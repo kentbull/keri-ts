@@ -97,8 +97,12 @@ export interface WebWallet {
   readonly inventory: WalletBaser;
   /** The composition's opener; `opener.queue` orders every commit. */
   readonly opener: WebStoreOpener;
-  /** Outcome of the persistence request made at open. Warn the user when `persisted` is false. */
-  readonly storage: PersistentStorageResult;
+  /**
+   * Outcome of the persistence request made at open; warn the user when `persisted` is false. A
+   * promise because some engines (Firefox) hold the request on a permission prompt, and a prompt
+   * must not hold the wallet closed. It never rejects.
+   */
+  readonly storage: Promise<PersistentStorageResult>;
   /**
    * Whether persistence is still accepting commits. After one failed write every store of the
    * composition refuses commits; reads continue. Recover with `close()` then `openWebWallet()`.
@@ -148,7 +152,7 @@ function* compose(
     assertSecret(options);
     // The lock comes first: each store is a snapshot taken at open.
     lock = yield* call(() => acquireStoreLock({ name, base }, { locks: host.locks }));
-    const storage = yield* call(() => requestPersistentStorage(host.storage));
+    const storage = requestPersistentStorage(host.storage);
     const opener = indexedDbOpener(host.indexedDb);
     const hby = yield* openHabery({
       name,
@@ -287,8 +291,7 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
   };
 }
 
-/** The page and document when running in one. */
+/** The page and document when running in one. Not `globalThis`: the npm build would shim it for Node. */
 function pageTargets(): PageLifecycleTargets | null {
-  const document = (globalThis as { document?: PageLifecycleTargets["document"] }).document;
-  return document ? { page: globalThis, document } : null;
+  return typeof document === "undefined" ? null : { page: self, document };
 }

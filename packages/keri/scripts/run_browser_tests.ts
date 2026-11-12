@@ -73,8 +73,13 @@ async function runEngine(name: string, origin: string, expected: string[]): Prom
     const page = await browser.newPage();
     page.on("pageerror", (error) => console.error(`[${name}] page error: ${error.message}`));
     await page.goto(origin);
-    await page.waitForFunction(() => (globalThis as unknown as { keriBrowserRun: BrowserRun }).keriBrowserRun.done, {
-      timeout: 300_000,
+    await page.waitForFunction(
+      () => (globalThis as unknown as { keriBrowserRun: BrowserRun }).keriBrowserRun.done,
+      undefined,
+      { timeout: 300_000 },
+    ).catch(async (error) => {
+      const state = await page.evaluate(() => (globalThis as unknown as { keriBrowserRun: BrowserRun }).keriBrowserRun);
+      throw new Error(`${error.message}\nstuck in case: ${state.current}; ${state.results.length} cases finished`);
     });
     const run = await page.evaluate(() => (globalThis as unknown as { keriBrowserRun: BrowserRun }).keriBrowserRun);
     console.log(`\n=== ${name} ${browser.version()} | ${run.engine}`);

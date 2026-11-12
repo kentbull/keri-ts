@@ -81,7 +81,7 @@ function page() {
 Deno.test("reload: close and reopen with a fresh opener returns identifiers and wallet inventory", async () => {
   const p = page();
   const first = await p.open();
-  assertEquals(first.storage.persisted, true);
+  assertEquals((await first.storage).persisted, true);
   const pre = first.hby.makeHab("main").pre;
   first.inventory.credentials.pin(["k"], "v");
   await first.close();

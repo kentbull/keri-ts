@@ -43,9 +43,18 @@ async function secondOpenRefused(): Promise<void> {
   await (await openWebWallet({ name, bran })).close();
 }
 
-/** Whatever the engine answers, the result is well formed and never throws. */
+/**
+ * Whatever the engine answers, the result is well formed and never throws. An engine that holds
+ * the request on a permission prompt (Firefox) answers nothing in automation; that is noted.
+ */
 async function persistentStorageShape(): Promise<void> {
-  const result = await requestPersistentStorage();
+  const pending = Symbol("pending");
+  const asked = requestPersistentStorage();
+  const result = await Promise.race([
+    asked,
+    new Promise<typeof pending>((resolve) => setTimeout(() => resolve(pending), 5000)),
+  ]);
+  if (result === pending) return note("persistent storage: request still pending after 5 s (permission prompt)");
   assertEquals(typeof result.persisted, "boolean");
   assertEquals(typeof result.supported, "boolean");
   for (const field of [result.quota, result.usage]) assert(field === undefined || typeof field === "number");

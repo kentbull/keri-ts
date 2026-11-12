@@ -16,6 +16,8 @@ export interface BrowserRun {
   /** Observations the cases reported through `note`. */
   notes: string[];
   elapsedMs: number;
+  /** The case running now, so a runner that times out can name it. */
+  current?: string;
 }
 
 async function runCase({ name, fn }: Case): Promise<CaseResult> {
@@ -36,6 +38,9 @@ const state: BrowserRun = { done: false, engine: navigator.userAgent, results: [
 (globalThis as unknown as { keriBrowserNotes: string[] }).keriBrowserNotes = state.notes;
 (globalThis as unknown as { keriBrowserRun: BrowserRun }).keriBrowserRun = state;
 
-for (const testCase of collect(registerCases)) state.results.push(await runCase(testCase));
+for (const testCase of collect(registerCases)) {
+  state.current = testCase.name;
+  state.results.push(await runCase(testCase));
+}
 state.elapsedMs = performance.now() - started;
 state.done = true;
