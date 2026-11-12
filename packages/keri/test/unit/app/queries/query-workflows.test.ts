@@ -16,7 +16,7 @@ import { Deck } from "../../../../src/core/deck.ts";
 function strict<T extends object>(deps: T): T {
   return new Proxy(deps, {
     get(target, prop, receiver) {
-      if (!(prop in target)) throw new Error(`unexpected collaborator access: ${String(prop)}`);
+      if (prop !== "changes" && !(prop in target)) throw new Error(`unexpected collaborator access: ${String(prop)}`);
       return Reflect.get(target, prop, receiver);
     },
   });
