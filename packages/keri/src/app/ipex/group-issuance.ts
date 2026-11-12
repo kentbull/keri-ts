@@ -468,10 +468,10 @@ export function* followGroupIssuanceProof(
 
 /**
  * The custodian's exact public proof of a completed group issuance: the proof support and the
- * `/multisig/ipex-proof` wrapper every other member received. A copy for members that were away and for a file
- * hand-off.
+ * `/multisig/ipex-proof` wrapper every other member received, read back from the stores. A copy for members that
+ * were away and for a file hand-off.
  *
- * @throws ValidationError unless the selection's member is the custodian and the Grant is accepted.
+ * @throws ValidationError unless the selection's member is the custodian and has published the proof of an accepted Grant.
  */
 export function* groupIssuanceProof(
   ops: IssuanceOperations,
@@ -482,11 +482,19 @@ export function* groupIssuanceProof(
   if (!lead || !deps.exc.complete(input.grant) || !retained?.nests?.length) {
     throw new ValidationError("Only the custodian of an accepted group Grant has its public proof");
   }
-  const completed = parseBytes(yield* storedBytes(ops, input.grant))[0];
-  return concatBytes(
-    discloser.proofSupport(yield* nodeStream(retained.nests), hab),
-    yield* wrapper(member, hab, completed, MULTISIG_IPEX_PROOF_ROUTE),
-  );
+  for (const [, parent] of deps.hby.db.exns.getTopItemIter()) {
+    const attrs = parent.sad?.a as Record<string, unknown> | undefined;
+    if (
+      parent.route === MULTISIG_IPEX_PROOF_ROUTE && parent.pre === member.pre && attrs?.gid === hab.pre
+      && attrs?.grant === input.grant
+    ) {
+      return concatBytes(
+        discloser.proofSupport(yield* nodeStream(retained.nests), hab),
+        yield* storedBytes(ops, parent.said!),
+      );
+    }
+  }
+  throw new ValidationError("The custodian has not published the proof of this group Grant");
 }
 
 /** What `IssuanceOperations.beginGroup` needs to record one group operation. */
@@ -839,7 +847,10 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
   const completed = parseBytes(yield* storedBytes(ops, grant))[0];
   const support = ops.discloser.proofSupport(g.nodeBytes!, hab);
   // KERIpy form: the elected member shares the proof with the other members by mailbox.
-  const publicProof = concatBytes(support, yield* wrapper(member, hab, completed, MULTISIG_IPEX_PROOF_ROUTE));
+  const wrapped = yield* wrapper(member, hab, completed, MULTISIG_IPEX_PROOF_ROUTE);
+  // Kept locally, so the proof the members received is the one {@link groupIssuanceProof} exports.
+  yield* deps.reactor.processBytes(wrapped, { local: true });
+  const publicProof = concatBytes(support, wrapped);
   for (const peer of others()) yield* send(peer, publicProof);
   if (issuer) yield* send(g.frozenGrant.sad!.ri as string, support, "credential");
   return true;
