@@ -323,7 +323,14 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
 
       // The custodian's public proof is derivable from the stores, and the status of a completed Grant reads from them.
       const proof = yield* groupIssuanceProof(ops(lead), { ...selection(lead), grant });
-      assertEquals((parseBytes(proof).at(-1)!.body as SerderKERI).route, "/multisig/ipex-proof");
+      const delivered = [...peer.hby.db.exns.getTopItemIter()].map(([, body]) => body)
+        .filter((body) => body.route === "/multisig/ipex-proof");
+      assertEquals(delivered.map((body) => body.pre), [lead.member.pre]);
+      assertEquals(
+        parseBytes(proof).at(-1)!.body.said,
+        delivered[0].said,
+        "the exported proof is the wrapper the member received",
+      );
       assertEquals(issuanceStatus(ops(lead), grant), done);
 
       // --- the holder admits, a separate consent ---
