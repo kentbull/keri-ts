@@ -19,6 +19,7 @@ Deno.test("resolveOobi reports resolved, failed and timed-out states from the Oo
   const targetDir = await Deno.makeTempDir({ prefix: "oobi-resolving-dst-" });
   const port = reserveTcpPort();
   let pre = "";
+  let other = "";
   try {
     await run(function*() {
       const hby = yield* createHabery({ name: "source", headDirPath: sourceDir, skipConfig: true });
@@ -32,6 +33,7 @@ Deno.test("resolveOobi reports resolved, failed and timed-out states from the Oo
           toad: 0,
         });
         pre = hab.pre;
+        other = hby.makeHab("other").pre;
         const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
           enableMailboxStore: true,
         });
@@ -63,9 +65,9 @@ Deno.test("resolveOobi reports resolved, failed and timed-out states from the Oo
             assertEquals(oobiStatus(targetRuntime, url).status, "resolved");
             assertExists(target.db.getState(pre));
 
-            // The provider has no witness role for this AID, so it answers 404 and the Oobiery
-            // records the failure with that reason.
-            const deadUrl = `http://127.0.0.1:${port}/oobi/${pre}/witness/${pre}`;
+            // The provider holds no witness role for the other AID, so it answers 404 and the
+            // Oobiery records the failure with that reason.
+            const deadUrl = `http://127.0.0.1:${port}/oobi/${pre}/witness/${other}`;
             const failed = yield* resolveOobi(targetRuntime, deadUrl);
             assertEquals(failed.status, "failed");
             if (failed.status !== "failed") throw new Error("unreachable");
