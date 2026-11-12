@@ -78,6 +78,11 @@ import {
   commitAcceptedGroupMembers,
   publishProposal,
 } from "../../../../src/app/multisig/multisig-workflows.ts";
+import {
+  proposeCredentialIssue,
+  proposeCredentialRegistry,
+  proposeCredentialRevocation,
+} from "../../../../src/app/multisig/proposing.ts";
 import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
@@ -1669,6 +1674,61 @@ Deno.test("group establishment-only registry inception, issuance and revocation 
           delivered.length > 0,
           true,
           "A later group/member rotation must retain the original anchor's lead",
+        );
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
+
+Deno.test("propose* wrappers hand each group anchor of a legacy registry, issuance and revocation to the Counselor", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      try {
+        runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+        runtime.postman.wait = function*(evt) {
+          return { kin: "sent", evt, deliveries: ["test"] };
+        };
+        const deps = {
+          rgy: runtime.vdr!,
+          input: runtime.reactor,
+          postman: runtime.postman,
+          counselor: runtime.counselor,
+        };
+        const registry = yield* proposeCredentialRegistry(deps, local.hab, { registryName: "counseled" }, {
+          fallbackAfterMs: 0,
+        });
+        const schemer = new Schemer({ sed: { $id: "", type: "object" } });
+        left.db.schema.pin(schemer.said, schemer);
+        const issued = yield* proposeCredentialIssue(deps, {
+          registryName: "counseled",
+          schema: schemer.said,
+          recipient: bob.pre,
+          data: { role: "holder" },
+        });
+        const revoked = yield* proposeCredentialRevocation(deps, {
+          registryName: "counseled",
+          credentialSaid: issued.creder.said!,
+        });
+        const counseled = runtime.counselor.pending(local.hab.pre).map(({ said }) => said);
+        for (const proposed of [registry, issued, revoked]) {
+          assertEquals(proposed.group.event.pre, local.hab.pre);
+          assertEquals(counseled.includes(proposed.group.event.said), true);
+        }
+        assertEquals(new Set(counseled).size, 3, "each proposal has its own anchor");
+        // A single-signature identifier is not a group: the wrapper refuses it instead of proposing.
+        const solo = left.makeHab("solo", undefined, {});
+        yield* call(() =>
+          assertRejects(
+            () => run(() => proposeCredentialRegistry(deps, solo, { registryName: "solo-registry" })),
+            Error,
+            "must be proposed by a local group",
+          )
         );
       } finally {
         yield* runtime.close();
