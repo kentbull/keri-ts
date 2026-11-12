@@ -42,6 +42,7 @@ import { MailboxDirector } from "../mailbox/mailbox-director.ts";
 import { type MailboxPollBatch, MailboxPoller } from "../mailbox/mailbox-poller.ts";
 import { mailboxerOptionsForHabery } from "../mailbox/mailboxing.ts";
 import { mailboxTopicForRoute } from "../mailbox/topic-routing.ts";
+import { Counselor } from "../multisig/counseling.ts";
 import { loadMultisigHandlers, type Multiplexor } from "../multisig/grouping.ts";
 import { noterOptionsForHabery, Notifier } from "../notifications/notifying.ts";
 import { Signaler } from "../notifications/signaling.ts";
@@ -55,6 +56,7 @@ import { cueDo } from "./cue-runtime.ts";
 import { IpexAuxiliaries } from "./ipex-auxiliaries.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+import { signalerChangeSink } from "./workflow-contract.ts";
 import { observeUntil } from "./workflow-contract.ts";
 
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
@@ -128,6 +130,11 @@ export interface AgentRuntime {
   postman: Poster;
   /** Delegation workflow state and delivery/accepted-state gates. */
   delegating: Anchorer;
+  /**
+   * Group-event completion over `gpse`/`gdee`/`gpwe`/`cgms`. It acts only on events a
+   * caller registered with `start`/`supply`; `runAgentRuntime` runs its loop.
+   */
+  counselor: Counselor;
   /**
    * Background unsigned-request sender, run independently of reply intake.
    * Pending sender work excludes semantic query waits; their invoking operations
@@ -244,6 +251,8 @@ export interface RuntimePendingState {
    * Whether witness, unanchored or publication delegation escrow remains.
    */
   delegationPending: boolean;
+  /** True while a group event awaits signatures, a delegator or witness receipts. */
+  groupPending: boolean;
   /** True while unsigned query requests or their current transport attempt remain. */
   queriesPending: boolean;
   /** True while independently retained query/cue delivery owners remain. */
@@ -451,6 +460,13 @@ export function* createAgentRuntime(
     }
   });
   const delegating = new Anchorer(hby, postman, querying, protocol, http, clock);
+  const counselor = new Counselor(
+    hby,
+    new Receiptor(hby, protocol, http, clock),
+    clock,
+    signaler ? signalerChangeSink(signaler) : undefined,
+    { anchorer: delegating, querying },
+  );
   const oobiery = new Oobiery(hby, protocol, revery, http, cues);
   oobiery.registerReplyRoutes(revery.rtr);
   const authenticator = new Authenticator(hby, http);
@@ -475,6 +491,7 @@ export function* createAgentRuntime(
     mailboxPoller,
     postman,
     delegating,
+    counselor,
     querying,
     replyStreams,
     vdr,
@@ -721,6 +738,7 @@ export function runtimePendingState(
     delegationPending: runtime.hby.db.dpwe.cnt() > 0
       || runtime.hby.db.dune.cnt() > 0
       || runtime.hby.db.dpub.cnt() > 0,
+    groupPending: runtime.hby.db.gpse.cnt() > 0 || runtime.hby.db.gdee.cnt() > 0 || runtime.hby.db.gpwe.cnt() > 0,
     queriesPending: runtime.querying.hasPendingWork(),
     deliveriesPending: runtime.querying.hasPendingDelivery || runtime.postman.hasPending,
   };
@@ -867,6 +885,12 @@ export function* runAgentRuntime(
     yield* spawn(function*() {
       while (true) {
         yield* runtime.delegating.processAllOnce();
+        yield* runtimeTurn();
+      }
+    }),
+    yield* spawn(function*() {
+      while (true) {
+        yield* runtime.counselor.processOnce();
         yield* runtimeTurn();
       }
     }),
