@@ -184,6 +184,18 @@ synchronous instead of becoming operations at every call site.
 Callers that already await durability, Exchanger and Unblind, keep doing so
 through `flushed()`.
 
+**Single writer.** A `WebDBer` loads its tables once and never re-reads them, so
+two tabs on one database each hold a private snapshot and the last flush wins.
+`indexedDbOpener()` therefore owns a Web Locks lock per store identity (`base`,
+`name`, `temp`; the family is not part of it). The first store's `reopen` takes it
+before anything loads, every family the opener creates shares it, and the last
+close releases it, also when a close step fails. A holder elsewhere gives
+`StoreLockHeldError`, no `navigator.locks` gives `StoreLockUnsupportedError`, and
+the store never opens unlocked by default. `unsafeSkipStoreLock: true` is the
+deliberate opt-out for a host that serializes writers itself (a SharedWorker
+owner) and for tests that open one database twice; `locks` injects a manager.
+`WebDBer` itself and other `Persistence` adapters are unchanged.
+
 ## What a browser store may differ on
 
 | Behavior                 | LMDB                                                          | Browser store                                                                                        |

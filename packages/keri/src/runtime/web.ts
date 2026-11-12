@@ -5,12 +5,6 @@
  * Mirrors `keri-ts/runtime/node` for the browser. Nothing here may reach
  * `node:` modules, sockets or the `Deno` global.
  */
-export { barrierHttpClient, OutputBarrierError } from "./web/output-barrier.ts";
-export {
-  type PersistentStorageManager,
-  type PersistentStorageResult,
-  requestPersistentStorage,
-} from "./web/persistent-storage.ts";
 export {
   acquireStoreLock,
   type AcquireStoreLockOptions,
@@ -19,4 +13,10 @@ export {
   storeLockKey,
   type StoreLockManager,
   StoreLockUnsupportedError,
-} from "./web/store-lock.ts";
+} from "../db/store-lock.ts";
+export { barrierHttpClient, OutputBarrierError } from "./web/output-barrier.ts";
+export {
+  type PersistentStorageManager,
+  type PersistentStorageResult,
+  requestPersistentStorage,
+} from "./web/persistent-storage.ts";

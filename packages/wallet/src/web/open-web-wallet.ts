@@ -1,8 +1,8 @@
 /**
  * `openWebWallet`: the one composition root a browser app calls.
  *
- * It only sequences pieces `keri-ts` already owns: the single-writer lock, one
- * IndexedDB opener (so one persistence queue and one commit order), `openHabery`,
+ * It only sequences pieces `keri-ts` already owns: one IndexedDB opener (so one persistence
+ * queue and one commit order, and the opener's single-writer lock), `openHabery`,
  * the wallet inventory, `createAgentRuntime` over the output-barrier HTTP client,
  * and `runAgentRuntime`. It wires no protocol processor itself.
  *
@@ -27,12 +27,10 @@ import {
   systemClock,
 } from "keri-ts/runtime";
 import {
-  acquireStoreLock,
   barrierHttpClient,
   type PersistentStorageManager,
   type PersistentStorageResult,
   requestPersistentStorage,
-  type StoreLock,
   type StoreLockManager,
 } from "keri-ts/runtime/web";
 import { openWalletBaser, type WalletBaser } from "../storing.ts";
@@ -148,13 +146,14 @@ function* compose(
   const { name, base = "", host = {} } = options;
   const failures: unknown[] = [];
   let opening: { error: unknown } | undefined;
-  let lock: StoreLock | undefined;
   try {
     assertSecret(options);
-    // The lock comes first: each store is a snapshot taken at open.
-    lock = yield* call(() => acquireStoreLock({ name, base }, { locks: host.locks }));
-    const storage = requestPersistentStorage(host.storage);
-    const opener = indexedDbOpener(host.indexedDb);
+    // The opener takes the single-writer lock in the first store's reopen, before any store loads,
+    // and releases it when the last store closes.
+    const opener = indexedDbOpener({
+      ...host.indexedDb,
+      ...(host.locks === undefined ? {} : { locks: host.locks }),
+    });
     const hby = yield* openHabery({
       name,
       base,
@@ -164,6 +163,7 @@ function* compose(
       seed: options.seed,
       aeid: options.aeid,
     });
+    const storage = requestPersistentStorage(host.storage);
     try {
       // Arguments alone do not prove encryption. The Manager encrypts only when the keeper stores an
       // AEID and holds the matching seed, so check that state, which is what protects seeds at rest.
@@ -213,7 +213,6 @@ function* compose(
   } catch (error) {
     opening = { error };
   } finally {
-    if (lock) yield* settle(failures, () => call(() => lock!.release()));
     const all = opening ? [opening.error, ...failures] : failures;
     finish(all.length <= 1 ? all[0] : new AggregateError(all, "Web wallet failed", { cause: all[0] }));
   }
@@ -232,8 +231,8 @@ function* scoped(body: () => Operation<void>): Operation<void> {
 /**
  * Open (or create) a browser wallet. See {@link OpenWebWalletOptions}.
  *
- * Order: take the store lock; request persistent storage; open one IndexedDB opener; open the
- * Habery and refuse an unencrypted keeper; open the inventory on the same queue; create the
+ * Order: create one IndexedDB opener; open the Habery, whose first store takes the opener's
+ * store lock before it loads anything; request persistent storage; refuse an unencrypted keeper; open the inventory on the same queue; create the
  * runtime over the output-barrier HTTP client; run it with mailbox polling. A failure at any
  * step closes what was opened, releases the lock and rejects.
  *
