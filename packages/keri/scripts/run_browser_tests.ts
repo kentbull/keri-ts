@@ -17,7 +17,7 @@
 import { registerCases } from "../test/browser/cases.ts";
 import { collect } from "../test/browser/collector.ts";
 import type { BrowserRun } from "../test/browser/main.ts";
-import { bundle, launch, selectEngines, serve } from "./browser_lane.ts";
+import { bundle, launch, openPage, selectEngines, serve } from "./browser_lane.ts";
 
 const browserDir = new URL("../test/browser/", import.meta.url);
 
@@ -27,7 +27,7 @@ async function runEngine(name: string, origin: string, expected: string[]): Prom
   try {
     const page = await browser.newPage();
     page.on("pageerror", (error) => console.error(`[${name}] page error: ${error.message}`));
-    await page.goto(origin);
+    await openPage(page, origin, "keriBrowserRun");
     await page.waitForFunction(
       () => (globalThis as unknown as { keriBrowserRun: BrowserRun }).keriBrowserRun.done,
       undefined,

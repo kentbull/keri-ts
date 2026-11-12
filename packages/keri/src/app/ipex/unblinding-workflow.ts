@@ -26,7 +26,7 @@
  * timers, the consent time. Per-identifier {@link Unblind} owners come through a narrow interface (`runtime.ipex`). Group identifiers
  * are refused; group Unblind belongs to the group proposal API.
  */
-import { action, type Operation, race } from "npm:effection@^3.6.0";
+import { type Operation, race } from "npm:effection@^3.6.0";
 import { Unblind } from "../../acdc/unblinding.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { singleKeyQueryWindow } from "../../core/mailbox/kram-policy.ts";
@@ -35,7 +35,7 @@ import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
-import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
+import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { IssuanceDelivery } from "./issuance.ts";
 
 /** Milliseconds between resends of the unchanged disclosee query, as `tufa ipex unblind` does. */
@@ -115,14 +115,6 @@ const CHANGED = "Original presentation deadline changed";
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** Wait on the host's clock so cancellation releases the timer. */
-function* wait(clock: RuntimeClock, milliseconds: number): Operation<void> {
-  yield* action<void>((resolve) => {
-    const timer = clock.setTimeout(resolve, milliseconds);
-    return () => clock.clearTimeout(timer);
-  });
 }
 
 /** Whether the Grant's deadline has passed. */
@@ -247,7 +239,7 @@ export class UnblindingOperations {
   }
 
   private *timer(milliseconds: number): Operation<"expired"> {
-    yield* wait(this.deps.clock, milliseconds);
+    yield* waitOnClock(this.deps.clock, milliseconds);
     return "expired";
   }
 

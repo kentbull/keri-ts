@@ -4,7 +4,7 @@
  * `run_browser_transport.ts` (HTTP transport probe) both build on it.
  */
 
-import { type Browser, type BrowserType, chromium, firefox, webkit } from "npm:playwright-core@1.56.1";
+import { type Browser, type BrowserType, chromium, firefox, type Page, webkit } from "npm:playwright-core@1.56.1";
 import { echoHandler } from "./transport_echo.ts";
 
 const packageDir = new URL("../", import.meta.url);
@@ -56,6 +56,15 @@ export function serve(dir: string): { origin: string; server: Deno.HttpServer } 
     });
   });
   return { origin: `http://localhost:${server.addr.port}`, server };
+}
+
+/**
+ * Open the lane page and wait until its module bundle has run and defined `globalThis[name]`. The bundle has
+ * top-level await, so `goto` can return before the entry has executed; evaluating the global at once races it.
+ */
+export async function openPage(page: Page, url: string, name: string, timeoutMs = 60_000): Promise<void> {
+  await page.goto(url);
+  await page.waitForFunction((name) => name in globalThis, name, { timeout: timeoutMs });
 }
 
 /** Launch one engine, naming the install command when its binary is missing. */

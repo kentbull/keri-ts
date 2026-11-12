@@ -10,7 +10,7 @@
  * an expired wait, are returned values; only caller-contract, invariant and
  * infrastructure failures throw.
  */
-import { type Operation, sleep } from "npm:effection@^3.6.0";
+import { action, type Operation, sleep } from "npm:effection@^3.6.0";
 import type { Signaler } from "../notifications/signaling.ts";
 import { type RuntimeClock, systemClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -104,4 +104,14 @@ export function* observeUntil(
     else yield* sleep(Math.min(pollMs, remaining));
   }
   return true;
+}
+
+/**
+ * Wait `milliseconds` on the host's clock, so a fake clock drives it and cancellation releases the timer.
+ */
+export function* waitOnClock(clock: RuntimeClock, milliseconds: number): Operation<void> {
+  yield* action<void>((resolve) => {
+    const timer = clock.setTimeout(resolve, milliseconds);
+    return () => clock.clearTimeout(timer);
+  });
 }
