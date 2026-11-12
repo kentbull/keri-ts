@@ -85,7 +85,8 @@ const SURFACES: SurfaceCheck[] = [
   {
     label: "keri-ts root surface",
     entrypoint: new URL("../mod.ts", import.meta.url),
-    forbidden: [...APP_FORBIDDEN, "node:"],
+    forbidden: [...APP_FORBIDDEN, ...HOST_FORBIDDEN],
+    forbidDenoGlobal: true,
   },
   {
     label: "keri-ts runtime surface",

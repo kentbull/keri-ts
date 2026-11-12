@@ -56,6 +56,11 @@ echo "Node runtime: $(node --version), npm: $(npm --version)" >&2
 cp /smoke-scripts/package-targets.mjs /smoke-scripts/smoke-keri-installed.mjs /smoke-scripts/keri-consumer.ts /smoke-scripts/tufa-consumer.ts "${WORK_DIR}/"
 node ./smoke-keri-installed.mjs
 
+# Bundle the installed browser-safe surfaces with a real bundler; esbuild is tooling only and never ships.
+npm install --no-save --no-audit --no-fund esbuild@0.25.12 >/dev/null
+cp /smoke-scripts/check_browser_bundle.mjs "${WORK_DIR}/"
+node ./check_browser_bundle.mjs "${WORK_DIR}"
+
 TUFA_BIN="${WORK_DIR}/node_modules/.bin/tufa"
 if [ ! -x "${TUFA_BIN}" ]; then
   echo "tufa bin not found or not executable: ${TUFA_BIN}" >&2
