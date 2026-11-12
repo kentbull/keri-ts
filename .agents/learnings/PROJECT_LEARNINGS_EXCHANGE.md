@@ -270,9 +270,8 @@ the Anchorer, which owns request, anchor and publication, and the Counselor writ
 `gpwe`. The member hab sends delegation traffic unless a proxy is supplied, as in
 KERIpy; proxy and witness auths are memory only. `runtime.counselor` runs one
 `processOnce` loop per `runAgentRuntime` and costs three row counts per idle turn.
-A group reopened unaccepted is not in `Habery.habs` until re-joined, so a
-witnessed resume needs `joinGroupHab` first (Receiptor reads `habs`). Anchorer escrows key by `(pre, snh)`, KERIpy's
-by `(pre, said)`. Without an Anchorer the event reads `notSupported`.
+A group reopened unaccepted is held in `Habery.habs` (KERIpy `loadHabs`) and becomes
+usable on acceptance. Anchorer escrows key by `(pre, snh)`, KERIpy's by `(pre, said)`. Without an Anchorer the event reads `notSupported`.
 Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
 only proposal selection and immediate UI decisions. Explicit selection reads accepted
 EXNs and their Multiplexor indexes independently of notification presence. When
