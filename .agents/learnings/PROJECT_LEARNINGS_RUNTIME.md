@@ -207,9 +207,9 @@ Library workflow contract (OOBI, query, event completion; `app/runtime/workflow-
 
 1. `begin*` returns after local commit; `*Status` is a pure synchronous read; `waitFor*`/`resolve*`/`query*` only observe via `observeUntil` and never start runtime workers.
 2. Functions take small declared collaborator interfaces of concrete owners, never `AgentRuntime` or `Pick` of it; hosts adapt once.
-3. A wait deadline is a returned `{ status: "timed-out", timeoutMs }`; only contract, invariant and infrastructure failures throw. The CLI turns it into its fixed error text.
+3. A wait deadline is a returned value `WaitResult<S>` = `{ outcome: "settled" | "timed-out", status, timeoutMs? }` where `status` is the status read at return; only contract, invariant and infrastructure failures throw. The CLI turns a timeout into its fixed error text.
 4. One-shot CLI commands run workers around the wait with `cli/common/runtime-workers.ts`; a wallet's already-running runtime does the work.
-5. Status is a union on `state` (`phase`, optional `blocked`); owners may push identity-only `ChangeSink` changes after commit. Key-state query status is process-local (`scope: "process"`), anchor status is durable.
+5. Status reads are unions on `state` (`phase`, optional `blocked`); wait results discriminate on `outcome`. Owners may push identity-only `ChangeSink` changes after commit (a failing sink drops them). Key-state query status is process-local (`scope: "process"`), anchor status is durable.
 
 WitnessInquisitor owns pending requests and one current attempt, never workflow observers.
 Concrete query operations own accepted-state waits; the composition routes live

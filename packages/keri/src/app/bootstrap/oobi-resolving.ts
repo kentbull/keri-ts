@@ -14,7 +14,7 @@
 import type { Operation } from "effection";
 import type { OobiRecord } from "../../core/records.ts";
 import type { Baser } from "../../db/basing.ts";
-import { type ChangeSink, observeUntil } from "../runtime/workflow-contract.ts";
+import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import { type Oobiery, oobiTerminalState } from "./oobiery.ts";
 
 /** Default wall-clock budget for one blocking resolution. */
@@ -64,19 +64,20 @@ export interface ResolveOobiOptions extends BeginOobiOptions, WaitForOobiOptions
 
 /** Durable state of one requested URL. `pending` covers queued, in flight and unknown URLs. */
 export type OobiStatus =
-  | { status: "pending" }
-  | { status: "resolved"; record: OobiRecord }
+  | { state: "pending" }
+  | { state: "resolved"; record: OobiRecord }
   | {
-    status: "failed";
+    state: "failed";
     /** The state the Oobiery recorded, or `"failed"` when it recorded none. */
     reason: string;
     record: OobiRecord;
   };
 
-/** Outcome of a wait: terminal Oobiery state, or the budget expiring first. */
-export type OobiResolveResult =
-  | Exclude<OobiStatus, { status: "pending" }>
-  | { status: "timed-out"; timeoutMs: number };
+/**
+ * Outcome of a wait. It settles when the status is terminal; `status.state` then
+ * says `resolved` or `failed`. On `timed-out`, `status` is the last read (pending).
+ */
+export type OobiResolveResult = WaitResult<OobiStatus>;
 
 /**
  * Queue one URL with the durable Oobiery. Returns after the job is queued.
@@ -91,16 +92,16 @@ export function beginOobi(deps: OobiBeginDeps, url: string, options: BeginOobiOp
 /** Read the durable status of one requested URL. Pure: no worker, no I/O beyond the Baser. */
 export function oobiStatus(deps: OobiStatusDeps, url: string): OobiStatus {
   const terminal = oobiTerminalState(deps.db, url);
-  if (terminal.status === "pending" || !terminal.record) return { status: "pending" };
-  if (terminal.status === "resolved") return { status: "resolved", record: terminal.record };
-  return { status: "failed", reason: terminal.record.state ?? "failed", record: terminal.record };
+  if (terminal.status === "pending" || !terminal.record) return { state: "pending" };
+  if (terminal.status === "resolved") return { state: "resolved", record: terminal.record };
+  return { state: "failed", reason: terminal.record.state ?? "failed", record: terminal.record };
 }
 
 /**
  * Observe a queued URL until it is terminal (and `deps.settled`, when given) or
  * the budget expires. Starts no worker.
  *
- * @returns `resolved`, `failed` with the recorded reason, or `timed-out`.
+ * @returns `settled` with a `resolved` or `failed` status (reason recorded), or `timed-out`.
  */
 export function* waitForOobi(
   deps: OobiWaitDeps,
@@ -108,13 +109,13 @@ export function* waitForOobi(
   { timeoutMs = OOBI_RESOLVE_TIMEOUT_MS }: WaitForOobiOptions = {},
 ): Operation<OobiResolveResult> {
   const done = yield* observeUntil(
-    () => oobiStatus(deps, url).status !== "pending" && (deps.settled?.() ?? true),
+    () => oobiStatus(deps, url).state !== "pending" && (deps.settled?.() ?? true),
     { timeoutMs },
   );
-  const status = done ? oobiStatus(deps, url) : { status: "pending" as const };
-  if (status.status === "pending") return { status: "timed-out", timeoutMs };
+  const status = oobiStatus(deps, url);
+  if (!done || status.state === "pending") return { outcome: "timed-out", status, timeoutMs };
   deps.changes?.push({ kind: "oobi", id: url });
-  return status;
+  return { outcome: "settled", status };
 }
 
 /** `beginOobi` then `waitForOobi`. The host must be running the Oobiery for the wait to end in a terminal state. */

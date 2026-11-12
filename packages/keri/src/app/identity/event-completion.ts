@@ -26,7 +26,7 @@ import type { Baser } from "../../db/basing.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
-import { type ChangeSink, observeUntil } from "../runtime/workflow-contract.ts";
+import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witness/receipting.ts";
 import type { Anchorer, DelegationWorkflowStatus } from "./delegating.ts";
@@ -137,9 +137,7 @@ export function delegationStatus(
 }
 
 /** Outcome of waiting for a delegator's anchor. */
-export type DelegationWaitResult =
-  | { status: "completed"; workflow: DelegationWorkflowStatus }
-  | { status: "timed-out"; timeoutMs: number };
+export type DelegationWaitResult = WaitResult<DelegationWorkflowStatus>;
 
 /**
  * Observe the delegated event until the delegator's anchor is learned or the
@@ -151,11 +149,11 @@ export function* waitForDelegation(
   sn: number,
   { timeoutMs = DELEGATION_WAIT_TIMEOUT_MS }: { timeoutMs?: number } = {},
 ): Operation<DelegationWaitResult> {
-  if (!(yield* observeUntil(() => delegation.anchorer.complete(hab.pre, sn), { timeoutMs }))) {
-    return { status: "timed-out", timeoutMs };
-  }
+  const done = yield* observeUntil(() => delegation.anchorer.complete(hab.pre, sn), { timeoutMs });
+  const status = delegationStatus(delegation, hab.pre, sn);
+  if (!done) return { outcome: "timed-out", status, timeoutMs };
   delegation.changes?.push({ kind: "delegation", id: `${hab.pre}:${sn}` });
-  return { status: "completed", workflow: delegationStatus(delegation, hab.pre, sn) };
+  return { outcome: "settled", status };
 }
 
 /** Delegation choices for `completeEvent`; present only for delegated events. */
@@ -175,14 +173,15 @@ export interface CompleteEventOptions extends ReceiptOptions {
   delegation?: DelegationOptions;
 }
 
-/** What completion observed; a delegation wait that expires is a value, not an exception. */
+/**
+ * What completion observed. `status` is the {@link EventStatus} read at return;
+ * a delegation wait that expires is `timed-out`, not an exception.
+ * `delegationPhase` is the delegating workflow phase after waiting, null when not
+ * delegated or finished.
+ */
 export type EventCompletion =
-  | {
-    status: "completed";
-    /** Delegating workflow phase after waiting; null when not delegated or finished. */
-    delegationPhase: DelegationWorkflowStatus["phase"] | null;
-  }
-  | { status: "timed-out"; timeoutMs: number };
+  & WaitResult<EventStatus>
+  & { readonly delegationPhase: DelegationWorkflowStatus["phase"] | null };
 
 /**
  * Complete a freshly authored event: witness receipts, then, for delegated
@@ -197,15 +196,18 @@ export function* completeEvent(
   { delegation, ...receipt }: CompleteEventOptions = {},
 ): Operation<EventCompletion> {
   yield* receiptEvent(deps, hab.pre, { ...receipt, sn });
-  if (!delegation) return { status: "completed", delegationPhase: null };
+  if (!delegation) {
+    return { outcome: "settled", status: eventStatus(deps.hby, hab.pre, sn), delegationPhase: null };
+  }
 
   const communicationHab = delegation.communicationHab?.();
   return yield* deps.withDelegation(hab, function*(collaborator) {
     beginDelegation(collaborator, hab.pre, sn, communicationHab);
     const result = yield* waitForDelegation(collaborator, hab, sn, { timeoutMs: delegation.timeoutMs });
-    return result.status === "timed-out"
-      ? result
-      : { status: "completed", delegationPhase: result.workflow.phase };
+    const status = eventStatus({ db: deps.hby.db, anchorer: collaborator.anchorer }, hab.pre, sn);
+    return result.outcome === "timed-out"
+      ? { outcome: "timed-out", status, timeoutMs: result.timeoutMs, delegationPhase: result.status.phase }
+      : { outcome: "settled", status, delegationPhase: result.status.phase };
   });
 }
 

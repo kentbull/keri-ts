@@ -32,6 +32,16 @@ export interface ChangeSink {
   push(change: WorkflowChange): void;
 }
 
+/**
+ * Result of a library wait. `settled` means the status reached a terminal or
+ * wanted state; `timed-out` means the budget expired first. Either way `status`
+ * is the status read at return, so a caller never needs a second read to explain
+ * the outcome. `Timed` adds fields to the timed-out arm (default: the budget).
+ */
+export type WaitResult<S, Timed extends object = { timeoutMs: number }> =
+  | { readonly outcome: "settled"; readonly status: S }
+  | ({ readonly outcome: "timed-out"; readonly status: S } & Readonly<Timed>);
+
 /** In-memory sink that records changes in order. */
 export class MemoryChangeSink implements ChangeSink {
   readonly changes: WorkflowChange[] = [];
@@ -44,13 +54,18 @@ export class MemoryChangeSink implements ChangeSink {
  * Back a sink with the host's transient `Signaler`. Publishing needs no polling:
  * `push` is a synchronous append that collapses repeats of one workflow into a
  * single signal (collapse key `kind:id`). Delivery is pull-based, though: the
- * Signaler has no subscriber hook, so the consumer must read `signaler.list()`,
- * and a closed Signaler throws on push.
+ * Signaler has no subscriber hook, so the consumer must read `signaler.list()`.
+ * A closed or failing Signaler drops the change instead of throwing: a hint must
+ * never break the workflow that published it.
  */
 export function signalerChangeSink(signaler: Pick<Signaler, "push">): ChangeSink {
   return {
     push: ({ kind, id }) => {
-      signaler.push({ id }, `/workflow/${kind}`, { ckey: `${kind}:${id}` });
+      try {
+        signaler.push({ id }, `/workflow/${kind}`, { ckey: `${kind}:${id}` });
+      } catch {
+        // Dropped on purpose; consumers re-read status and tolerate a missed hint.
+      }
     },
   };
 }

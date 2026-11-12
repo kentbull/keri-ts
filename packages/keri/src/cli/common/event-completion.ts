@@ -44,7 +44,7 @@ export function* completeEventOrThrow(
   ...args: Parameters<typeof completeEvent>
 ): Operation<{ delegationPhase: DelegationWorkflowStatus["phase"] | null }> {
   const completion = yield* completeEvent(...args);
-  if (completion.status === "timed-out") {
+  if (completion.outcome === "timed-out") {
     throw new Error(`Runtime did not converge within ${completion.timeoutMs}ms.`);
   }
   return completion;

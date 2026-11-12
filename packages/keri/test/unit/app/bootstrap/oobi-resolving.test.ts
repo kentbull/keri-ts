@@ -55,20 +55,21 @@ Deno.test("resolveOobi reports resolved, failed and timed-out states from the Oo
 
             // Queued but not run: pending, and unknown URLs are pending too.
             beginOobi(deps, url, { alias: "src" });
-            assertEquals(oobiStatus(target, url), { status: "pending" });
-            assertEquals(oobiStatus(target, "http://127.0.0.1:1/never"), { status: "pending" });
+            assertEquals(oobiStatus(target, url), { state: "pending" });
+            assertEquals(oobiStatus(target, "http://127.0.0.1:1/never"), { state: "pending" });
 
             // Zero budget expires before any worker turn can finish the job.
             const timedOut = yield* resolveOobi(deps, url, { timeoutMs: 0 });
-            assertEquals(timedOut, { status: "timed-out", timeoutMs: 0 });
+            assertEquals(timedOut, { outcome: "timed-out", status: { state: "pending" }, timeoutMs: 0 });
 
             const resolved = yield* withRuntimeWorkers(
               targetRuntime,
               { pollMailbox: false },
               () => resolveOobi(deps, url, { alias: "src" }),
             );
-            assertEquals(resolved.status, "resolved");
-            assertEquals(oobiStatus(target, url).status, "resolved");
+            assertEquals(resolved.outcome, "settled");
+            assertEquals(resolved.status.state, "resolved");
+            assertEquals(oobiStatus(target, url).state, "resolved");
             assertExists(target.db.getState(pre));
 
             // The provider hosts no such AID, so it answers 404 and the Oobiery records the
@@ -80,11 +81,11 @@ Deno.test("resolveOobi reports resolved, failed and timed-out states from the Oo
               { pollMailbox: false },
               () => resolveOobi(deps, deadUrl),
             );
-            assertEquals(failed.status, "failed");
-            if (failed.status !== "failed") throw new Error("unreachable");
-            assertEquals(failed.reason, "http-404");
-            assertEquals(failed.record.state, "http-404");
-            assertEquals(oobiStatus(target, deadUrl).status, "failed");
+            assertEquals(failed.outcome, "settled");
+            if (failed.status.state !== "failed") throw new Error("unreachable");
+            assertEquals(failed.status.reason, "http-404");
+            assertEquals(failed.status.record.state, "http-404");
+            assertEquals(oobiStatus(target, deadUrl).state, "failed");
           } finally {
             yield* targetRuntime.close();
             yield* target.close();
@@ -127,7 +128,11 @@ Deno.test("waitForOobi only observes: it ends on the host-recorded terminal row 
   const deps = { db, changes: sink };
   const url = "http://127.0.0.1:1/oobi/Eabc/controller";
 
-  assertEquals(await run(() => waitForOobi(deps, url, { timeoutMs: 20 })), { status: "timed-out", timeoutMs: 20 });
+  assertEquals(await run(() => waitForOobi(deps, url, { timeoutMs: 20 })), {
+    outcome: "timed-out",
+    status: { state: "pending" },
+    timeoutMs: 20,
+  });
   assertEquals(sink.changes, []);
 
   const result = await run(function*() {
@@ -137,6 +142,7 @@ Deno.test("waitForOobi only observes: it ends on the host-recorded terminal row 
     });
     return yield* waitForOobi(deps, url, { timeoutMs: 1000 });
   });
-  assertEquals(result.status, "resolved");
+  assertEquals(result.outcome, "settled");
+  assertEquals(result.status.state, "resolved");
   assertEquals(sink.changes, [{ kind: "oobi", id: url }]);
 });

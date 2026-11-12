@@ -106,7 +106,7 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
             ? queryAnchor(deps, { hab, prefix, anchor })
             : queryKeyState({ ...deps, cues: queryCues }, { hab, prefix }),
       );
-      if (outcome.status === "timed-out") {
+      if (outcome.outcome === "timed-out") {
         throw new ValidationError(`Query timed out before accepted evidence satisfied ${prefix}.`);
       }
       return externalStateLines(hby, prefix);

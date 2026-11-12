@@ -15,10 +15,11 @@ import {
 import type { Hab } from "../../../../src/app/identity/habbing.ts";
 import { acceptedEventReplayMessage, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
+import { Signaler } from "../../../../src/app/notifications/signaling.ts";
 import { createProtocolProcessor } from "../../../../src/app/protocol/protocol-processing.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
-import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
+import { MemoryChangeSink, signalerChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
 import type { HttpClient } from "../../../../src/app/transport/http-client.ts";
 import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
@@ -86,7 +87,10 @@ Deno.test("waitForDelegation only observes: it completes when the host advances 
     yield* spawn(() => hostAdvances(delegatedHab.pre));
     return yield* waitForDelegation(observed, delegatedHab, 0);
   });
-  assertEquals(result, { status: "completed", workflow: { phase: null, proxyDependent: false, complete: true } });
+  assertEquals(result, {
+    outcome: "settled",
+    status: { phase: null, proxyDependent: false, complete: true },
+  });
   assertEquals(sink.changes, [
     { kind: "delegation", id: "EDelegate:0" },
     { kind: "delegation", id: "EDelegate:0" },
@@ -97,14 +101,20 @@ Deno.test("waitForDelegation returns a timed-out value instead of throwing", asy
   const { collaborator } = fakeDelegation();
   beginDelegation(collaborator, delegatedHab.pre, 0);
   const result = await run(() => waitForDelegation(collaborator, delegatedHab, 0, { timeoutMs: 30 }));
-  assertEquals(result, { status: "timed-out", timeoutMs: 30 });
+  assertEquals(result, {
+    outcome: "timed-out",
+    status: { phase: "waitingDelegatorAnchor", proxyDependent: false, complete: false },
+    timeoutMs: 30,
+  });
 });
+
+const unknownEvent = { state: "unknown", reason: "no-accepted-event" } as const;
 
 Deno.test("completeEvent opens the delegation scope only for delegated events, after resolving the proxy", async () => {
   const { collaborator, calls, hostAdvances } = fakeDelegation({ anchorAfterMs: 5 });
   let scopes = 0;
   const deps = {
-    hby: { habs: new Map() },
+    hby: { habs: new Map(), db: { kels: { getLast: () => undefined } } },
     *withDelegation<T>(_hab: Hab, use: (delegation: DelegationCollaborator) => Operation<T>) {
       scopes++;
       calls.push("scope");
@@ -113,7 +123,11 @@ Deno.test("completeEvent opens the delegation scope only for delegated events, a
     },
   } as unknown as EventCompletionDeps;
 
-  assertEquals(await run(() => completeEvent(deps, delegatedHab, 0)), { status: "completed", delegationPhase: null });
+  assertEquals(await run(() => completeEvent(deps, delegatedHab, 0)), {
+    outcome: "settled",
+    status: unknownEvent,
+    delegationPhase: null,
+  });
   assertEquals(scopes, 0);
 
   const result = await run(() =>
@@ -126,18 +140,23 @@ Deno.test("completeEvent opens the delegation scope only for delegated events, a
       },
     })
   );
-  assertEquals(result, { status: "completed", delegationPhase: null });
+  assertEquals(result, { outcome: "settled", status: unknownEvent, delegationPhase: null });
   assertEquals(calls, ["resolve", "scope", "begin EDelegate 0 proxy=EProxy"]);
 
   const stalled = fakeDelegation();
   const stalledDeps = {
-    hby: { habs: new Map() },
+    hby: { habs: new Map(), db: { kels: { getLast: () => undefined } } },
     withDelegation: <T>(_hab: Hab, use: (delegation: DelegationCollaborator) => Operation<T>) =>
       use(stalled.collaborator),
   } as unknown as EventCompletionDeps;
   assertEquals(
     await run(() => completeEvent(stalledDeps, delegatedHab, 0, { delegation: { timeoutMs: 20 } })),
-    { status: "timed-out", timeoutMs: 20 },
+    {
+      outcome: "timed-out",
+      status: unknownEvent,
+      timeoutMs: 20,
+      delegationPhase: "waitingDelegatorAnchor",
+    },
   );
 
   await assertRejects(
@@ -263,4 +282,20 @@ Deno.test("eventStatus judges receipts against the witness set of that event, no
       yield* provider.close(true);
     }
   });
+});
+
+Deno.test("signalerChangeSink publishes through a real Signaler and never throws into a workflow", () => {
+  const signaler = new Signaler();
+  const sink = signalerChangeSink(signaler);
+  sink.push({ kind: "oobi", id: "u1" });
+  sink.push({ kind: "oobi", id: "u1" });
+  sink.push({ kind: "query", id: "EPre" });
+  assertEquals(
+    signaler.list().map((signal) => [signal.topic, signal.attrs, signal.ckey]),
+    [["/workflow/oobi", { id: "u1" }, "oobi:u1"], ["/workflow/query", { id: "EPre" }, "query:EPre"]],
+    "repeats of one workflow collapse to one signal",
+  );
+  signaler.close();
+  sink.push({ kind: "oobi", id: "u2" });
+  assertEquals(signaler.count(), 0);
 });

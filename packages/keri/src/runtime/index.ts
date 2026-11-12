@@ -760,6 +760,7 @@ export {
   MemoryChangeSink,
   observeUntil,
   signalerChangeSink,
+  type WaitResult,
   type WorkflowChange,
   type WorkflowKind,
 } from "../app/runtime/workflow-contract.ts";

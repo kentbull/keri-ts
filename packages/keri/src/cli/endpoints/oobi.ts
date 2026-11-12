@@ -211,11 +211,11 @@ export function* oobiResolveCommand(
             { alias: commandArgs.oobiAlias, timeoutMs: 30_000 },
           ),
       );
-      if (result.status === "timed-out") {
+      if (result.outcome === "timed-out") {
         throw new Error(`Runtime did not converge within ${result.timeoutMs}ms.`);
       }
-      if (result.status === "failed") {
-        throw new ValidationError(`OOBI ${url} failed: ${result.reason}`);
+      if (result.status.state === "failed") {
+        throw new ValidationError(`OOBI ${url} failed: ${result.status.reason}`);
       }
       console.log(url);
     },

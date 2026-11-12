@@ -20,7 +20,7 @@ import type { Deck } from "../../core/deck.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
-import { type ChangeSink } from "../runtime/workflow-contract.ts";
+import type { ChangeSink, WaitResult } from "../runtime/workflow-contract.ts";
 import { AnchorQuerier, KeyStateNoticer } from "./querying.ts";
 import type { WitnessInquisitor } from "./witness-inquisitor.ts";
 
@@ -54,10 +54,8 @@ export type QueryStatus =
   | { state: "active"; phase: "awaitingEvidence"; scope: "process" | "durable" }
   | { state: "completed"; scope: "process" | "durable" };
 
-/** Result of waiting on a query: accepted evidence satisfied it, or the deadline won. */
-export type QueryOutcome =
-  | { status: "completed" }
-  | { status: "timed-out"; timeoutMs: number };
+/** Result of waiting on a query: settled once accepted evidence satisfied it, or the deadline won. */
+export type QueryOutcome = WaitResult<QueryStatus>;
 
 /** Wait budget for a blocking query. */
 export interface QueryWaitOptions {
@@ -128,7 +126,7 @@ export function* beginAnchorQuery(
 /**
  * Query current key state for `prefix` and wait for accepted evidence.
  *
- * @returns `completed`, or `timed-out`; a timeout is not permission to treat
+ * @returns `settled` (status `completed`), or `timed-out`; a timeout is not permission to treat
  * stale local state as success. Workflow failures propagate.
  */
 export function* queryKeyState(
@@ -155,6 +153,10 @@ function* startQuery(
   workflow: { queryDo(): Operation<void> },
 ): Operation<QueryRun> {
   let completed = false;
+  const status = (): QueryStatus =>
+    completed
+      ? { state: "completed", scope: "process" }
+      : { state: "active", phase: "awaitingEvidence", scope: "process" };
   const observing: Task<void> = yield* spawn(function*() {
     yield* workflow.queryDo();
     completed = true;
@@ -162,13 +164,10 @@ function* startQuery(
   deps.changes?.push({ kind: "query", id: prefix });
   return {
     prefix,
-    status: () =>
-      completed
-        ? { state: "completed", scope: "process" }
-        : { state: "active", phase: "awaitingEvidence", scope: "process" },
+    status,
     *wait(options = {}) {
-      const outcome = yield* waitForQuery(observing, options.timeoutMs ?? QUERY_TIMEOUT_MS);
-      if (outcome.status === "completed") deps.changes?.push({ kind: "query", id: prefix });
+      const outcome = yield* waitForQuery(observing, status, options.timeoutMs ?? QUERY_TIMEOUT_MS);
+      if (outcome.outcome === "settled") deps.changes?.push({ kind: "query", id: prefix });
       return outcome;
     },
     halt: () => observing.halt(),
@@ -180,7 +179,7 @@ function* startQuery(
  * The race cancels only its observation when the timer wins; the run's `halt`
  * joins the original task.
  */
-function* waitForQuery(observing: Task<void>, timeoutMs: number): Operation<QueryOutcome> {
+function* waitForQuery(observing: Task<void>, status: () => QueryStatus, timeoutMs: number): Operation<QueryOutcome> {
   const done = yield* race([
     call(function*() {
       yield* observing;
@@ -191,7 +190,7 @@ function* waitForQuery(observing: Task<void>, timeoutMs: number): Operation<Quer
       return false;
     }),
   ]);
-  return done ? { status: "completed" } : { status: "timed-out", timeoutMs };
+  return done ? { outcome: "settled", status: status() } : { outcome: "timed-out", status: status(), timeoutMs };
 }
 
 /** begin + wait, halting the run on every exit path. */
