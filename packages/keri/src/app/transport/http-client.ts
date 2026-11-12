@@ -80,6 +80,23 @@ export interface HttpClient {
 }
 
 /**
+ * Native requests and signals that a pending `fetch` still needs. WebKit links an in-flight fetch to
+ * its abort signal only weakly: once the `Request`, or an `AbortSignal.any` composite, is garbage
+ * collected, `abort()` neither rejects the fetch nor closes the connection, so a halted caller waits
+ * forever on a request that WebKit will never settle. A strong reference until the request scope
+ * ends keeps the link alive; engines that hold it themselves are unaffected.
+ */
+const inFlight = new Set<object>();
+
+/**
+ * Whether `cause` is the rejection an abort of `signal` produces. Chromium rejects with `signal.reason`;
+ * Node 20 and WebKit reject with a fresh native `AbortError`, which is the same cancellation.
+ */
+function isAbort(cause: unknown, signal: AbortSignal): boolean {
+  return cause === signal.reason || (cause instanceof DOMException && cause.name === "AbortError");
+}
+
+/**
  * Own the native Request, fetch and response reader for one attempt.
  * Construction errors remain outside network classification. Native fetch/read
  * errors retain their causes as TransportError. Consumer execution remains outside
@@ -120,6 +137,7 @@ export class FetchHttpClient implements HttpClient {
       const controller = new AbortController();
       const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
       // These handles let scope teardown join native work before releasing the reader.
+      let request: Request | undefined;
       let fetching: Promise<Response> | undefined;
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
       let reading: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
@@ -134,7 +152,9 @@ export class FetchHttpClient implements HttpClient {
        * @returns Original cancellation reason or a TransportError retaining cause.
        */
       const transportFailure = (cause: unknown, message: string): unknown =>
-        signal.aborted && cause === signal.reason ? cause : new TransportError(`${message} for ${url}`, { cause });
+        signal.aborted && isAbort(cause, signal)
+          ? signal.reason
+          : new TransportError(`${message} for ${url}`, { cause });
       try {
         signal.throwIfAborted();
         const endpoint = new URL(url);
@@ -142,7 +162,8 @@ export class FetchHttpClient implements HttpClient {
           throw new ValidationError("HTTP output requires an HTTP(S) URL without credentials");
         }
         // Construction errors are caller errors, before native network classification.
-        const request = new Request(url, { ...init, signal, body: init.body as BodyInit | null | undefined });
+        request = new Request(url, { ...init, signal, body: init.body as BodyInit | null | undefined });
+        inFlight.add(request).add(signal);
         fetching = fetch(request).catch((cause) => {
           throw transportFailure(cause, "HTTP request failed");
         });
@@ -174,9 +195,6 @@ export class FetchHttpClient implements HttpClient {
                     signal.throwIfAborted();
                     reading = reader.read().catch((cause) => {
                       // Node 20 Fetch replaces the supplied reason with a native AbortError during body reads.
-                      if (signal.aborted && cause instanceof DOMException && cause.name === "AbortError") {
-                        throw signal.reason;
-                      }
                       throw transportFailure(cause, "HTTP response body failed");
                     });
                     let result: ReadableStreamReadResult<Uint8Array>;
@@ -212,7 +230,7 @@ export class FetchHttpClient implements HttpClient {
             try {
               await pending;
             } catch (error) {
-              if (error !== signal.reason && error !== failure?.error) cleanup.push(error);
+              if (!isAbort(error, signal) && error !== failure?.error) cleanup.push(error);
             }
           }
           try {
@@ -222,6 +240,8 @@ export class FetchHttpClient implements HttpClient {
           }
           bodySignal?.removeEventListener("abort", abortBody);
         });
+        if (request) inFlight.delete(request);
+        inFlight.delete(signal);
         // Throw outside the Promise leaf so Effection teardown preserves genuine cleanup failures.
         if (cleanup.length) {
           if (failure && failure.error !== signal.reason) cleanup.unshift(failure.error);
