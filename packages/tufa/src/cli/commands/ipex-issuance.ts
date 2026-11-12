@@ -1,7 +1,7 @@
 /** Finite individual issuance over the selected runtime's DH owner; wallet owns issuance and Admit stays separate. */
 import { type IssuanceGrantOptions, RegistryCustody, type Wallet } from "@keri-ts/wallet";
 import { bytesEqual, parseBytes, SerderACDC, SerderKERI, type Versionage } from "cesr-ts";
-import { action, call, type Operation, race, scoped, spawn } from "effection";
+import { action, call, type Operation, scoped, spawn } from "effection";
 import {
   parseBooleanOption,
   parseGvrsn,
@@ -13,12 +13,13 @@ import {
 import {
   abandonIssuance,
   type AgentRuntime,
+  approveIssuanceExchange,
   beginIssuance,
   createAgentRuntime,
-  CREDENTIAL_MAILBOX_TOPIC,
   type Hab,
   isLocalGroupHab,
   IssuanceOperations,
+  type IssuanceStatus,
   type KramConfig,
   localGroupMember,
   MemoryIssuanceOperationStore,
@@ -30,7 +31,6 @@ import {
   runAgentRuntime,
   type RuntimeClock,
   systemClock,
-  timestampMicros,
   ValidationError,
   waitForIssuance,
   type WitnessAuthMap,
@@ -130,11 +130,11 @@ export function* prepareDerivedIssuance(
 const ELAPSED = "Derived issuance reached its elapsed limit or original Grant deadline; no Admit was created";
 
 /**
- * Issuer side of one explicitly selected issuance: begin it in the library owner, drive
- * `processOnce` under the host workers, and wait observe-only to the elapsed limit. The wallet
- * inventory is this embedder's reaction to completion; the library never writes it.
+ * One explicitly selected issuance, either side: begin or consent in the library owner, drive `processOnce`
+ * under the host workers, and wait observe-only to the elapsed limit. The holder stops where it needs its
+ * Admit consent. The wallet inventory is this embedder's reaction to completion; the library never writes it.
  */
-function* runIssuerIssuance(
+function* runIssuance(
   runtime: AgentRuntime,
   wallet: Wallet,
   request: DerivedIssuanceRequest,
@@ -143,7 +143,10 @@ function* runIssuerIssuance(
   const { hab } = owners(runtime, wallet);
   const receiptor = new Receiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock, { gvrsn: witnessGvrsn });
   const ops = issuanceOperations(runtime, wallet, hab, receiptor);
-  const { grant, xid } = yield* beginIssuance(ops, { hab, grant: request.grant, auths });
+  const issuer = request.role === "issuer";
+  const { grant, xid } = issuer
+    ? yield* beginIssuance(ops, { hab, grant: request.grant, auths })
+    : approveIssuanceExchange(ops, { hab, grant: request.grant });
   const credential = runtime.exc.retainedInput(grant, { pending: true })!.nests![0].body as SerderACDC;
   const outcome = yield* withRuntimeWorkers(runtime, { hab, pollMailbox: true }, function*() {
     const driver = yield* spawn(function*() {
@@ -153,16 +156,20 @@ function* runIssuerIssuance(
       }
     });
     try {
-      return yield* waitForIssuance(ops, grant, { timeoutMs });
+      const until = (status: IssuanceStatus) => status.state !== "active" || status.needs === "admit";
+      return yield* waitForIssuance(ops, grant, { timeoutMs, until });
     } finally {
       yield* driver.halt();
     }
   });
   const { status } = outcome;
-  if (status.state === "done") {
-    const registry = credential.regid!, head = wallet.registry.headEvent(registry)!;
-    const custody = new RegistryCustody({ hby: runtime.hby, hab, registry: wallet.registry, db: wallet.db });
-    wallet.recordIssued(credential, head.said!, { blinder: custody.derivedOpening(head) });
+  const registry = credential.regid!;
+  if (status.state === "done" || (status.state === "active" && status.needs === "admit")) {
+    if (issuer) {
+      const head = wallet.registry.headEvent(registry)!;
+      const custody = new RegistryCustody({ hby: runtime.hby, hab, registry: wallet.registry, db: wallet.db });
+      wallet.recordIssued(credential, head.said!, { blinder: custody.derivedOpening(head) });
+    }
     return { grant, xid, registry, registryIssued: true, admitted: false };
   }
   if (status.state === "active") abandonIssuance(ops, grant, ELAPSED);
@@ -171,7 +178,6 @@ function* runIssuerIssuance(
 
 /**
  * Run one explicitly selected individual issuance under an elapsed timeout and the original Grant deadline.
- * The issuer runs in the library issuance owner; the recipient still runs its own DH loop here.
  * Borrowed runtime and wallet lifetimes belong to the caller. This never prepares or records Admit.
  */
 export function* runDerivedIssuance(
@@ -180,68 +186,10 @@ export function* runDerivedIssuance(
   request: DerivedIssuanceRequest,
   options: { timeoutMs: number; witnessGvrsn?: Versionage; auths?: WitnessAuthMap },
 ): Operation<DerivedIssuanceResult> {
-  const { timeoutMs } = options;
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+  if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0) {
     throw new ValidationError("Issuance timeout must be finite and positive");
   }
-  if (request.role === "issuer") return yield* runIssuerIssuance(runtime, wallet, request, options);
-  const { dh, hab, rgy } = owners(runtime, wallet);
-  const input = runtime.exc.retainedInput(request.grant, { pending: true });
-  const credential = input?.nests?.[0]?.body;
-  if (
-    !input || !(credential instanceof SerderACDC) || !credential.regid || input.serder.sad!.ri !== hab.pre
-    || input.sourceSeals?.length || input.ptds?.length || input.essrs?.length
-  ) {
-    throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
-  }
-  const registry = credential.regid;
-  const deadline = runtime.exc.exchangeDeadline(input.serder);
-  const expires = deadline ? timestampMicros(deadline) : null;
-  if (expires === null) throw new Error("Authenticated pending Grant has a missing or corrupt deadline");
-  const remainingMs = Number(expires - BigInt(runtime.clock.now()) * 1000n) / 1000;
-  const xid = dh.approve(request.grant);
-  try {
-    return yield* race([
-      call(function*() {
-        return yield* scoped(function*() {
-          const host = yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
-          try {
-            while (true) {
-              while (dh.outgoing.length) {
-                const message = dh.outgoing.pull()!;
-                if (message.kin === "sign") {
-                  throw new ValidationError("Individual issuance cannot process group contributions");
-                }
-                const event = runtime.postman.send(
-                  { src: hab.pre, dest: message.dest, topic: CREDENTIAL_MAILBOX_TOPIC, msg: message.msg },
-                  { notify: true },
-                );
-                const outcome = yield* runtime.postman.wait(event);
-                if (outcome.kin === "failed") throw outcome.error;
-              }
-              if (dh.complete(xid)) break;
-              yield* wait(runtime.clock, 50);
-            }
-            while (wallet.registry.headEvent(registry)?.ilk === "rip") {
-              dh.complete(xid);
-              yield* wait(runtime.clock, 50);
-            }
-            yield* dh.finish(xid);
-            if (!runtime.exc.complete(request.grant)) throw new ValidationError("Issued Grant remains unaccepted");
-            return { grant: request.grant, xid, registry, registryIssued: true, admitted: false } as const;
-          } finally {
-            yield* host.halt();
-          }
-        });
-      }),
-      call(function*(): Operation<never> {
-        yield* wait(runtime.clock, Math.min(timeoutMs, Math.max(0, remainingMs)));
-        throw new ValidationError(ELAPSED);
-      }),
-    ]);
-  } finally {
-    dh.abandon(xid);
-  }
+  return yield* runIssuance(runtime, wallet, request, options);
 }
 
 /** CLI resource boundary shared only by these two finite issuance actions. */

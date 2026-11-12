@@ -32,7 +32,17 @@
  * the same `processOnce`; the table, store port and status union are unchanged.
  * Collaborators are narrow concrete owners (ADR-0013); no `AgentRuntime`.
  */
-import { collectPayload, concatBytes, Counter, framePayload, parseBytes, SerderACDC, Vrsn_2_0 } from "cesr-ts";
+import {
+  collectPayload,
+  concatBytes,
+  Counter,
+  framePayload,
+  parseBytes,
+  SerderACDC,
+  type SerderKERI,
+  type Versionage,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { action, call, type Operation, race } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
@@ -51,6 +61,7 @@ import type { Reactor } from "../protocol/reactor.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
+import { IpexAdmitter } from "./ipex-admitting.ts";
 import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions } from "./ipex-discloser.ts";
 
 /** Milliseconds between resends of the unchanged issuer query, as `tufa ipex --issue` and KERIpy do. */
@@ -63,7 +74,13 @@ export type IssuanceRole = "issuer" | "holder";
 export type IssuanceEndState = "abandoned" | "interrupted" | "expired" | "refused" | "failed";
 
 /** Where an active issuance is. Group and holder phases extend this union. */
-export type IssuancePhase = "exchangingKeys" | "awaitingAnchor" | "proving";
+export type IssuancePhase =
+  | "awaitingExchangeConsent"
+  | "exchangingKeys"
+  | "rootRetained"
+  | "awaitingAnchor"
+  | "proving"
+  | "awaitingAdmitConsent";
 
 /** A user step an active issuance waits for. Single-signature issuers never wait: `beginIssuance` authorises the anchor. */
 export type IssuanceNeed = "exchange" | "admit";
@@ -77,11 +94,13 @@ export interface IssuanceRecord {
   /** Prefix of the local identifier. */
   readonly hab: string;
   readonly role: IssuanceRole;
-  /** The Grant's original exchange deadline (ISO 8601). */
-  readonly deadline: string;
+  /** The Grant's original exchange deadline (ISO 8601); absent only for an Admit of a Grant that never needed DH. */
+  readonly deadline?: string;
   /** When the user gave each consent (ISO 8601). */
   readonly consents: { readonly exchange?: string; readonly anchor?: string; readonly admit?: string };
-  /** When the operation completed. */
+  /** Holder: when the Grant was accepted locally, leaving only the Admit consent. */
+  readonly issued?: string;
+  /** When the operation completed: the issuer's final proof support was sent, or the holder's Admit was accepted. */
   readonly done?: string;
   readonly ended?: { readonly state: IssuanceEndState; readonly reason: string; readonly at: string };
 }
@@ -115,15 +134,15 @@ export type IssuanceStatus =
     role: IssuanceRole;
     phase: IssuancePhase;
     needs?: IssuanceNeed;
-    /** The Grant's exchange deadline (ISO 8601). */
-    deadline: string;
+    /** The Grant's exchange deadline (ISO 8601), while the exchange is still open. */
+    deadline?: string;
   }
-  | { state: "done"; role: IssuanceRole; phase: "issued" }
+  | { state: "done"; role: IssuanceRole; phase: "issued" | "admitted" }
   | { state: IssuanceEndState; role: IssuanceRole; reason: string };
 
 /** Delivery of signed bytes; resolves once the transport reports an outcome and throws when it failed. */
 export interface IssuanceDelivery {
-  deliver(message: { src: string; dest: string; msg: Uint8Array }): Operation<void>;
+  deliver(message: { src: string; dest: string; msg: Uint8Array }): Operation<string[]>;
 }
 
 /** Adapt a `Poster`; its delivery worker must be running (a one-shot CLI runs it under `withRuntimeWorkers`). */
@@ -134,30 +153,37 @@ export function posterDelivery(postman: Pick<Poster, "send" | "wait">): Issuance
         notify: true,
       }));
       if (outcome.kin === "failed") throw outcome.error;
+      return outcome.deliveries;
     },
   };
 }
 
-/** Narrow collaborators of the issuance owner. Hosts adapt their runtime to this once. */
-export interface IssuanceDeps {
+/** Collaborators of an Admit: everything that needs no DH owner, so a host without per-identifier owners can admit. */
+export interface AdmitDeps {
   readonly hby: Habery;
-  /** Registry environment; `rgy.store` is the public registry store. */
-  readonly rgy: Regery;
+  /** Registry environment; only its public `store` is read here. */
+  readonly rgy: Pick<Regery, "store">;
   readonly exc: Exchanger;
-  /** Receipt collector; its genus selects the witness protocol version. */
+  /** Receipt collector for an anchored Admit; its genus selects the witness protocol version. */
   readonly receiptor: Receiptor;
-  /** Per-identifier DH owners (`runtime.ipex`), so several identifiers can issue on one runtime. */
-  readonly dhkes: { dhke(hab: Hab): Dhke };
-  /** Local intake of the Grant this identifier signs. */
+  /** Local intake of what this identifier signs. */
   readonly reactor: Pick<Reactor, "processBytes">;
   readonly protocol: Pick<ProtocolProcessor, "processEscrowsOnce">;
   readonly delivery: IssuanceDelivery;
   readonly store: IssuanceOperationStore;
-  /** Non-secret derivation coordinates of blinded registry updates. */
-  readonly derived: DerivedUpdateStore;
   /** Same clock the exchanger and DH owners were composed with. */
   readonly clock: RuntimeClock;
   readonly changes?: ChangeSink;
+}
+
+/** Narrow collaborators of the issuance owner. Hosts adapt their runtime to this once. */
+export interface IssuanceDeps extends AdmitDeps {
+  /** Registry environment; `rgy.store` is the public registry store. */
+  readonly rgy: Regery;
+  /** Per-identifier DH owners (`runtime.ipex`), so several identifiers can issue on one runtime. */
+  readonly dhkes: { dhke(hab: Hab): Dhke };
+  /** Non-secret derivation coordinates of blinded registry updates. */
+  readonly derived: DerivedUpdateStore;
 }
 
 /** One operation the user began; exists only while its authorisation is live in memory. */
@@ -166,18 +192,21 @@ interface LiveIssuance {
   readonly hab: Hab;
   readonly dh: Dhke;
   readonly peer: string;
-  readonly credential: SerderACDC;
   readonly registry: string;
-  /** Grant body and nested disclosure, the input of proof support. */
-  readonly raw: Uint8Array;
-  readonly grantWire: Uint8Array;
-  readonly query: Uint8Array;
   readonly expires: bigint;
-  /** Transient witness codes for the anchor. */
-  readonly auths?: WitnessAuthMap;
+  /** Issuer only: what the loop sends and anchors. Absent for a holder. */
+  readonly issuer?: {
+    readonly credential: SerderACDC;
+    /** Grant body and nested disclosure, the input of proof support. */
+    readonly raw: Uint8Array;
+    readonly grantWire: Uint8Array;
+    readonly query: Uint8Array;
+    /** Transient witness codes for the anchor. */
+    readonly auths?: WitnessAuthMap;
+    sent: boolean;
+    nextQuery: number;
+  };
   phase: IssuancePhase;
-  sent: boolean;
-  nextQuery: number;
   /** A step is running; overlapping `processOnce` calls skip it. */
   busy: boolean;
 }
@@ -235,7 +264,7 @@ export class IssuanceOperations {
     if (!this.swept) {
       this.swept = true;
       for (const record of this.deps.store.list()) {
-        if (!record.ended && !record.done && !this.live.has(record.grant)) this.orphan(record);
+        if (!record.ended && !record.issued && !record.done && !this.live.has(record.grant)) this.orphan(record);
       }
     }
     for (const op of [...this.live.values()]) {
@@ -273,8 +302,7 @@ export class IssuanceOperations {
   }
 
   private orphan(record: IssuanceRecord): void {
-    const lapsed = BigInt(this.deps.clock.now()) * 1000n >= (timestampMicros(record.deadline) ?? 0n);
-    const [state, reason] = orphaned(lapsed);
+    const [state, reason] = orphaned(lapsed(this.deps, record));
     this.deps.store.put({ ...record, ended: { state, reason, at: iso(this.deps.clock.now()) } });
     this.deps.changes?.push({ kind: "issuance", id: record.grant });
   }
@@ -289,46 +317,70 @@ export class IssuanceOperations {
   }
 
   private setPhase(op: LiveIssuance, phase: IssuancePhase): void {
+    if (op.phase === phase) return;
     op.phase = phase;
     this.deps.changes?.push({ kind: "issuance", id: op.record.grant });
   }
 
   /** One pass of the issuer loop, in the order of the CLI loop it replaces. */
   private *step(op: LiveIssuance): Operation<"stepped"> {
-    if (!op.sent) {
-      yield* this.send(op, op.peer, concatBytes(this.discloser.proofSupport(op.raw, op.hab), op.grantWire));
-      op.sent = true;
+    const issuer = op.issuer;
+    if (issuer && !issuer.sent) {
+      yield* this.send(op, op.peer, concatBytes(this.discloser.proofSupport(issuer.raw, op.hab), issuer.grantWire));
+      issuer.sent = true;
     }
     while (op.dh.outgoing.length) {
       const queued = op.dh.outgoing.pull()!;
       if (queued.kin === "sign") throw new ValidationError("Individual issuance cannot process group contributions");
       yield* this.send(op, queued.dest, queued.msg);
     }
-    if (op.dh.complete(op.record.xid)) yield* this.finish(op);
-    else if (this.deps.clock.now() >= op.nextQuery) {
-      yield* this.send(op, op.peer, op.query);
-      op.nextQuery = this.deps.clock.now() + ISSUANCE_QUERY_RESEND_MS;
-    }
+    if (!op.dh.complete(op.record.xid)) {
+      if (issuer && this.deps.clock.now() >= issuer.nextQuery) {
+        yield* this.send(op, op.peer, issuer.query);
+        issuer.nextQuery = this.deps.clock.now() + ISSUANCE_QUERY_RESEND_MS;
+      }
+    } else if (issuer) yield* this.finish(op, issuer);
+    else yield* this.receive(op);
     return "stepped";
   }
 
+  /**
+   * Holder, DH complete: wait for the issuer's registry update, then verify it and finish the Grant. The
+   * issuance is then complete but for the holder's separate Admit consent.
+   */
+  private *receive(op: LiveIssuance): Operation<void> {
+    if (this.deps.rgy.store.headEvent(op.registry)?.ilk === "rip") return this.setPhase(op, "rootRetained");
+    this.setPhase(op, "proving");
+    yield* op.dh.finish(op.record.xid);
+    if (!this.deps.exc.complete(op.record.grant)) throw new ValidationError("Issued Grant remains unaccepted");
+    this.release(op);
+    this.deps.store.put({ ...op.record, issued: iso(this.deps.clock.now()) });
+    this.deps.changes?.push({ kind: "issuance", id: op.record.grant });
+  }
+
   /** DH is complete: stage and anchor the BUP under the live authorisation, finish the Grant, send proof support. */
-  private *finish(op: LiveIssuance): Operation<void> {
+  private *finish(op: LiveIssuance, issuer: NonNullable<LiveIssuance["issuer"]>): Operation<void> {
     const { rgy, receiptor, derived } = this.deps;
     this.setPhase(op, "awaitingAnchor");
     const reg = rgy.regs.get(op.registry)!;
     const custody = new RegistryCustody({ hby: this.deps.hby, hab: op.hab, registry: rgy.store, store: derived });
     const author = new RegistryAuthor(rgy, receiptor, custody);
-    const { event } = author.stage(reg, op.credential, "issued", { auths: op.auths });
-    yield* author.anchor(reg, event, op.auths);
+    const { event } = author.stage(reg, issuer.credential, "issued", { auths: issuer.auths });
+    yield* author.anchor(reg, event, issuer.auths);
     this.setPhase(op, "proving");
     yield* op.dh.finish(op.record.xid);
     if (!this.deps.exc.complete(op.record.grant)) throw new ValidationError("Issued Grant remains unaccepted");
-    yield* this.send(op, op.peer, this.discloser.proofSupport(op.raw, op.hab));
+    yield* this.send(op, op.peer, this.discloser.proofSupport(issuer.raw, op.hab));
     this.release(op);
     this.deps.store.put({ ...op.record, done: iso(this.deps.clock.now()) });
     this.deps.changes?.push({ kind: "issuance", id: op.record.grant });
   }
+}
+
+/** Whether the Grant's exchange deadline has passed; a record without one never lapses. */
+function lapsed(deps: Pick<IssuanceDeps, "clock">, { deadline }: IssuanceRecord): boolean {
+  const expiry = timestampMicros(deadline);
+  return expiry !== null && BigInt(deps.clock.now()) * 1000n >= expiry;
 }
 
 function orphaned(lapsed: boolean): ["expired" | "interrupted", string] {
@@ -372,6 +424,35 @@ function requireIndividual(deps: IssuanceDeps, hab: Hab): void {
 }
 
 /**
+ * The exact unanchored pending Grant a local party may consent to, with its deadline. Refuses a group
+ * identifier, an issuance already begun, a Grant that is not this party's, and an issuer without its registry.
+ */
+function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: IssuanceRole) {
+  const { deps } = ops;
+  requireIndividual(deps, hab);
+  const old = deps.store.get(grant);
+  if (ops.live.has(grant) || old?.issued || old?.done) {
+    throw new ValidationError("Issuance was already begun for this Grant");
+  }
+  const retained = deps.exc.retainedInput(grant, { pending: true });
+  const credential = retained?.nests?.[0]?.body;
+  if (
+    !retained || !(credential instanceof SerderACDC) || !credential.regid
+    || (role === "issuer" ? retained.serder.pre : retained.serder.sad!.ri) !== hab.pre
+    || retained.sourceSeals?.length || retained.ptds?.length || retained.essrs?.length
+  ) {
+    throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
+  }
+  const reg = deps.rgy.regs.get(credential.regid);
+  if (role === "issuer" && (!reg || reg.hab !== hab)) {
+    throw new ValidationError("Issuance requires the selected issuer's managed local registry");
+  }
+  const deadline = deps.exc.exchangeDeadline(retained.serder), expires = timestampMicros(deadline);
+  if (!deadline || expires === null) throw new Error("Authenticated pending Grant has a missing or corrupt deadline");
+  return { retained, credential, deadline, expires };
+}
+
+/**
  * The issuer's one "issue this credential" consent. Signs the Grant when given
  * a credential, approves the DH exchange, signs the query and records the
  * authorisation, including the later KEL signature that anchors the registry
@@ -384,25 +465,7 @@ function requireIndividual(deps: IssuanceDeps, hab: Hab): void {
 export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInput): Operation<IssuanceBegun> {
   const { deps } = ops, { hab, auths } = input;
   const grant = "grant" in input ? input.grant : (yield* prepareIssuanceGrant(ops, input)).grant;
-  requireIndividual(deps, hab);
-  const old = deps.store.get(grant);
-  if (ops.live.has(grant) || old?.done) {
-    throw new ValidationError("Issuance was already begun for this Grant");
-  }
-  const retained = deps.exc.retainedInput(grant, { pending: true });
-  const credential = retained?.nests?.[0]?.body;
-  if (
-    !retained || !(credential instanceof SerderACDC) || !credential.regid || retained.serder.pre !== hab.pre
-    || retained.sourceSeals?.length || retained.ptds?.length || retained.essrs?.length
-  ) {
-    throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
-  }
-  const reg = deps.rgy.regs.get(credential.regid);
-  if (!reg || reg.hab !== hab) {
-    throw new ValidationError("Issuance requires the selected issuer's managed local registry");
-  }
-  const deadline = deps.exc.exchangeDeadline(retained.serder), expires = timestampMicros(deadline);
-  if (!deadline || expires === null) throw new Error("Authenticated pending Grant has a missing or corrupt deadline");
+  const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "issuer");
   const raw = concatBytes(
     Counter.makeGVC(Vrsn_2_0),
     ...yield* call(() => Promise.all((retained.nests ?? []).map((nest) => collectPayload(framePayload(nest))))),
@@ -426,16 +489,10 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
     hab,
     dh,
     peer: retained.serder.sad!.ri as string,
-    credential,
-    registry: credential.regid,
-    raw,
-    grantWire,
-    query,
+    registry: credential.regid!,
     expires,
-    auths,
+    issuer: { credential, raw, grantWire, query, auths, sent: false, nextQuery: 0 },
     phase: "exchangingKeys",
-    sent: false,
-    nextQuery: 0,
     busy: false,
   });
   deps.changes?.push({ kind: "issuance", id: grant });
@@ -451,15 +508,25 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
  */
 export function issuanceStatus(ops: Pick<IssuanceOperations, "deps" | "live">, grant: string): IssuanceStatus {
   const record = ops.deps.store.get(grant);
-  if (!record) throw new ValidationError("No issuance was begun for this Grant");
+  if (!record) return unconsented(ops.deps, grant);
   const { role } = record;
   if (record.ended) return { state: record.ended.state, role, reason: record.ended.reason };
-  if (record.done) return { state: "done", role, phase: "issued" };
-  const live = ops.live.get(grant);
-  const lapsed = BigInt(ops.deps.clock.now()) * 1000n >= (timestampMicros(record.deadline) ?? 0n);
-  if (live && !lapsed) return { state: "active", role, phase: live.phase, deadline: record.deadline };
-  const [state, reason] = orphaned(lapsed);
+  if (record.done) return { state: "done", role, phase: role === "holder" ? "admitted" : "issued" };
+  if (record.issued) return { state: "active", role, phase: "awaitingAdmitConsent", needs: "admit" };
+  const live = ops.live.get(grant), over = lapsed(ops.deps, record);
+  if (live && !over) return { state: "active", role, phase: live.phase, deadline: record.deadline };
+  const [state, reason] = orphaned(over);
   return { state, role, reason };
+}
+
+/** A Grant addressed to a local identifier that has not yet consented to the exchange reads as awaiting that consent. */
+function unconsented(deps: IssuanceDeps, grant: string): IssuanceStatus {
+  const pending = deps.exc.retainedInput(grant, { pending: true }), holder = pending?.serder.sad?.ri;
+  if (typeof holder !== "string" || !deps.hby.habs.has(holder)) {
+    throw new ValidationError("No issuance was begun for this Grant");
+  }
+  const deadline = deps.exc.exchangeDeadline(pending!.serder) ?? undefined;
+  return { state: "active", role: "holder", phase: "awaitingExchangeConsent", needs: "exchange", deadline };
 }
 
 /** Options for {@link waitForIssuance}. */
@@ -467,6 +534,8 @@ export interface IssuanceWaitOptions {
   /** Wall-clock budget. */
   timeoutMs: number;
   clock?: Pick<RuntimeClock, "now">;
+  /** Settle on this instead of any non-active state, e.g. a holder stopping where it needs the Admit consent. */
+  until?: (status: IssuanceStatus) => boolean;
 }
 
 /**
@@ -476,11 +545,110 @@ export interface IssuanceWaitOptions {
 export function* waitForIssuance(
   ops: Pick<IssuanceOperations, "deps" | "live">,
   grant: string,
-  { timeoutMs, clock = ops.deps.clock }: IssuanceWaitOptions,
+  { timeoutMs, clock = ops.deps.clock, until = (status) => status.state !== "active" }: IssuanceWaitOptions,
 ): Operation<WaitResult<IssuanceStatus>> {
-  const settled = yield* observeUntil(() => issuanceStatus(ops, grant).state !== "active", { timeoutMs, clock });
+  const settled = yield* observeUntil(() => until(issuanceStatus(ops, grant)), { timeoutMs, clock });
   const status = issuanceStatus(ops, grant);
   return settled ? { outcome: "settled", status } : { outcome: "timed-out", status, timeoutMs };
+}
+
+/**
+ * The holder's consent to the DH exchange for one pending Grant addressed to `hab`. Approves DH and records the
+ * consent; `processOnce` then answers the issuer's query, waits for its registry update and finishes the Grant.
+ * Admitting the credential is a separate consent ({@link admitIssuance}).
+ */
+export function approveIssuanceExchange(
+  ops: IssuanceOperations,
+  { hab, grant }: { hab: Hab; grant: string },
+): IssuanceBegun {
+  const { deps } = ops, { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "holder");
+  const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant);
+  const record: IssuanceRecord = {
+    grant,
+    xid,
+    hab: hab.pre!,
+    role: "holder",
+    deadline,
+    consents: { exchange: iso(deps.clock.now()) },
+  };
+  deps.store.put(record);
+  ops.live.set(grant, {
+    record,
+    hab,
+    dh,
+    peer: retained.serder.pre!,
+    registry: credential.regid!,
+    expires,
+    phase: "exchangingKeys",
+    busy: false,
+  });
+  deps.changes?.push({ kind: "issuance", id: grant });
+  return { grant, xid };
+}
+
+/** A signed Admit already accepted locally; delivery is the next, separate step. */
+export interface IssuanceAdmit {
+  admit: SerderKERI;
+  /** Support and Admit bytes, in delivery order. */
+  wire: Uint8Array;
+  /** The issuer the Admit answers. */
+  dest: string;
+}
+
+/**
+ * The holder's consent to admit one accepted Grant: signs the Admit, accepts it locally and records it. Works for
+ * a Grant finished by this module and for any other accepted v2 Grant, for which it creates the record. Returns
+ * before delivery so an embedder can record its own inventory first; see {@link deliverIssuanceAdmit}.
+ *
+ * @throws ValidationError for a Grant that is not accepted and addressed to `hab`, an admitted Grant, or a group identifier.
+ */
+export function* admitIssuance(
+  deps: AdmitDeps,
+  { hab, grant, message = "", gvrsn, auths }: {
+    hab: Hab;
+    grant: string;
+    message?: string;
+    gvrsn?: Versionage;
+    auths?: WitnessAuthMap;
+  },
+): Operation<IssuanceAdmit> {
+  const old = deps.store.get(grant);
+  if (old?.done || old?.ended) throw new ValidationError("Issuance cannot be admitted in its state");
+  const prepared = yield* new IpexAdmitter(deps.hby, deps.rgy.store, deps.exc).prepareAdmit(grant, hab.pre!, {
+    consent: true,
+    auths,
+    message,
+    gvrsn,
+    receiptor: deps.receiptor,
+  });
+  const wire = concatBytes(prepared.support, prepared.wire);
+  yield* deps.reactor.processBytes(wire, { local: true });
+  yield* deps.protocol.processEscrowsOnce();
+  if (!deps.exc.complete(prepared.admit.said!)) throw new ValidationError("Local ACDC v2 Admit was not accepted.");
+  const now = iso(deps.clock.now()), body = deps.hby.db.exns.get([grant])!;
+  const xid = body.ilk === "xip" ? body.said! : body.sad!.x as string;
+  deps.store.put({
+    grant,
+    xid,
+    hab: hab.pre!,
+    role: "holder",
+    deadline: deps.exc.exchangeDeadline(body) ?? undefined,
+    ...old,
+    consents: { ...old?.consents, admit: now },
+    issued: old?.issued ?? now,
+    done: now,
+  });
+  deps.changes?.push({ kind: "issuance", id: grant });
+  return { admit: prepared.admit, wire, dest: prepared.admit.sad!.ri as string };
+}
+
+/** Deliver an accepted Admit; needs the host's delivery worker. Returns the destinations reached. */
+export function* deliverIssuanceAdmit(
+  deps: Pick<AdmitDeps, "delivery">,
+  hab: Hab,
+  { dest, wire }: IssuanceAdmit,
+): Operation<string[]> {
+  return yield* deps.delivery.deliver({ src: hab.pre!, dest, msg: wire });
 }
 
 /**

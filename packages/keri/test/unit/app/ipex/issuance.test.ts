@@ -248,7 +248,7 @@ Deno.test("late and duplicate DH traffic after completion is harmless", async ()
     const deliver = route([s.issuer, s.holder], s.log);
     yield* pump(s.holder, function*(sent) {
       replies.push(sent.msg);
-      yield* deliver(sent);
+      return yield* deliver(sent);
     });
     yield* settle(s, ops, [grant]);
     assertEquals(issuanceStatus(ops, grant).state, "done");
