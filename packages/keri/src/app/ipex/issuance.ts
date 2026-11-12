@@ -53,7 +53,11 @@
  * The runtime never writes wallet inventory. Completion is pushed to the `ChangeSink` as
  * `{kind: "issuance", id: <grant>}` and the embedder records it.
  *
- * Group steps are a later change: they add phases and run inside the same `processOnce`.
+ * A local group issues and receives through the same table, status and wait: its consent calls and per-operation
+ * steps are in `group-issuance.ts` and run inside the same `processOnce`. A group exchange is not resumed after a
+ * restart (its frozen coordinator and custodian are not stored): a group pending Grant with no root reads
+ * `awaitingExchangeConsent`, and a member consents again with the same call.
+ *
  * Collaborators are narrow concrete owners (ADR-0013); no `AgentRuntime`.
  */
 import {
@@ -78,6 +82,7 @@ import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { ExchangeInput, Exchanger } from "../exchanges/exchanging.ts";
+import type { ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
@@ -85,6 +90,13 @@ import type { Reactor } from "../protocol/reactor.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
+import {
+  type GroupBegin,
+  GroupIssuance,
+  type GroupIssuanceDeps,
+  registerGroupRoutes,
+  stepGroup,
+} from "./group-issuance.ts";
 import { IpexAdmitter } from "./ipex-admitting.ts";
 import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions, storedExchangeWire } from "./ipex-discloser.ts";
 
@@ -102,6 +114,8 @@ export type IssuancePhase =
   | "awaitingExchangeConsent"
   | "exchangingKeys"
   | "rootRetained"
+  /** Group issuer: the Grant lacks member contributions; the group threshold has not authenticated it. */
+  | "awaitingGrantSignatures"
   | "awaitingAnchor"
   | "proving"
   | "awaitingAdmitConsent";
@@ -124,7 +138,8 @@ export type IssuanceStatus =
 
 /** Delivery of signed bytes; resolves once the transport reports an outcome and throws when it failed. */
 export interface IssuanceDelivery {
-  deliver(message: { src: string; dest: string; msg: Uint8Array }): Operation<string[]>;
+  /** `topic` defaults to the credential mailbox topic; group members coordinate on `multisig`. */
+  deliver(message: { src: string; dest: string; msg: Uint8Array; topic?: string }): Operation<string[]>;
 }
 
 /**
@@ -134,8 +149,8 @@ export interface IssuanceDelivery {
  */
 export function posterDelivery(postman: Pick<Poster, "send" | "sendStream" | "wait">): IssuanceDelivery {
   return {
-    *deliver({ src, dest, msg }) {
-      const event = { src, dest, topic: CREDENTIAL_MAILBOX_TOPIC };
+    *deliver({ src, dest, msg, topic = CREDENTIAL_MAILBOX_TOPIC }) {
+      const event = { src, dest, topic };
       const sent = parseBytes(msg).length > 1
         ? postman.sendStream({ ...event, msgs: [msg] }, { notify: true })
         : postman.send({ ...event, msg }, { notify: true });
@@ -156,7 +171,7 @@ export interface AdmitDeps {
   readonly receiptor: Receiptor;
   /** Local intake of what this identifier signs. */
   readonly reactor: Pick<Reactor, "processBytes">;
-  readonly protocol: Pick<ProtocolProcessor, "processEscrowsOnce">;
+  readonly protocol: Pick<ProtocolProcessor, "processEscrowsOnce" | "dispatch">;
   readonly delivery: IssuanceDelivery;
   /** Same clock the exchanger and DH owners were composed with. */
   readonly clock: RuntimeClock;
@@ -173,10 +188,12 @@ export interface IssuanceDeps extends AdmitDeps {
   readonly derived: DerivedUpdateStore;
   /** Called when an operation becomes live, so the owner loop leaves its idle cadence at once. */
   readonly wake?: () => void;
+  /** Collaborators of group issuance; absent, this owner issues and holds as an individual only. */
+  readonly group?: GroupIssuanceDeps;
 }
 
 /** One operation the user began or adopted; exists only while it is live in this process. */
-interface LiveIssuance {
+export interface LiveIssuance {
   /** SAID of the Grant exchange. */
   readonly grant: string;
   /** DH transaction id; differs from the Grant SAID for a Grant that continues an earlier exchange. */
@@ -204,6 +221,8 @@ interface LiveIssuance {
     sent: boolean;
     nextQuery: number;
   };
+  /** Group party state, for an operation of a local group; such an operation has no {@link issuer} part. */
+  readonly group?: GroupIssuance;
   phase: IssuancePhase;
   /** A step is running; overlapping `processOnce` calls skip it. */
   busy: boolean;
@@ -265,6 +284,8 @@ export class IssuanceOperations {
   /** Operations that ended in this process with their reasons; not durable, see the module doc. */
   readonly ended = new Map<string, EndedIssuance>();
   readonly discloser: IpexDiscloser;
+  /** The DH child handlers this owner registered on the multiplexor, once a group operation began. */
+  groupRoutes: Array<[string, ExchangeRouteHandler]> | null = null;
   private swept = false;
   /** Grants an earlier process left resumable: each is adopted once, or dropped. */
   private stale: Resumable[] = [];
@@ -386,14 +407,59 @@ export class IssuanceOperations {
     yield* this.deps.delivery.deliver({ src: op.hab.pre!, dest, msg });
   }
 
-  private setPhase(op: LiveIssuance, phase: IssuancePhase): void {
+  /** Record a phase change of a live operation and tell the sink; the group steps call it too. */
+  setPhase(op: LiveIssuance, phase: IssuancePhase): void {
     if (op.phase === phase) return;
     op.phase = phase;
     this.deps.changes?.push({ kind: "issuance", id: op.grant });
   }
 
+  /**
+   * Record one group operation the user consented to ({@link beginGroupIssuance},
+   * {@link approveGroupIssuanceExchange}, {@link followGroupIssuanceProof}). A holder approves DH here, with its
+   * consent; an issuer approves once the group has authenticated the Grant.
+   */
+  beginGroup(begin: GroupBegin): IssuanceBegun {
+    const { deps } = this, { hab, coordinator, custodian } = begin.sel;
+    const deadline = deps.exc.exchangeDeadline(begin.frozen), expires = timestampMicros(deadline);
+    if (!deadline || expires === null) throw new ValidationError("Selected group Grant has no original deadline");
+    registerGroupRoutes(this);
+    const dh = deps.dhkes.dhke(hab);
+    const approve = begin.role === "holder" && !begin.proofOnly;
+    const xid = approve ? dh.approve(begin.grant, { coordinator, custodian }) : begin.xid;
+    this.ended.delete(begin.grant);
+    this.live.set(begin.grant, {
+      grant: begin.grant,
+      xid,
+      role: begin.role,
+      deadline,
+      hab,
+      dh,
+      peer: begin.peer,
+      registry: begin.registry,
+      expires,
+      group: new GroupIssuance({ ...begin, approved: approve }),
+      phase: begin.proofOnly
+        ? "awaitingAnchor"
+        : begin.role === "issuer"
+        ? "awaitingGrantSignatures"
+        : "exchangingKeys",
+      busy: false,
+    });
+    deps.changes?.push({ kind: "issuance", id: begin.grant });
+    deps.wake?.();
+    return { grant: begin.grant, xid };
+  }
+
   /** One pass of the issuer loop, in the order of the CLI loop it replaces. */
   private *step(op: LiveIssuance): Operation<"stepped"> {
+    if (op.group) {
+      if (yield* stepGroup(this, op)) {
+        this.release(op);
+        this.deps.changes?.push({ kind: "issuance", id: op.grant });
+      }
+      return "stepped";
+    }
     const issuer = op.issuer;
     if (issuer && !issuer.sent) {
       yield* this.send(op, op.peer, concatBytes(this.discloser.proofSupport(issuer.raw, op.hab), issuer.grantWire));
@@ -477,6 +543,8 @@ function reached(deps: Pick<IssuanceDeps, "clock">, expires: bigint | null): boo
  * anchor would be signed after the restart. A pure read of stores.
  */
 function resumable(deps: IssuanceDeps, hab: Hab, grant: string, role: IssuanceRole): boolean {
+  // The frozen coordinator and custodian are not stored, so a group exchange is never resumed after a restart.
+  if (isLocalGroupHab(deps.hby, hab)) return false;
   const scope = resumableExchange({ hab, exc: deps.exc }, grant);
   if (!scope || (scope.issuer === hab.pre) !== (role === "issuer")) return false;
   return role === "holder" || scope.registries.every((r) => deps.rgy.store.headEvent(r)?.ilk === "bup");
@@ -663,8 +731,10 @@ export function issuanceStatus(
     return { state: "expired", role, reason: late ? EXPIRED_LATE : EXPIRED };
   }
   if (resumable(deps, hab, grant, role)) return { state: "active", role, phase: "rootRetained", deadline };
-  if (role === "holder" && !heldRoot(deps, hab, grant)) {
-    if (!deps.exc.retainedInput(grant, { pending: true })) {
+  const group = isLocalGroupHab(deps.hby, hab);
+  if ((role === "holder" || group) && !heldRoot(deps, hab, grant)) {
+    // A group issuer's Grant may still be a partial one that only its members' contributions authenticate.
+    if (!group && !deps.exc.retainedInput(grant, { pending: true })) {
       throw new ValidationError("No issuance was begun for this Grant");
     }
     return { state: "active", role, phase: "awaitingExchangeConsent", needs: "exchange", deadline };

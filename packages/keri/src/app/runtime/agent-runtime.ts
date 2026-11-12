@@ -468,6 +468,8 @@ export function* createAgentRuntime(
       ipex,
       clock,
       registryRoot,
+      mux,
+      counselor,
       changes: signaler ? signalerChangeSink(signaler) : undefined,
     }, options.operationStores)
     : null;
