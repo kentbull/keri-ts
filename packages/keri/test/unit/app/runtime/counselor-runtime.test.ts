@@ -201,35 +201,55 @@ class Recording implements HttpClient {
   }
 }
 
-Deno.test("two member runtimes counsel one witnessed group event: only the elected member submits, both complete", async () => {
+/** A real witness served over HTTP; `learn` teaches a member Habery its KEL and location. */
+function* witnessHost() {
   const port = 20000 + Math.floor(Math.random() * 20000);
   const url = `http://127.0.0.1:${port}`;
-  await run(function*() {
-    const [provider, a, b] = [
-      yield* open(crypto.randomUUID()),
-      yield* open(crypto.randomUUID()),
-      yield* open(crypto.randomUUID()),
-    ];
-    const witness = provider.makeHab("witness", undefined, { transferable: false, icount: 1, isith: "1", toad: 0 });
-    const [ma, mb] = [a.makeHab("a"), b.makeHab("b")];
-    share(a, ma.pre!, b);
-    share(b, mb.pre!, a);
-    const seeding = yield* createAgentRuntime(provider, new NodeHttpClient(), systemClock, {
-      enableMailboxStore: true,
+  const provider = yield* open(crypto.randomUUID());
+  const witness = provider.makeHab("witness", undefined, { transferable: false, icount: 1, isith: "1", toad: 0 });
+  const seeding = yield* createAgentRuntime(provider, new NodeHttpClient(), systemClock, { enableMailboxStore: true });
+  yield* settleRuntimeIngress(seeding, [
+    witness.makeLocScheme(url, witness.pre, Schemes.http),
+    witness.makeEndRole(witness.pre, EndpointRoles.controller, true),
+    witness.makeEndRole(witness.pre, EndpointRoles.witness, true),
+  ]);
+  yield* seeding.close();
+  const hostRuntime = yield* createAgentRuntime(provider, new NodeHttpClient(), systemClock, {
+    enableMailboxStore: true,
+  });
+  const server = yield* spawn(function*() {
+    yield* startServer(port, undefined, hostRuntime, {
+      hostname: "127.0.0.1",
+      hostedPrefixes: [witness.pre!],
+      serviceHab: witness,
+      witnessHab: witness,
     });
-    yield* settleRuntimeIngress(seeding, [
-      witness.makeLocScheme(url, witness.pre, Schemes.http),
-      witness.makeEndRole(witness.pre, EndpointRoles.controller, true),
-      witness.makeEndRole(witness.pre, EndpointRoles.witness, true),
-    ]);
-    yield* seeding.close();
-    for (const hby of [a, b]) { // each member learns the witness and its location
+  });
+  yield* waitForServer(port);
+  return {
+    witness,
+    *learn(hby: Habery) {
       const learning = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
       for (const message of witness.db.clonePreIter(witness.pre, 0)) yield* settleRuntimeIngress(learning, [message]);
       yield* settleRuntimeIngress(learning, [witness.makeLocScheme(url, witness.pre, Schemes.http)]);
       yield* learning.close();
-    }
+    },
+    *stop() {
+      yield* waitForTaskHalt(server);
+      yield* hostRuntime.close();
+      yield* provider.close(true);
+    },
+  };
+}
 
+Deno.test("two member runtimes counsel one witnessed group event: only the elected member submits, both complete", async () => {
+  await run(function*() {
+    const host = yield* witnessHost(), witness = host.witness;
+    const [a, b] = [yield* open(crypto.randomUUID()), yield* open(crypto.randomUUID())];
+    const [ma, mb] = [a.makeHab("a"), b.makeHab("b")];
+    share(a, ma.pre!, b);
+    share(b, mb.pre!, a);
+    for (const hby of [a, b]) yield* host.learn(hby);
     const smids = [ma.pre!, mb.pre!];
     const args = { isith: "2", nsith: "2", wits: [witness.pre!], toad: 1 };
     const created = [
@@ -239,20 +259,7 @@ Deno.test("two member runtimes counsel one witnessed group event: only the elect
     accept(a, created[1]);
     accept(b, created[0]);
     const event = refOf(created[0].serder);
-
-    const hostRuntime = yield* createAgentRuntime(provider, new NodeHttpClient(), systemClock, {
-      enableMailboxStore: true,
-    });
-    const server = yield* spawn(function*() {
-      yield* startServer(port, undefined, hostRuntime, {
-        hostname: "127.0.0.1",
-        hostedPrefixes: [witness.pre!],
-        serviceHab: witness,
-        witnessHab: witness,
-      });
-    });
     try {
-      yield* waitForServer(port);
       const [httpA, httpB] = [new Recording(), new Recording()];
       const [ra, rb] = [
         yield* createAgentRuntime(a, httpA, systemClock),
@@ -275,9 +282,51 @@ Deno.test("two member runtimes counsel one witnessed group event: only the elect
       yield* ra.close();
       yield* rb.close();
     } finally {
-      yield* waitForTaskHalt(server);
-      yield* hostRuntime.close();
+      yield* host.stop();
     }
-    for (const hby of [provider, a, b]) yield* hby.close(true);
+    for (const hby of [a, b]) yield* hby.close(true);
   });
+});
+
+Deno.test("a witnessed group event started before a restart is receipted by the reopened runtime once accepted", async () => {
+  const dir = await Deno.makeTempDir();
+  await run(function*() {
+    const host = yield* witnessHost(), witness = host.witness;
+    const name = crypto.randomUUID();
+    const b = yield* open(crypto.randomUUID());
+    let a = yield* open(name, dir);
+    const [ma, mb] = [a.makeHab("a"), b.makeHab("b")];
+    share(a, ma.pre!, b);
+    share(b, mb.pre!, a);
+    for (const hby of [a, b]) yield* host.learn(hby);
+    const smids = [ma.pre!, mb.pre!];
+    const args = { isith: "2", nsith: "2", wits: [witness.pre!], toad: 1 };
+    const mine = a.makeGroupHab("g", ma, smids, undefined, undefined, args);
+    const theirs = b.makeGroupHab("g", mb, smids, undefined, undefined, args);
+    const event = refOf(mine.serder);
+    try {
+      const before = yield* createAgentRuntime(a, new Recording(), systemClock);
+      before.counselor.start(event); // the other member has not signed yet
+      yield* before.close();
+      yield* a.close();
+
+      a = yield* open(name, dir);
+      assert(a.habs.has(event.pre), "a group with an unaccepted inception is held across reopen, as in KERIpy");
+      assertEquals(a.habs.get(event.pre)!.accepted, false);
+      accept(a, theirs); // accepted after the restart: usable with no joinGroupHab
+      assert(a.habs.get(event.pre)!.accepted);
+      const http = new Recording();
+      const after = yield* createAgentRuntime(a, http, systemClock);
+      const outcome = yield* working(after, () => waitForGroupEvent(after.counselor, event, { timeoutMs: 20_000 }));
+      assertEquals(outcome, { outcome: "settled", status: { state: "complete" } });
+      assert(http.requests.some(r => r.startsWith("POST")), "the elected member submitted to the witness");
+      assertEquals(a.db.wigs.get(dgKey(event.pre, event.said)).length, 1);
+      yield* after.close();
+    } finally {
+      yield* host.stop();
+    }
+    yield* a.close(true);
+    yield* b.close(true);
+  });
+  await Deno.remove(dir, { recursive: true });
 });
