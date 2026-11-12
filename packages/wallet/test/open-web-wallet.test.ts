@@ -5,7 +5,13 @@ import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
 import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
-import { openWebWallet, type OpenWebWalletOptions, UnencryptedKeeperError, type WebWallet } from "../web.ts";
+import {
+  openWebWallet,
+  type OpenWebWalletOptions,
+  UnencryptedKeeperError,
+  WALLET_KRAM_CACHES,
+  type WebWallet,
+} from "../web.ts";
 
 const keyRange = IDBKeyRange as unknown as typeof globalThis.IDBKeyRange;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -197,5 +203,17 @@ Deno.test("a failed write latches; close reports it and reopen sees exactly the 
     assertEquals(second.health(), { status: "ok" });
   } finally {
     await second.close();
+  }
+});
+
+Deno.test("a new web wallet installs the loose mailbox KRAM windows: 5 minute drift, 24 hour lags and pruning", async () => {
+  const wallet = await page().open();
+  try {
+    const day = 86_400_000;
+    assertEquals(WALLET_KRAM_CACHES["~"], [300_000, day, day, day, day, day, day]);
+    const row = wallet.hby.db.ctyp.get("~")!;
+    assertEquals([row.d, row.sl, row.ll, row.xl, row.psl, row.pll, row.pxl], [300_000, day, day, day, day, day, day]);
+  } finally {
+    await wallet.close();
   }
 });

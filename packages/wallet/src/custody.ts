@@ -20,7 +20,7 @@ class DerivedRecord extends RawRecord<DerivedUpdate> implements DerivedUpdate {
 }
 
 /** The wallet's `derived-updates.` table behind the keri-ts `DerivedUpdateStore` port. */
-class WalletDerivedUpdates implements DerivedUpdateStore {
+export class WalletDerivedUpdates implements DerivedUpdateStore {
   private bound: Table | null = null;
   private derivations?: Komer<DerivedRecord>;
 

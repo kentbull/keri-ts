@@ -143,6 +143,25 @@ two background processes with a readiness wait, before several more minutes of p
 three engines. Selecting `"browser":true` still runs only the store-contract lane. Firefox does
 not launch on the macOS host; run it from a Linux container (the report says how).
 
+### Browser wallet scenario (local only)
+
+`deno task test:browser:wallet [engine ...]` opens a wallet with `openWebWallet` in a real browser and
+runs a named-step scenario against real peers: incept with a KERIpy witness and collect its
+receipt, authorize a Tufa mailbox, exchange OOBIs with a Tufa counterparty, receive and issue a
+v2 DH credential, close and reopen the wallet in the same page, rotate, and release the store
+lock. Each step is asserted through the library's status reads and timed; a per-engine table is
+printed and any failed or skipped step fails the run. Steps are in `packages/keri/test/browser-wallet/`
+(page side `steps.ts`, scenario `scenario.ts`); results are in
+[the wallet end-to-end report](../reports/browser-wallet-e2e-2026-11.md).
+
+It is not in the `browser-tests` job, for the reasons the transport probe lists, plus a Tufa
+counterparty and a second Docker server. `scripts/ci/browser-wallet-servers.sh` starts the witness
+(served at KERI v2), the mailbox and a counterparty control server in one Docker network namespace
+over the named volume `keri-ts-browser-pr15b`, publishing ports on 127.0.0.1; no host directory is
+mounted and no LMDB store is opened on the host. Firefox runs in a Linux container that joins that
+namespace: `bash scripts/ci/browser-wallet-firefox.sh`. Selecting `"browser":true` still runs only
+the store-contract lane.
+
 ## Browser bundle gate (package smoke)
 
 Selecting `"package": true` also runs `scripts/npm/check_browser_bundle.mjs` inside the

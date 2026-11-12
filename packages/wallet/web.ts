@@ -18,6 +18,7 @@ export {
   type OpenWebWalletOptions,
   type PageLifecycleTargets,
   UnencryptedKeeperError,
+  WALLET_KRAM_CACHES,
   type WebWallet,
   type WebWalletHealth,
   type WebWalletHost,
