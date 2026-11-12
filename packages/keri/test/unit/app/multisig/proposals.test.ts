@@ -119,7 +119,7 @@ Deno.test("listGroupProposals reads every proposal kind the multisig routes carr
       const found = new Map<GroupProposalKind, { embedded: string; event?: unknown; said: string }>();
 
       // icp for a group this member has not joined
-      const other = right.makeGroupHab("other", bob, mids, mids, undefined, GROUP);
+      const other = right.makeGroupHab("other", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
       const incept = signGroupMessage(bob, alice.pre, yield* multisigInceptExn(bob, mids, mids, other.message));
       yield* receive(s, incept.message);
       found.set("icp", {
