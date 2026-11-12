@@ -97,6 +97,12 @@ export {
   evaluateChain,
 } from "../acdc/chaining.ts";
 export {
+  type DerivedUpdate,
+  type DerivedUpdateStore,
+  RegistryCustody,
+  type RegistryCustodyOptions,
+} from "../acdc/custody.ts";
+export {
   decodePublicKey,
   deriveRoot,
   Dhke,
