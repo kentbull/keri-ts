@@ -261,7 +261,10 @@ export {
 } from "../app/ipex/ipex-credentialing.ts";
 export {
   anchorExchange as anchorIpexExchange,
+  type CredentialViews,
+  type DisclosureSelection,
   exchangeWire,
+  type HeldCredential,
   IpexDiscloser,
   type IssuanceGrantOptions,
   type PreparedDisclosure,

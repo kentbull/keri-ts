@@ -14,10 +14,12 @@ import {
   acceptedRegistryEvidence,
   authenticateIpexNode,
   type ChainVerdict,
+  type CredentialViews,
   envelopeFromFrame,
   evaluateChain,
   type Exchanger,
   type Habery,
+  type HeldCredential,
   ipexExnBody,
   ipexGrantWalk,
   isLocalGroupHab,
@@ -55,14 +57,6 @@ export interface WalletOptions {
   exc: Exchanger;
   db: WalletBaser;
 }
-/** Exact admitted node streams; no fuller cached section replaces retained disclosure. */
-export interface HeldCredential {
-  credential: SerderACDC;
-  proof: Uint8Array;
-  artifacts: Uint8Array[];
-  grant: SerderKERI;
-  admit: string;
-}
 /** A signed response prepared after consent/current policy; intake and delivery remain caller-owned. */
 export interface PreparedAdmit {
   admit: SerderKERI;
@@ -74,8 +68,10 @@ function identical(left: object, right: object): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+export type { HeldCredential };
+
 /** Inventory owns consent, never protocol acceptance, current standing or custody. */
-export class Wallet {
+export class Wallet implements CredentialViews {
   readonly hby: Habery;
   readonly registry: RegistryStore;
   readonly exc: Exchanger;
@@ -146,6 +142,21 @@ export class Wallet {
       throw new ValidationError("Retained issuance bytes do not match their identifier.");
     }
     return acdc;
+  }
+
+  /** Credential view for presentation: the retained issuance, as `issuedCredential` returns it. */
+  issued(said: string): SerderACDC {
+    return this.issuedCredential(said);
+  }
+
+  /** Credential view for presentation: the registry recorded with a retained issuance. */
+  issuedRegistry(said: string): string | undefined {
+    return this.db.issued.get([said])?.registry;
+  }
+
+  /** Credential view for presentation: the original admitted proof, as `heldCredential` returns it. */
+  held(grant: string, options: { presenterAuthorized?: boolean } = {}): Promise<HeldCredential> {
+    return this.heldCredential(grant, options);
   }
 
   /** Authenticate accepted outer evidence through existing replay, without current node policy. */
