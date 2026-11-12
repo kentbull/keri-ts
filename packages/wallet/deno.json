@@ -18,6 +18,7 @@
     "keri-ts/db/indexeddb": "../keri/db-indexeddb.ts",
     "keri-ts/db/lmdb": "../keri/db-lmdb.ts",
     "keri-ts/runtime": "../keri/runtime.ts",
+    "keri-ts/runtime/web": "../keri/runtime-web.ts",
     "effection": "npm:effection@^3.6.0",
     "jsr:@std/assert": "jsr:@std/assert@^0.217.0",
     "@deno/dnt": "jsr:@deno/dnt@^0.42.3"

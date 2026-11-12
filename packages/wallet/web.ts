@@ -13,3 +13,13 @@ export {
 } from "./src/disclosing.ts";
 export { type AdmittedCredential, type IssuedCredential, openWalletBaser, WalletBaser } from "./src/storing.ts";
 export { type HeldCredential, type PreparedAdmit, Wallet, type WalletOptions } from "./src/wallet.ts";
+export {
+  openWebWallet,
+  type OpenWebWalletOptions,
+  type PageLifecycleTargets,
+  UnencryptedKeeperError,
+  type WebWallet,
+  type WebWalletHealth,
+  type WebWalletHost,
+  type WebWalletSecret,
+} from "./src/web/open-web-wallet.ts";
