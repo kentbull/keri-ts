@@ -15,16 +15,16 @@ mailbox extensions are absent from unmodified upstream.
 
 Run these commands from the repository root after `deno task setup:compat-lmdb`:
 
-| Command                        | Coverage                                                         |
-| ------------------------------ | ---------------------------------------------------------------- |
-| `deno task test:audit`         | Reject missing, duplicate and unowned KERI test files.           |
-| `deno task test:unit`          | Required KERI runtime suites, Tufa and CESR, once each.          |
-| `deno task test:interop`       | Required representative KERIpy parity.                           |
-| `deno task test:quality`       | Exactly the required unit/runtime and parity coverage.           |
-| `deno task test`               | All functional KERI/Tufa/CESR tests, including DID Webs.         |
-| `deno task test:qualification` | All functional tests plus both manual endurance scenarios.       |
-| `deno task test:package-tools` | Packaging helper tests, also required before npm smoke/release.  |
-| `deno task test:browser`       | Local-only Chromium run of the store contract on real IndexedDB. |
+| Command                        | Coverage                                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `deno task test:audit`         | Reject missing, duplicate and unowned KERI test files.                                                             |
+| `deno task test:unit`          | Required KERI runtime suites, Tufa and CESR, once each.                                                            |
+| `deno task test:interop`       | Required representative KERIpy parity.                                                                             |
+| `deno task test:quality`       | Exactly the required unit/runtime and parity coverage.                                                             |
+| `deno task test`               | All functional KERI/Tufa/CESR tests, including DID Webs.                                                           |
+| `deno task test:qualification` | All functional tests plus both manual endurance scenarios.                                                         |
+| `deno task test:package-tools` | Packaging helper tests, also required before npm smoke/release.                                                    |
+| `deno task test:browser`       | Store contract and engine-sensitive cases on real IndexedDB in Chromium, Firefox and WebKit (CI: `browser-tests`). |
 
 `deno run -A scripts/ci/run-keri-test-group.ts <target> --list` prints exact file
 selection and any manual opt-in environment. Package-local `deno task test` and

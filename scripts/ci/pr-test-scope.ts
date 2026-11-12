@@ -11,6 +11,8 @@ export interface PrTestScope {
   unit: { kind: "local"; head: string } | { kind: "ci"; targets: readonly UnitTarget[] };
   interop: readonly InteropTarget[];
   packageSmoke: boolean;
+  /** The three-engine real-browser lane (`deno task test:browser`). */
+  browser: boolean;
 }
 
 /** Validate selectors against existing owners, never shell commands or arbitrary paths. */
@@ -52,18 +54,21 @@ export function requestedScope(body: string, head: string): PrTestScope | null {
       unit: { kind: "ci", targets: allUnits },
       interop: [...interopOwners],
       packageSmoke: true,
+      browser: true,
     };
   }
+  const { browser = false, ...required } = value as Record<string, unknown>;
   if (
-    Object.keys(value).length !== 3 || !("unit" in value) || !("interop" in value) || !("package" in value)
-    || typeof value.package !== "boolean"
-  ) throw new Error("CI scope requires unit, interop and package, or full:true.");
+    Object.keys(required).length !== 3 || !("unit" in value) || !("interop" in value) || !("package" in value)
+    || typeof value.package !== "boolean" || typeof browser !== "boolean"
+  ) throw new Error("CI scope requires unit, interop and package, optional browser boolean, or full:true.");
   const selectedInterop = targets(value.interop, interopOwners);
   if (Array.isArray(value.unit)) {
     return {
       unit: { kind: "ci", targets: unitTargets(value.unit) },
       interop: selectedInterop,
       packageSmoke: value.package,
+      browser,
     };
   }
   const local = value.unit;
@@ -71,7 +76,7 @@ export function requestedScope(body: string, head: string): PrTestScope | null {
     !local || typeof local !== "object" || !("local" in local) || Object.keys(local).length !== 1
     || typeof local.local !== "string" || !/^[a-f0-9]{40}$/.test(local.local) || local.local !== head
   ) throw new Error("Local unit credit must name this PR's exact head SHA.");
-  return { unit: { kind: "local", head: local.local }, interop: selectedInterop, packageSmoke: value.package };
+  return { unit: { kind: "local", head: local.local }, interop: selectedInterop, packageSmoke: value.package, browser };
 }
 
 /** Preserve path-based defaults and bot release packaging when no eligible override is supplied. */
@@ -84,7 +89,7 @@ export function selectScope(args: {
 }): PrTestScope {
   const override = args.sameRepository ? requestedScope(args.body, args.head) : null;
   if (override) return override;
-  if (args.release) return { unit: { kind: "ci", targets: [] }, interop: [], packageSmoke: true };
+  if (args.release) return { unit: { kind: "ci", targets: [] }, interop: [], packageSmoke: true, browser: false };
   const infrastructure = args.files.some((file) =>
     [".github/workflows/pr-stage-gate.yml", "deno.json", "deno.lock", "package.json", "package-lock.json"].includes(
       file,
@@ -105,10 +110,19 @@ export function selectScope(args: {
       file.startsWith("packages/") || file.startsWith("scripts/npm/") || file.startsWith("scripts/smoke-test-")
       || file.startsWith("scripts/build-") || file === ".github/workflows/npm-release.yml"
     );
+  // IndexedDB store code, the browser harness and its CI scripts are what the lane can regress.
+  const browser = infrastructure
+    || args.files.some((file) =>
+      file.startsWith("packages/keri/test/browser/") || file.startsWith("packages/keri/src/db/")
+      || file === "packages/keri/scripts/run_browser_tests.ts"
+      || file === "packages/keri/test/unit/db/store-contract.ts"
+      || file.startsWith("scripts/ci/") && file.includes("browser")
+    );
   return {
     unit: { kind: "ci", targets: unit ? allUnits : [] },
     interop: interop ? ["interop-parity"] : [],
     packageSmoke,
+    browser,
   };
 }
 
@@ -163,6 +177,7 @@ async function publish(scope: PrTestScope, source: string): Promise<void> {
     `run_unit=${unit.length > 0}`,
     `run_interop=${scope.interop.length > 0}`,
     `run_package=${scope.packageSmoke}`,
+    `run_browser=${scope.browser}`,
     `unit_targets=${JSON.stringify(unit)}`,
     `interop_targets=${JSON.stringify(scope.interop)}`,
   ].join("\n");
@@ -181,7 +196,7 @@ async function main(): Promise<void> {
   if (Deno.args[0] === "dispatch") {
     // A manual run has no PR body or diff, so it exercises every maintained check.
     return await publish(
-      { unit: { kind: "ci", targets: allUnits }, interop: [...interopOwners], packageSmoke: true },
+      { unit: { kind: "ci", targets: allUnits }, interop: [...interopOwners], packageSmoke: true, browser: true },
       Deno.env.get("GITHUB_SHA") ?? "manual dispatch",
     );
   }

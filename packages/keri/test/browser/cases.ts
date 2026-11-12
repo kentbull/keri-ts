@@ -10,6 +10,7 @@ import { indexedDbOpener } from "../../db-indexeddb.ts";
 import { MemStore } from "../../src/db/core/memstore.ts";
 import type { WebDBer } from "../../src/db/core/webdber.ts";
 import { storeContract, wrapperContract } from "../unit/db/store-contract.ts";
+import { registerEngineCases } from "./engine-cases.ts";
 
 /** A fresh `WebDBer` on real IndexedDB under a unique database name; `close(true)` deletes it. */
 async function openWeb(name = `contract-${crypto.randomUUID()}`): Promise<WebDBer> {
@@ -65,5 +66,6 @@ export function registerCases(): void {
     storeContract(() => open(), backend);
     wrapperContract(() => open(), backend);
   }
+  registerEngineCases();
   Deno.test("indexeddb reopen fidelity: flushed rows are byte-identical through a fresh opener", reopenFidelity);
 }
