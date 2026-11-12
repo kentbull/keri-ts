@@ -89,6 +89,7 @@ export {
 export { requireTcpDialer, type TcpDialer } from "../app/transport/tcp-dialer.ts";
 export { TransportError } from "../app/transport/transport-error.ts";
 // Controller state, credentials and protocol operations.
+export { type AcdcV2UpdateOptions, RegistryAuthor } from "../acdc/authoring.ts";
 export {
   type AcdcGraph,
   type AcdcWalkPolicy,
