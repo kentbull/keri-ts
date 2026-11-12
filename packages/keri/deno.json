@@ -29,6 +29,7 @@
     "test:quality": "deno run -A ../../scripts/ci/run-keri-test-group.ts quality",
     "test:browser": "deno run -A scripts/run_browser_tests.ts",
     "test:browser:transport": "deno run -A scripts/run_browser_transport.ts",
+    "test:browser:wallet": "deno run -A scripts/run_browser_wallet.ts",
     "test:audit": "deno run -A ../../scripts/ci/run-keri-test-group.ts audit",
     "test:qualification": "deno run -A ../../scripts/ci/run-keri-test-group.ts qualification",
     "test:quality:app-fast-parallel": "deno run -A ../../scripts/ci/run-keri-test-group.ts app-fast-parallel",

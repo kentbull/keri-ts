@@ -45,6 +45,7 @@
     "test:integration:server": "cd packages/tufa && deno task test:integration:server",
     "test:browser": "cd packages/keri && deno task test:browser",
     "test:browser:transport": "cd packages/keri && deno task test:browser:transport",
+    "test:browser:wallet": "cd packages/keri && deno task test:browser:wallet",
     "test:cesr": "cd packages/cesr && deno task test",
     "bench:cesr": "cd packages/cesr && deno task bench",
     "tephra:bench": "cd packages/cesr && deno task bench:parser",
