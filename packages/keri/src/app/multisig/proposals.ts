@@ -382,8 +382,8 @@ export function* approveGroupProposal(
     },
   };
   const result = isKelRoute(route)
-    ? yield* approveKelProposal(hby, deps, exn, route, { callbacks })
-    : yield* approveRpyProposal(hby, deps, exn, route, { callbacks });
+    ? yield* approveKelProposal(hby, deps, exn, route, { callbacks, resume: true })
+    : yield* approveRpyProposal(hby, deps, exn, route, { callbacks, resume: true });
   if (!result) throw new ValidationError(`Group proposal ${said} cannot be approved.`);
   const { event } = proposal;
   if (event) {

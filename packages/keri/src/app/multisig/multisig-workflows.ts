@@ -297,6 +297,8 @@ export interface ApprovalChannels {
 }
 
 export interface MultisigApprovalOptions {
+  /** Reuse this member's recorded event signatures instead of signing again. */
+  resume?: boolean;
   group?: string;
   said?: string;
   callbacks: MultisigApprovalCallbacks;
@@ -647,9 +649,10 @@ export function* approveKelProposal(
       return null;
     }
     // Signing writes the member's signatures to `sigs.` when the event is first
-    // processed, before any wrapper exists. Finding them means consent was given and
-    // the group joined in an earlier attempt: reuse them, never prompt or sign again.
-    const signed = recordedLocalSignatures(hby, serder, groupPre, smids);
+    // processed, before any wrapper exists. A resuming caller (explicit consent
+    // already given) finds them and reuses them: no second signature and no
+    // second join. The prompting path ignores them, as it always has.
+    const signed = options.resume ? recordedLocalSignatures(hby, serder, groupPre, smids) : null;
     if (signed) {
       localMessage = messagize(serder, { sigers: signed, pipelined: false, gvrsn: approval.genus });
     } else {

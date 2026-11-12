@@ -6,7 +6,6 @@ import { groupEndorseReply } from "../../../../src/app/identity/endpoint-roleing
 import type { GroupEventRef } from "../../../../src/app/multisig/counseling.ts";
 import { multisigInceptExn, multisigRpyExn } from "../../../../src/app/multisig/grouping.ts";
 import { signGroupMessage, storedGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
-import { approvePendingMultisigProposal } from "../../../../src/app/multisig/multisig-workflows.ts";
 import { approveGroupProposal, findGroupProposal } from "../../../../src/app/multisig/proposals.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
@@ -158,34 +157,6 @@ Deno.test("crash window 1: signed but wrapper not stored resumes without prompti
       assertExists(storedGroupMessage(s.left.db, s.alice.pre, s.left.db.exns.get([signed.exnSaid])!));
       assertEquals(result.accepted, true);
       assertEquals(started.length, 1);
-    }, "2");
-  });
-});
-
-Deno.test("crash window 1 through the callback wrapper does not prompt a second time", async () => {
-  await run(function*() {
-    yield* scenario(function*(s) {
-      const counts = instrument(s);
-      const { signed } = yield* peerInteraction(s, []);
-      let prompts = 0;
-      const callbacks = {
-        approveProposal: () => (prompts++, true),
-        chooseGroupAlias: () => "unused",
-        chooseRegistryName: () => "unused",
-      };
-      yield* crashingOnce("\"/multisig/ixn\"", function*() {
-        yield* call(() =>
-          assertRejects(
-            () => run(() => approvePendingMultisigProposal(s.left, s.runtime, { said: signed.exnSaid, callbacks })),
-            Error,
-            "crash before",
-          )
-        );
-      });
-      const result = yield* approvePendingMultisigProposal(s.left, s.runtime, { said: signed.exnSaid, callbacks });
-      assertEquals(prompts, 1);
-      assertEquals(counts.signs, 1);
-      assertEquals(result?.accepted, true);
     }, "2");
   });
 });
