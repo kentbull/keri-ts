@@ -1,8 +1,8 @@
 # Upgrading from 2.0.x
 
 This guide is for anyone running or building on **keri-ts 2.0.0 or 2.0.1** and
-the matching `@keri-ts/*` packages. It covers the first release containing the
-pluggable store contract (ADR-0015), the `keri-ts/db/lmdb` and
+the matching `@keri-ts/*` packages upgrading to **2.1.0**, the first release
+containing the pluggable store contract (ADR-0015), the `keri-ts/db/lmdb` and
 `keri-ts/runtime/node` entrypoints, and the KERIpy path fixes.
 
 Upgrade every `@keri-ts/*` package together, because each pins `keri-ts` to an
@@ -97,7 +97,7 @@ Move these imports. Everything not listed stays where it was.
 
 | Names                                                                                                                                                                                              | From              | To                     |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------------- |
-| `LMDBer`, `LMDBerOptions`, `LMDBerDefaults`, `LMDBER_DEFAULTS`, `openLMDB`, `createLMDBer`, `readStoredLmdbMapSize`                                                                                | `keri-ts/db`      | `keri-ts/db/lmdb`      |
+| `LMDBer`, `LMDBerOptions`, `LMDBerDefaults`, `LMDBER_DEFAULTS`, `openLMDB`, `createLMDBer`, `readStoredLmdbMapSize`, `resolveLmdbMapSize`, `clearDatabaserDir`, `BinKey`, `BinVal`                 | `keri-ts/db`      | `keri-ts/db/lmdb`      |
 | `PathManager`, `PathManagerOptions`, `PathManagerDefaults`, `PATH_DEFAULTS`                                                                                                                        | `keri-ts/db`      | `keri-ts/db/lmdb`      |
 | `createBaser`, `createKeeper`, `createNoter`, `createMailboxer`, `createReger`                                                                                                                     | `keri-ts/db`      | `keri-ts/db/lmdb`      |
 | `createHabery`                                                                                                                                                                                     | `keri-ts/runtime` | `keri-ts/db/lmdb`      |
@@ -175,6 +175,17 @@ which return closed stores, all from `keri-ts/db/lmdb`.
 
 `Komer` and `Suber` take any `DBer`. Their `sdb` is now an opaque `Table`; use
 `lmdbTable(sdb)` from `keri-ts/db/lmdb` if you need the native handle.
+`LMDBer`'s table methods take the same `Table`, which `openDB` and `openTable`
+return.
+
+### Grant walk policy
+
+Grants now walk open by default, as in KERIpy: a far node the Grant does not
+carry is a permanent unknown, so an OR group with a valid sibling accepts. Pass
+`grantWalk: "closed"` to `createAgentRuntime` or `loadIpexHandlers` to keep the
+2.0 behavior of refusing every Grant that omits a far node. `walkIpexGraph` takes
+`"open"` or `"closed"` instead of a `closed` boolean, and `AcdcGraph` requires
+`walk`.
 
 ## 6. Behavior changes to check
 
@@ -208,6 +219,10 @@ which return closed stores, all from `keri-ts/db/lmdb`.
   upgrade a v1 identifier deliberately.
 - A message that fails validation is skipped, and the rest of its stream is still
   processed, as in KERIpy.
+- A v2 ACDC attribute, edge or rule section without a top-level `d` is no longer
+  given one. Building the same body now yields KERIpy's bytes and SAID rather
+  than the 2.0.x ones. Credentials authored by 2.0.x carry the inserted `d` and
+  still verify.
 
 ## 7. Verify the upgrade
 

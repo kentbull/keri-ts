@@ -159,7 +159,8 @@ Deno.test("init credentials - explicit plaintext and temporary paths remain expl
       ], { TMPDIR: headDirPath });
       assertEquals(result.code, 0, result.stderr);
       await run(function*() {
-        // The child's TMPDIR is supplied as the test-owned head for temp paths.
+        // The child's TMPDIR is the test-owned temp root, except on macOS, where
+        // temp stores follow hio and always live under /tmp.
         const prior = Deno.env.get("TMPDIR");
         Deno.env.set("TMPDIR", headDirPath);
         try {
@@ -168,7 +169,8 @@ Deno.test("init credentials - explicit plaintext and temporary paths remain expl
             assertEquals(hby.mgr.aeid, "");
             assertEquals(hby.ks.getGbls("salt"), salt);
             assertEquals(hby.temp, temp);
-            assert(hby.db.path!.startsWith(headDirPath));
+            const root = temp && Deno.build.os === "darwin" ? "/tmp/" : headDirPath;
+            assert(hby.db.path!.startsWith(root), `${hby.db.path} is not under ${root}`);
           } finally {
             yield* hby.close();
           }
