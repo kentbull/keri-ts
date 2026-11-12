@@ -16,9 +16,24 @@ import type { Operation } from "npm:effection@^3.6.0";
 import type { RegistryDisclosure } from "../../acdc/regeventing.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
+import type { Regery } from "../../vdr/credentialing.ts";
+import {
+  type CredentialRevokeOptions,
+  type CredentialRevokeResult,
+  revokeCredential,
+} from "../credentials/credential-revoking.ts";
+import {
+  createCredential,
+  type CredentialCreateOptions,
+  type CredentialRegistryInceptOptions,
+  inceptCredentialRegistry,
+  type IssueResult,
+  type RegistryResult,
+} from "../credentials/credential-workflows.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Hab, Habery, MakeGroupHabArgs } from "../identity/habbing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
+import type { Reactor } from "../protocol/reactor.ts";
 import type { CounselInputs, Counselor, GroupEventRef } from "./counseling.ts";
 import { groupSigningMembers, localGroupMember, uniqueMembers } from "./group-members.ts";
 import { MULTISIG_ICP_ROUTE, MULTISIG_IXN_ROUTE, MULTISIG_ROT_ROUTE } from "./grouping.ts";
@@ -211,4 +226,71 @@ export function* proposeRegistryEvent(
     ...sent,
     event: anchorRef,
   };
+}
+
+/** Collaborators for proposing a legacy (v1) group registry or credential event. */
+export interface CredentialProposeDeps {
+  readonly rgy: Regery;
+  /** Byte intake that commits each exact local wrapper before it is sent. */
+  readonly input: Reactor;
+  readonly postman: Poster;
+  readonly counselor: Pick<Counselor, "start">;
+}
+
+/** A result that is known to carry its group coordination, including the anchor the Counselor tracks. */
+type Proposed<T extends { group?: unknown }> = T & { group: NonNullable<T["group"]> };
+
+function proposedGroup<T extends { group?: unknown }>(result: T, what: string): Proposed<T> {
+  if (!result.group) throw new ValidationError(`${what} must be proposed by a local group.`);
+  return result as Proposed<T>;
+}
+
+/**
+ * Propose a group's legacy credential registry (`vcp`): author the anchoring group event,
+ * process this member's contribution, hand the anchor to the Counselor and publish the
+ * proposal. Returns without waiting; the anchor's progress is `counselor.status(result.group.event)`
+ * and the registry's is `waitForTelEvent`.
+ *
+ * @throws ValidationError when `group` is not a local group or the registry name is taken.
+ */
+export function* proposeCredentialRegistry(
+  deps: CredentialProposeDeps,
+  group: Hab,
+  options: CredentialRegistryInceptOptions,
+  inputs?: CounselInputs,
+): Operation<Proposed<RegistryResult>> {
+  const result = proposedGroup(
+    yield* inceptCredentialRegistry(deps.rgy, deps.input, deps.postman, group, options),
+    "A group registry",
+  );
+  deps.counselor.start(result.group.event, inputs);
+  return result;
+}
+
+/** Propose a group credential issuance (`iss`) the way {@link proposeCredentialRegistry} proposes a registry. */
+export function* proposeCredentialIssue(
+  deps: CredentialProposeDeps,
+  options: CredentialCreateOptions,
+  inputs?: CounselInputs,
+): Operation<Proposed<IssueResult>> {
+  const result = proposedGroup(
+    yield* createCredential(deps.rgy, deps.input, deps.postman, options),
+    "A group credential",
+  );
+  deps.counselor.start(result.group.event, inputs);
+  return result;
+}
+
+/** Propose a group credential revocation (`rev`) the way {@link proposeCredentialRegistry} proposes a registry. */
+export function* proposeCredentialRevocation(
+  deps: CredentialProposeDeps,
+  options: CredentialRevokeOptions,
+  inputs?: CounselInputs,
+): Operation<Proposed<CredentialRevokeResult>> {
+  const result = proposedGroup(
+    yield* revokeCredential(deps.rgy, deps.input, deps.postman, options),
+    "A group revocation",
+  );
+  deps.counselor.start(result.group.event, inputs);
+  return result;
 }
