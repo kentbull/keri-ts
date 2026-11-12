@@ -18,7 +18,6 @@ Deno.test("resolveOobi reports resolved, failed and timed-out states from the Oo
   const sourceDir = await Deno.makeTempDir({ prefix: "oobi-resolving-src-" });
   const targetDir = await Deno.makeTempDir({ prefix: "oobi-resolving-dst-" });
   const port = reserveTcpPort();
-  const deadPort = reserveTcpPort();
   let pre = "";
   try {
     await run(function*() {
@@ -64,12 +63,14 @@ Deno.test("resolveOobi reports resolved, failed and timed-out states from the Oo
             assertEquals(oobiStatus(targetRuntime, url).status, "resolved");
             assertExists(target.db.getState(pre));
 
-            // Nothing listens on the second port: the Oobiery records the failure and its reason.
-            const deadUrl = `http://127.0.0.1:${deadPort}/oobi/${pre}/agent/${pre}`;
+            // The provider has no witness role for this AID, so it answers 404 and the Oobiery
+            // records the failure with that reason.
+            const deadUrl = `http://127.0.0.1:${port}/oobi/${pre}/witness/${pre}`;
             const failed = yield* resolveOobi(targetRuntime, deadUrl);
             assertEquals(failed.status, "failed");
             if (failed.status !== "failed") throw new Error("unreachable");
-            assertEquals(failed.reason, failed.record.state ?? "failed");
+            assertEquals(failed.reason, "http-404");
+            assertEquals(failed.record.state, "http-404");
             assertEquals(oobiStatus(targetRuntime, deadUrl).status, "failed");
           } finally {
             yield* targetRuntime.close();
