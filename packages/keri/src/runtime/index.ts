@@ -817,3 +817,18 @@ export {
   sendIpexSpurn,
   waitForIpexExchange,
 } from "../app/ipex/ipex-conversation.ts";
+
+// Library legacy IPEX grant, admit and credential settle.
+export {
+  type AdmittableGrant,
+  type IpexAdmitOptions,
+  type IpexAdmitSent,
+  type IpexGrantDeps,
+  type IpexGrantSendOptions,
+  type IpexGrantSent,
+  type IpexSettleDeps,
+  requireAdmittableGrant,
+  sendIpexAdmit,
+  sendIpexGrant,
+  settleGrantCredential,
+} from "../app/ipex/ipex-granting.ts";
