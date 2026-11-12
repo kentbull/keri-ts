@@ -2,22 +2,31 @@
 import { startServer } from "@keri-ts/hosting";
 import { bytesEqual, type CesrFrame, collectPayload, framePayload, parseBytes, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { action, call, type Operation, race, scoped, spawn } from "effection";
-import { parseIntegerOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
+import { parseIntegerOption, parseNumberOption, parseStringOption, withRuntimeWorkers } from "keri-ts/cli";
 import {
+  abandonUnblinding,
   type AgentRuntime,
+  approveUnblind,
   consoleLogger,
   createAgentRuntime,
   envelopeFromFrame,
   type ExchangeRouteHandler,
   groupSigningMembers,
+  type Hab,
+  isLocalGroupHab,
   type KramConfig,
   localGroupMember,
+  MemoryUnblindingOperationStore,
   multisigExnBody,
+  posterDelivery,
+  requestUnblind,
   runAgentRuntime,
   systemClock,
   timestampMicros,
   Unblind,
+  UnblindingOperations,
   ValidationError,
+  waitForUnblinding,
 } from "keri-ts/runtime";
 import { NodeHttpClient } from "keri-ts/runtime/node";
 import { withExistingHab } from "../support/context.ts";
@@ -277,6 +286,77 @@ function* runUnblind(
   }
 }
 
+/**
+ * One individual Unblind through the library owner: consent, then `processOnce` under the host workers while
+ * the wait observes. Only the optional direct listener (`--listen`) is the CLI's own.
+ */
+function* runIndividualUnblind(
+  runtime: AgentRuntime,
+  hab: Hab,
+  grant: string,
+  { timeoutMs, proposer, listen, states }: PresentationUnblindOptions & { states: readonly string[] },
+): Operation<PresentationUnblindResult> {
+  if (listen !== undefined && (!Number.isInteger(listen) || listen < 1 || listen > 65535)) {
+    throw new ValidationError("--listen must be a port between 1 and 65535");
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new ValidationError("Unblind timeout must be positive");
+  if (proposer !== undefined) {
+    throw new ValidationError("Group Unblind requires a current signing member proposer; individual Unblind has none");
+  }
+  const ops = new UnblindingOperations({
+    hby: runtime.hby,
+    exc: runtime.exc,
+    unblinds: runtime.ipex!,
+    delivery: posterDelivery(runtime.postman),
+    store: new MemoryUnblindingOperationStore(),
+    clock: runtime.clock,
+  });
+  const requester = runtime.exc.retainedInput(grant)?.serder.sad?.ri === hab.pre;
+  const consent = requester ? requestUnblind : approveUnblind;
+  const run = function*() {
+    const { xid, role } = consent(ops, { hab, grant, states });
+    const outcome = yield* withRuntimeWorkers(runtime, { hab, pollMailbox: true }, function*() {
+      const driver = yield* spawn(function*() {
+        while (true) {
+          yield* ops.processOnce();
+          yield* wait(runtime, 50);
+        }
+      });
+      try {
+        return yield* waitForUnblinding(ops, grant, { timeoutMs });
+      } finally {
+        yield* driver.halt();
+      }
+    });
+    const { status } = outcome;
+    if (status.state === "done") return { grant, xid, role, completed: true, admitted: false } as const;
+    if (status.state === "active") abandonUnblinding(ops, grant, "Elapsed limit");
+    const elapsed = status.state === "active" || status.state === "expired";
+    throw new ValidationError(
+      elapsed ? "Unblind reached its elapsed limit or original Grant deadline without Admit" : status.reason,
+    );
+  };
+  if (listen === undefined) return yield* run();
+  return yield* scoped(function*() {
+    let ready!: () => void;
+    const bound = new Promise<void>((resolve) => ready = resolve);
+    const listener = yield* spawn(() =>
+      startServer(listen, consoleLogger, runtime, {
+        hostname: "127.0.0.1",
+        serviceHab: hab,
+        hostedPrefixes: [hab.pre!],
+        onListen: () => ready(),
+      })
+    );
+    try {
+      yield* call(() => bound);
+      return yield* run();
+    } finally {
+      yield* listener.halt();
+    }
+  });
+}
+
 /** Compose the selected concrete owner and explicit KRAM policy for one live CLI action. */
 export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operation<void> {
   const listen = parseIntegerOption(args.listen, "listen");
@@ -299,9 +379,13 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
   const completed = yield* withExistingHab(walletStoreArgs(args), parseStringOption(args.alias, "alias"), {
     skipConfig: false,
   }, function*({ hby, hab }) {
+    // TODO(group proposal API): group Unblind keeps its CLI-owned loop (runPresentationUnblind) until that API.
+    const individual = !isLocalGroupHab(hby, hab);
     const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
       kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
-      ipexAuxiliary: { kind: "unblind", hab, states },
+      ...individual
+        ? { ipexOwners: "per-identifier" as const, operationStores: { rootReplication: "off" as const } }
+        : { ipexAuxiliary: { kind: "unblind" as const, hab, states } },
     });
     try {
       const input = parseStringOption(args.input, "input");
@@ -309,11 +393,14 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
         yield* runtime.reactor.processBytes(yield* call(() => Deno.readFile(input)));
         yield* runtime.protocol.processEscrowsOnce();
       }
-      return yield* runPresentationUnblind(runtime, grant, {
+      const options = {
         timeoutMs: timeout * 1000,
         proposer: parseStringOption(args.proposer, "proposer"),
         listen,
-      });
+      };
+      return individual
+        ? yield* runIndividualUnblind(runtime, hab, grant, { ...options, states })
+        : yield* runPresentationUnblind(runtime, grant, options);
     } finally {
       yield* runtime.close();
     }

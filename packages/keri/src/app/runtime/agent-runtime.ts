@@ -28,6 +28,7 @@ import { Regery as VdrRegery } from "../../vdr/credentialing.ts";
 import { Tevery } from "../../vdr/eventing.ts";
 import { Authenticator } from "../bootstrap/authenticating.ts";
 import { loadOobiHandlers, Oobiery, type OobiJob, oobiTerminalState } from "../bootstrap/oobiery.ts";
+import type { RootReplicator } from "../credentials/root-replicator.ts";
 import { publishPendingTel } from "../credentials/tel-publishing.ts";
 import { Poster } from "../delivery/forwarding.ts";
 import { ReplyStreams } from "../delivery/reply-streams.ts";
@@ -54,6 +55,12 @@ import type { HttpClient } from "../transport/http-client.ts";
 import { Receiptor } from "../witness/receipting.ts";
 import { cueDo } from "./cue-runtime.ts";
 import { IpexAuxiliaries } from "./ipex-auxiliaries.ts";
+import {
+  composeOwners,
+  operationOwnersDo,
+  type OperationStores,
+  type RuntimeOperations,
+} from "./operation-owners.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { signalerChangeSink } from "./workflow-contract.ts";
@@ -116,6 +123,13 @@ export interface AgentRuntime {
    * Owners can be obtained or released at any time, including while the runtime loop runs.
    */
   readonly ipex: IpexAuxiliaries | null;
+  /**
+   * Issuance, presentation and Unblind operations owners; present with `ipexOwners`.
+   * `runAgentRuntime` runs each `processOnce` in its own fiber.
+   */
+  readonly operations: RuntimeOperations | null;
+  /** Root copy replicator driven by the owners loop; null without `ipexOwners` or a registry root owner. */
+  readonly rootReplicator: RootReplicator | null;
   /** Durable OOBI job owner, independent of outgoing delivery. */
   oobiery: Oobiery;
   /** Well-known authentication jobs over the shared HTTP service. */
@@ -202,6 +216,11 @@ export interface AgentRuntimeOptions {
    * like `ipexAuxiliary`, and may be combined with it.
    */
   ipexOwners?: "per-identifier";
+  /**
+   * Stores and policy of the operations owners that `ipexOwners` adds. Omitted stores are
+   * process-local; a wallet supplies durable ones.
+   */
+  operationStores?: OperationStores;
   /**
    * `/registry/root` policy. `"accept"` (default) registers `RegistryRoot` when
    * a v2 registry is available, so copies are retained or escrowed on arrival.
@@ -360,7 +379,7 @@ export function* createAgentRuntime(
   // One registry serves the legacy single selection and per-identifier hosts: one dispatch path.
   const ipex = (selected || options.ipexOwners) && registry
     ? yield* resource<IpexAuxiliaries>(function*(provide) {
-      const owners = new IpexAuxiliaries(exc, registry, revery, now);
+      const owners = new IpexAuxiliaries(exc, registry, revery, now, options.ipexOwners ? hby.habs : undefined);
       try {
         owners.registerReplyRoutes(revery.rtr);
         yield* provide(owners);
@@ -467,6 +486,21 @@ export function* createAgentRuntime(
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
   );
+  const owned = options.ipexOwners && acdc && ipex
+    ? composeOwners({
+      hby,
+      acdc,
+      exc,
+      protocol,
+      reactor,
+      postman,
+      receiptor: new Receiptor(hby, protocol, http, clock),
+      ipex,
+      clock,
+      registryRoot,
+      changes: signaler ? signalerChangeSink(signaler) : undefined,
+    }, options.operationStores)
+    : null;
   const oobiery = new Oobiery(hby, protocol, revery, http, cues);
   oobiery.registerReplyRoutes(revery.rtr);
   const authenticator = new Authenticator(hby, http);
@@ -484,6 +518,8 @@ export function* createAgentRuntime(
     mux,
     ipexAuxiliary,
     ipex,
+    operations: owned?.operations ?? null,
+    rootReplicator: owned?.rootReplicator ?? null,
     oobiery,
     authenticator,
     mailboxDirector,
@@ -894,6 +930,18 @@ export function* runAgentRuntime(
         yield* runtimeTurn();
       }
     }),
+    ...(runtime.operations && runtime.ipex
+      ? [
+        yield* spawn(() =>
+          operationOwnersDo({
+            operations: runtime.operations!,
+            rootReplicator: runtime.rootReplicator,
+            ipex: runtime.ipex!,
+            clock: runtime.clock,
+          })
+        ),
+      ]
+      : []),
   ];
   try {
     return yield* suspend();
