@@ -13,9 +13,11 @@ npm install keri-ts
 
 - default import: browser-safe core/types surface
 - `keri-ts/runtime`: explicit non-browser-safe runtime surface
-- `keri-ts/db`: explicit LMDB-backed storage surface
+- `keri-ts/db`: backend-neutral storage surface
+- `keri-ts/db/lmdb`: native LMDB storage backend
+- `keri-ts/db/indexeddb`: browser IndexedDB storage backend (`indexedDbOpener`)
 
-Those three entrypoints are the general library surfaces. `keri-ts/cli` is the
+These entrypoints are the general library surfaces. `keri-ts/cli` is the
 separate command-helper boundary used by Tufa. Runnable CLI/server ownership
 lives in `@keri-ts/tufa`.
 

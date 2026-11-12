@@ -22,6 +22,7 @@ const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
 const RUNTIME_NODE_ENTRYPOINT = "./src/npm/runtime-node.ts";
 const DB_ENTRYPOINT = "./src/npm/db.ts";
 const DB_LMDB_ENTRYPOINT = "./src/npm/db-lmdb.ts";
+const DB_INDEXEDDB_ENTRYPOINT = "./src/npm/db-indexeddb.ts";
 const OUT_DIR = "./npm";
 const DNT_IMPORT_MAP_PATH = "./.dnt.import-map.json";
 const NPM_MAIN_PATH = "./esm/keri/npm/src/keri/src/npm/index.js";
@@ -36,6 +37,8 @@ const NPM_DB_PATH = "./esm/keri/npm/src/keri/src/npm/db.js";
 const NPM_DB_TYPES_PATH = "./types/keri/src/npm/db.d.ts";
 const NPM_DB_LMDB_PATH = "./esm/keri/npm/src/keri/src/npm/db-lmdb.js";
 const NPM_DB_LMDB_TYPES_PATH = "./types/keri/src/npm/db-lmdb.d.ts";
+const NPM_DB_INDEXEDDB_PATH = "./esm/keri/npm/src/keri/src/npm/db-indexeddb.js";
+const NPM_DB_INDEXEDDB_TYPES_PATH = "./types/keri/src/npm/db-indexeddb.d.ts";
 
 /** Manifest fields that this build script owns after DNT emits package.json. */
 interface BuiltNpmPackageManifest {
@@ -59,6 +62,7 @@ interface NpmExportTargets {
   runtimeNode: NpmExportTarget;
   db: NpmExportTarget;
   dbLmdb: NpmExportTarget;
+  dbIndexedDb: NpmExportTarget;
 }
 
 // These marker comments live in source entrypoints and should survive DNT
@@ -70,6 +74,7 @@ const ENTRYPOINT_MARKERS = {
   runtimeNode: "npm subpath entrypoint for `keri-ts/runtime/node`.",
   db: "npm subpath entrypoint for `keri-ts/db`.",
   dbLmdb: "npm subpath entrypoint for `keri-ts/db/lmdb`.",
+  dbIndexedDb: "npm subpath entrypoint for `keri-ts/db/indexeddb`.",
 } as const;
 
 /**
@@ -189,6 +194,24 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
         { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "db-lmdb.d.ts", marker: ENTRYPOINT_MARKERS.dbLmdb },
       ),
     },
+    dbIndexedDb: {
+      import: findGeneratedEntrypoint(
+        {
+          root: `${OUT_DIR}/esm`,
+          outDir: OUT_DIR,
+          fileName: "db-indexeddb.js",
+          marker: ENTRYPOINT_MARKERS.dbIndexedDb,
+        },
+      ),
+      types: findGeneratedEntrypoint(
+        {
+          root: `${OUT_DIR}/types`,
+          outDir: OUT_DIR,
+          fileName: "db-indexeddb.d.ts",
+          marker: ENTRYPOINT_MARKERS.dbIndexedDb,
+        },
+      ),
+    },
   };
 
   for (const target of Object.values(targets)) {
@@ -209,7 +232,8 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
  * - `main` and `module` to the discovered root ESM entrypoint
  * - `types` to the discovered root declaration entrypoint
  * - `exports["."]`, `exports["./cli"]`, `exports["./runtime"]`,
- *   `exports["./runtime/node"]`, `exports["./db"]` and `exports["./db/lmdb"]`
+ *   `exports["./runtime/node"]`, `exports["./db"]`, `exports["./db/lmdb"]` and
+ *   `exports["./db/indexeddb"]`
  *   to their discovered import/types pairs
  *
  * These fields are the public npm package surface. Normalizing them here keeps
@@ -248,6 +272,10 @@ function normalizeBuiltManifest(): void {
     "./db/lmdb": {
       import: targets.dbLmdb.import,
       types: targets.dbLmdb.types,
+    },
+    "./db/indexeddb": {
+      import: targets.dbIndexedDb.import,
+      types: targets.dbIndexedDb.types,
     },
   };
   writeJsonFileSync(packageJsonPath, manifest);
@@ -298,6 +326,7 @@ try {
       RUNTIME_NODE_ENTRYPOINT,
       DB_ENTRYPOINT,
       DB_LMDB_ENTRYPOINT,
+      DB_INDEXEDDB_ENTRYPOINT,
     ],
     outDir: OUT_DIR,
     shims: {
@@ -353,6 +382,10 @@ try {
         "./db/lmdb": {
           import: NPM_DB_LMDB_PATH,
           types: NPM_DB_LMDB_TYPES_PATH,
+        },
+        "./db/indexeddb": {
+          import: NPM_DB_INDEXEDDB_PATH,
+          types: NPM_DB_INDEXEDDB_TYPES_PATH,
         },
       },
       files: ["esm", "types", "README.md", "LICENSE"],

@@ -10,6 +10,7 @@ import { run } from "effection";
 import * as keri from "keri-ts";
 import * as db from "keri-ts/db";
 import * as dbLmdb from "keri-ts/db/lmdb";
+import * as dbIndexedDb from "keri-ts/db/indexeddb";
 import { parseGvrsn } from "keri-ts/cli";
 import * as runtime from "keri-ts/runtime";
 import * as runtimeNode from "keri-ts/runtime/node";
@@ -58,6 +59,8 @@ assert(typeof runtimeNode.TCPMessenger === "function", "keri-ts/runtime/node mis
 assert(typeof dbLmdb.createBaser === "function", "keri-ts/db/lmdb missing createBaser");
 assert(typeof dbLmdb.LMDBer === "function", "keri-ts/db/lmdb missing LMDBer");
 assert(typeof dbLmdb.createHabery === "function", "keri-ts/db/lmdb missing createHabery");
+assert(typeof dbIndexedDb.indexedDbOpener === "function", "keri-ts/db/indexeddb missing indexedDbOpener");
+assert(typeof dbIndexedDb.IndexedDbPersistence === "function", "keri-ts/db/indexeddb missing IndexedDbPersistence");
 assert(typeof runtime.openHabery === "function", "keri-ts/runtime missing openHabery");
 assert(typeof db.dgKey === "function", "keri-ts/db missing dgKey");
 assert(typeof runtime.EssrRecipient === "function", "keri-ts/runtime missing ESSR recipient");
