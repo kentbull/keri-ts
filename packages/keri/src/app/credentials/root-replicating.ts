@@ -9,7 +9,7 @@
  */
 import { parseBytes } from "cesr-ts";
 import { action, type Operation, race } from "effection";
-import type { RegistryRoot } from "../../acdc/salting.ts";
+import { type RegistryRoot, RootUnverified } from "../../acdc/salting.ts";
 import { AppError, ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import type { Poster } from "../delivery/forwarding.ts";
@@ -86,18 +86,83 @@ function* within<T>(clock: RuntimeClock, milliseconds: number, operation: Operat
   ]);
 }
 
+/** How one copy attempt ended: `deferred` and `failed` may succeed later; `refused` never will. */
+export type RootCopyKin = "sent" | "deferred" | "refused" | "failed";
+
+/**
+ * Prepare and deliver one `/registry/root` copy for `gid` from its local member to
+ * `recipient`, before `deadline` (epoch ms of `clock`).
+ *
+ * The copy is sealed with `RegistryRoot.prepare` and a per-registry derived hint
+ * (`hinted`, so a copy that could never verify is reported, not sent). `failure`
+ * is null when the Poster transmitted it, else the `AppError` or Poster error
+ * that stopped it, classified by `kin`: `deferred` when local evidence (the BUP,
+ * key state, a hint) is not yet present, `refused` when the copy is not
+ * authorized, `failed` when the budget ended or the Poster could not send it.
+ * Any other exception is an invariant failure and escapes. The caller runs
+ * `postman.deliverDo` for the duration.
+ */
+export function* replicateRootCopy(
+  root: RegistryRoot,
+  postman: Poster,
+  clock: RuntimeClock,
+  gid: string,
+  registry: string,
+  recipient: string,
+  deadline: number,
+): Operation<{ kin: RootCopyKin; report: RootCopyReport; failure: unknown }> {
+  const sender = localGroupMember(root.hby, gid);
+  const report: RootCopyReport = {
+    phase: "root_copy",
+    gid,
+    registry,
+    sender: sender.pre!,
+    recipient,
+    transmitted: false,
+  };
+  let failure: unknown = null, kin: RootCopyKin = "sent";
+  try {
+    kin = "failed";
+    if (clock.now() >= deadline) {
+      throw new ValidationError("registry root copies did not complete within their budget");
+    }
+    kin = "refused";
+    let wire: Uint8Array;
+    try {
+      wire = root.prepare(sender, recipient, gid, registry, { hinted: true });
+    } catch (error) {
+      if (error instanceof RootUnverified) kin = "deferred";
+      throw error;
+    }
+    kin = "failed";
+    report.exchange = parseBytes(wire)[0].body.said!;
+    const outcome = yield* within(
+      clock,
+      deadline - clock.now(),
+      deliverRegistryRoots(postman, sender.pre!, [{ recipient, wire }]),
+    );
+    if (!outcome) failure = new ValidationError("registry root copies did not complete within their budget");
+    else if (outcome[0].kin === "failed") failure = outcome[0].error ?? "delivery failed";
+    else kin = "sent";
+  } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    failure = error;
+  }
+  if (failure === null) return { kin, report: { ...report, transmitted: true }, failure };
+  const message = failure instanceof Error ? failure.message : String(failure);
+  return { kin, report: { ...report, error: message, recovery: RootCopyRecovery }, failure };
+}
+
 /**
  * Fire and forget one copy of each of `registries`' held roots for group
  * `ghab` to each recipient, signed by `ghab`'s local member.
  *
- * `recipients` defaults to every other current signing member. Each copy is
- * prepared with `RegistryRoot.prepare` and a per-registry derived hint
- * (`hinted`, so a copy that could never verify is reported, not sent) and
- * delivered through `deliverRegistryRoots`, as `tufa vc registry root send`
- * does. `timeoutMs` is this replication's own budget: a copy reached after it
- * ends, or still sending when it ends, is reported unsent. Nothing is retried
- * or recorded and an `AppError` never escapes: every outcome is returned for
- * display. The caller runs `postman.deliverDo` for the duration.
+ * `recipients` defaults to every other current signing member. Each copy goes
+ * through `replicateRootCopy`, as `tufa vc registry root send` does. `timeoutMs`
+ * is this replication's own budget: a copy reached after it ends, or still
+ * sending when it ends, is reported unsent. Nothing is retried or recorded and
+ * an `AppError` never escapes: every outcome is returned for display. The caller
+ * runs `postman.deliverDo` for the duration.
  */
 export function* replicateRegistryRoots(
   root: RegistryRoot,
@@ -112,39 +177,7 @@ export function* replicateRegistryRoots(
   const reports: RootCopyReport[] = [];
   for (const registry of registries) {
     for (const recipient of targets) {
-      const result: RootCopyReport = {
-        phase: "root_copy",
-        gid,
-        registry,
-        sender: sender.pre,
-        recipient,
-        transmitted: false,
-      };
-      let failure: unknown = null;
-      try {
-        if (clock.now() >= deadline) {
-          throw new ValidationError("registry root copies did not complete within their budget");
-        }
-        const wire = root.prepare(sender, recipient, gid, registry, { hinted: true });
-        result.exchange = parseBytes(wire)[0].body.said!;
-        const outcome = yield* within(
-          clock,
-          deadline - clock.now(),
-          deliverRegistryRoots(postman, sender.pre, [{ recipient, wire }]),
-        );
-        if (!outcome) failure = new ValidationError("registry root copies did not complete within their budget");
-        else if (outcome[0].kin === "failed") failure = outcome[0].error ?? "delivery failed";
-      } catch (error) {
-        if (!(error instanceof AppError)) throw error;
-        failure = error;
-      }
-      reports.push(
-        failure === null ? { ...result, transmitted: true } : {
-          ...result,
-          error: failure instanceof Error ? failure.message : String(failure),
-          recovery: RootCopyRecovery,
-        },
-      );
+      reports.push((yield* replicateRootCopy(root, postman, clock, gid, registry, recipient, deadline)).report);
     }
   }
   return reports;
