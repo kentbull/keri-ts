@@ -1,25 +1,23 @@
-import { action, type Operation, spawn } from "npm:effection@^3.6.0";
-import { sendExchangeMessage } from "../../app/exchanges/exchange-messaging.ts";
+import type { Operation } from "npm:effection@^3.6.0";
 import {
-  CHALLENGE_RESPONSE_ROUTE,
   type ChallengeOutput,
-  type ChallengeResponsePayload,
-  findVerifiedChallengeResponse,
+  challengeStatus,
   formatChallengeWords,
   generateChallengeWords,
   markChallengeVerified,
   parseChallengeWords,
+  respondToChallenge,
+  waitForChallengeResponse,
 } from "../../app/identity/challenging.ts";
 import type { Habery } from "../../app/identity/habbing.ts";
 import { Organizer } from "../../app/identity/organizing.ts";
-import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
-import { runAgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { parseBooleanOption, parseIntegerOption, parseNumberOption, parseStringOption } from "../common/parsing.ts";
 
 import { withAgentRuntime, withExistingHab } from "../common/context.ts";
+import { withRuntimeWorkers } from "../common/runtime-workers.ts";
 
 interface ChallengeGenerateArgs {
   strength?: number;
@@ -114,23 +112,11 @@ export function* challengeRespondCommand(
       skipSignator: false,
     },
     function*({ hby, hab }) {
-      if (isLocalGroupHab(hby, hab)) {
-        throw new ValidationError(
-          "Challenge respond does not coordinate group approval. Select the responding member alias.",
-        );
-      }
-      const payload: ChallengeResponsePayload = { words };
-      const { serder } = yield* sendExchangeMessage(
-        hby,
+      const serder = yield* respondToChallenge(
+        { hby, http: new NodeHttpClient(), clock: systemClock },
         hab,
-        new NodeHttpClient(),
-        systemClock,
-        {
-          dest: recipient,
-          route: CHALLENGE_RESPONSE_ROUTE,
-          topic: "challenge",
-          payload: { i: hab.pre, ...payload },
-        },
+        recipient,
+        words,
       );
       console.log("Sent EXN message");
       console.log(serder.pretty());
@@ -204,20 +190,17 @@ export function* challengeVerifyCommand(
       runtime.mailboxDirector.registerTopic("/challenge");
       const timeoutMs = commandArgs.timeout * 1000;
       const pollDelayMs = commandArgs.pollDelayMs;
-      const deadline = Date.now() + timeoutMs;
-      let match = findVerifiedChallengeResponse(hby.db, signer, words);
+      let status = challengeStatus(hby, signer, words);
 
-      if (!match && timeoutMs > 0) {
-        const worker = yield* spawn(() => runAgentRuntime(runtime));
-        try {
-          while (!match && Date.now() < deadline) {
-            yield* sleep(Math.min(pollDelayMs, Math.max(0, deadline - Date.now())));
-            match = findVerifiedChallengeResponse(hby.db, signer, words);
-          }
-        } finally {
-          yield* worker.halt();
-        }
+      if (status.state === "waiting" && timeoutMs > 0) {
+        const waited = yield* withRuntimeWorkers(
+          runtime,
+          {},
+          () => waitForChallengeResponse(hby, signer, words, { timeoutMs, pollMs: pollDelayMs }),
+        );
+        status = waited.status;
       }
+      const match = status.state === "waiting" ? null : status.response;
 
       if (!match) {
         throw new ValidationError(
@@ -257,13 +240,6 @@ function normalizeOutput(input?: string): ChallengeOutput {
     return out;
   }
   throw new ValidationError(`Unsupported challenge output ${String(input)}.`);
-}
-
-function* sleep(ms: number): Operation<void> {
-  yield* action((resolve) => {
-    const timeoutId = setTimeout(() => resolve(undefined), ms);
-    return () => clearTimeout(timeoutId);
-  });
 }
 
 /** Challenge entropy is a positive whole bit count; omission selects the command default. */

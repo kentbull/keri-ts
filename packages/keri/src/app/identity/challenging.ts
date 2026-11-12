@@ -1,7 +1,15 @@
 import { Diger, type SerderKERI } from "cesr-ts";
+import type { Operation } from "npm:effection@^3.6.0";
+import { ValidationError } from "../../core/errors.ts";
 import type { Baser } from "../../db/basing.ts";
+import { sendExchangeMessage } from "../exchanges/exchange-messaging.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
+import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
+import { observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
+import type { HttpClient } from "../transport/http-client.ts";
+import { isLocalGroupHab } from "./endpoint-roleing.ts";
+import type { Hab, Habery } from "./habbing.ts";
 
 const CHALLENGE_CONSONANTS = [
   "b",
@@ -104,6 +112,96 @@ export function findVerifiedChallengeResponse(
     }
   }
   return null;
+}
+
+/** Collaborators for sending a challenge response. */
+export interface ChallengeRespondDeps {
+  /** Borrowed identities and stores. */
+  readonly hby: Habery;
+  /** Borrowed HTTP implementation used to deliver the message. */
+  readonly http: HttpClient;
+  /** Borrowed clock for network deadlines. */
+  readonly clock: RuntimeClock;
+}
+
+/**
+ * Respond to a challenge: sign and send a `/challenge/response` exchange message
+ * carrying `words` to `recipient`. Each call authors a new message (the exchange
+ * carries a timestamp); the verifier's matching is idempotent over repeats.
+ *
+ * @returns The signed exchange message that was sent.
+ * @throws ValidationError for a group habitat or empty words; send failures propagate.
+ */
+export function* respondToChallenge(
+  deps: ChallengeRespondDeps,
+  hab: Hab,
+  recipient: string,
+  words: readonly string[],
+): Operation<SerderKERI> {
+  if (isLocalGroupHab(deps.hby, hab)) {
+    throw new ValidationError(
+      "Challenge respond does not coordinate group approval. Select the responding member alias.",
+    );
+  }
+  if (words.length === 0) throw new ValidationError("Challenge words must not be empty.");
+  const payload: ChallengeResponsePayload = { words: [...words] };
+  const { serder } = yield* sendExchangeMessage(deps.hby, hab, deps.http, deps.clock, {
+    dest: recipient,
+    route: CHALLENGE_RESPONSE_ROUTE,
+    topic: "challenge",
+    payload: { i: hab.pre, ...payload },
+  });
+  return serder;
+}
+
+/**
+ * Status of one expected challenge from one signer, derived from stored exchange
+ * messages: `waiting` until an accepted response with exactly these words exists,
+ * `received` once it does, `verified` after the verifier recorded it in `chas.`.
+ */
+export type ChallengeStatus =
+  | { state: "waiting" }
+  | { state: "received" | "verified"; response: SerderKERI };
+
+/** Read the status of `words` from `signer`; mutates nothing. */
+export function challengeStatus(
+  deps: { readonly db: Baser },
+  signer: string,
+  words: readonly string[],
+): ChallengeStatus {
+  const response = findVerifiedChallengeResponse(deps.db, signer, words);
+  if (!response) return { state: "waiting" };
+  const recorded = deps.db.chas.get([signer]).some((diger) => diger.qb64 === response.said);
+  return { state: recorded ? "verified" : "received", response };
+}
+
+/** Choices for `waitForChallengeResponse`. */
+export interface WaitForChallengeOptions {
+  /** Wall-clock budget in milliseconds; zero reads once. */
+  timeoutMs: number;
+  /** Elapsed milliseconds between reads. */
+  pollMs?: number;
+  clock?: RuntimeClock;
+}
+
+/**
+ * Observe stored exchange messages until a response with the expected words from
+ * `signer` arrives or the budget expires. Starts no worker: the host's runtime
+ * (mailbox polling, exchange intake) is what stores the response.
+ */
+export function* waitForChallengeResponse(
+  deps: { readonly db: Baser },
+  signer: string,
+  words: readonly string[],
+  { timeoutMs, pollMs = 250, clock = systemClock }: WaitForChallengeOptions,
+): Operation<WaitResult<ChallengeStatus>> {
+  const done = yield* observeUntil(() => challengeStatus(deps, signer, words).state !== "waiting", {
+    timeoutMs,
+    pollMs,
+    clock,
+  });
+  const status = challengeStatus(deps, signer, words);
+  return done ? { outcome: "settled", status } : { outcome: "timed-out", status, timeoutMs };
 }
 
 /** Persist one verifier-confirmed challenge response in `chas.`. */

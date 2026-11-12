@@ -27,7 +27,13 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { action, call, type Operation, scoped, spawn } from "effection";
-import { parseBooleanOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
+import {
+  parseBooleanOption,
+  parseNumberOption,
+  parseStringOption,
+  type RootCopyLine,
+  rootCopyLine,
+} from "keri-ts/cli";
 import {
   type AgentRuntime,
   deliverRegistryRoots,
@@ -35,11 +41,11 @@ import {
   type Habery,
   isLocalGroupHab,
   localGroupMember,
+  MemoryRootLedger,
   Organizer,
   type RegistryDisclosure,
   type RegistryRoot,
-  replicateRegistryRoots,
-  type RootCopyReport,
+  RootReplicator,
   RootUnverified,
   runAgentRuntime,
   type RuntimeClock,
@@ -247,12 +253,24 @@ export function* sendRootCopies(
   ghab: Hab,
   registries: readonly string[],
   options: { recipients?: readonly string[]; timeoutMs: number },
-): Operation<RootCopyReport[]> {
+): Operation<RootCopyLine[]> {
   const root = runtime.registryRoot;
   if (!root) return [];
+  const replicating = new RootReplicator({
+    root,
+    postman: runtime.postman,
+    clock: runtime.clock,
+    ledger: new MemoryRootLedger(),
+  });
+  const sender = localGroupMember(root.hby, ghab.pre).pre;
+  replicating.owe(
+    ghab.pre,
+    registries,
+    options.recipients ?? root.members(ghab.pre).filter(aid => aid !== sender),
+  );
   return yield* scoped(function*() {
     yield* spawn(() => runtime.postman.deliverDo());
-    return yield* replicateRegistryRoots(root, runtime.postman, runtime.clock, ghab, registries, options);
+    return (yield* replicating.processOnce({ timeoutMs: options.timeoutMs, scan: false })).map(rootCopyLine);
   });
 }
 

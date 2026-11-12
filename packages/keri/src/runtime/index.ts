@@ -111,6 +111,7 @@ export {
   type DhkeApproval,
   type DhkeContext,
   type DhkeOutgoing,
+  type DhkeReplicate,
   generateKeyPair,
 } from "../acdc/dhking.ts";
 export {
@@ -396,6 +397,17 @@ export type {
 export { signGroupMessage } from "../app/multisig/multisig-messaging.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
 export {
+  dismissGroupProposal,
+  findGroupProposal,
+  type GroupProposal,
+  type GroupProposalDismissDeps,
+  type GroupProposalFilter,
+  type GroupProposalKind,
+  type GroupProposalNeeds,
+  type GroupProposalReadDeps,
+  listGroupProposals,
+} from "../app/multisig/proposals.ts";
+export {
   Notifier,
 } from "../app/notifications/notifying.ts";
 export {
@@ -501,14 +513,29 @@ export { validateSchema as validateAcdcSchema } from "../acdc/scheming.ts";
 export {
   deliverRegistryRoots,
   replicateRegistryRoots,
+  replicateRootCopies,
+  replicateRootCopy,
   resealRegistryRoots,
+  resealRootCopies,
   type RootCopy,
+  type RootCopyKin,
   RootCopyRecovery,
   type RootCopyReport,
+  type RootCopyResult,
   type RootDelivery,
+  type RootExamination,
   RootResealBudgetMs,
   type RootResealFailure,
 } from "../app/credentials/root-replicating.ts";
+export {
+  MemoryRootLedger,
+  type OwedCopy,
+  type OwedCopyStatus,
+  type RootLedger,
+  RootReplicator,
+  type RootReplicatorDeps,
+  type RootReplicatorStatus,
+} from "../app/credentials/root-replicator.ts";
 export { publishPendingTel } from "../app/credentials/tel-publishing.ts";
 export {
   type AgentCue,
@@ -886,5 +913,65 @@ export {
   type WaitForDelegationApprovalOptions,
 } from "../app/identity/delegation-approval.ts";
 
+// Library TEL completion status/waits and challenge respond/status/wait.
+export {
+  issuedCredentialStatus,
+  type TelCompletionDeps,
+  type TelEventStatus,
+  telEventStatus,
+  type TelPhase,
+  type TelWaitOptions,
+  type TelWaitResult,
+  waitForIssuedCredential,
+  waitForTelEvent,
+} from "../app/credentials/tel-completion.ts";
+export {
+  type ChallengeRespondDeps,
+  type ChallengeStatus,
+  challengeStatus,
+  respondToChallenge,
+  type WaitForChallengeOptions,
+  waitForChallengeResponse,
+} from "../app/identity/challenging.ts";
+
 // Pre-signed hab adoption (Habery.makeSignedHab).
 export type { SignedHabArgs } from "../app/identity/habbing.ts";
+
+// Library legacy IPEX conversation (apply, offer, agree, spurn; status and wait).
+export {
+  type IpexAgreeOptions,
+  type IpexApplyOptions,
+  type IpexCredentialFact,
+  type IpexExchangeStatus,
+  ipexExchangeStatus,
+  type IpexMessageOptions,
+  type IpexOfferOptions,
+  type IpexSendDeps,
+  type IpexSent,
+  type IpexSpurnOptions,
+  type IpexStatusDeps,
+  type IpexWaitFor,
+  type IpexWaitOptions,
+  requireIpexPrior,
+  requireIpexSender,
+  sendIpexAgree,
+  sendIpexApply,
+  sendIpexOffer,
+  sendIpexSpurn,
+  waitForIpexExchange,
+} from "../app/ipex/ipex-conversation.ts";
+
+// Library legacy IPEX grant, admit and credential settle.
+export {
+  type AdmittableGrant,
+  type IpexAdmitOptions,
+  type IpexAdmitSent,
+  type IpexGrantDeps,
+  type IpexGrantSendOptions,
+  type IpexGrantSent,
+  type IpexSettleDeps,
+  requireAdmittableGrant,
+  sendIpexAdmit,
+  sendIpexGrant,
+  settleGrantCredential,
+} from "../app/ipex/ipex-granting.ts";

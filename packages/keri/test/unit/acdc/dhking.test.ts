@@ -269,6 +269,15 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       message: "Exact group issuance",
     }, { coordinator: coordinator.said!, custodian: lead.member.pre });
     const grant = parseBytes(preparedGrant.proposal)[0].nests![0].body as SerderKERI;
+    // Observe the completion cues the drainer consumes: only the retaining custodians emit one.
+    const replicate = new Map<(typeof actors)[number], unknown[]>();
+    for (const side of actors) {
+      const push = side.dh.replicated.push.bind(side.dh.replicated);
+      side.dh.replicated.push = item => {
+        replicate.set(side, [...(replicate.get(side) ?? []), item]);
+        return push(item);
+      };
+    }
     // Spawned members wait across peer contribution, DH and explicit BUP approval; budget the whole flow.
     const issuing = yield* spawn(() =>
       runGroupDerivedIssuance(lead.runtime, lead.wallet, {
@@ -343,6 +352,10 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     const root = lead.hab.mgr.getRegistryRoot(lead.hab.pre, rip.said!)!;
     assertExists(root);
     assertEquals(holder.hab.mgr.getRegistryRoot(holder.hab.pre, rip.said!)!.qb64, root.qb64);
+    for (const side of [lead, holder]) {
+      assertEquals(replicate.get(side), [{ gid: side.hab.pre, registries: [rip.said!] }]);
+    }
+    for (const peer of [issuerPeer, issuees[1]]) assertEquals(replicate.has(peer), false);
     for (const peer of [issuerPeer, issuees[1]]) {
       assertEquals(peer.hab.mgr.getRegistryRoot(peer.hab.pre, rip.said!), null);
     }
