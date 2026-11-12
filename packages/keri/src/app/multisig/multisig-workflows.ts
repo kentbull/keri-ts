@@ -107,13 +107,14 @@ import {
 
 /** Approve one exact ACDC v2 TEL/anchor through existing member signing and ordinary processors.
  * A returned wrapper records consent, not quorum/witness/TEL completion; retry the accepted-state owners.
+ * `resume` reuses this member's recorded anchor signatures after a crash instead of signing again.
  */
 export function* approveAcdcV2Registry(
   hby: Habery,
   protocol: ProtocolProcessor,
   group: Hab,
   event: SerderACDC,
-  { anchor, opening }: { anchor?: SerderKERI; opening?: RegistryDisclosure } = {},
+  { anchor, opening, resume }: { anchor?: SerderKERI; opening?: RegistryDisclosure; resume?: boolean } = {},
 ): Operation<MultisigMessage> {
   const registry = protocol.registry, member = localGroupMember(hby, group.pre);
   if (!registry || group.db !== hby.db || registry.db !== hby.db) {
@@ -204,7 +205,10 @@ export function* approveAcdcV2Registry(
     throw new ValidationError("Registry anchor does not extend the current group event.");
   }
   const keys = groupEventKeys(hby, group.pre, anchor);
-  const sigers = signLocalGroupEvent(hby, anchor, groupSigningMembers(hby, group.pre), keys);
+  const members = groupSigningMembers(hby, group.pre);
+  // A resuming caller reuses the signatures the first attempt recorded in `sigs.` instead of signing the anchor again.
+  const sigers = (resume ? recordedLocalSignatures(hby, anchor, group.pre, members) : null)
+    ?? signLocalGroupEvent(hby, anchor, members, keys);
   const own = messagize(anchor, { sigers, gvrsn: Vrsn_2_0 });
   const tel = concatBytes(
     event.raw,
@@ -546,6 +550,7 @@ export function* approveRegistryV2Proposal(
   const approval = yield* approveAcdcV2Registry(hby, runtime.protocol, group, proposal.tel, {
     anchor: proposal.anchor,
     opening: opening[0],
+    resume: options.resume,
   });
   const published = yield* publishAcdcV2Registry(hby, runtime.postman, group, approval);
   const regid = proposal.tel.ilk === "rip" ? proposal.tel.said! : proposal.tel.regid!;
