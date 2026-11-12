@@ -100,6 +100,7 @@ export {
 export {
   type DerivedUpdate,
   type DerivedUpdateStore,
+  MemoryDerivedUpdateStore,
   RegistryCustody,
   type RegistryCustodyOptions,
 } from "../acdc/custody.ts";
@@ -807,3 +808,27 @@ export {
   waitForIpexArrival,
   type WaitForIpexArrivalOptions,
 } from "../app/mailbox/ipex-arrival.ts";
+
+// Runtime-owned single-signature DH issuance operations (begin, process, status, wait, abandon).
+export {
+  abandonIssuance,
+  beginIssuance,
+  type BeginIssuanceInput,
+  type IssuanceBegun,
+  type IssuanceDelivery,
+  type IssuanceDeps,
+  type IssuanceEndState,
+  type IssuanceNeed,
+  IssuanceOperations,
+  type IssuanceOperationStore,
+  type IssuancePhase,
+  type IssuanceRecord,
+  type IssuanceRole,
+  type IssuanceStatus,
+  issuanceStatus,
+  type IssuanceWaitOptions,
+  MemoryIssuanceOperationStore,
+  posterDelivery,
+  prepareIssuanceGrant,
+  waitForIssuance,
+} from "../app/ipex/issuance.ts";
