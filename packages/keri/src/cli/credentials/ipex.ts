@@ -9,14 +9,18 @@ import {
   sendIpexApply,
   sendIpexOffer,
   sendIpexSpurn,
+  waitForIpexExchange,
 } from "../../app/ipex/ipex-conversation.ts";
 import {
   ipexCredentialAdmit,
   ipexCredentialGrant,
-  processCredentialPresentationArtifacts,
-  storedGrantArtifacts,
-  validateAdmitGrant,
 } from "../../app/ipex/ipex-credentialing.ts";
+import {
+  requireAdmittableGrant,
+  sendIpexAdmit,
+  sendIpexGrant,
+  settleGrantCredential,
+} from "../../app/ipex/ipex-granting.ts";
 import {
   approveMultisigIpex,
   approveStoredMultisigIpexWrappers,
@@ -278,8 +282,27 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<Ipex
     } else {
       recipient = new Organizer(hby.db, hby.signator).resolveRecipient(selectedRecipient);
     }
+    if (!isLocalGroupHab(hby, hab)) {
+      return yield* withRuntimeWorkers(runtime, { hab }, function*() {
+        const sent = yield* sendIpexGrant({ ...ipexSendDeps(hby, runtime), reger }, hab, {
+          recipient,
+          credential: ipexArgs.said!,
+          message: ipexArgs.message,
+          agree: ipexArgs.agree,
+          gvrsn: ipexArgs.gvrsn,
+          deliver: !ipexArgs.out,
+        });
+        if (ipexArgs.out) Deno.writeFileSync(ipexArgs.out, concatBytes(...sent.support, sent.wire));
+        return {
+          grant: sent.grant,
+          credential: ipexArgs.said!,
+          support: sent.support.length,
+          deliveries: sent.deliveries,
+        };
+      });
+    }
+    // TODO(group proposal API): replace the group branch with the multisig proposal API from app/multisig/counseling.ts.
     if (ipexArgs.agree) requireConversationPrior(hby, hab, recipient, ipexArgs.agree, "grant");
-    const group = isLocalGroupHab(hby, hab);
     const grant = ipexCredentialGrant({
       hby,
       hab,
@@ -291,32 +314,14 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<Ipex
         agree: ipexArgs.agree ? hby.db.exns.get([ipexArgs.agree]) : null,
         gvrsn: ipexArgs.gvrsn,
       },
-      sign: !group,
+      sign: false,
     });
     const genus = grant.grant.gvrsn ?? ipexArgs.gvrsn ?? grant.grant.pvrsn;
-    const wire = group ? groupIpexPartial(hby, hab, grant.grant, grant.attachments, genus) : grant.wire;
-    const signer = group ? localGroupMember(hby, hab.pre) : hab;
-    const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
-    try {
+    const wire = groupIpexPartial(hby, hab, grant.grant, grant.attachments, genus);
+    const signer = localGroupMember(hby, hab.pre);
+    return yield* withRuntimeWorkers(runtime, { hab: signer, pollMailbox: true }, function*() {
       yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), wire), { local: true });
       yield* runtime.protocol.processEscrowsOnce();
-      if (!group) {
-        if (!runtime.exc.complete(grant.grant.said!)) throw new ValidationError("Local IPEX grant was not accepted.");
-        const deliveries: string[] = [];
-        if (!ipexArgs.out) {
-          deliveries.push(
-            ...yield* sendCredentialStream(
-              runtime.postman,
-              hab,
-              recipient,
-              [...grant.support, wire],
-            ),
-          );
-        }
-        if (ipexArgs.out) Deno.writeFileSync(ipexArgs.out, concatBytes(...grant.support, wire));
-        return { grant: grant.grant, credential: ipexArgs.said!, support: grant.support.length, deliveries };
-      }
-
       const publication = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, hab, wire, genus);
       const complete = yield* waitForGroupIpexApproval(
         hby,
@@ -357,9 +362,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<Ipex
         deliveries,
         group: { ...publication, complete: true, lead },
       };
-    } finally {
-      yield* host.halt();
-    }
+    });
   });
 }
 
@@ -384,16 +387,12 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<Ipex
     const selected = yield* loadGrant(hby, ipexArgs);
     const group = isLocalGroupHab(hby, hab);
     const signer = group ? localGroupMember(hby, hab.pre) : hab;
-    const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
-    try {
+    return yield* withRuntimeWorkers(runtime, { hab: signer, pollMailbox: group }, function*() {
       if (selected.wire) yield* runtime.reactor.processBytes(selected.wire);
-      const grant = requireStoredExchange(hby, selected.grant.said!);
-      const recipient = grantSender(grant);
-      requireConversationPrior(hby, hab, recipient, grant.said!, "admit");
-      const credential = validateAdmitGrant(grant, hab.pre, reger, false);
+      const { grant, recipient, credential } = requireAdmittableGrant({ hby, reger }, hab, selected.grant.said!);
       if (
         !ipexArgs.noWait
-        && !(yield* settleGrantCredential(
+        && !(yield* settleAndWaitForCredential(
           hby,
           runtime.protocol,
           reger,
@@ -405,6 +404,17 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<Ipex
       ) {
         return { admit: null, grant, credential, saved: false, deliveries: [] };
       }
+      if (!group) {
+        const sent = yield* sendIpexAdmit({ ...ipexSendDeps(hby, runtime), reger }, hab, grant.said!, {
+          message: ipexArgs.message,
+          gvrsn: ipexArgs.gvrsn,
+          requireSaved: !ipexArgs.noWait,
+          deliver: !ipexArgs.out,
+        });
+        if (ipexArgs.out) Deno.writeFileSync(ipexArgs.out, sent.wire);
+        return { admit: sent.admit, grant, credential, saved: sent.saved, deliveries: sent.deliveries };
+      }
+      // TODO(group proposal API): replace the group branch with the multisig proposal API from app/multisig/counseling.ts.
       const saved = !!reger.saved.get([credential]);
       const prepared = ipexCredentialAdmit({
         hab,
@@ -412,21 +422,13 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<Ipex
         grant,
         message: ipexArgs.message ?? "",
         options: { requireSaved: !ipexArgs.noWait, gvrsn: ipexArgs.gvrsn },
-        sign: !group,
+        sign: false,
       });
       const genus = prepared.admit.gvrsn ?? ipexArgs.gvrsn ?? prepared.admit.pvrsn;
-      const wire = group ? groupIpexPartial(hby, hab, prepared.admit, prepared.attachments, genus) : prepared.wire;
+      const wire = groupIpexPartial(hby, hab, prepared.admit, prepared.attachments, genus);
       yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), wire), { local: true });
       yield* runtime.protocol.processEscrowsOnce();
       const deliveries: string[] = [];
-      if (!group) {
-        if (!runtime.exc.complete(prepared.admit.said!)) {
-          throw new ValidationError("Local IPEX admit was not accepted.");
-        }
-        if (ipexArgs.out) Deno.writeFileSync(ipexArgs.out, wire);
-        else deliveries.push(...yield* sendCredentialStream(runtime.postman, signer, recipient, [wire]));
-        return { admit: prepared.admit, grant, credential, saved, deliveries };
-      }
       const publication = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, hab, wire, genus);
       deliveries.push(...publication.deliveries);
       const complete = yield* waitForGroupIpexApproval(
@@ -445,9 +447,7 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<Ipex
         }
       }
       return { admit: prepared.admit, grant, credential, saved, deliveries, group: { ...publication, complete, lead } };
-    } finally {
-      yield* host.halt();
-    }
+    });
   });
 }
 
@@ -574,7 +574,7 @@ export function* joinIpexProposal(
       if (!reger) throw new ValidationError("VDR runtime did not open Reger.");
       const prior = embedded.ked?.p;
       const grant = typeof prior === "string" && prior.length > 0 ? hby.db.exns.get([prior]) : null;
-      credentialSaved = !!grant && (yield* settleGrantCredential(
+      credentialSaved = !!grant && (yield* settleAndWaitForCredential(
         hby,
         runtime.protocol,
         reger,
@@ -835,7 +835,7 @@ function grantSender(grant: SerderKERI): string {
  * escrow progress. The caller runs the host and selects the elapsed wait; no
  * admit signature is produced here. Missing evidence remains pending on expiry.
  */
-function* settleGrantCredential(
+function* settleAndWaitForCredential(
   hby: Habery,
   protocol: ProtocolProcessor,
   reger: Reger,
@@ -844,15 +844,12 @@ function* settleGrantCredential(
   genus: Versionage | undefined,
   timeout: number,
 ): Operation<boolean> {
-  const said = validateAdmitGrant(grant, recipient, reger, false);
-  if (reger.saved.get([said])) return true;
-  const deadline = Date.now() + timeout * 1000;
-  yield* processCredentialPresentationArtifacts(protocol, storedGrantArtifacts(hby, grant, genus));
-  while (!reger.saved.get([said])) {
-    if (Date.now() >= deadline) return false;
-    yield* sleep(Math.min(250, deadline - Date.now()));
-  }
-  return true;
+  yield* settleGrantCredential({ hby, reger, protocol }, recipient, grant.said!, { gvrsn: genus });
+  const waited = yield* waitForIpexExchange({ hby, reger }, grant.said!, {
+    timeoutMs: timeout * 1000,
+    until: "credential-saved",
+  });
+  return waited.outcome === "settled";
 }
 
 /**
