@@ -3,7 +3,6 @@ import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { Organizer } from "../../app/identity/organizing.ts";
 import {
-  credentialSaidFromGrant,
   ipexCredentialAdmit,
   ipexCredentialGrant,
   processCredentialPresentationArtifacts,
@@ -31,6 +30,12 @@ import {
   IPEX_SPURN_ROUTE,
   validateIpexReply,
 } from "../../app/ipex/ipexing.ts";
+import {
+  ipexBaseline,
+  MailboxIntakeTally,
+  settleStoredGrants,
+  waitForIpexArrival,
+} from "../../app/mailbox/ipex-arrival.ts";
 import { isLocalGroupHab, localGroupMember } from "../../app/multisig/group-members.ts";
 import { MULTISIG_EXN_ROUTE } from "../../app/multisig/grouping.ts";
 import type { GroupSendResult } from "../../app/multisig/multisig-messaging.ts";
@@ -46,6 +51,7 @@ import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { Reger } from "../../db/reger.ts";
 import { withAgentRuntime } from "../common/context.ts";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "../common/parsing.ts";
+import { withRuntimeWorkers } from "../common/runtime-workers.ts";
 
 interface IpexBaseArgs {
   name?: string;
@@ -434,57 +440,37 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<IpexP
   const timeoutMs = nonNegativeNumber(args.timeout, 40, "poll timeout seconds") * 1000;
   return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
-    const beforeExns = new Set(
-      [...hby.db.exns.getTopItemIter()]
-        .map(([, exn]) => exn.said)
-        .filter((said): said is string => typeof said === "string"),
-    );
-    const beforeSaved = savedCredentials(reger);
-    let batchesSeen = 0;
-    let messagesSeen = 0;
+    const arrivals = { hby, reger };
+    const baseline = ipexBaseline(arrivals);
+    const tally = new MailboxIntakeTally();
 
     const signer = hab && isLocalGroupHab(hby, hab) ? localGroupMember(hby, hab.pre) : hab;
-    const deadline = Date.now() + timeoutMs;
-    let receiving = 0;
-    const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: false }));
-    try {
+    // The CLI has no running runtime: it runs the workers and a mailbox poller around the library wait.
+    const result = yield* withRuntimeWorkers(runtime, { hab: signer, pollMailbox: false }, function*() {
       const mailbox = yield* spawn(function*() {
-        yield* runtime.mailboxPoller.pollDo(function*(batch) {
-          receiving++;
-          try {
-            yield* settleMailboxPollBatch(runtime, batch);
-            batchesSeen++;
-            messagesSeen += batch.messages.length;
-          } finally {
-            receiving--;
-          }
-        });
+        yield* runtime.mailboxPoller.pollDo((batch) =>
+          tally.track(batch, () => settleMailboxPollBatch(runtime, batch))
+        );
       });
       try {
-        while (true) {
-          yield* processStoredCredentialGrants(hby, runtime, reger, ipexArgs.gvrsn);
-          // State may become visible before the rest of a delivered batch settles.
-          if (
-            receiving === 0
-            && (newIpexMessages(hby, beforeExns).length > 0 || newSavedCredentials(reger, beforeSaved).length > 0)
-          ) {
-            break;
-          }
-          if (Date.now() >= deadline) break;
-          yield* sleep(Math.min(250, deadline - Date.now()));
-        }
+        return yield* waitForIpexArrival(
+          {
+            ...arrivals,
+            settle: () => settleStoredGrants({ ...arrivals, hby, protocol: runtime.protocol }, ipexArgs.gvrsn),
+          },
+          baseline,
+          { timeoutMs, tally },
+        );
       } finally {
         yield* mailbox.halt();
       }
-    } finally {
-      yield* host.halt();
-    }
+    });
 
     return {
-      batches: batchesSeen,
-      messages: messagesSeen,
-      ipex: newIpexMessages(hby, beforeExns),
-      saved: newSavedCredentials(reger, beforeSaved),
+      batches: tally.batches,
+      messages: tally.messages,
+      ipex: result.status.ipex,
+      saved: result.status.saved,
     };
   });
 }
@@ -765,52 +751,6 @@ function nonNegativeNumber(value: unknown, fallback: number, label: string): num
 function requireNonEmpty(value: string | undefined, label: string): void {
   if (!value) {
     throw new ValidationError(`${label} is required and cannot be empty.`);
-  }
-}
-
-function newIpexMessages(
-  hby: Habery,
-  before: Set<string>,
-): SerderKERI[] {
-  const messages: SerderKERI[] = [];
-  for (const [, exn] of hby.db.exns.getTopItemIter()) {
-    const said = exn.said;
-    const route = exn.route ?? "";
-    if (!said || before.has(said) || !route.startsWith("/ipex/")) {
-      continue;
-    }
-    messages.push(exn);
-  }
-  return messages;
-}
-
-function savedCredentials(reger: Reger): Set<string> {
-  return new Set([...reger.saved.getTopItemIter()].map(([keys]) => keys[0]).filter((key): key is string => !!key));
-}
-
-function newSavedCredentials(reger: Reger, before: Set<string>): string[] {
-  return [...savedCredentials(reger)].filter((said) => !before.has(said));
-}
-
-/** Settle accepted grant artifacts before the poll command reports newly saved credentials. */
-function* processStoredCredentialGrants(
-  hby: Habery,
-  runtime: AgentRuntime,
-  reger: Reger,
-  gvrsn?: Versionage,
-): Operation<void> {
-  for (const [, grant] of hby.db.exns.getTopItemIter()) {
-    if (grant.route !== IPEX_GRANT_ROUTE) {
-      continue;
-    }
-    const credentialSaid = credentialSaidFromGrant(grant);
-    if (!credentialSaid || reger.saved.get([credentialSaid])) {
-      continue;
-    }
-    yield* processCredentialPresentationArtifacts(
-      runtime.protocol,
-      storedGrantArtifacts(hby, grant, gvrsn),
-    );
   }
 }
 

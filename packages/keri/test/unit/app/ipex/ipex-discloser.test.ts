@@ -1,5 +1,5 @@
 /** IpexDiscloser prepares exchange wires, proof support and fresh-issuance refusals with no wallet inventory. */
-import { parseBytes } from "cesr-ts";
+import { parseBytes, type SerderACDC } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap, regcept } from "../../../../src/acdc/messaging.ts";
@@ -88,6 +88,58 @@ Deno.test("IpexDiscloser refuses foreign owners and unselectable fresh issuance"
     } finally {
       yield* baser.close(true);
       yield* other.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+/** Expose the protected graph and view helpers a subclass composes into its own selection. */
+class Probe extends IpexDiscloser {
+  reduce(credential: SerderACDC, paths?: readonly string[]) {
+    return this.partial(credential, paths);
+  }
+  require(origin: string, raw: Uint8Array) {
+    this.requireGraph(origin, raw);
+  }
+}
+
+Deno.test("IpexDiscloser prepares Apply, keeps the whole view without paths and refuses incomplete evidence", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
+    try {
+      const hab = hby.makeHab("sender"), registry = new RegistryStore(baser);
+      const discloser = new Probe(hby, registry, new Exchanger(hby), receiptorFor(hby));
+
+      const apply = yield* discloser.prepareApply(hab.pre, { message: "", recipient: hab.pre, plan: [] });
+      assertEquals(apply.exn.route, "/ipex/apply");
+      assertEquals(parseBytes(apply.wire)[0].body.said, apply.exn.said);
+      let unknown: unknown;
+      try {
+        yield* discloser.prepareApply("Eunknown", { message: "", recipient: hab.pre, plan: [] });
+      } catch (error) {
+        unknown = error;
+      }
+      assert(unknown instanceof ValidationError);
+
+      const credential = acdcmap(hab.pre, {
+        regid: regcept(hab.pre).said!,
+        attribute: { d: "", i: hab.pre, name: "Alice", role: "holder" },
+      });
+      assertEquals(discloser.reduce(credential), credential);
+      assertThrows(
+        () => discloser.registryProof(credential, "Eunknown"),
+        ValidationError,
+        "registry history is required",
+      );
+      assertThrows(
+        () => discloser.unblind({ u: { nonce: "" } } as never, credential.said!, []),
+        ValidationError,
+        "possessed disclosure UUID",
+      );
+      assertThrows(() => discloser.require(credential.said!, new Uint8Array()), Error);
+    } finally {
+      yield* baser.close(true);
       yield* hby.close(true);
     }
   });
