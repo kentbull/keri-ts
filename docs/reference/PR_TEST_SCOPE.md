@@ -101,3 +101,15 @@ every one passed. The bundle must contain no `node:` or LMDB import. It is not a
 `keri-ci` unit choice and no workflow runs it; Firefox, WebKit and CI follow separately.
 Install the browser once with `npx playwright-core@1.56.1 install chromium`; binaries
 stay in Playwright's user cache.
+
+## Browser bundle gate (package smoke)
+
+Selecting `"package": true` also runs `scripts/npm/check_browser_bundle.mjs` inside the
+installed-package smoke. It bundles a consumer of `cesr-ts`, `keri-ts`, `keri-ts/runtime`,
+`keri-ts/db` and `keri-ts/db/indexeddb` from the installed packages with esbuild
+(`platform: "browser"`, `conditions: ["browser"]`) and fails on bundle errors, any Node
+builtin, `lmdb`, `@deno/shim-deno` or DNT polyfill/shim module in the esbuild metafile, or any
+external import. It seeds `keri-ts/db/lmdb` and `keri-ts/runtime/node` imports to prove the
+gate rejects them, and prints the bundle size with its top contributors. `@keri-ts/wallet`
+is a named known-failing entry (`TODO(wallet-web)`). To run it by hand inside an npm project
+that has the packed tarballs and `esbuild` installed: `deno task check:browser-bundle <dir>`.
