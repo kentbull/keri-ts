@@ -160,7 +160,9 @@ export const suites: Record<string, TestSuite> = {
     files: [
       "test/unit/app/identity/challenge/challenge-mailbox-runtime.test.ts",
       "test/unit/app/bootstrap/oobi-runtime.test.ts",
+      "test/unit/app/bootstrap/oobi-resolving.test.ts",
       "test/unit/app/queries/query-runtime.test.ts",
+      "test/unit/app/queries/query-workflows.test.ts",
       "test/unit/app/mailbox/mailbox-runtime-slow.test.ts",
       "test/unit/app/bootstrap/oobi-mailbox-runtime.test.ts",
       "test/unit/app/witness/witness-runtime.test.ts",
