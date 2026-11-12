@@ -352,6 +352,7 @@ export {
   Counselor,
   type CounselStage,
   DEFAULT_FALLBACK_AFTER_MS,
+  type GroupDelegation,
   type GroupEventRef,
   type GroupEventStatus,
   type GroupEventWait,
@@ -832,3 +833,26 @@ export {
   prepareIssuanceGrant,
   waitForIssuance,
 } from "../app/ipex/issuance.ts";
+
+// Library delegator approval (list, approve, status, wait, dismiss).
+export {
+  approveDelegation,
+  type ApproveDelegationOptions,
+  DELEGATION_APPROVAL_TIMEOUT_MS,
+  type DelegationAnchor,
+  type DelegationApprovalDeps,
+  type DelegationApprovalReadDeps,
+  type DelegationApprovalStatus,
+  delegationApprovalStatus,
+  type DelegationApprovalWaitDeps,
+  type DelegationApprovalWaitResult,
+  type DelegationDismissDeps,
+  type DelegationRequest,
+  dismissDelegation,
+  listPendingDelegations,
+  type PendingDelegation,
+  type PendingDelegationFilter,
+  settleDelegationApproval,
+  waitForDelegationApproval,
+  type WaitForDelegationApprovalOptions,
+} from "../app/identity/delegation-approval.ts";
