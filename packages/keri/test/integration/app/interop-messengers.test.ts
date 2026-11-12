@@ -1,12 +1,13 @@
 import { createProtocolHandler } from "@keri-ts/hosting";
-import { concatBytes, Diger, essrChunks, parseBytes, Texter, Vrsn_1_0 } from "cesr-ts";
+import { collectPayload, concatBytes, Diger, essrChunks, framePayload, parseBytes, Texter, Vrsn_1_0 } from "cesr-ts";
 import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
-import { encodeBase64 } from "jsr:@std/encoding/base64";
+import { decodeBase64, encodeBase64 } from "jsr:@std/encoding/base64";
 import { acceptedEventReplayMessage, type Hab } from "../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime, settleMailboxPollBatch } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { isNativeCesrFrame } from "../../../src/app/transport/cesr-egress.ts";
 import { HTTPMessenger } from "../../../src/app/transport/http-messenger.ts";
 import { HTTPStreamMessenger } from "../../../src/app/transport/http-stream-messenger.ts";
 import { messengerFrom, streamMessengerFrom } from "../../../src/app/transport/messengering.ts";
@@ -26,9 +27,17 @@ interface Snapshot {
     destination: string;
     attachment: string | null;
     authorization: string | null;
+    status?: number;
   }[];
   exn: string | null;
   payload: string[];
+}
+
+/** Result of the fixture's `history` command: a foreign v2 key history the witness has never seen. */
+interface KeyHistory {
+  pre: string;
+  saids: string[];
+  wire: string;
 }
 
 Deno.test("messenger factories exchange ordered POSTs and whole PUTs through actual Python witness and Tufa intake", async () => {
@@ -298,4 +307,148 @@ Deno.test("signed mailbox queries retrieve and accept Python replies across refe
   } finally {
     await Deno.remove(ctx.home, { recursive: true });
   }
+});
+
+Deno.test({
+  name: "native CESR key histories from the Python peer travel as whole PUTs through HTTPMessenger and are accepted",
+  // v1-only reference profiles cannot author kind-CESR v2 key histories.
+  ignore: ["1.2", "1.3"].includes(Deno.env.get("KERIPY_INTEROP_PROFILE") ?? ""),
+  async fn() {
+    const ctx = await createInteropContext();
+    try {
+      const witnesses = await startKeriPyWitnessHarness(ctx, {
+        aliases: ["wan"],
+        messengerProbe: true,
+        protocolVersion: 2,
+      });
+      try {
+        const witness = witnesses.node("wan");
+        /** Author foreign histories or inspect accepted state; protocol intake stays real. */
+        const control = async <T>(command: Record<string, unknown>): Promise<T> => {
+          const response = await fetch(`${witness.httpOrigin}/_messenger`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(command),
+            signal: AbortSignal.timeout(20_000),
+          });
+          assertEquals(response.status, 200, await response.clone().text());
+          return await response.json();
+        };
+        await run(function*() {
+          const hby = yield* createHabery({
+            name: `native-history-${crypto.randomUUID()}`,
+            temp: true,
+            skipConfig: true,
+          });
+          const http = new NodeHttpClient();
+          const runtime = yield* createAgentRuntime(hby, http, systemClock);
+          const receiver = hby.makeHab("receiver");
+          const handler = createProtocolHandler(runtime, { serviceHab: receiver });
+          const received: {
+            method: string;
+            destination: string | null;
+            attachment: string | null;
+            body: Uint8Array;
+          }[] = [];
+          const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (req) => {
+            received.push({
+              method: req.method,
+              destination: req.headers.get("CESR-DESTINATION"),
+              attachment: req.headers.get("CESR-ATTACHMENT"),
+              body: new Uint8Array(await req.clone().arrayBuffer()),
+            });
+            return await handler(req);
+          });
+          try {
+            const auth = { Authorization: "messenger-probe" };
+            // keripy's test_http_messenger_key_history rows: native text, native binary, then v2 JSON.
+            for (const [kind, binary] of [["cesr", false], ["cesr", true], ["json", false]] as const) {
+              const label = `${kind}${binary ? " binary" : ""}`;
+              const history = yield* call(() => control<KeyHistory>({ action: "history", kind, binary }));
+              const wire = decodeBase64(history.wire);
+              const frames = parseBytes(wire);
+              assertEquals(frames.map((frame) => frame.body.said), history.saids, label);
+              assertEquals(frames.every(isNativeCesrFrame), kind === "cesr", label);
+              /** Expected native PUT bodies: each frame behind its own genus selector, in the source domain. */
+              const bodies = kind === "cesr"
+                ? yield* call(() =>
+                  Promise.all(
+                    frames.map((frame) => collectPayload(framePayload(frame, { domain: binary ? "bny" : "txt" }))),
+                  )
+                )
+                : [];
+
+              const before = yield* call(() => control<Snapshot>({ action: "snapshot", prefixes: [] }));
+              const toWitness = messengerFrom(witness.pre, { http: witness.httpOrigin }, http, systemClock, auth);
+              assertInstanceOf(toWitness, HTTPMessenger);
+              assertEquals((yield* toWitness.send(wire)).kind, "complete", label);
+              // The authoring Habery closed before sending: Python acceptance is genuine foreign intake.
+              const snapshot = yield* call(async () => {
+                const deadline = Date.now() + 20_000;
+                let snapshot: Snapshot;
+                do {
+                  snapshot = await control<Snapshot>({ action: "snapshot", prefixes: [history.pre] });
+                  if (snapshot.states[history.pre]?.length === 2) break;
+                  await new Promise((resolve) => setTimeout(resolve, 10));
+                } while (Date.now() < deadline);
+                return snapshot;
+              });
+              assertEquals(snapshot.states[history.pre], history.saids, label);
+              const traffic = snapshot.traffic.slice(before.traffic.length);
+              if (kind === "cesr") {
+                assertEquals(
+                  traffic.map((
+                    t,
+                  ) => [t.method, t.type, t.length, t.destination, t.attachment, t.authorization, t.status]),
+                  bodies.map((
+                    body,
+                  ) => ["PUT", "application/cesr", body.length, witness.pre, null, "messenger-probe", 204]),
+                  label,
+                );
+              } else {
+                assertEquals(traffic.map((t) => [t.method, t.type, t.destination, t.status]), [
+                  ["POST", "application/cesr", witness.pre, 204],
+                  ["POST", "application/cesr", witness.pre, 204],
+                ], label);
+                for (const post of traffic) assertExists(post.attachment);
+              }
+
+              // The same messenger shape reaches TypeScript intake with the same frames.
+              const start = received.length;
+              const toReceiver = messengerFrom(
+                receiver.pre,
+                { http: `http://127.0.0.1:${server.addr.port}` },
+                http,
+                systemClock,
+                auth,
+              );
+              assertInstanceOf(toReceiver, HTTPMessenger);
+              assertEquals((yield* toReceiver.send(wire)).kind, "complete", label);
+              const delivered = received.slice(start);
+              assertEquals(delivered.map((r) => r.method), kind === "cesr" ? ["PUT", "PUT"] : ["POST", "POST"], label);
+              for (const r of delivered) assertEquals(r.destination, receiver.pre);
+              if (kind === "cesr") {
+                assertEquals(delivered.map((r) => r.body), bodies, label);
+                assertEquals(delivered.map((r) => r.attachment), [null, null], label);
+              }
+              assertEquals(
+                parseBytes(concatBytes(...hby.db.clonePreIter(history.pre))).map((frame) => frame.body.said),
+                history.saids,
+                label,
+              );
+            }
+          } finally {
+            yield* call(() => server.shutdown());
+            yield* call(() => handler.close!());
+            yield* runtime.close();
+            yield* hby.close(true);
+          }
+        });
+      } finally {
+        await witnesses.close();
+      }
+    } finally {
+      await Deno.remove(ctx.home, { recursive: true });
+    }
+  },
 });

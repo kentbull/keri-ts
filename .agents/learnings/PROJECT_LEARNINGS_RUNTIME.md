@@ -198,7 +198,12 @@ fails without OOBI catch-up. HTTP queries acknowledge intake and send-only
 HTTPMessenger binds an endpoint and HTTP
 client without protocol state or a clock. TCPMessenger binds its endpoint and clock;
 only duplex replies need a protocol receiver. Ordinary sendSource means per-message
-POST iteration for HTTP or raw source output for TCP, not a stream HTTP PUT.
+HTTP iteration or raw source output for TCP, not a whole-stream HTTP PUT. Each HTTP
+frame's body picks its shape, as KERIpy HTTPMessenger does since PR 1751: a
+JSON/CBOR/MGPK frame is a detached-attachment POST; a native CESR frame (kind CESR,
+counter-prefixed body) is one whole PUT of the serialized frame in its source domain
+with Content-Length and CESR-DESTINATION, no CESR-ATTACHMENT/CESR-Genus and no media
+fallback. Native-ness comes from the parsed frame, never a caller option.
 Concrete messenger factories select resolved HTTPS/HTTP/TCP URLs without looking up
 identity preferences. HTTPStreamMessenger sends one prepared opaque PUT and returns
 owned response bytes; TCPStreamMessenger uses the existing raw writer. Neither
@@ -310,7 +315,8 @@ backpressure, cursor ordering and consumer-plus-cleanup failures. A pull-only bo
 iterator cannot observe consumer failure; add no queue/task or new closing protocol
 solely to remove this local call. Named query/cursor consumers retain their response lifetime. Poster contains
 TransportError only around actual send calls; unknown errors still propagate.
-postCesr sends successive framed POSTs; KERIpy714 bulk PUT is a documented wire difference.
+postCesr sends one request per frame (detached POST or native PUT); KERIpy's single
+bulk PUT for a multi-message native stream is a documented wire difference.
 Preserve authentication through media retries. Post-header failure terminates the
 body and reports the original error. Signals must wake the host supervisor.
 

@@ -5,21 +5,30 @@
  * caller consumes that body before leaving the enclosing scope. Neither path
  * implicitly feeds successful response bytes into protocol processing.
  *
- * Match KERIpy's detached-attachment POST contract while retaining the exact
- * signed body. Only the known pre-intake Falcon media refusal permits a second
- * request; authentication/application failures and network errors are not retries.
+ * Match KERIpy HTTPMessenger's two wire shapes. A JSON/CBOR/MGPK frame is one
+ * detached-attachment POST retaining the exact signed body; only the known
+ * pre-intake Falcon media refusal permits a second request, and
+ * authentication/application failures and network errors are not retries.
+ * A native CESR frame (counter-prefixed body, text or binary domain) is one
+ * whole opaque PUT of the serialized frame, as KERIpy sends since PR 1751,
+ * because a native body is not JSON and cannot travel in the detached form.
  */
 import {
   attachmentPayload,
   byteString,
+  type CesrDomain,
   type CesrFrame,
   collectPayload,
+  framePayload,
+  Kinds,
   parse,
+  sniff,
 } from "cesr-ts";
 import { call, ensure, type Operation, race, resource, scoped } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { abortable, cleanupFailures, throwOnAbort } from "../runtime/abortable.ts";
 import {
+  buildCesrStreamRequest,
   CESR_ATTACHMENT_HEADER,
   CESR_CONTENT_TYPE,
   CESR_DESTINATION_HEADER,
@@ -162,18 +171,78 @@ function openFrameResponse(
   });
 }
 /**
+ * Recognize a frame whose body is native CESR rather than a JSON/CBOR/MGPK message.
+ * KERIpy HTTPMessenger decides by sniffing the message cold start for a counter in
+ * either domain; a hydrated native body carries kind CESR and its raw bytes begin
+ * with that fixed-field counter. Opaque fallback bodies without a counter stay ordinary.
+ *
+ * @param frame Parsed frame whose body kind and raw bytes decide the wire shape.
+ * @returns True when the frame must travel as one whole PUT instead of a detached POST.
+ */
+export function isNativeCesrFrame(frame: CesrFrame): boolean {
+  if (frame.body.kind !== Kinds.cesr) return false;
+  const cold = sniff(frame.body.raw);
+  return cold === "txt" || cold === "bny";
+}
+
+/**
+ * Select the qualification domain for one native frame's PUT body.
+ * The parser hydrates native bodies as qualified text, so the admitted attachment
+ * wire is the remaining evidence of a binary source; a bare body stays text.
+ *
+ * @param frame Native frame whose attachments retain their admitted domain.
+ * @returns The source domain KERIpy would have forwarded unchanged.
+ */
+function nativeFrameDomain(frame: CesrFrame): CesrDomain {
+  const evidence = frame.attachments[0]?.raw;
+  return evidence && sniff(evidence) === "bny" ? "bny" : "txt";
+}
+
+/**
+ * Prepare KERIpy HTTPMessenger's native-stream PUT for one frame.
+ * The shared serializer emits the frame's root genus selector, body and one
+ * attachment enclosure in the source domain, and that whole payload is the body
+ * with an explicit length, exactly as HTTPStreamMessenger sends a prepared stream.
+ * Detached CESR-ATTACHMENT/CESR-Genus headers do not apply and no legacy media
+ * fallback exists; caller authentication headers are retained.
+ *
+ * @param frame Native frame; its serialized bytes are the complete request body.
+ * @param options Destination, extra headers and optional cancellation.
+ * @returns One PUT request whose body is the serialized frame.
+ */
+function* nativeFrameRequest(frame: CesrFrame, options: EgressOptions): Operation<HttpRequestInit> {
+  const domain = nativeFrameDomain(frame);
+  const bytes = yield* abortable((signal) => collectPayload(framePayload(frame, { domain }), signal), options.signal);
+  const prepared = buildCesrStreamRequest(bytes, { destination: options.destination });
+  const headers = new Headers(options.headers);
+  headers.delete(CESR_DESTINATION_HEADER);
+  headers.delete(CESR_ATTACHMENT_HEADER);
+  headers.delete("CESR-Genus");
+  for (const [key, value] of Object.entries(prepared.headers)) headers.set(key, value);
+  headers.set("Content-Length", String(bytes.byteLength));
+  return {
+    method: "PUT",
+    redirect: "manual",
+    headers,
+    signal: options.signal,
+    body: prepared.body,
+  };
+}
+
+/**
  * Prepare finite request bytes before opening any network attempt.
- * Ordinary POSTs put normalized text attachments in CESR-ATTACHMENT and send the
- * original body. CESR-Genus retains the observed counter context when stream framing is removed.
- * Requests retain
+ * A native frame yields exactly one whole PUT. Ordinary POSTs put normalized text
+ * attachments in CESR-ATTACHMENT and send the original body. CESR-Genus retains
+ * the observed counter context when stream framing is removed. Requests retain
  * caller authentication headers; sender-owned framing/destination headers replace
  * conflicting caller values. The fallback shares the prepared bytes.
  *
  * @param frame Parsed signed body and attachments; framing preserves the signed body bytes.
  * @param options Destination, extra headers and optional cancellation for ordinary signed-message POSTs.
- * @returns Current and legacy media choices sharing the same signed body.
+ * @returns One native PUT, or the current and legacy media choices sharing the same signed body.
  */
 function* frameRequests(frame: CesrFrame, options: EgressOptions): Operation<HttpRequestInit[]> {
+  if (isNativeCesrFrame(frame)) return [yield* nativeFrameRequest(frame, options)];
   const header = byteString(
     yield* abortable((signal) => collectPayload(attachmentPayload(frame, { domain: "txt" }), signal), options.signal),
   );
@@ -263,8 +332,8 @@ function* sendFrame(
 
 /**
  * Send a CESR source and throw on a completed peer refusal.
- * One parsed frame becomes one POST, and its request scope closes before the next
- * source pull. A refusal stops the sequence; prior frames may already be delivered.
+ * One parsed frame becomes one request (a detached POST, or one whole PUT for a
+ * native frame), and its request scope closes before the next source pull. A refusal stops the sequence; prior frames may already be delivered.
  * Cancellation aborts active work, joins any pending source pull and returns the
  * parser iterator before leaving. There is no automatic retry beyond media fallback.
  * A pending asynchronous source pull can finish after cancellation is requested;
@@ -289,8 +358,8 @@ export function* postCesr(
 }
 /**
  * Send frames sequentially and return a completed peer refusal as data.
- * One parsed frame becomes one POST, and its request scope closes before the next
- * source pull. A refusal stops the sequence; prior frames may already be delivered.
+ * One parsed frame becomes one request (a detached POST, or one whole PUT for a
+ * native frame), and its request scope closes before the next source pull. A refusal stops the sequence; prior frames may already be delivered.
  * Cancellation aborts active work, joins any pending source pull and returns the
  * parser iterator before leaving. There is no automatic retry beyond media fallback.
  *

@@ -59,8 +59,35 @@ class MessengerProbe:
             rep.media = self.publish(command["alias"], command["recipient"])
         elif command["action"] == "send":
             rep.media = self.send(command["url"], command["destination"], command["stream"])
+        elif command["action"] == "history":
+            rep.media = self.history(command["kind"], command.get("binary", False))
         else:
             raise ValueError("Unknown messenger fixture command")
+
+    def history(self, kind, binary):
+        """Author a fresh two-event v2 key history in a separate temporary Habery.
+
+        The witness store never learns this Hab, so its later acceptance of the
+        replay is genuine foreign intake. This mirrors keripy's
+        test_http_messenger_key_history: ``kind`` selects native (``cesr``) or
+        ``json`` bodies and ``binary`` returns the urlsafe-base64-decoded stream.
+        """
+        if self.legacy:
+            raise ValueError("Key histories require the v2 reference API")
+        from keri.app.habbing import Habery
+        kind = {"cesr": kering.Kinds.cesr, "json": kering.Kinds.json}[kind]
+        self.serial += 1
+        hby = Habery(name=f"history-{self.serial}", temp=True, version=kering.Vrsn_2_0)
+        try:
+            hab = hby.makeHab(name="history", version=kering.Vrsn_2_0, kind=kind)
+            hab.interact(kind=kind, version=kering.Vrsn_2_0, gvrsn=kering.Vrsn_2_0)
+            wire = bytes(hab.replay(gvrsn=kering.Vrsn_2_0))
+            saids = [hby.db.kels.getLast(keys=hab.pre, on=on) for on in range(2)]
+        finally:
+            hby.close(clear=True)
+        if binary:
+            wire = base64.urlsafe_b64decode(wire)
+        return dict(pre=hab.pre, saids=saids, wire=base64.b64encode(wire).decode())
 
     def publish(self, alias, recipient):
         """Publish an actual signed reply through the witness's ordinary mailbox owner."""

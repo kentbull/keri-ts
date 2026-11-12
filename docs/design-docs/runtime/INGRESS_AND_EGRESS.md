@@ -496,8 +496,16 @@ polling uses the same preprocessing-refusal decision, closes that response befor
 one alternate media attempt and reuses the signed query and attachment bytes.
 Successful SSE consumption and cursor publication keep their existing ordering.
 
-`postCesr` sends successive framed POSTs and drains each ordinary response before
-advancing. It accepts no injected response consumer and does not interpret
+`postCesr` sends one request per parsed frame and drains each ordinary response before
+advancing. A JSON/CBOR/MGPK frame is a detached-attachment POST. A native CESR frame
+(kind CESR, counter-prefixed body in either domain) is one whole PUT whose body is the
+shared serializer's output for that frame (root genus selector, body, one attachment
+enclosure) in the source domain, with `Content-Type: application/cesr`, Content-Length
+and CESR-DESTINATION, retained caller headers, no CESR-ATTACHMENT/CESR-Genus and no
+media fallback. This follows KERIpy HTTPMessenger after PR 1751, which PUTs any message
+whose cold start is a counter; KERIpy's one bulk PUT for a multi-message native stream
+remains a wire difference. Native-ness is decided from the parsed frame, not a caller
+option. It accepts no injected response consumer and does not interpret
 response bytes as protocol evidence. It does not eagerly parse later input frames;
 earlier valid sends survive a later malformed input. Success headers alone do not establish completion: Content-Length or
 chunked truncation fails the attempt. Redirects are refused without following or
@@ -509,8 +517,9 @@ work and releases its reader. There is no upload iterator or general error histo
 At the native body-read boundary only, Node 20's replacement AbortError after local
 cancellation is normalized to the owning signal's reason; other native failures keep
 their causes. Application errors are never classified by their names. Ordinary
-delivery carries CESR-ATTACHMENT in ordered signed-message POSTs; stream delivery
-sends one opaque finite PUT. Preserve URL/path, destination, authentication and
+delivery carries CESR-ATTACHMENT in ordered signed-message POSTs, except native
+frames, which travel as per-frame whole PUTs; stream delivery sends one opaque
+finite PUT. Preserve URL/path, destination, authentication and
 the narrow ordinary media-refusal fallback. Queries and mailbox polling use signed
 POSTs; dedicated admin and receipt endpoints keep their own contracts.
 
@@ -712,8 +721,8 @@ remain in the lower TCP owner. The old conversation and prepared-target applicat
 wrappers are removed; WitnessInquisitor and Poster retain separate queue policies.
 
 HTTPMessenger binds its URL, HTTP client and destination/authentication metadata;
-`send` and `sendSource` return typed completion/refusal after ordinary POST response
-consumption. WitnessInquisitor uses this ordinary HTTP path; mailbox polling and
+`send` and `sendSource` return typed completion/refusal after ordinary per-frame
+POST or native-frame PUT response consumption. WitnessInquisitor uses this ordinary HTTP path; mailbox polling and
 direct/TCP ingress own protocol reception. Concrete messengerFrom and
 streamMessengerFrom factories select already resolved HTTPS/HTTP/TCP endpoints,
 without identity configuration, stores or I/O. HTTPStreamMessenger binds a finite
