@@ -300,7 +300,14 @@ Deno.test("a read-only Habery has no v2 registry store, so no owners and no oper
     const name = crypto.randomUUID();
     const writable = yield* createHabery({ name, temp: true, skipConfig: true, bran: "ReadOnlyPasscodeSecretAB" });
     writable.makeHab("a");
-    const hby = yield* createHabery({ name, temp: true, skipConfig: true, readonly: true, skipSignator: true });
+    const hby = yield* createHabery({
+      name,
+      temp: true,
+      skipConfig: true,
+      readonly: true,
+      skipSignator: true,
+      bran: "ReadOnlyPasscodeSecretAB",
+    });
     yield* ensure(() => hby.close());
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {});
     yield* ensure(() => runtime.close());

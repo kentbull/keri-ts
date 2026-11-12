@@ -422,6 +422,8 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       const rgy = new Regery(side.hby, baser);
       const runtime = yield* createAgentRuntime(side.hby, new FetchHttpClient(), systemClock, {
         acdc: rgy,
+        // These members stay rootless on purpose; the always-on replicator would otherwise copy the root to them.
+        registryRoots: "refuse",
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
       });
       yield* ensure(() => runtime.close());

@@ -755,8 +755,15 @@ export class Dhke implements AuxiliaryQueryProcessor {
     for (const [, key] of entries) decodePublicKey(key);
     const expires = this.retainUntil(envelope, grant);
     const prior = this.pendingQueries.get(data.x);
-    if (prior && !bytesEqual(prior.envelope.serder.raw, query.raw)) throw new ValidationError("Conflicting DH query");
-    if (!prior) {
+    if (prior && !bytesEqual(prior.envelope.serder.raw, query.raw)) {
+      // The issuer re-dates a query that aged before this side consented (`requery`): same sender, keys and
+      // Grant under a new date. It replaces the held one; any other difference is a conflict.
+      const held = this.parameters(prior.envelope.serder, "q");
+      const same = prior.envelope.serder.pre === query.pre && prior.grant === grant.said
+        && JSON.stringify(Object.entries(held.pk).sort()) === JSON.stringify(entries.sort());
+      if (!same) throw new ValidationError("Conflicting DH query");
+    }
+    if (!prior || !bytesEqual(prior.envelope.serder.raw, query.raw)) {
       this.pendingQueries.set(data.x, { envelope: copyAuxiliaryQuery(envelope), expires, grant: grant.said! });
     }
   }
