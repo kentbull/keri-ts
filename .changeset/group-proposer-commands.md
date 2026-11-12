@@ -1,0 +1,5 @@
+---
+"keri-ts": minor
+---
+
+`tufa multisig incept`, `rotate`, `interact` and `rpy` now call the library's proposal API (`proposeGroupInception`, `proposeGroupRotation`, `proposeGroupInteraction`, `proposeGroupEndpointRole`) and wait on the runtime Counselor. A proposer's wait no longer approves other stored proposals for the group: it signs only the event the command was asked to propose, so a pending proposal from another member stays unsigned until `multisig join` approves it. Witness receipts and the delegation request now come from the runtime Counselor, with every member submitting (`fallbackAfterMs: 0`) as before; it receipts over HTTP and falls back to TCP for witnesses without an HTTP URL, so `--endpoint` no longer selects a different receipting path. A delegated group `incept` or `rotate` without `--proxy` now fails before the event is authored. The CLI-held `receipt`/`delegation` waits for these commands are removed rather than kept as wrappers; backward compatibility with 2.1.0 is not a goal for 2.2.0.
