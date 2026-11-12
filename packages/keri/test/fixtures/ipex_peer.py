@@ -31,12 +31,8 @@ from ipex_disclosures import delegated_graph_case, graph_disclosures, partial_di
 
 
 def grant_walk_options(grant_walk):
-    """KERIpy Grant walk policy ("open" or "closed"); None keeps KERIpy's default.
-
-    The keyword follows the unmerged KERIpy Grant walk policy change. Confirm it
-    against the merged KERIpy commit when scripts/ci/keripy-reference.json moves.
-    """
-    return {} if grant_walk is None else dict(walk=grant_walk)
+    """KERIpy Grant walk policy ("open" or "closed"); None keeps KERIpy's default (open)."""
+    return {} if grant_walk is None else dict(walkPolicy=grant_walk)
 
 
 class Recorder:
