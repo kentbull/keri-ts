@@ -78,6 +78,33 @@ function sendChallenge(peer: Context["peer"], store: string[], recipient: string
   ]);
 }
 
+/** `tufa ipex setup` refuses a Grant the counterparty's store does not hold yet. */
+const NO_GRANT_YET = "Select the exact unanchored pending issuance Grant";
+
+/**
+ * The counterparty comes online and takes the Grant: poll its mailbox until the Grant is stored, then run
+ * `ipex setup`. One `ipex poll` is not enough: it ends at the first IPEX message newer than its start, and 4a's
+ * Admit, still in the mailbox when 4b begins, ends it before the Grant has arrived. A wallet's own poller runs
+ * all the time and has no such gap.
+ */
+async function setupWhenGranted(
+  peer: Context["peer"],
+  store: string[],
+  grant: string,
+  attempts = 20,
+): Promise<PeerResult> {
+  for (let attempt = 1;; attempt++) {
+    await peer(["ipex", "poll", ...store, "-a", "peer", "--timeout", "3"]);
+    try {
+      return await peer(["ipex", "setup", ...store, "-a", "peer", "--said", grant, "--timeout", "150"], 170_000);
+    } catch (error) {
+      if (attempt >= attempts || !String(error instanceof Error ? error.message : error).includes(NO_GRANT_YET)) {
+        throw error;
+      }
+    }
+  }
+}
+
 export const steps: Step[] = [
   {
     name: "1 open wallet, request persistent storage",
@@ -202,8 +229,7 @@ export const steps: Step[] = [
     needs: ["3b mailbox authorized, OOBIs resolved both ways"],
     run: async ({ page, peer, facts, store }) => {
       const begun = await page("issueCredential", { peerPre: facts.peerPre });
-      await peer(["ipex", "poll", ...store, "-a", "peer", "--timeout", "20"]);
-      const setup = peer(["ipex", "setup", ...store, "-a", "peer", "--said", begun.grant, "--timeout", "150"], 170_000);
+      const setup = setupWhenGranted(peer, store, begun.grant);
       const finishing = page("finishIssuance", { grant: begun.grant });
       const [set, finished] = await Promise.allSettled([setup, finishing]);
       both(["peer", set], ["browser", finished]);
