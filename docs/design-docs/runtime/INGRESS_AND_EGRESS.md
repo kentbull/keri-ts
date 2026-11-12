@@ -125,29 +125,22 @@ does not prove prior threshold completion. Ordinary query routes retain replay
 refusal. A finite sender may retry the same frozen query when initial delivery
 preceded recipient consent; retries never renew either lifetime.
 
-`createAgentRuntime` can select one concrete owner with `ipexAuxiliary: {kind: "dhke", hab}` or `{kind: "unblind", hab}`. The habitat must be the
-actual local object in this Habery, a v2 registry must be available, and caller
-configuration must explicitly enable KRAM (without `caches`, `DEFAULT_KRAM_CACHES` apply). Missing or disabled KRAM is a caller
-error, never a fallback to unauthenticated receiver time. The composition constructs
-the owner with its Exchanger and registry, registers the reply route on its actual
-Revery, and supplies the same owner as immutable `ProtocolProcessor.qvy`. Both
-owners accept an explicit `rvy` dependency with matching database; standalone
-composition defaults to the habitat's Revery.
-
-`ipexOwners: "per-identifier"` composes the same owner registry without selecting
-an identifier, for hosts such as wallets whose identifiers appear after the runtime
-exists. `runtime.ipex.dhke(hab)` and `runtime.ipex.unblind(hab)` create and
-register one owner per identifier and kind on first use; `release(pre)` removes
-both. It has the same registry and KRAM requirements and may be combined with
-`ipexAuxiliary`, which is registered in it. Dispatch keys on sender plus transaction
+Every runtime with a v2 registry store (that is, every runtime of a writable Habery; a read-only one has
+`runtime.ipex === null`) composes the per-identifier owner registry, the operation owners and the root replicator,
+with no option. `runtime.ipex.dhke(hab)` and `runtime.ipex.unblind(hab)` create and register one owner per
+identifier and kind on first use, for identifiers that appear after the runtime exists; `release(pre)` removes both.
+The registry supplies the owners' Exchanger, registry and Revery, registers the reply routes on the actual Revery,
+and is the immutable `ProtocolProcessor.qvy`. Creating an owner grants no consent. DH and Unblind rely on the rows
+only KRAM writes, so `approve` of either owner throws a "requires KRAM" error when the runtime's `kram` is off
+(omitted leaves it off, as in KERIpy; enabled without `caches` applies `DEFAULT_KRAM_CACHES`); composition itself does
+not need KRAM. Dispatch keys on sender plus transaction
 id (`q.x` or `a.x`), because the messages name no recipient: `AuxiliaryQueryProcessor.claims`
 admits a query, before KRAM, only when exactly one owner's `inTransaction` holds (an
 approved operation, a stored Grant, or a group's own contribution awaiting KRAM pooling),
 and replies select the owner at the shared Router resource. Anything else is an
 unowned message, handled as with no owner configured.
 
-The returned `runtime.ipexAuxiliary` identifies the concrete owner for a finite
-application to approve a selected Grant and drain its outgoing Deck. Construction
+The owner of a finite application is `runtime.ipex.dhke(hab)` or `.unblind(hab)`: it approves a selected Grant and drains its outgoing Deck. Construction
 supplies no consent and starts no protocol operation. Commands still abandon their
 scoped XID; explicit runtime close and scope exit also clear all process-local
 approvals and retry bytes, zeroing owned pending DH scalar arrays on a best-effort

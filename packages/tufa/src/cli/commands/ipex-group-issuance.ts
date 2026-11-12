@@ -32,6 +32,8 @@ import {
   type ExchangeRouteHandler,
   groupElectedMember,
   groupSigningMembers,
+  type Hab,
+  isLocalGroupHab,
   Kever,
   latestGroupContribution,
   localGroupMember,
@@ -50,6 +52,8 @@ import { sendRootCopies } from "./registry-root.ts";
 const QueryRoute = "/multisig/qry", ProofRoute = "/multisig/ipex-proof";
 /** Exact accepted coordinator and already elected custody member selected by this invocation. */
 export interface GroupIssuanceSelection {
+  /** The local group identifier that issues. */
+  hab: Hab;
   coordinator: string;
   custodian: string;
 }
@@ -78,12 +82,11 @@ export interface GroupIssuanceResult {
 
 /** Resolve exact local owners and the already accepted coordinator; election is never recomputed from a new event. */
 function owners(runtime: AgentRuntime, wallet: Wallet, selection: GroupIssuanceSelection) {
-  const selected = runtime.ipexAuxiliary;
   if (
-    selected?.kind !== "dhke" || !selected.owner.group || !runtime.acdc || wallet.hby !== runtime.hby
-    || wallet.registry !== runtime.acdc.store || wallet.exc !== runtime.exc
-  ) throw new ValidationError("Group issuance requires its selected DH runtime and wallet");
-  const dh = selected.owner, hab = dh.hab, member = localGroupMember(runtime.hby, hab.pre);
+    !runtime.ipex || !runtime.acdc || wallet.hby !== runtime.hby || wallet.registry !== runtime.acdc.store
+    || wallet.exc !== runtime.exc || !isLocalGroupHab(runtime.hby, selection.hab)
+  ) throw new ValidationError("Group issuance requires its DH runtime and wallet");
+  const hab = selection.hab, dh = runtime.ipex.dhke(hab), member = localGroupMember(runtime.hby, hab.pre);
   const event = hab.db.getEvtSerder(hab.pre, selection.coordinator);
   const coordinator = event ? { sn: event.sn!, said: event.said! } : null;
   if (
@@ -114,10 +117,11 @@ function* wait(runtime: AgentRuntime, milliseconds: number): Operation<void> {
 /** Parent authentication commits one exact child; it never supplies the child's group threshold. */
 function* wrapper(
   runtime: AgentRuntime,
+  hab: Hab,
   child: CesrFrame,
   route: typeof QueryRoute | typeof ProofRoute | "/multisig/exn" | "/multisig/rpy",
 ): Operation<Uint8Array> {
-  const hab = runtime.ipexAuxiliary!.owner.hab, member = localGroupMember(runtime.hby, hab.pre);
+  const member = localGroupMember(runtime.hby, hab.pre);
   // Core builder checks: qry authored by the group; ipex-proof a Grant for the group.
   const body = multisigExnBody(member.pre, { route, attrs: { gid: hab.pre } }, child.body as SerderKERI, {
     version: Vrsn_2_0,
@@ -156,7 +160,7 @@ export function* prepareGroupDerivedIssuance(
   );
   const prepared = yield* discloser.prepareIssuanceGrantBody(hab.pre, credential, options);
   const child = parseBytes(exchangeWire(hab, prepared.exn, prepared.nests))[0];
-  const proposal = yield* wrapper(runtime, child, "/multisig/exn");
+  const proposal = yield* wrapper(runtime, hab, child, "/multisig/exn");
   yield* retainLocalGrant(runtime, child);
   yield* runtime.reactor.processBytes(concatBytes(discloser.proofSupport(prepared.raw, hab), proposal), {
     local: true,
@@ -375,7 +379,7 @@ function* runGroupIssuance(
     const own = parseBytes(exchangeWire(hab, grant, rebuilt.nests))[0];
     own.attachments = [...child.attachments, ...own.attachments];
     yield* retainLocalGrant(runtime, own);
-    ownProposal = yield* wrapper(runtime, own, "/multisig/exn");
+    ownProposal = yield* wrapper(runtime, hab, own, "/multisig/exn");
     yield* runtime.reactor.processBytes(ownProposal, { local: true });
   } else {
     const input = runtime.exc.retainedInput(request.grant, { pending: true });
@@ -519,7 +523,7 @@ function* runGroupIssuance(
                 const child = parseBytes(dh.start(request.grant))[0];
                 frozen = child.body.raw;
                 yield* runtime.protocol.dispatch(child, { local: true });
-                yield* broadcast(yield* wrapper(runtime, child, QueryRoute));
+                yield* broadcast(yield* wrapper(runtime, hab, child, QueryRoute));
               }
             }
             while (!runtime.exc.complete(request.grant)) {
@@ -569,7 +573,12 @@ function* runGroupIssuance(
                   const contribution = parseBytes(signature)[0];
                   yield* runtime.protocol.dispatch(contribution, { local: true });
                   yield* broadcast(
-                    yield* wrapper(runtime, contribution, request.role === "issuer" ? QueryRoute : "/multisig/rpy"),
+                    yield* wrapper(
+                      runtime,
+                      hab,
+                      contribution,
+                      request.role === "issuer" ? QueryRoute : "/multisig/rpy",
+                    ),
                   );
                   if (request.role === "issuer") {
                     return result(false);
@@ -584,7 +593,7 @@ function* runGroupIssuance(
                   const child = parseBytes(message.msg)[0];
                   frozen = child.body.raw;
                   yield* runtime.protocol.dispatch(child, { local: true });
-                  yield* broadcast(yield* wrapper(runtime, child, "/multisig/rpy"));
+                  yield* broadcast(yield* wrapper(runtime, hab, child, "/multisig/rpy"));
                 } else if (message.kin === "query") query = message.msg;
                 else yield* send(message.msg, message.dest, "credential");
               }
@@ -627,7 +636,7 @@ function* runGroupIssuance(
                 const completed = parseBytes(yield* wrapperBytes(runtime, request.grant))[0];
                 const publicProof = concatBytes(
                   discloser.proofSupport(raw, hab),
-                  yield* wrapper(runtime, completed, ProofRoute),
+                  yield* wrapper(runtime, hab, completed, ProofRoute),
                 );
                 // KERIpy form: the elected member shares the proof with the other members by mailbox.
                 yield* broadcastEvidence(publicProof);

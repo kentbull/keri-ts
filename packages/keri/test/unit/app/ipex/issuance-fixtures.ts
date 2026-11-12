@@ -74,7 +74,6 @@ export function* party(
   const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), clock, {
     acdc: rgy,
     kram,
-    ipexOwners: "per-identifier",
   });
   yield* ensure(() => runtime.close());
   const receiptor = {

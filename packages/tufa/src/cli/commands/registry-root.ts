@@ -33,6 +33,7 @@ import {
   parseStringOption,
   type RootCopyLine,
   rootCopyLine,
+  RootCopyRecoveryCommand,
 } from "keri-ts/cli";
 import {
   type AgentRuntime,
@@ -44,7 +45,7 @@ import {
   Organizer,
   type RegistryDisclosure,
   type RegistryRoot,
-  RootReplicator,
+  type RootCopyResult,
   RootUnverified,
   runAgentRuntime,
   type RuntimeClock,
@@ -241,11 +242,12 @@ function* receive(context: Replication, options: RegistryRootOptions): Operation
 }
 
 /**
- * Fire-and-forget root copies from a group command once a send is possible.
- *
- * Hosts Poster delivery for the copies only, under their own `timeoutMs`
- * budget, and returns each outcome for the command to display as a
- * `root_copy` line. A runtime that refuses roots holds none to send.
+ * The `root_copy` lines of a group command's copies to the other members, once the runtime's replicator has
+ * sent them. The runtime owns the one `RootReplicator`: its loop already sends what the DH completion cue
+ * owes while the command runs, so this prompts the group, runs the replicator's passes for what remains
+ * (under the command's own `timeoutMs` budget, hosting Poster delivery for them only) and reads each copy's
+ * outcome back from the state the replicator keeps, never sending a copy twice. A copy the loop sent earlier
+ * reads as transmitted without its exchange SAID. A runtime that refuses roots holds none to send.
  */
 export function* sendRootCopies(
   runtime: AgentRuntime,
@@ -253,16 +255,51 @@ export function* sendRootCopies(
   registries: readonly string[],
   options: { recipients?: readonly string[]; timeoutMs: number },
 ): Operation<RootCopyLine[]> {
-  const root = runtime.registryRoot;
-  if (!root) return [];
-  const replicating = new RootReplicator({
-    root,
-    postman: runtime.postman,
-    clock: runtime.clock,
-  });
-  return yield* scoped(function*() {
+  const root = runtime.registryRoot, replicator = runtime.rootReplicator;
+  if (!root || !replicator) return [];
+  const gid = ghab.pre!, sender = localGroupMember(runtime.hby, gid).pre;
+  const recipients = options.recipients ?? root.members(gid).filter(aid => aid !== sender);
+  const wanted = registries.flatMap(registry => recipients.map(recipient => ({ registry, recipient })));
+  const sent = ({ registry, recipient }: { registry: string; recipient: string }) =>
+    runtime.hby.db.rrsn.get([gid, registry, recipient])?.key === root.contributor(gid, recipient);
+  const attempted = new Map<string, RootCopyResult>();
+  const id = (copy: { registry: string; recipient: string }) => `${copy.registry}/${copy.recipient}`;
+  const stop = runtime.clock.now() + options.timeoutMs;
+  yield* scoped(function*() {
     yield* spawn(() => runtime.postman.deliverDo());
-    return (yield* replicating.send(ghab, registries, options)).map(rootCopyLine);
+    replicator.prompt(gid);
+    for (let pass = 0; pass <= wanted.length; pass++) {
+      for (const result of yield* replicator.processOnce({ timeoutMs: Math.max(stop - runtime.clock.now(), 0) })) {
+        if (result.group === gid) attempted.set(id(result), result);
+      }
+      if (wanted.every(copy => sent(copy) || attempted.has(id(copy))) || runtime.clock.now() >= stop) break;
+    }
+  });
+  const owed = new Map(replicator.status().owed.filter(entry => entry.group === gid).map(entry => [id(entry), entry]));
+  return wanted.flatMap((copy): RootCopyLine[] => {
+    const result = attempted.get(id(copy));
+    if (result) return [rootCopyLine(result)];
+    if (sent(copy)) {
+      return [{
+        phase: "root_copy",
+        gid,
+        registry: copy.registry,
+        sender,
+        recipient: copy.recipient,
+        transmitted: true,
+      }];
+    }
+    const failure = owed.get(id(copy))?.lastFailure ?? new Error("Root copy was not sent before the timeout");
+    return [{
+      phase: "root_copy",
+      gid,
+      registry: copy.registry,
+      sender,
+      recipient: copy.recipient,
+      transmitted: false,
+      error: failure instanceof Error ? failure.message : String(failure),
+      recovery: RootCopyRecoveryCommand,
+    }];
   });
 }
 

@@ -48,6 +48,8 @@ import {
 
 /** Explicit consent to one retained Grant, not a selector for other pending exchanges. */
 export interface DerivedIssuanceRequest {
+  /** The local identifier that consents. */
+  hab: Hab;
   role: "issuer" | "recipient";
   grant: string;
 }
@@ -69,21 +71,19 @@ function* wait(clock: RuntimeClock, milliseconds: number): Operation<void> {
 }
 
 /** Check actual composition before any approval, signing or root access. */
-function owners(runtime: AgentRuntime, wallet: Wallet) {
-  const selected = runtime.ipexAuxiliary;
+function owners(runtime: AgentRuntime, wallet: Wallet, hab: Hab) {
   if (
-    selected?.kind !== "dhke" || !runtime.acdc || wallet.hby !== runtime.hby
-    || wallet.registry !== runtime.acdc.store || wallet.exc !== runtime.exc
+    !runtime.acdc || !runtime.ipex || wallet.hby !== runtime.hby || wallet.registry !== runtime.acdc.store
+    || wallet.exc !== runtime.exc
   ) {
-    throw new ValidationError("Derived issuance requires the wallet's selected DH runtime and registry");
+    throw new ValidationError("Derived issuance requires the wallet's DH runtime and registry");
   }
-  const dh = selected.owner, hab = dh.hab;
   if (isLocalGroupHab(runtime.hby, hab)) {
     throw new ValidationError(
       "This finite issuance workflow requires an individual habitat; group issuance needs explicit member coordination",
     );
   }
-  return { dh, hab, rgy: runtime.acdc };
+  return { dh: runtime.ipex.dhke(hab), hab, rgy: runtime.acdc };
 }
 
 /** Compose the library issuance owner over this CLI runtime; the CLI is its only embedder. */
@@ -112,10 +112,11 @@ function issuanceOperations(
 export function* prepareDerivedIssuance(
   runtime: AgentRuntime,
   wallet: Wallet,
+  hab: Hab,
   credential: SerderACDC,
   options: IssuanceGrantOptions,
 ): Operation<{ grant: string; wire: Uint8Array }> {
-  const { hab } = owners(runtime, wallet);
+  owners(runtime, wallet, hab);
   const receiptor = new Receiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock);
   return yield* prepareIssuanceGrant(issuanceOperations(runtime, wallet, hab, receiptor), {
     hab,
@@ -138,7 +139,7 @@ function* runIssuance(
   request: DerivedIssuanceRequest,
   { timeoutMs, witnessGvrsn, auths }: { timeoutMs: number; witnessGvrsn?: Versionage; auths?: WitnessAuthMap },
 ): Operation<DerivedIssuanceResult> {
-  const { hab } = owners(runtime, wallet);
+  const { hab } = owners(runtime, wallet, request.hab);
   const receiptor = new Receiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock, { gvrsn: witnessGvrsn });
   const ops = issuanceOperations(runtime, wallet, hab, receiptor);
   const issuer = request.role === "issuer";
@@ -238,10 +239,9 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
       ) {
         throw new ValidationError("Group selection/proof options require a group habitat");
       }
-      const selection = group ? { coordinator: coordinator!, custodian: custodian! } : undefined;
+      const selection = group ? { hab, coordinator: coordinator!, custodian: custodian! } : undefined;
       const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
-        ipexAuxiliary: { kind: "dhke", hab },
       });
       try {
         return yield* scoped(function*() {
@@ -318,7 +318,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
             };
             const prepared = selection
               ? yield* prepareGroupDerivedIssuance(runtime, wallet, credential, options, selection)
-              : yield* prepareDerivedIssuance(runtime, wallet, credential, options);
+              : yield* prepareDerivedIssuance(runtime, wallet, hab, credential, options);
             if ("proposal" in prepared) proposal = prepared.proposal;
             selected = prepared.grant;
             const out = parseStringOption(args.out, "out");
@@ -378,7 +378,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
             }
             return { ...facts, ...(proof && proofOutput ? { proofOutput } : {}) };
           }
-          return yield* runDerivedIssuance(runtime, wallet, { role, grant: selected }, {
+          return yield* runDerivedIssuance(runtime, wallet, { hab, role, grant: selected }, {
             timeoutMs: timeout * 1000,
             auths,
             witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1"),

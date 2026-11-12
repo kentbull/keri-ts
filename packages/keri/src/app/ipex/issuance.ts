@@ -333,6 +333,8 @@ export class IssuanceOperations {
       if (error instanceof ValidationError) return false;
       throw error;
     }
+    // Another operations table over this runtime reached the Grant first (a command's own, beside the host's).
+    if (this.deps.dhkes.dhke(found.hab).holds(found.grant)) return true;
     try {
       yield* this.adopt(found);
     } catch (error) {

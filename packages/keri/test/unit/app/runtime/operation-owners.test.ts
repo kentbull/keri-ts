@@ -47,7 +47,7 @@ function* posting(posted: Uint8Array[], options: Parameters<typeof world>[0] = {
   });
 }
 
-const OWNERS = { runtime: { ipexOwners: "per-identifier" as const } };
+const OWNERS = {};
 
 Deno.test("a DH query that arrives before any explicit dhke(hab) call finds its owner", async () => {
   await run(function*() {
@@ -67,12 +67,15 @@ Deno.test("a DH query that arrives before any explicit dhke(hab) call finds its 
   });
 });
 
-Deno.test("owners compose with in-memory stores and expose themselves additively; legacy runtimes have none", async () => {
+Deno.test("owners compose with in-memory tables on every runtime that has a registry store", async () => {
   await run(function*() {
     const s = yield* scenario();
     assert(s.holder.runtime.operations && s.holder.runtime.rootReplicator);
     const w = yield* world();
-    assertEquals([w.alice.runtime.operations, w.alice.runtime.rootReplicator], [null, null]);
+    assert(
+      w.alice.runtime.operations && w.alice.runtime.rootReplicator,
+      "every runtime with a registry store composes them",
+    );
   });
 });
 

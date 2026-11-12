@@ -173,10 +173,9 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         acdc: rgy,
         enableMailboxStore: index === 0,
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        ipexAuxiliary: { kind: "dhke", hab },
       });
       yield* ensure(() => runtime.close());
-      assert(runtime.ipexAuxiliary?.kind === "dhke");
+      assert(runtime.ipex);
       const db = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => db.close(true));
       const wallet = new Wallet({ hby: side.hby, registry: rgy.store, exc: runtime.exc, db });
@@ -185,7 +184,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         hab,
         store: rgy.store,
         exc: runtime.exc,
-        dh: runtime.ipexAuxiliary.owner,
+        dh: runtime.ipex!.dhke(hab),
         protocol: runtime.protocol,
         reactor: runtime.reactor,
         runtime,
@@ -268,7 +267,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     const preparedGrant = yield* prepareGroupDerivedIssuance(lead.runtime, lead.wallet, credential, {
       recipient: holder.hab.pre,
       message: "Exact group issuance",
-    }, { coordinator: coordinator.said!, custodian: lead.member.pre });
+    }, { hab: lead.hab, coordinator: coordinator.said!, custodian: lead.member.pre });
     const grant = parseBytes(preparedGrant.proposal)[0].nests![0].body as SerderKERI;
     // Observe the completion cues the drainer consumes: only the retaining custodians emit one.
     const replicate = new Map<(typeof actors)[number], unknown[]>();
@@ -279,9 +278,19 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         return push(item);
       };
     }
+    // Every sent root copy writes one marker through the runtime's single replicator: count them per recipient.
+    const sentCopies: string[] = [];
+    for (const side of actors) {
+      const pin = side.hby.db.rrsn.pin.bind(side.hby.db.rrsn);
+      side.hby.db.rrsn.pin = ((keys: Parameters<typeof pin>[0], record: Parameters<typeof pin>[1]) => {
+        sentCopies.push(`${side.member.pre}>${(keys as string[])[2]}`);
+        return pin(keys, record);
+      }) as typeof pin;
+    }
     // Spawned members wait across peer contribution, DH and explicit BUP approval; budget the whole flow.
     const issuing = yield* spawn(() =>
       runGroupDerivedIssuance(lead.runtime, lead.wallet, {
+        hab: lead.hab,
         role: "issuer",
         grant: preparedGrant.grant,
         proposal: preparedGrant.proposal,
@@ -295,6 +304,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     // A later member key cannot reinterpret the frozen coordinator or its historical contribution.
     yield* intakeAll(issuers[1].member.rotate());
     const contributed = yield* runGroupDerivedIssuance(issuers[1].runtime, issuers[1].wallet, {
+      hab: issuers[1].hab,
       role: "issuer",
       grant: preparedGrant.grant,
       proposal: preparedGrant.proposal,
@@ -318,6 +328,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     assertEquals(responses, [], "receiving the full Grant does not approve recipient setup");
     const receiving = yield* spawn(() =>
       runGroupDerivedIssuance(holder.runtime, holder.wallet, {
+        hab: holder.hab,
         role: "recipient",
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
@@ -330,6 +341,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     yield* intakeAll(issuees[1].member.rotate());
     const peerReceiving = yield* spawn(() =>
       runGroupDerivedIssuance(issuees[1].runtime, issuees[1].wallet, {
+        hab: issuees[1].hab,
         role: "recipient",
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
@@ -387,13 +399,18 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         undefined,
       ],
     );
+    assertEquals(
+      sentCopies.toSorted(),
+      [`${lead.member.pre}>${issuers[1].member.pre}`, `${holder.member.pre}>${issuees[1].member.pre}`].toSorted(),
+      "the loop and the command share one replicator: exactly one copy per member, none twice",
+    );
     // The custodian delivered the same proof by mailbox; the peer's host received it.
     assertEquals(
       yield* awaitGroupIssuanceProof(
         issuerPeer.runtime,
         issuerPeer.wallet,
         grant.said!,
-        { coordinator: coordinator.said!, custodian: lead.member.pre },
+        { hab: issuerPeer.hab, coordinator: coordinator.said!, custodian: lead.member.pre },
         90000,
       ),
       true,
@@ -694,11 +711,10 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       }, {
         acdc: rgy,
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        ipexAuxiliary: { kind: "dhke", hab },
       });
       yield* ensure(() => runtime.close());
-      assert(runtime.ipexAuxiliary?.kind === "dhke");
-      const dh = runtime.ipexAuxiliary.owner;
+      assert(runtime.ipex);
+      const dh = runtime.ipex!.dhke(hab);
       assertEquals(
         dh.rvy === runtime.protocol.rvy,
         true,
@@ -870,7 +886,6 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       const runtime = yield* createAgentRuntime(party.hby, new FetchHttpClient(), systemClock, {
         acdc: rgy,
         kram: { enabled: true },
-        ipexAuxiliary: { kind: "dhke", hab: party.hab },
       });
       yield* ensure(() => runtime.close());
       const db = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
@@ -940,7 +955,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       assertEquals(side.wallet.inventory(), { issued: [], held: [] });
       assertEquals(side.hab.mgr.getRegistryRoot(side.hab.pre, freshRip.said!), null);
     }
-    const prepared = yield* prepareDerivedIssuance(source.runtime, source.wallet, fresh, {
+    const prepared = yield* prepareDerivedIssuance(source.runtime, source.wallet, source.hab, fresh, {
       recipient: issuee.pre,
       message: "Finite derived issuance",
     });
@@ -950,6 +965,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     assertEquals(issuer.mgr.getRegistryRoot(issuer.pre, freshRip.said!), null);
     const issuing = yield* spawn(() =>
       runDerivedIssuance(source.runtime, source.wallet, {
+        hab: source.hab,
         role: "issuer",
         grant: prepared.grant,
       }, { timeoutMs: 10000 })
@@ -961,7 +977,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     const recipientDeadline = recipient.runtime.exc.exchangeDeadline(body);
     assertExists(queryCache);
     assertEquals(
-      recipient.runtime.ipexAuxiliary!.owner.outgoing.length,
+      recipient.runtime.ipex!.dhke(recipient.hab).outgoing.length,
       0,
       "real query arrival cannot approve receiver setup",
     );
@@ -1002,6 +1018,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       "one current signature cannot reuse a completed query cache",
     );
     const received = yield* runDerivedIssuance(recipient.runtime, recipient.wallet, {
+      hab: recipient.hab,
       role: "recipient",
       grant: prepared.grant,
     }, { timeoutMs: 10000 });

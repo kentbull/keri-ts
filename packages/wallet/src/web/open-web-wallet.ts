@@ -90,11 +90,12 @@ export type OpenWebWalletOptions = WebWalletSecret & {
   name: string;
   base?: string;
   /**
-   * Passed to `createAgentRuntime`. The wallet enables `ipexOwners: "per-identifier"` and KRAM by
-   * default, because DH and Unblind owners need KRAM; obtain them per identifier after open with
-   * `runtime.ipex.dhke(hab)` and `runtime.ipex.unblind(hab, states)`. Disabling KRAM fails the open.
+   * Passed to `createAgentRuntime`. Every runtime composes the per-identifier DH and Unblind owners;
+   * the wallet enables KRAM by default because their `approve` needs it, with wallet-sized windows.
+   * Obtain the owners per identifier after open with `runtime.ipex.dhke(hab)` and
+   * `runtime.ipex.unblind(hab)`.
    */
-  runtime?: Pick<AgentRuntimeOptions, "kram" | "ipexAuxiliary" | "ipexOwners" | "operationStores">;
+  runtime?: Pick<AgentRuntimeOptions, "kram" | "operationStores">;
   host?: WebWalletHost;
 };
 
@@ -190,7 +191,6 @@ function* compose(
         yield* scoped(function*() {
           const http = barrierHttpClient(host.http ?? new FetchHttpClient(), () => opener.queue.flushed());
           const runtime = yield* createAgentRuntime(hby, http, host.clock ?? systemClock, {
-            ipexOwners: "per-identifier",
             ...options.runtime,
             // The operation owners record blind-derivation coordinates where the wallet's own custody
             // reads them back; a process-local default would hide them from `recordIssued`.

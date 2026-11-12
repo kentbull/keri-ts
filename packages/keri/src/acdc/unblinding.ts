@@ -132,14 +132,18 @@ export class Unblind implements AuxiliaryQueryProcessor {
   readonly rvy: Revery;
   readonly registry: RegistryObserver;
   readonly group: boolean;
+  private readonly kram: boolean;
 
   /** Bind the exact Grant verifier's store; the state vocabulary is chosen per approved operation. */
-  constructor({ hab, exc, registry, rvy = hab.rvy }: {
+  constructor({ hab, exc, registry, rvy = hab.rvy, kram = true }: {
     hab: Hab;
     exc: Exchanger;
     registry: RegistryObserver;
     rvy?: Revery;
+    /** False when the runtime has KRAM off: its `tmsc`/`msgc` rows never exist, so `approve` refuses. */
+    kram?: boolean;
   }) {
+    this.kram = kram;
     if (
       !(hab instanceof Hab) || hab.db !== exc.hby.db || registry.db !== hab.db || rvy.db !== hab.db
       || exc.hby.habs.get(hab.pre!) !== hab
@@ -161,6 +165,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
    * while omitting `states` on a repeat approval keeps the frozen vocabulary.
    */
   approve(grant: string, options: { states?: readonly string[] } = {}): string {
+    if (!this.kram) throw new ValidationError("Unblind requires KRAM: enable it with the runtime's kram option");
     const states = options.states ?? DEFAULT_UNBLIND_STATES;
     if (!Array.isArray(states) || states.some((state) => typeof state !== "string")) {
       throw new ValidationError("Unblind requires an explicit sequence of state strings");

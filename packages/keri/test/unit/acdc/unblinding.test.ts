@@ -21,7 +21,7 @@ import {
 } from "cesr-ts";
 import { call, ensure, run, sleep, spawn } from "effection";
 import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { runPresentationUnblind } from "../../../../tufa/src/cli/commands/ipex-unblinding.ts";
+import { runGroupUnblind, runIndividualUnblind } from "../../../../tufa/src/cli/commands/ipex-unblinding.ts";
 import { loadNests } from "../../../db.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { publicOpeningAttachment, type RegistryStore } from "../../../src/acdc/registering.ts";
@@ -42,6 +42,8 @@ import { interact as interactEvent, reply } from "../../../src/core/protocol-eve
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
+
+const ST = ["issued", "revoked", ""];
 
 Deno.test("Unblind repairs pending and live exact presentations without changing admitted history", async () => {
   await run(function*() {
@@ -84,16 +86,15 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
         acdc: rgy,
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        ipexAuxiliary: { kind: "unblind", hab },
       });
       yield* ensure(() => runtime.close());
-      assert(runtime.ipexAuxiliary?.kind === "unblind");
+      assert(runtime.ipex);
       parties.push({
         hby,
         hab,
         store: rgy.store,
         exc: runtime.exc,
-        route: runtime.ipexAuxiliary.owner,
+        route: runtime.ipex!.unblind(hab),
         protocol: runtime.protocol,
         reactor: runtime.reactor,
         runtime,
@@ -341,8 +342,13 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     const liveView = observer.hby.db.enst.get(live.said!), liveDeadline = observer.exc.exchangeDeadline(live);
     assertEquals(observer.exc.verifyAccepted(live.said!, "/ipex/grant"), false);
     assertEquals(observer.hby.db.enst.get(live.said!), liveView);
-    const liveRequest = yield* spawn(() => runPresentationUnblind(observer.runtime, live.said!, { timeoutMs: 15000 }));
-    const liveRelease = yield* runPresentationUnblind(presenter.runtime, live.said!, { timeoutMs: 15000 });
+    const liveRequest = yield* spawn(() =>
+      runIndividualUnblind(observer.runtime, observer.hab, live.said!, { timeoutMs: 15000, states: ST })
+    );
+    const liveRelease = yield* runIndividualUnblind(presenter.runtime, presenter.hab, live.said!, {
+      timeoutMs: 15000,
+      states: ST,
+    });
     assertEquals((yield* liveRequest).completed, true);
     assertEquals(liveRelease.admitted, false);
     assertEquals(observer.exc.verifyAccepted(live.said!, "/ipex/grant"), true);
@@ -417,16 +423,15 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       const runtime = yield* createAgentRuntime(side.hby, new FetchHttpClient(), systemClock, {
         acdc: rgy,
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        ipexAuxiliary: { kind: "unblind", hab },
       });
       yield* ensure(() => runtime.close());
-      assert(runtime.ipexAuxiliary?.kind === "unblind");
+      assert(runtime.ipex);
       actors.push({
         ...side,
         hab,
         store: rgy.store,
         exc: runtime.exc,
-        route: runtime.ipexAuxiliary.owner,
+        route: runtime.ipex!.unblind(hab),
         protocol: runtime.protocol,
         reactor: runtime.reactor,
         runtime,
@@ -565,7 +570,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* call(finiteListener.stop);
     // Start the ordinary nonproposer command first; one setup cannot publish a group query.
     const peerRequest = yield* spawn(() =>
-      runPresentationUnblind(verifiers[1].runtime, grant.said!, {
+      runGroupUnblind(verifiers[1].runtime, verifiers[1].hab, grant.said!, {
         timeoutMs: 15000,
         proposer: verifier.member.pre,
         listen: finiteListener.port,
@@ -574,7 +579,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* sleep(100);
     assertEquals(queries, []);
     const request = yield* spawn(() =>
-      runPresentationUnblind(verifier.runtime, grant.said!, {
+      runGroupUnblind(verifier.runtime, verifier.hab, grant.said!, {
         timeoutMs: 15000,
         proposer: verifier.member.pre,
       })
@@ -591,7 +596,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
 
     // Index 1 authors the proof; rootless index 0 validates and contributes under its one setup approval.
     const peerRelease = yield* spawn(() =>
-      runPresentationUnblind(sender.runtime, grant.said!, {
+      runGroupUnblind(sender.runtime, sender.hab, grant.said!, {
         timeoutMs: 15000,
         proposer: presenters[1].member.pre,
       })
@@ -599,7 +604,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* sleep(100);
     assertEquals(replies, [], "one approved presenter cannot release a threshold reply");
     const release = yield* spawn(() =>
-      runPresentationUnblind(presenters[1].runtime, grant.said!, {
+      runGroupUnblind(presenters[1].runtime, presenters[1].hab, grant.said!, {
         timeoutMs: 15000,
         proposer: presenters[1].member.pre,
       })
@@ -612,7 +617,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* call(() =>
       assertRejects(() =>
         run(() =>
-          runPresentationUnblind(verifiers[1].runtime, "missing", {
+          runGroupUnblind(verifiers[1].runtime, verifiers[1].hab, "missing", {
             timeoutMs: 15000,
             proposer: verifier.member.pre,
             listen: finiteListener.port,

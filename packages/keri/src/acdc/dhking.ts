@@ -276,15 +276,19 @@ export class Dhke implements AuxiliaryQueryProcessor {
   readonly rvy: Revery;
   readonly registryStore: RegistryStore;
   readonly group: boolean;
+  private readonly kram: boolean;
 
   /** Bind concrete local owners; construction grants no consent and writes nothing. */
-  constructor({ hab, exc, registryStore, rvy = hab.rvy, now = Date.now }: {
+  constructor({ hab, exc, registryStore, rvy = hab.rvy, now = Date.now, kram = true }: {
     hab: Hab;
     exc: Exchanger;
     registryStore: RegistryStore;
     rvy?: Revery;
     now?: () => number;
+    /** False when the runtime has KRAM off: its `tmsc`/`msgc` rows never exist, so `approve` refuses. */
+    kram?: boolean;
   }) {
+    this.kram = kram;
     if (
       !(hab instanceof Hab) || hab.db !== exc.hby.db || rvy.db !== hab.db
       || exc.hby.habs.get(hab.pre!) !== hab
@@ -312,6 +316,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
    * live operation on a registry, so two pending Grants cannot clobber each other's root.
    */
   approve(grant: string, { coordinator, custodian }: DhkeApproval = {}): string {
+    if (!this.kram) throw new ValidationError("DH requires KRAM: enable it with the runtime's kram option");
     this.pruneQueries();
     this.hab.mgr.requireRegistryRootAccess();
     for (const op of this.operations.values()) {
@@ -420,6 +425,15 @@ export class Dhke implements AuxiliaryQueryProcessor {
       throw new ValidationError("Individual DH has no group coordinator");
     }
     return op;
+  }
+
+  /**
+   * Whether this owner already holds a live operation for `grant`. Two operation tables over one runtime
+   * (the host's and a command's own) use it so only the first to reach a Grant drives it.
+   */
+  holds(grant: string): boolean {
+    for (const op of this.operations.values()) if (op.grant === grant && !op.abandoned) return true;
+    return false;
   }
 
   /** Return the stable issuer proposal until own threshold intake supplies the complete query. */

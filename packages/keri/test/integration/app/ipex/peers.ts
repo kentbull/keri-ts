@@ -43,7 +43,7 @@ import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { runGroupDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-group-issuance.ts";
 import { prepareDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-issuance.ts";
-import { runPresentationUnblind } from "../../../../../tufa/src/cli/commands/ipex-unblinding.ts";
+import { runGroupUnblind } from "../../../../../tufa/src/cli/commands/ipex-unblinding.ts";
 import type { AcdcWalkPolicy } from "../../../../src/acdc/chaining.ts";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
@@ -228,7 +228,17 @@ class TypeScriptPeer implements DerivedIpexPeer {
   private remotes = new Map<string, PeerInfo>();
   protected operation?: { grant: string; xid: string; replySent?: boolean };
   private pumping?: Promise<void>;
+  /** Which auxiliary owner of this peer's identifier the current phase drives. */
+  protected phaseKind: "dhke" | "unblind" = "dhke";
   private derivedSchema?: MapperMap;
+
+  /** The owner of the current phase, from the runtime's per-identifier registry. */
+  protected get selected() {
+    const ipex = this.runtime.ipex!;
+    return this.phaseKind === "dhke"
+      ? { kind: "dhke" as const, owner: ipex.dhke(this.hab) }
+      : { kind: "unblind" as const, owner: ipex.unblind(this.hab) };
+  }
 
   constructor(
     protected hby: Habery,
@@ -506,7 +516,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
   protected async drainAuxiliary(): Promise<void> {
     if (this.pumping) return await this.pumping;
     this.pumping = (async () => {
-      const selected = this.runtime.ipexAuxiliary;
+      const selected = this.selected;
       if (!selected || !this.operation) return;
       while (selected.owner.outgoing.length) {
         const cue = selected.owner.outgoing.pull()!;
@@ -551,7 +561,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
       this.graph.fullNodes = [full];
       this.graph.nodes = [selected];
       this.info.commitment = full.said!;
-      const prepared = yield* prepareDerivedIssuance(this.runtime, this.wallet!, selected, {
+      const prepared = yield* prepareDerivedIssuance(this.runtime, this.wallet!, this.hab, selected, {
         recipient,
         message: "derived issuance",
         plan: this.plan,
@@ -561,7 +571,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
     }.bind(this));
   }
   async approveDh(grant: string): Promise<void> {
-    const selected = this.runtime.ipexAuxiliary;
+    const selected = this.selected;
     assertEquals(selected?.kind, "dhke");
     if (selected?.kind !== "dhke") throw new Error("Select DH runtime");
     const xid = selected.owner.approve(grant);
@@ -573,7 +583,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
     await this.drainAuxiliary();
   }
   async issueDerived(grant: string): Promise<string> {
-    const selected = this.runtime.ipexAuxiliary;
+    const selected = this.selected;
     if (selected?.kind !== "dhke" || this.operation?.grant !== grant || !selected.owner.complete(this.operation.xid)) {
       throw new Error("Issuance requires the explicitly approved completed DH exchange");
     }
@@ -587,7 +597,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
     }.bind(this));
   }
   async finishDh(grant: string): Promise<void> {
-    const selected = this.runtime.ipexAuxiliary;
+    const selected = this.selected;
     if (selected?.kind !== "dhke" || this.operation?.grant !== grant) throw new Error("Select approved DH Grant");
     assertEquals((await run(() => selected.owner.finish(this.operation!.xid))).kind, "accept");
     selected.owner.abandon(this.operation.xid);
@@ -598,6 +608,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
     if (this.operation) throw new Error("Finish the selected auxiliary operation before changing invocation");
     await this.pumping;
     this.runtime = await this.selectRuntime("unblind");
+    this.phaseKind = "unblind";
     this.wallet = new Wallet({
       hby: this.hby,
       registry: this.runtime.acdc!.store,
@@ -624,7 +635,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
     }.bind(this));
   }
   async approveUnblind(grant: string): Promise<void> {
-    const selected = this.runtime.ipexAuxiliary;
+    const selected = this.selected;
     if (selected?.kind !== "unblind") throw new Error("Select Unblind runtime");
     this.operation = { grant, xid: selected.owner.approve(grant) };
     const body = this.runtime.exc.retainedInput(grant)!.serder;
@@ -634,7 +645,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
     await this.drainAuxiliary();
   }
   async finishUnblind(grant: string): Promise<void> {
-    const selected = this.runtime.ipexAuxiliary;
+    const selected = this.selected;
     if (selected?.kind !== "unblind" || this.operation?.grant !== grant) {
       throw new Error("Select approved presentation");
     }
@@ -766,10 +777,10 @@ class TypeScriptPeer implements DerivedIpexPeer {
       ),
       encrypted: Boolean(this.hab.mgr.aeid),
       auxiliaryReady: Boolean(
-        this.operation && (this.runtime.ipexAuxiliary!.kind === "unblind"
+        this.operation && (this.selected.kind === "unblind"
             && (db.exns.get(this.operation.grant) ?? db.epse.get(this.operation.grant))?.pre === this.hab.pre
           ? this.operation.replySent
-          : this.runtime.ipexAuxiliary!.owner.complete(this.operation.xid)),
+          : this.selected.owner.complete(this.operation.xid)),
       ),
       deadline: grant ? this.runtime.exc.exchangeDeadline(grant) : null,
       grantRaw: grant ? new TextDecoder().decode(grant.raw) : null,
@@ -851,6 +862,7 @@ class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
     this.info.pre = hab.pre;
     this.info.urls = members.map(member => member.url);
     this.runtime = await this.selectRuntime!("dhke", hab);
+    this.phaseKind = "dhke";
     this.wallet = new Wallet({
       hby: this.hby,
       registry: this.runtime.acdc!.store,
@@ -958,7 +970,7 @@ class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
     this.operation = undefined;
   }
   override approveDh(grant: string): Promise<void> {
-    const selected = this.runtime.ipexAuxiliary;
+    const selected = this.selected;
     if (selected?.kind !== "dhke") throw new Error("Select group DH runtime");
     const coordinator = this.hab.kever!.said, custodian = this.members[0].pre;
     const xid = selected.owner.approve(grant, {
@@ -968,6 +980,7 @@ class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
     this.operation = { grant, xid };
     this.start("dh", () =>
       runGroupDerivedIssuance(this.runtime, this.wallet!, {
+        hab: this.hab,
         role: "recipient",
         grant,
         coordinator,
@@ -1034,7 +1047,7 @@ class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
   }
   override approveUnblind(grant: string, proposer?: string): Promise<void> {
     if (!proposer) throw new Error("Select the ordinary group Unblind proposer");
-    this.start("unblind", () => runPresentationUnblind(this.runtime, grant, { proposer, timeoutMs: 120000 }));
+    this.start("unblind", () => runGroupUnblind(this.runtime, this.hab, grant, { proposer, timeoutMs: 120000 }));
     return Promise.resolve();
   }
   override async finishUnblind(_grant: string): Promise<void> {
@@ -1347,7 +1360,6 @@ async function withDerivedTypeScriptPeer(body: (peer: DerivedIpexPeer) => Promis
           const runtime = yield* createAgentRuntime(hby, http, systemClock, {
             acdc: rgy,
             kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
-            ipexAuxiliary: kind === "dhke" ? { kind, hab } : { kind, hab },
           });
           resolve(runtime);
           try {
