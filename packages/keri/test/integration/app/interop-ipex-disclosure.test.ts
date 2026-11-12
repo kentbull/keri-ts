@@ -505,7 +505,11 @@ Deno.test("IPEX reciprocal groups: KERIpy issuer → TypeScript holder → rootl
     const heldView = histories[2].nodes.map(({ raw, proof }) => ({ raw, proof }));
     const custodian = histories[2].member, rootless = histories[3].member;
     assertEquals(histories[2].rootPresent, true);
-    assertEquals(histories[3].rootPresent, false);
+    // Once its setup completes, the holder custodian sends the root to the other member automatically.
+    await observed(
+      "non-custodian holder member retained the custodian's root copy",
+      async () => (await holders[1].snapshot(proposed.grant)).rootPresent || undefined,
+    );
 
     // A real accepted rotation reverses indices; custody stays put while delivery election moves.
     await rotateHolders();
@@ -515,7 +519,7 @@ Deno.test("IPEX reciprocal groups: KERIpy issuer → TypeScript holder → rootl
       assertEquals(state.groupReady, true);
     }
     assertEquals((await holders[0].snapshot(proposed.grant)).rootPresent, true);
-    assertEquals((await holders[1].snapshot(proposed.grant)).rootPresent, false);
+    assertEquals((await holders[1].snapshot(proposed.grant)).rootPresent, true, "a retained copy survives rotation");
     for (const peer of [...holders, verifier]) await peer.useUnblind();
     for (const peer of holders) await peer.connect(verifier.info, plan);
     await verifier.connect(holders[0].info, plan);
@@ -564,7 +568,6 @@ Deno.test("IPEX reciprocal groups: KERIpy issuer → TypeScript holder → rootl
       "rootless holder delivered the threshold-complete opening reply",
       async () => (await holders[1].snapshot(presentation.said)).deliveredReply ? true : undefined,
     );
-    assertEquals((await holders[1].snapshot(presentation.said)).rootPresent, false);
     assertEquals((await holders[0].snapshot(presentation.said)).deliveredReply, false);
     await observed(
       "verifier authenticated the complete group opening reply",
@@ -588,6 +591,11 @@ Deno.test("IPEX reciprocal groups: KERIpy issuer → TypeScript holder → rootl
         async () => (await peer.snapshot(presentation.said)).admit === acceptance ? true : undefined,
       );
     }
+    // KERIpy's issuer custodian sends its copy only after the Admit completes its issuance.
+    await observed(
+      "non-custodian issuer member retained the custodian's root copy",
+      async () => (await issuers[1].snapshot(proposed.grant)).rootPresent || undefined,
+    );
     for (const [index, peer] of members.entries()) {
       const state = await peer.snapshot(proposed.grant), original = histories[index];
       assertEquals(state.grantRaw, original.grantRaw);
@@ -598,7 +606,7 @@ Deno.test("IPEX reciprocal groups: KERIpy issuer → TypeScript holder → rootl
         original.nodes.map(({ raw, proof }) => ({ raw, proof })),
         "group rotation, new proof and later Admit preserve the original admitted view",
       );
-      assertEquals(state.rootPresent, index === 0 || index === 2);
+      assertEquals(state.rootPresent, true, "each custodian replicated the root to its other member");
     }
     assertEquals((await verifier.snapshot(undefined, inception.registry)).rootPresent, false);
   }));

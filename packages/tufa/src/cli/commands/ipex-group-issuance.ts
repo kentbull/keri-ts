@@ -29,14 +29,15 @@ import {
   Dhke,
   envelopeFromFrame,
   type ExchangeRouteHandler,
+  groupElectedMember,
   groupSigningMembers,
-  groupWitnesserSelection,
   Kever,
   latestGroupContribution,
   localGroupMember,
   messagize,
   multisigExnBody,
   Receiptor,
+  type RootCopyReport,
   runAgentRuntime,
   timestampMicros,
   ValidationError,
@@ -44,6 +45,7 @@ import {
   type WitnessAuthMap,
 } from "keri-ts/runtime";
 import { approveAcdcV2RegistryEvent } from "./acdc-v2-authoring.ts";
+import { sendRootCopies } from "./registry-root.ts";
 
 const QueryRoute = "/multisig/qry", ProofRoute = "/multisig/ipex-proof";
 /** Exact accepted coordinator and already elected custody member selected by this invocation. */
@@ -70,6 +72,8 @@ export interface GroupIssuanceResult {
    * The custodian also sends it to them by mailbox on `multisig`; this copy is the file fallback.
    */
   proof?: Uint8Array;
+  /** The custodian's fire-and-forget root copies to the other members, sent after issuance completes. */
+  rootCopies?: RootCopyReport[];
 }
 
 /** Resolve exact local owners and the already accepted coordinator; election is never recomputed from a new event. */
@@ -82,11 +86,8 @@ function owners(runtime: AgentRuntime, wallet: Wallet, selection: GroupIssuanceS
   const dh = selected.owner, hab = dh.hab, member = localGroupMember(runtime.hby, hab.pre);
   const event = hab.db.getEvtSerder(hab.pre, selection.coordinator);
   const coordinator = event ? { sn: event.sn!, said: event.said! } : null;
-  const elected = coordinator && groupWitnesserSelection(hab.db, hab.pre, coordinator);
-  const contribution = elected && latestGroupContribution(hab.db, selection.custodian, elected.establishment.verfers);
   if (
-    !elected || !coordinator || contribution?.index !== elected.index
-    || !groupSigningMembers(runtime.hby, hab.pre).includes(selection.custodian)
+    !coordinator || groupElectedMember(runtime.hby, hab.pre, coordinator) !== selection.custodian
     || !latestGroupContribution(hab.db, member.pre, hab.kever!.verfers)
   ) {
     throw new ValidationError(
@@ -442,8 +443,9 @@ function* runGroupIssuance(
     runtime.mux.addChildHandler(route, Dhke.Route, handler);
     delegated.push([route, handler]);
   }
+  const started = runtime.clock.now();
   try {
-    return yield* race([
+    const outcome = yield* race([
       call(function*() {
         return yield* scoped(function*() {
           const host = yield* spawn(() => runAgentRuntime(runtime, { hab: member, pollMailbox: true }));
@@ -647,6 +649,13 @@ function* runGroupIssuance(
         throw new ValidationError("Group issuance timed out without Admit");
       }),
     ]);
+    if (!lead || !outcome.registryIssued) return outcome;
+    // The DH custodian now retains the root and an accepted, issuer-anchored BUP exists. The issuance
+    // succeeded; copies to the other members run under the remaining --timeout and cannot change that.
+    const rootCopies = yield* sendRootCopies(runtime, hab, [registry], {
+      timeoutMs: started + timeoutMs - runtime.clock.now(),
+    });
+    return { ...outcome, rootCopies };
   } finally {
     if (approved) dh.abandon(xid);
     for (const [route, handler] of delegated) runtime.mux.removeChildHandler(route, Dhke.Route, handler);

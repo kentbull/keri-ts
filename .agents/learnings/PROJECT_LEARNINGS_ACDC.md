@@ -198,8 +198,8 @@ writer rechecks the original pending deadline after serialization. Local partial
 Grant consent starts that deadline before waiting for the remaining signatures.
 Group DH freezes its accepted coordinator's custodian and ordinary threshold;
 only that member retains the scalar-derived root, while other members contribute
-ordinary signatures to the exact proposal. No automatic root copying follows;
-Admit stays explicit. `Unblind` uses exact held ordinary or bound
+ordinary signatures to the exact proposal. Issuance completion then sends that
+root to the other members (see `RegistryRoot` below); Admit stays explicit. `Unblind` uses exact held ordinary or bound
 openings, or derives ordinary openings from the existing Keeper root using an
 explicit application state vocabulary. It never derives a bound proof or sends a
 root. Public query BUPs must form a fully anchored contiguous suffix before any
@@ -247,8 +247,19 @@ other ValidationErrors drop (including a root conflicting with the retained one)
 `createAgentRuntime` registers it (`runtime.registryRoot`) whenever a v2 registry exists, so every mailbox-polling
 runtime retains copies with no command; construction `reconcile()`s stored-but-unescrowed copies. Service roles
 pass `registryRoots: "refuse"` (`RouteRefuser`, nothing persisted). Never register a second instance on a runtime.
-`newcomers` derives the prior roster from the accepted KEL. Tufa `vc registry root send|receive|newcomers` mirror kli; `receive` is an optional drain (`--message`, `--listen --registry`, reconcile plus one escrow retry, `retained` output). `@keri-ts/multisync/v2` remains a separate explicit-
+`newcomers` derives the prior roster from the accepted KEL; `rekeyed` adds continuing members with a changed key.
+`prepare` derives each registry's `td` hint (held opening, else an ACDC nested at any depth in a stored exchange,
+including a Grant inside a signed `/multisig/exn`) and self-checks it before sealing; `--acdc` overrides, `""` sends
+none, `hinted` refuses. Automatic copies are fire and forget, with no ack, record or retry: the DH custodian sends at
+group issuance completion (end of `ipex grant --issue`, or of holder group `ipex setup`, since keri-ts splits setup from
+Admit), and every rotation signer with a prior key and held roots re-seals to new or rekeyed members after
+`multisig rotate|join` (`resealed`, no election). Failures are `root_copy` lines naming `tufa vc registry root send`
+and never fail the command. Tufa `vc registry root send|receive|newcomers` mirror kli; `receive` is an optional drain (`--message`, `--listen --registry`, reconcile plus one escrow retry, `retained` output). `@keri-ts/multisync/v2` remains a separate explicit-
 roster selector; missing custody never starts fresh DH.
+`deliverRegistryRoots` sends prepared copies through Poster with one sent/failed outcome per copy
+(sent means transmitted). `groupElectedMember` is KERIpy `GroupHab.elected` (current signing members
+only); `RegistryRoot.witnesser` stays KERIpy `witnesser` (local member, no roster filter), DH custody
+rechecks its frozen choice without reelecting, and revocation's anchor lead matches any historical member key.
 WalletAuthor composes the existing v2 Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries

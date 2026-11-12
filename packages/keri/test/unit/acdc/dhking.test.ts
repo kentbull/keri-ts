@@ -371,6 +371,17 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       true,
     ]);
     assertExists(issued.proof, "the custodian keeps the file fallback copy");
+    // Once issuance completes, each custodian sends its root to the other current member, fire and forget.
+    assertEquals(
+      [issued, recipientIssued, peerReceived].map(result =>
+        result.rootCopies?.map(report => [report.sender, report.recipient, report.registry, report.transmitted])
+      ),
+      [
+        [[lead.member.pre, issuers[1].member.pre, rip.said!, true]],
+        [[holder.member.pre, issuees[1].member.pre, rip.said!, true]],
+        undefined,
+      ],
+    );
     // The custodian delivered the same proof by mailbox; the peer's host received it.
     assertEquals(
       yield* awaitGroupIssuanceProof(
@@ -387,6 +398,10 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     assertEquals(delivered.map(body => body.pre), [lead.member.pre]);
     // The file fallback carries the same exact wrapper.
     assertEquals(parseBytes(issued.proof).at(-1)!.body.said, delivered[0].said);
+    // The rootless issuer member retains the custodian's copy from its mailbox, with no explicit send.
+    for (let polls = 0; !issuerPeer.hab.mgr.getRegistryRoot(issuerPeer.hab.pre, rip.said!) && polls < 500; polls++) {
+      yield* sleep(10);
+    }
     yield* peerHost.halt();
     assert(queries.length > 0 && responses.length > 0, "DH messages traverse real Poster HTTP delivery");
     for (const wire of queries) assertEquals(wire, queries[0], "group fanout and retries keep the exact signed query");
@@ -451,7 +466,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       assertEquals(side.hby.db.erpy.get(grant.said!)!.qb64, admit.said!);
     }
     for (const peer of [issuers[1], issuees[1]]) {
-      assertEquals(peer.hab.mgr.getRegistryRoot(peer.hab.pre, rip.said!), null);
+      assertEquals(peer.hab.mgr.getRegistryRoot(peer.hab.pre, rip.said!)?.qb64, root.qb64);
     }
 
     // The same held view becomes one exact group presentation file, with ordinary sender contributions.
@@ -507,7 +522,8 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       assertEquals(side.wallet.inventory().held, heldBeforePresentation[index]);
     }
 
-    // Replicate the custodian's existing root to its already rotated, rootless signing member by ESSR exn.
+    // A manual copy of the custodian's root to its already rotated signing member, which already retains the
+    // automatic copy, is retained idempotently.
     const recipient = issuees[1];
     const holderRoot = new RegistryRoot(holder.hby, holder.runtime.acdc!, holder.runtime.notifier);
     const recipientRoot = recipient.runtime.registryRoot!;
@@ -525,7 +541,6 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       false,
       "held opening remains local approval evidence",
     );
-    assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!), null);
     yield* recipient.reactor.processBytes(copy);
     yield* recipient.reactor.processBytes(copy);
     // The copy verifies by its commitment hint, so arrival retains it without an approval step.

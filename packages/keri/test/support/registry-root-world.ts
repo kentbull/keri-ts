@@ -6,8 +6,17 @@
  * side owns a Habery, a v2 registry and an agent runtime whose registered
  * `RegistryRoot` (`runtime.registryRoot`) is the side's route owner.
  */
-import { makeBlindState, MtrDex, parseBytes, Salter, type SerderACDC, Vrsn_2_0 } from "cesr-ts";
-import { ensure, type Operation } from "effection";
+import {
+  type CesrFrame,
+  makeBlindState,
+  MtrDex,
+  parseBytes,
+  Salter,
+  type SerderACDC,
+  type SerderKERI,
+  Vrsn_2_0,
+} from "cesr-ts";
+import { call, ensure, type Operation } from "effection";
 import { assertEquals, assertExists, assertNotEquals } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../src/acdc/messaging.ts";
 import { Regery } from "../../src/acdc/registraring.ts";
@@ -17,7 +26,9 @@ import { createHabery } from "../../src/app/identity/lmdb-habery.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient, type HttpClient } from "../../src/app/transport/http-client.ts";
+import { exchange } from "../../src/core/protocol-eventing.ts";
 import { messagize } from "../../src/core/protocol-serialization.ts";
+import { prepareNests, publishNests } from "../../src/db/exchange/exchange-nests.ts";
 import { openLmdbRegistry } from "../../src/db/lmdb-stores.ts";
 
 export interface Side {
@@ -41,6 +52,7 @@ export interface World {
   opening: ReturnType<typeof makeBlindState>;
   event: SerderACDC;
   acdc: string;
+  credential: SerderACDC;
   gid: string;
   late: [Side, Uint8Array, Uint8Array][];
   held: Uint8Array[];
@@ -179,10 +191,78 @@ export function* world(
     opening,
     event,
     acdc: acdc.said!,
+    credential: acdc,
     gid,
     late: deferred,
     held: [],
   };
+}
+
+/** One further registry with its own root, ACDC, issued opening and accepted BUP. */
+export interface Issued {
+  registry: string;
+  root: Salter;
+  acdc: SerderACDC;
+  opening: ReturnType<typeof makeBlindState>;
+  event: SerderACDC;
+}
+
+/**
+ * Issue one more registry and publish its KEL anchors and TEL to every side.
+ *
+ * `group` false: the individual issuer authors it and holds its root, like the
+ * world's first registry. `group` true: the Alice/Bob group is the issuer, its
+ * 2-of-2 interactions anchor the TEL, and Alice, the custodian, holds the root
+ * for the group. `label` must be 16 bytes, the Salt128 root material. Use only
+ * in worlds without late sides.
+ */
+export function* issueRegistry(w: World, label: string, { group = false } = {}): Operation<Issued> {
+  const issuer = group ? w.gid : w.issuer.hab.pre!;
+  const anchor = function*(event: SerderACDC, sn: number) {
+    const seal = { i: event.regid ?? event.said!, s: sn.toString(16), d: event.said! };
+    let kel: Uint8Array;
+    if (group) {
+      const proposals = [w.alice, w.bob].map(side => side.hby.interactGroupHab("group", undefined, { data: [seal] }));
+      assertEquals(proposals[0].serder.raw, proposals[1].serder.raw);
+      kel = messagize(proposals[0].serder, { sigers: proposals.flatMap(part => part.sigers), gvrsn: Vrsn_2_0 });
+    } else kel = w.issuer.hab.interact({ data: [seal] });
+    for (const side of w.sides) {
+      yield* receive(side, kel, group);
+      yield* receive(side, event.raw);
+    }
+  };
+  const rip = regcept(issuer);
+  yield* anchor(rip, 0);
+  const root = new Salter({ raw: encoder.encode(label), code: MtrDex.Salt_128 });
+  (group ? w.alice : w.issuer).hby.mgr.putRegistryRoot(issuer, rip.said!, root);
+  const acdc = acdcmap(issuer, { regid: rip.said!, attribute: { d: "", i: w.gid, role: label } });
+  const opening = makeBlindState({ salt: root.qb64, sn: 1, acdc: acdc.said!, state: "issued" });
+  const event = blindate(rip.said!, rip.said!, opening.d.nonce);
+  yield* anchor(event, 1);
+  for (const side of w.sides) assertEquals(side.rgy.store.headEvent(rip.said!)?.said, event.said);
+  return { registry: rip.said!, root, acdc, opening, event };
+}
+
+/** Store one exchange with nested evidence as the Exchanger does: its `exns` body plus `enst` rows. */
+export function* storeExchange(side: Side, serder: SerderKERI, nests: CesrFrame[]): Operation<string> {
+  const wires = yield* call(() => prepareNests(nests));
+  side.hby.db.exns.pin([serder.said!], serder);
+  publishNests(side.hby.db, serder.said!, wires);
+  return serder.said!;
+}
+
+/**
+ * Store a Grant disclosing `acdcs` at `side`, the only hint evidence a holder
+ * without an opening has. `wrapped` stores only the `/multisig/exn` proposal
+ * nesting that Grant, as a member that signed the proposal holds it.
+ */
+export function* storeGrant(side: Side, acdcs: readonly SerderACDC[], { wrapped = false } = {}): Operation<string> {
+  const gid = side.group?.pre ?? side.hab.pre!;
+  const grant = exchange("/ipex/grant", { sender: gid, attributes: { m: "" } });
+  const nodes: CesrFrame[] = acdcs.map(acdc => ({ body: acdc, attachments: [], gvrsn: Vrsn_2_0 }));
+  if (!wrapped) return yield* storeExchange(side, grant, nodes);
+  const proposal = exchange("/multisig/exn", { sender: side.hab.pre!, attributes: { gid, exn: grant.said! } });
+  return yield* storeExchange(side, proposal, [{ body: grant, attachments: [], gvrsn: Vrsn_2_0, nests: nodes }]);
 }
 
 /** Send one authorized copy from the sender's individual habitat and return its SAID. */

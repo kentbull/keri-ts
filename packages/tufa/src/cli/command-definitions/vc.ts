@@ -83,7 +83,10 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
         )
         .option("--holder <aid>", "AID the root is held for (defaults to the group alias, else the recipient)")
         .option("--event <said>", "Accepted BUP SAID hint (defaults to the registry head)")
-        .option("--acdc <said>", "ACDC SAID hint for commitment reproduction by a recipient without an opening")
+        .option(
+          "--acdc <said>",
+          "ACDC SAID hint overriding the one derived per registry from a held opening or stored Grant",
+        )
         .option("--out <file>", "Exclusive-create file for the signed exn instead of mailbox delivery");
     } else if (verb === "newcomers") {
       command.requiredOption("--rotation <said>", "Accepted group rotation SAID that added members")
@@ -93,7 +96,10 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
           collectOption,
           [],
         )
-        .option("--acdc <said>", "ACDC SAID hint for commitment reproduction")
+        .option(
+          "--acdc <said>",
+          "ACDC SAID hint overriding the one derived per registry from a held opening or stored Grant",
+        )
         .option("--out <file>", "Exclusive-create file for the signed exns instead of mailbox delivery");
     } else {
       command.option("--registry <said>", "Require a retained root for this registry SAID; --listen waits for it")

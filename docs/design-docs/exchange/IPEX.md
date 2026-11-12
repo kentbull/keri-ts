@@ -190,8 +190,10 @@ verification or Revery. Only own complete reply acceptance permits the issuee
 custodian to retain roots. The `query`/`reply` cues carry completed wire for peer
 delivery; `sign` carries the exact reply proposal for member review, not approval.
 Noncustodians sign without generating or retaining roots. This uses the same
-scalar shared-root profile below, with no signature pool, durable consent or
-automatic root copying. Final Admit remains a separate ordinary IPEX operation.
+scalar shared-root profile below, with no signature pool or durable consent.
+Once issuance completes, the custodian sends fire-and-forget root copies to the
+other members (see automatic copies below). Final Admit remains a separate
+ordinary IPEX operation.
 
 The derivation ports Python's local profile
 `KERI/ipex/dhke/X25519-HKDF-SHA256-Salt128/v1`, carried in KERI/CESR v2 JSON
@@ -264,8 +266,46 @@ handler that defines it, so ordinary runtime escrow loops retry `rrpe` with no
 extra wiring. `pending()` lists escrow entries without decrypting;
 `receive(said, {event, opening})` is only a manual retry supplying evidence a copy
 lacks. A different retained root is never replaced. `newcomers(groupHab, rotation)` selects members contributing to an
-accepted rotation and not to the prior establishment; accepted public rotation
-alone never copies a root.
+accepted rotation and not to the prior establishment; `rekeyed` adds continuing
+members whose contributing key changed.
+
+`prepare` derives each copy's `td` hint for its own registry: the ACDC of the
+head BUP's held public opening, else an ACDC of that registry nested at any
+depth in a locally stored exchange (a custodian's own `/ipex/grant`, or the
+Grant inside the `/multisig/exn` proposal a copy-holding member signed). Before
+sealing, the sender checks that its own root reproduces the BUP with the derived
+or override hint and refuses otherwise. `--acdc` on the Tufa commands overrides
+it; an explicit empty hint sends an unhinted copy; `hinted` refuses instead of
+sending a copy no local evidence can verify.
+
+Group commands send copies without being asked, on a fire-and-forget happy path
+(KERIpy kentbull/keripy root replication phase 1):
+
+- **Group issuance.** Once issuance completes, so the root is retained and an
+  accepted, issuer-anchored BUP exists, the DH custodian sends a copy to every
+  other current signing member: the issuer custodian at the end of
+  `tufa ipex grant --issue`, the holder custodian at the end of its group
+  `tufa ipex setup`. KERIpy's holder sends after its group Admit; keri-ts keeps
+  DH setup separate from Admit, and setup already holds the root and the BUP.
+- **Accepted group rotation.** After `tufa multisig rotate` or
+  `tufa multisig join` sees a group rotation accepted, every signer of it that
+  held a key in the prior establishment and holds roots for the group sends each
+  root to every current signing member that is new in that rotation or whose
+  contributing key changed (`resealed`). Receivers decrypt only with their
+  current key, so a rotated member needs a copy sealed to its new key. No
+  sender is elected.
+
+`replicateRegistryRoots` and `resealRegistryRoots` (`keri-ts/runtime`) prepare
+each copy with `hinted` and deliver it through Poster, the path
+`tufa vc registry root send` uses. Each outcome is printed as a `root_copy`
+JSON line after the command's own result. Limits: there is no acknowledgement,
+sent-copies record or retry. A copy that cannot be sent, because the mailbox is
+unreachable, the budget (the remaining issuance `--timeout`, or 30 seconds after
+a rotation) runs out, or no held opening or stored Grant yields a hint, is
+reported with `tufa vc registry root send` as the recovery and never fails the
+issuance or rotation. Several signers may send the same root; receiving is
+idempotent, so duplicates are harmless. A crash between retention and sending
+leaves the root unreplicated until someone sends it by hand.
 
 Disclosure plans select every disclosed node in exactly the graph's BFS order.
 The DAG path is `/` for the origin or a rooted literal SAD path ending in `_/`.

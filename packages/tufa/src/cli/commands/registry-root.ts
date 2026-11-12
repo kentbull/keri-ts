@@ -3,7 +3,9 @@
  * the `kli vc registry root send|receive|newcomers` equivalent.
  *
  * `send` and `newcomers` prepare one signed ESSR `exn` per (recipient,
- * registry) through `RegistryRoot` and deliver each to the recipient's mailbox
+ * registry) through `RegistryRoot`, each with the verification hint
+ * `RegistryRoot.prepare` derives for its own registry unless `--acdc`
+ * overrides it, and deliver each to the recipient's mailbox
  * (topic `credential`) through the runtime Poster. `--out` writes the same bytes
  * to a file instead. `receive` ingests copies from the `credential` mailbox
  * (`--listen`) or `--message` files through the ordinary Reactor, KRAM and
@@ -24,11 +26,11 @@ import {
   Prefixer,
   Vrsn_2_0,
 } from "cesr-ts";
-import { action, call, type Operation, spawn } from "effection";
+import { action, call, type Operation, scoped, spawn } from "effection";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
   type AgentRuntime,
-  CREDENTIAL_MAILBOX_TOPIC,
+  deliverRegistryRoots,
   type Hab,
   type Habery,
   isLocalGroupHab,
@@ -36,6 +38,8 @@ import {
   Organizer,
   type RegistryDisclosure,
   type RegistryRoot,
+  replicateRegistryRoots,
+  type RootCopyReport,
   RootUnverified,
   runAgentRuntime,
   type RuntimeClock,
@@ -151,7 +155,7 @@ function* send(context: Replication, options: RegistryRootOptions): Operation<vo
     check(context);
     const wire = root.prepare(member, aid, gid, registry, { event: options.event, td: options.acdc });
     const exchange = parseBytes(wire)[0].body.said!;
-    return { result: { registry, sender: member.pre!, recipient: aid, gid, exchange }, wire };
+    return { result: { registry, sender: member.pre!, recipient: aid, gid, exchange }, recipient: aid, wire };
   });
   if (options.verb === "newcomers") {
     writeJsonLine({
@@ -167,15 +171,10 @@ function* send(context: Replication, options: RegistryRootOptions): Operation<vo
   } else if (prepared.length) {
     const delivering = yield* spawn(() => runtime.postman.deliverDo());
     try {
-      for (const { result, wire } of prepared) {
+      // One copy per call keeps the per-copy deadline and stops at the first failure, before any output.
+      for (const copy of prepared) {
         check(context);
-        const event = runtime.postman.send({
-          src: member.pre!,
-          dest: result.recipient,
-          topic: CREDENTIAL_MAILBOX_TOPIC,
-          msg: wire,
-        }, { notify: true });
-        const outcome = yield* runtime.postman.wait(event);
+        const [outcome] = yield* deliverRegistryRoots(runtime.postman, member.pre!, [copy]);
         if (outcome.kin === "failed") throw outcome.error;
       }
     } finally {
@@ -234,6 +233,27 @@ function* receive(context: Replication, options: RegistryRootOptions): Operation
     }
     writeJsonLine({ gid: hab.pre, registry: options.registry, retained: true });
   }
+}
+
+/**
+ * Fire-and-forget root copies from a group command once a send is possible.
+ *
+ * Hosts Poster delivery for the copies only, under their own `timeoutMs`
+ * budget, and returns each outcome for the command to display as a
+ * `root_copy` line. A runtime that refuses roots holds none to send.
+ */
+export function* sendRootCopies(
+  runtime: AgentRuntime,
+  ghab: Hab,
+  registries: readonly string[],
+  options: { recipients?: readonly string[]; timeoutMs: number },
+): Operation<RootCopyReport[]> {
+  const root = runtime.registryRoot;
+  if (!root) return [];
+  return yield* scoped(function*() {
+    yield* spawn(() => runtime.postman.deliverDo());
+    return yield* replicateRegistryRoots(root, runtime.postman, runtime.clock, ghab, registries, options);
+  });
 }
 
 /** Run one verb over the alias's actual runtime and registry owners. */

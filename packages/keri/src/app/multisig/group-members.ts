@@ -78,6 +78,22 @@ export function groupWitnesserSelection(
   return null;
 }
 
+/**
+ * Return the current signing member elected by `coordinator`, as KERIpy
+ * `GroupHab.elected`: the member whose latest contribution to the coordinator's
+ * establishment keys holds the lowest verified signing index. Null when the
+ * event has no election or that contributor is no longer a current signing
+ * member. The result depends on locally stored signatures, so it suits
+ * idempotent duties only; frozen operations recheck their earlier choice instead.
+ */
+export function groupElectedMember(hby: Habery, group: string, coordinator: GroupCoordinator): string | null {
+  const selection = groupWitnesserSelection(hby.db, group, coordinator);
+  if (!selection) return null;
+  return groupSigningMembers(hby, group).find(member =>
+    latestGroupContribution(hby.db, member, selection.establishment.verfers)?.index === selection.index
+  ) ?? null;
+}
+
 /** Return current group signing member AIDs in signing-index order. */
 export function groupSigningMembers(hby: Habery, groupPre: string): string[] {
   const stored = hby.ks.getSmids(groupPre).map((tuple) => tuple[0].qb64);

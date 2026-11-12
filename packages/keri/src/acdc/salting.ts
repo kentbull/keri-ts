@@ -1,8 +1,10 @@
 /**
- * Explicit encrypted copies of existing registry roots.
+ * Encrypted copies of existing registry roots.
  *
  * `RegistryRoot` replicates held roots to individual members with ESSR `exn`
  * messages, ported from KERIpy `keri.acdc.salting` (kentbull/keripy v2-spec).
+ * Operators send them explicitly; group issuance completion and accepted group
+ * rotations also send them, fire and forget (`app/credentials/root-replicating.ts`).
  *
  * Local profile, not a KERI, ACDC or #1740 standard. Upstream KERIpy uses ESSR
  * only as the v1 `/essr/req` transport envelope on direct sends.
@@ -19,6 +21,7 @@
  * dependency escrow (`Baser.rrpe`, no timeout) that `processEscrows` retries.
  */
 import {
+  type CesrFrame,
   concatBytes,
   Counter,
   Dater,
@@ -44,11 +47,14 @@ import {
 } from "cesr-ts";
 import type { ExchangeRouteHandler } from "../app/exchanges/exchanging.ts";
 import type { Hab, Habery } from "../app/identity/habbing.ts";
-import { groupWitnesserSelection, isLocalGroupHab } from "../app/multisig/group-members.ts";
+import { groupWitnesserSelection, isLocalGroupHab, localGroupMember } from "../app/multisig/group-members.ts";
 import type { Notifier } from "../app/notifications/notifying.ts";
 import { ValidationError } from "../core/errors.ts";
+import { Kever } from "../core/kel/kever.ts";
 import { exchange } from "../core/protocol-eventing.ts";
 import type { Baser } from "../db/basing.ts";
+import { dgKey } from "../db/core/keys.ts";
+import { hasNests, loadNests } from "../db/exchange/exchange-nests.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { type RegistryDisclosure, validateRip, validateUpdate, verifyRegistryAnchor, vetBlind } from "./regeventing.ts";
 import type { Regery } from "./registraring.ts";
@@ -104,7 +110,11 @@ function canonical<T extends Matter>(value: unknown, ctor: new(args: { qb64: str
 }
 
 /** Latest member establishment whose first key is in `verfers`, as KERIpy `fetchLatestContribTo`. */
-function contribution(db: Baser, member: string, verfers: readonly Verfer[]): { sn: number; index: number } | null {
+function contribution(
+  db: Baser,
+  member: string,
+  verfers: readonly Verfer[],
+): { sn: number; index: number; key: string } | null {
   const state = db.getKever(member);
   if (!state) return null;
   const keys = verfers.map(verfer => verfer.qb64);
@@ -112,8 +122,8 @@ function contribution(db: Baser, member: string, verfers: readonly Verfer[]): { 
     if (db.kels.getLast(member, sn) !== said) continue;
     const event = db.getEvtSerder(member, said);
     if (!event?.estive) continue;
-    const index = keys.indexOf(event.verfers[0]?.qb64 ?? "");
-    if (index >= 0) return { sn, index };
+    const key = event.verfers[0]?.qb64 ?? "", index = keys.indexOf(key);
+    if (index >= 0) return { sn, index, key };
   }
   return null;
 }
@@ -327,14 +337,8 @@ export class RegistryRoot implements ExchangeRouteHandler {
     return rip;
   }
 
-  /**
-   * Return current signing member AIDs added by one accepted group rotation.
-   *
-   * Members, not keys, are compared: a continuing member usually rotates its
-   * own key, so it contributes to both establishments. Candidates are the AIDs
-   * with accepted key state in this Habery.
-   */
-  newcomers(ghab: Hab, rotation: string): string[] {
+  /** Return `ghab`'s accepted `rotation` and the establishment before it; ValidationError otherwise. */
+  private rotation(ghab: Hab, rotation: string): [SerderKERI, SerderKERI] {
     const db = this.hby.db, pre = ghab.pre;
     if (!pre || ghab.db !== db || !isLocalGroupHab(this.hby, ghab)) {
       throw new ValidationError("newcomers require a local group habitat");
@@ -343,24 +347,59 @@ export class RegistryRoot implements ExchangeRouteHandler {
     if (!event || !["rot", "drt"].includes(event.ilk!) || db.kels.getLast(pre, event.sn!) !== rotation) {
       throw new ValidationError("newcomers require an accepted group rotation");
     }
-    let prior: SerderKERI | null = null;
     for (const [, sn, said] of db.kels.getOnItemBackIter(pre, event.sn! - 1)) {
       if (db.kels.getLast(pre, sn) !== said) continue;
       const candidate = db.getEvtSerder(pre, said);
-      if (candidate?.estive) {
-        prior = candidate;
-        break;
-      }
+      if (candidate?.estive) return [event, candidate];
     }
-    if (!prior) throw new ValidationError("rotation has no accepted prior establishment");
+    throw new ValidationError("rotation has no accepted prior establishment");
+  }
+
+  /**
+   * Return current signing member AIDs added by one accepted group rotation.
+   *
+   * Members, not keys, are compared: a continuing member usually rotates its
+   * own key, so it contributes to both establishments. `rekeyed` also returns
+   * continuing members whose contributing key changed, the recipients a
+   * re-seal must reach under their new key. Candidates are the AIDs with
+   * accepted key state in this Habery.
+   */
+  newcomers(ghab: Hab, rotation: string, { rekeyed = false }: { rekeyed?: boolean } = {}): string[] {
+    const db = this.hby.db, pre = ghab.pre!, [event, prior] = this.rotation(ghab, rotation);
     const found: [number, string][] = [];
     for (const [keys] of db.states.getTopItemIter()) {
       const aid = keys.join(".");
       if (aid === pre || !db.getKever(aid)) continue;
-      const added = contribution(db, aid, event.verfers);
-      if (added && !contribution(db, aid, prior.verfers) && this.current(aid, pre)) found.push([added.index, aid]);
+      const added = contribution(db, aid, event.verfers), before = contribution(db, aid, prior.verfers);
+      if (added && this.current(aid, pre) && (!before || rekeyed && before.key !== added.key)) {
+        found.push([added.index, aid]);
+      }
     }
     return found.sort((left, right) => left[0] - right[0]).map(([, aid]) => aid);
+  }
+
+  /**
+   * Return the members `ghab`'s local member re-seals held roots to after `rotation`.
+   *
+   * Only a signer of the accepted rotation that held a key in the prior
+   * establishment sends, and it sends to each current signing member that is
+   * new in the rotation or whose contributing key changed (`newcomers` with
+   * `rekeyed`). Every such signer sends: copies are idempotent, so no single
+   * sender is elected. An empty list means nothing is owed.
+   */
+  resealed(ghab: Hab, rotation: string): string[] {
+    const recipients = this.newcomers(ghab, rotation, { rekeyed: true });
+    const db = this.hby.db, [event, prior] = this.rotation(ghab, rotation);
+    const member = localGroupMember(this.hby, ghab.pre!).pre;
+    const own = contribution(db, member, event.verfers);
+    if (!own || !contribution(db, member, prior.verfers)) return [];
+    const { indices } = Kever.verifyIndexedSignatures(
+      event.raw,
+      db.sigs.get(dgKey(ghab.pre!, rotation)),
+      event.verfers,
+    );
+    if (!indices.includes(own.index)) return [];
+    return recipients.filter(aid => aid !== member);
   }
 
   /** Return the current signing member AIDs of `gid` known to this Habery. */
@@ -398,15 +437,22 @@ export class RegistryRoot implements ExchangeRouteHandler {
 
   /**
    * Return one authorized copy of a root held locally for `gid` or the issuer.
+   *
    * `hab` is the local individual sender. `event` defaults to the registry's
-   * accepted BUP head.
+   * accepted BUP head. `td` is the recipient's verification hint: omitted, it
+   * is derived for this registry (`hint`); `""` sends none; any other value is
+   * an override. Before sealing, a derived or override hint must let this
+   * sender's own root reproduce the BUP `b` commitment, so a copy never carries
+   * a hint that cannot verify it. `hinted` refuses with RootUnverified, instead
+   * of sending a copy without a hint, when no local evidence yields one;
+   * automatic sends set it.
    */
   prepare(
     hab: Hab,
     recipient: string,
     gid: string,
     registry: string,
-    { event, td }: { event?: string; td?: string } = {},
+    { event, td, hinted = false }: { event?: string; td?: string; hinted?: boolean } = {},
   ): Uint8Array {
     const rip = this.authorize(hab.pre!, recipient, gid, registry);
     let root: Salter | null = null;
@@ -417,8 +463,74 @@ export class RegistryRoot implements ExchangeRouteHandler {
       }
     }
     if (!root) throw new ValidationError("no local root is held for this registry");
-    const [bup] = this.event(registry, event ?? this.rgy.store.headEvent(registry)!.said!, rip);
-    return rootExn(hab, recipient, gid, registry, root, { event: bup.said!, td });
+    const [bup, sn] = this.event(registry, event ?? this.rgy.store.headEvent(registry)!.said!, rip);
+    const uuid = makeBlindUuid({ salt: root.qb64, sn }).qb64;
+    let hint: string | undefined = td;
+    if (hint === undefined) {
+      hint = this.hint(gid, registry, uuid, bup) ?? undefined;
+      if (hint === undefined && hinted) {
+        throw new RootUnverified(
+          `no held opening or stored Grant ACDC lets this root reproduce registry ${registry} update ${bup.said}; `
+            + "send it with an ACDC hint",
+        );
+      }
+    } else if (hint && !this.reproduces(bup.sad!.b as string, uuid, hint, gid)) {
+      throw new ValidationError(
+        `the local root does not reproduce registry ${registry} update ${bup.said} with ACDC hint ${hint}`,
+      );
+    }
+    return rootExn(hab, recipient, gid, registry, root, { event: bup.said!, td: hint });
+  }
+
+  /**
+   * Return the ACDC SAID by which `uuid` reproduces `bup`'s commitment, or null.
+   *
+   * Derived per registry, never shared across registries: the ACDC of the
+   * BUP's locally held opening first, then each ACDC of `registry` nested in a
+   * locally stored exchange. A candidate counts only when it reproduces the
+   * commitment, which is the sender self-check.
+   */
+  hint(gid: string, registry: string, uuid: string, bup: SerderACDC): string | null {
+    const held = this.rgy.store.publicOpening(bup.said!)?.td.nonce;
+    const blid = bup.sad!.b as string;
+    if (held && this.reproduces(blid, uuid, held, gid)) return held;
+    for (const td of this.acdcs(registry)) {
+      if (this.reproduces(blid, uuid, td, gid)) return td;
+    }
+    return null;
+  }
+
+  /**
+   * Yield SAIDs of ACDCs in `registry` nested in any locally stored exchange.
+   *
+   * A custodian finds them in its own `/ipex/grant`; a member holding only a
+   * received copy finds them nested in the `/multisig/exn` proposal it signed.
+   * Nests are walked recursively, so the wrapper depth does not matter, and no
+   * index table is needed. An exchange whose stored nests no longer decode is
+   * skipped: hint search is advisory and the self-check still guards the copy.
+   */
+  private *acdcs(registry: string): Generator<string> {
+    const db = this.hby.db;
+    for (const [keys] of db.exns.getTopItemIter()) {
+      const said = keys.join(".");
+      if (!hasNests(db, said)) continue;
+      let nests: CesrFrame[];
+      try {
+        nests = loadNests(db, said);
+      } catch (error) {
+        if (error instanceof ParserError || error instanceof ValidationError) continue;
+        throw error;
+      }
+      yield* RegistryRoot.nested(nests, registry);
+    }
+  }
+
+  /** Depth-first SAIDs of nested bodies whose `rd` is `registry`. */
+  private static *nested(nests: readonly CesrFrame[], registry: string): Generator<string> {
+    for (const nest of nests) {
+      if (nest.body.ked?.rd === registry && nest.body.said) yield nest.body.said;
+      yield* RegistryRoot.nested(nest.nests ?? [], registry);
+    }
   }
 
   // receiving
