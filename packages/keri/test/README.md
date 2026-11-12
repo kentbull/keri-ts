@@ -131,7 +131,7 @@ Run these scenario files with their maintained owner:
 
 The default CLI runtime is the `kentbull/keripy` `v2-spec` peer selected by
 [`scripts/ci/keripy-reference.json`](../../../scripts/ci/keripy-reference.json),
-currently `8d767fe26c10995d454de9615b69319bff349187`, which includes the v2 Poster
+currently `c5841f30d0d830bad62e0ab91e66d98a0afac20c`, which includes the v2 Poster
 nested-forwarding fix that v2 group proposals need (kentbull/keripy#157, #158), the core
 `/multisig/qry` and `/multisig/ipex-proof` routes (#149), `Unblind.openings` (#156) and
 DH/Unblind `requery` (#159) and `/registry/root` ESSR root replication with its KRAM
@@ -142,7 +142,8 @@ credential mailbox with `reconcile()` and `RouteRefuser` (#173, #174), compact v
 Number ordinals on every v2 attachment path (#176), body-only nested nodes with no
 placeholder empty signature group (#177), and restart recovery of accepted group
 member commits (#171), and automatic registry root copies at group issuance completion and
-re-seals after an accepted group rotation, with per-registry verification hints (#184-#187). It defaults to KERI v2, matching
+re-seals after an accepted group rotation, with per-registry verification hints (#184-#187), and the
+open/closed Grant walk policy `walkPolicy` on `loadHandlers` and `IpexHandler` (#188). It defaults to KERI v2, matching
 Tufa's v2 KEL authoring, so KEL and KERI-message KLI calls no longer pin `--version 1.0`
 and KERIpy witness fixtures default to v2 except for v1-only release profiles. Legacy
 pathed IPEX/VDR credential scenarios still select v1 explicitly. `v2-spec` has no

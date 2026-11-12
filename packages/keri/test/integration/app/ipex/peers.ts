@@ -44,6 +44,7 @@ import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { runGroupDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-group-issuance.ts";
 import { prepareDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-issuance.ts";
 import { runPresentationUnblind } from "../../../../../tufa/src/cli/commands/ipex-unblinding.ts";
+import type { AcdcWalkPolicy } from "../../../../src/acdc/chaining.ts";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
@@ -84,7 +85,8 @@ export type Implementation = "TypeScript" | "KERIpy";
 export type ReplyDefect = { kind: "prior"; said: string } | {
   kind: "exchange-id" | "recipient" | "sender" | "non-opening";
 };
-export type DisclosureDefect = "extra" | "missing" | "altered";
+/** `refused` carries the negotiated graph unchanged; the peers' Grant walk policy refuses it. */
+export type DisclosureDefect = "extra" | "missing" | "altered" | "refused";
 export type Verb = "apply" | "offer" | "agree" | "grant" | "admit" | "spurn";
 
 /** Public coordinates only; each peer keeps its private keys and stores. */
@@ -1180,6 +1182,7 @@ async function withPythonPeer(
   body: (peer: DerivedIpexPeer) => Promise<void>,
   witnessed: boolean | "derived" = false,
   group = false,
+  grantWalk?: AcdcWalkPolicy,
 ): Promise<void> {
   // HIO HTTP treats port=0 as port 80; select an available unprivileged port explicitly.
   const port = randomPort();
@@ -1190,6 +1193,7 @@ async function withPythonPeer(
       context.home,
       group ? "derived-group" : witnessed === "derived" ? "derived" : witnessed ? "witnessed" : graph ?? "-",
       String(port),
+      grantWalk ?? "-",
     ],
     context.env,
     context.repoRoot,
@@ -1232,12 +1236,14 @@ export interface IpexPeers {
 async function withTypeScriptPeer(
   graph: GraphCase | undefined,
   body: (peer: IpexPeer) => Promise<void>,
+  grantWalk?: AcdcWalkPolicy,
 ): Promise<void> {
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-http-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
         kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
+        grantWalk,
       });
       try {
         const peer = new TypeScriptPeer(hby, runtime, graph);
@@ -1258,7 +1264,8 @@ async function withTypeScriptPeer(
 
 /** One fresh pair per test. KEL introduction also uses the public CESR endpoints. */
 export async function withIpexPeers(
-  options: { issuer: Implementation; graph?: GraphCase; witnessed?: boolean },
+  /** `grantWalk` applies to both peers; omitted, each uses its default policy. */
+  options: { issuer: Implementation; graph?: GraphCase; witnessed?: boolean; grantWalk?: AcdcWalkPolicy },
   scenario: (peers: IpexPeers) => Promise<void>,
 ): Promise<void> {
   const context = await createInteropContext();
@@ -1270,23 +1277,31 @@ export async function withIpexPeers(
     await withTypeScriptPeer(
       tsIssuer ? options.graph : undefined,
       (ts) =>
-        withPythonPeer(context, tsIssuer ? undefined : options.graph, async (py) => {
-          if (witnesses) {
-            await ts.enableWitnessedEvidence(witnesses.nodes);
-            await py.enableWitnessedEvidence(witnesses.nodes);
-          }
-          const issuer = tsIssuer ? ts : py, holder = tsIssuer ? py : ts;
-          const plan = disclosurePlan(issuer.info.schemas, options.graph);
-          await ts.connect(py.info, plan);
-          await py.connect(ts.info, plan);
-          for (const [peer, other] of [[ts, py], [py, ts]]) {
-            await observed(
-              `${peer.implementation} verified remote KEL`,
-              async () => (await peer.snapshot()).known.includes(other.info.pre) ? true : undefined,
-            );
-          }
-          await scenario({ issuer, holder, plan });
-        }, options.witnessed),
+        withPythonPeer(
+          context,
+          tsIssuer ? undefined : options.graph,
+          async (py) => {
+            if (witnesses) {
+              await ts.enableWitnessedEvidence(witnesses.nodes);
+              await py.enableWitnessedEvidence(witnesses.nodes);
+            }
+            const issuer = tsIssuer ? ts : py, holder = tsIssuer ? py : ts;
+            const plan = disclosurePlan(issuer.info.schemas, options.graph);
+            await ts.connect(py.info, plan);
+            await py.connect(ts.info, plan);
+            for (const [peer, other] of [[ts, py], [py, ts]]) {
+              await observed(
+                `${peer.implementation} verified remote KEL`,
+                async () => (await peer.snapshot()).known.includes(other.info.pre) ? true : undefined,
+              );
+            }
+            await scenario({ issuer, holder, plan });
+          },
+          options.witnessed,
+          false,
+          options.grantWalk,
+        ),
+      options.grantWalk,
     );
   } finally {
     await witnesses?.close();

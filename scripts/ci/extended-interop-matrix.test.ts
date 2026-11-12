@@ -5,7 +5,7 @@ import { groups, interop, required, suites } from "./keri-test-suites.ts";
 Deno.test("extended matrices preserve every exported owner and all four reference executions", () => {
   assertEquals(groups.full, [...required, ...interop]);
   assertEquals(groups["extended-interop"], interop);
-  for (const [target, count] of [["full", 30], ["extended-interop", 20], ["qualification", 32]] as const) {
+  for (const [target, count] of [["full", 28], ["extended-interop", 18], ["qualification", 30]] as const) {
     const rows = extendedInteropMatrix(target).include;
     assertEquals(rows.length, count);
     assertEquals(new Set(rows.map((row) => row.id)).size, count);

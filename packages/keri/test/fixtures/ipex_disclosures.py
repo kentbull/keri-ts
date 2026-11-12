@@ -93,6 +93,8 @@ def graph_disclosures(hby, hab, graph_case):
         return deep_graph(hby, hab, graph_case)
     if graph_case == "DI2I":
         return delegated_graph(hby, hab)
+    if graph_case in ("OR-undisclosed", "AND-undisclosed", "plan-unnested"):
+        return undisclosed_graph(hby, hab, graph_case)
     if graph_case == "I1I":
         return same_issuer_graph(hby, hab)
     if graph_case in ("DI1I", "E1E+DI1I"):
@@ -120,6 +122,35 @@ def delegated_graph(hby, hab):
     full, partial = near(far)
     return DisclosureGraph([full, far_full], [partial, far], [near(bad_far)[1], bad_far],
                            [hab, root, middle, issuer], None)
+
+
+def undisclosed_graph(hby, hab, graph_case):
+    """The root links a disclosed authority and an absent node the Grant never carries.
+
+    OR-undisclosed holds under the open walk; its control makes the disclosed sibling
+    false. AND-undisclosed refuses as sent. plan-unnested selects the absent node in the
+    plan; its control omits it from the nests.
+    """
+    authority = hby.makeHab(name="authority")
+    far_full, far = disclosure(authority.pre, issuee=hab.pre)
+    absent_full, absent = disclosure(authority.pre, issuee=authority.pre)
+
+    def near(false_sibling=False):
+        edge = dict(d="")
+        if graph_case != "AND-undisclosed":
+            edge["o"] = "OR"
+        # The root has no issuee, so E1E is a decided refusal of the disclosed sibling.
+        edge["authority"] = dict(n=far.said, o="E1E" if false_sibling else "I2I")
+        edge["absent"] = dict(n=absent.said, o="NI2I")
+        return disclosure(hab.pre, edge=edge)
+
+    full, partial = near()
+    if graph_case == "plan-unnested":
+        nodes = [partial, far, absent]
+        return DisclosureGraph([full, far_full, absent_full], nodes, nodes[:-1], [hab, authority], None)
+    nodes = [partial, far]
+    bad = [near(True)[1], far] if graph_case == "OR-undisclosed" else nodes
+    return DisclosureGraph([full, far_full], nodes, bad, [hab, authority], None)
 
 
 def delegated_graph_case(graph_case):

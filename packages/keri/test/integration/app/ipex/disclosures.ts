@@ -122,6 +122,8 @@ export type EdgeRefusalCase =
   | "inherited-schema"
   | "malformed-schema";
 export type PathShapeCase = "required-edge" | "optional-edge";
+/** Grant walk policy rows: a far node the Grant never carries. */
+export type UndisclosedCase = "OR-undisclosed" | "AND-undisclosed" | "plan-unnested";
 /** Issuer-identity rows; the composed row ANDs E1E with DI1I. */
 export type IssuerIdentityCase = "I1I" | "DI1I" | "E1E+DI1I";
 export type GraphCase =
@@ -135,6 +137,7 @@ export type GraphCase =
   | "OR"
   | "multi-hop"
   | "branching"
+  | UndisclosedCase
   | EdgeRefusalCase;
 /** Concrete credential bodies, issuer keys and the deliberately missing proof. */
 export interface DisclosureGraph {
@@ -154,6 +157,9 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
   if (graphCase === "required-edge" || graphCase === "optional-edge") return pathShapeGraph(hby, hab, graphCase);
   if (graphCase === "multi-hop" || graphCase === "branching") return deepGraph(hby, hab, graphCase);
   if (graphCase === "DI2I") return delegatedGraph(hby, hab);
+  if (graphCase === "OR-undisclosed" || graphCase === "AND-undisclosed" || graphCase === "plan-unnested") {
+    return undisclosedGraph(hby, hab, graphCase);
+  }
   if (graphCase === "I1I") return sameIssuerGraph(hby, hab);
   if (graphCase === "DI1I" || graphCase === "E1E+DI1I") return delegatedIssuerGraph(hby, hab, graphCase);
   switch (graphCase) {
@@ -184,6 +190,47 @@ function delegatedGraph(hby: Habery, hab: Hab): DisclosureGraph {
     nodes: [valid.partial, far.partial],
     badNodes: [near(badFar.partial).partial, badFar.partial],
     issuers: [hab, root, middle, issuer],
+    unsigned: null,
+  };
+}
+
+/**
+ * The root links a disclosed authority and an `absent` node the Grant never carries.
+ * OR-undisclosed: the valid Grant holds under the open walk; its control makes the
+ * disclosed sibling false. AND-undisclosed: the valid Grant itself refuses.
+ * plan-unnested: the plan selects `absent`; the control omits it from the nests.
+ */
+function undisclosedGraph(hby: Habery, hab: Hab, graphCase: UndisclosedCase): DisclosureGraph {
+  const authority = hby.makeHab("authority");
+  const far = disclosure(authority.pre, { issuee: hab.pre });
+  const absent = disclosure(authority.pre, { issuee: authority.pre });
+  const near = (falseSibling = false) =>
+    disclosure(hab.pre, {
+      edge: {
+        d: "",
+        ...(graphCase === "AND-undisclosed" ? {} : { o: "OR" }),
+        // The root has no issuee, so E1E is a decided refusal of the disclosed sibling.
+        authority: { n: far.partial.said, o: falseSibling ? "E1E" : "I2I" },
+        absent: { n: absent.partial.said, o: "NI2I" },
+      },
+    });
+  const valid = near();
+  if (graphCase === "plan-unnested") {
+    const nodes = [valid.partial, far.partial, absent.partial];
+    return {
+      fullNodes: [valid.full, far.full, absent.full],
+      nodes,
+      badNodes: nodes.slice(0, -1),
+      issuers: [hab, authority],
+      unsigned: null,
+    };
+  }
+  const nodes = [valid.partial, far.partial];
+  return {
+    fullNodes: [valid.full, far.full],
+    nodes,
+    badNodes: graphCase === "OR-undisclosed" ? [near(true).partial, far.partial] : nodes,
+    issuers: [hab, authority],
     unsigned: null,
   };
 }
@@ -457,6 +504,7 @@ export function disclosurePlan(schemas: readonly string[], graph?: GraphCase): D
     );
   }
   if (graph === "branching") paths.push("/e/audit/_/");
+  if (graph === "plan-unnested") paths.push("/e/absent/_/");
   if (graph === "multi-hop" || graph === "branching") paths.push("/e/authority/_/e/authority/_/");
   assertEquals(schemas.length, paths.length, "every selected node supplies its own actual schema ID");
   return paths.map((path, i) => [schemas[i], path, ["a/status/"]]);
