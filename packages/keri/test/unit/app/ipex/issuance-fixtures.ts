@@ -52,7 +52,13 @@ export interface Party {
 }
 
 /** An unwitnessed habitat has no receipts to collect; `onReceipt` lets a test look at the moment of anchoring. */
-export function* party(clock: RuntimeClock, label: string, names: string[], onReceipt = () => {}): Operation<Party> {
+export function* party(
+  clock: RuntimeClock,
+  label: string,
+  names: string[],
+  onReceipt = () => {},
+  register = true,
+): Operation<Party> {
   const hby = yield* createHabery({
     name: crypto.randomUUID(),
     temp: true,
@@ -77,7 +83,7 @@ export function* party(clock: RuntimeClock, label: string, names: string[], onRe
   } as unknown as Receiptor;
   const habs = names.map((name) => hby.makeHab(name));
   // A wallet registers its identifiers' DH owners when it opens; a query reaches only an existing owner.
-  for (const hab of habs) runtime.ipex!.dhke(hab);
+  if (register) for (const hab of habs) runtime.ipex!.dhke(hab);
   return { hby, rgy, runtime, receiptor, habs };
 }
 
@@ -126,17 +132,19 @@ export interface Scenario {
   holderStore: IssuanceOperationStore;
   holderChanges: { id: string }[];
   fail: { on: boolean };
+  /** The in-process transport shared by both parties. */
+  delivery: IssuanceDelivery["deliver"];
   author: RegistryAuthor;
   /** A fresh registry for issuer hab `index`, and a credential for holder hab `index`. */
   registry(index: number): Operation<{ regid: string; credential: () => SerderACDC }>;
 }
 
 /** Issuer with `count` identifiers, holder with `count`, KELs exchanged so each side knows the other. */
-export function* scenario(count = 1, onReceipt = () => {}): Operation<Scenario> {
+export function* scenario(count = 1, onReceipt = () => {}, register = true): Operation<Scenario> {
   const clock = new TestClock();
   const names = Array.from({ length: count }, (_, i) => `n${i}`);
   const issuer = yield* party(clock, "Issuer", names.map((n) => `i${n}`), onReceipt);
-  const holder = yield* party(clock, "Holder", names.map((n) => `h${n}`));
+  const holder = yield* party(clock, "Holder", names.map((n) => `h${n}`), undefined, register);
   for (const [from, to] of [[issuer, holder], [holder, issuer]] as const) {
     for (const hab of from.habs) {
       for (const wire of from.hby.db.clonePreIter(hab.pre!, 0)) yield* to.runtime.reactor.processBytes(wire);
@@ -158,6 +166,7 @@ export function* scenario(count = 1, onReceipt = () => {}): Operation<Scenario> 
     derived,
     changes,
     fail,
+    delivery: deliver,
     author,
     holderStore,
     holderChanges,

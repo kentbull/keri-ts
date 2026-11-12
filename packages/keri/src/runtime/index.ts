@@ -883,6 +883,59 @@ export {
   waitForIssuance,
 } from "../app/ipex/issuance.ts";
 
+// Runtime-owned single-signature IPEX presentation operations (present, process, status, wait, abandon).
+export {
+  abandonPresentation,
+  MemoryPresentationOperationStore,
+  type PreparedPresentation,
+  preparePresentation,
+  present,
+  type PresentationBegun,
+  type PresentationDeps,
+  type PresentationEndState,
+  type PresentationInput,
+  PresentationOperations,
+  type PresentationOperationStore,
+  type PresentationOptions,
+  type PresentationRecord,
+  type PresentationResponse,
+  type PresentationStatus,
+  presentationStatus,
+  type PresentationVerb,
+  type PresentationWaitOptions,
+  type PresentOptions,
+  waitForPresentation,
+} from "../app/ipex/presenting.ts";
+
+// Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
+export {
+  abandonUnblinding,
+  approveUnblind,
+  MemoryUnblindingOperationStore,
+  requestUnblind,
+  type UnblindingBegun,
+  type UnblindingDeps,
+  type UnblindingEndState,
+  UnblindingOperations,
+  type UnblindingOperationStore,
+  type UnblindingPhase,
+  type UnblindingRecord,
+  type UnblindingRequest,
+  type UnblindingRole,
+  type UnblindingStatus,
+  unblindingStatus,
+  type UnblindingWaitOptions,
+  waitForUnblinding,
+} from "../app/ipex/unblinding-workflow.ts";
+
+// Operations owners composed by the runtime for `ipexOwners` hosts.
+export {
+  type ComposedOwners,
+  type OperationStores,
+  OWNER_LOOP_MS,
+  type RuntimeOperations,
+} from "../app/runtime/operation-owners.ts";
+
 // Library delegator approval (list, approve, status, wait, dismiss).
 export {
   approveDelegation,
