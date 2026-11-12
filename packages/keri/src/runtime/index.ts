@@ -950,6 +950,8 @@ export {
   listPendingDelegations,
   type PendingDelegation,
   type PendingDelegationFilter,
+  proposeGroupDelegationApproval,
+  requestDelegatedEvent,
   settleDelegationApproval,
   waitForDelegationApproval,
   type WaitForDelegationApprovalOptions,
