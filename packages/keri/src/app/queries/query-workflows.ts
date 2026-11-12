@@ -1,30 +1,28 @@
 /**
  * Library entry points for key-state and anchor queries.
  *
- * A query is a finite workflow (`KeyStateNoticer` or `AnchorQuerier`) that must
- * run alongside the runtime workers, which send the request and ingest the
- * reply. These functions own that composition: choose the workflow, spawn it
- * and the workers in the caller's scope, race an elapsed deadline against
- * completion, and halt both before returning so stores may close.
+ * A query is a finite workflow (`KeyStateNoticer` or `AnchorQuerier`) that runs
+ * beside the host's runtime workers, which send the request and ingest the reply.
+ * These functions never start those workers: a wallet already runs them, and the
+ * CLI runs them around the call (`cli/common/runtime-workers.ts`). The host must
+ * have configured the sender with the signing hab (`runAgentRuntime` does) and,
+ * for key state, wired its cue owner to the `cues` Deck it passes here.
  *
- * Begin/status/wait split. `begin*` starts the workflow and workers and returns
- * a {@link QueryRun}; `wait` observes it against a deadline; `queryKeyState` and
- * `queryAnchor` are begin + wait + halt. Status is process-local for both
- * queries: the key-state wait completes on a transient `keyStateSaved` cue that
- * leaves no durable record, so it cannot be recomputed from stores. Anchor
- * queries additionally have a durable predicate, {@link anchorQueryStatus}.
- * Tasks live in the caller's Effection scope, so a UI that begins a query must
- * keep that scope open (and halt the run) rather than abandon it.
+ * Begin/status/wait split. `begin*` spawns the workflow in the caller's scope and
+ * returns a {@link QueryRun}; `wait` observes it against a deadline; `queryKeyState`
+ * and `queryAnchor` are begin + wait + halt. Tasks belong to the scope that began
+ * them, so a UI that begins a query keeps that scope open and halts the run.
  */
 import type { SealEvent } from "cesr-ts";
 import { call, type Operation, race, sleep, spawn, type Task } from "effection";
 import type { AgentCue } from "../../core/cues.ts";
-import { Deck } from "../../core/deck.ts";
+import type { Deck } from "../../core/deck.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
-import { type AgentRuntime, runAgentRuntime } from "../runtime/agent-runtime.ts";
+import type { ChangeSink, WaitResult } from "../runtime/workflow-contract.ts";
 import { AnchorQuerier, KeyStateNoticer } from "./querying.ts";
+import type { WitnessInquisitor } from "./witness-inquisitor.ts";
 
 /** One elapsed deadline covers query sending and independently received evidence. */
 export const QUERY_TIMEOUT_MS = 10_000;
@@ -32,10 +30,32 @@ export const QUERY_TIMEOUT_MS = 10_000;
 /** Exact event seal sought by an anchor query. */
 export type QueryAnchor = ReturnType<typeof SealEvent.toSad>;
 
-/** Result of waiting on a query: accepted evidence satisfied it, or the deadline won. */
-export type QueryOutcome =
-  | { status: "completed" }
-  | { status: "timed-out"; timeoutMs: number };
+/** Collaborators every query needs: accepted-state stores and the query sender. */
+export interface QueryDeps {
+  readonly hby: Habery;
+  readonly querying: WitnessInquisitor;
+  /** Optional sink told `{kind:"query", id:"<prefix>"}` when a query starts and when it completes. */
+  readonly changes?: ChangeSink;
+}
+
+/** Key-state queries also need the Deck the host's cue owner fills with saved notices. */
+export interface KeyStateQueryDeps extends QueryDeps {
+  readonly cues: Deck<AgentCue>;
+}
+
+/**
+ * Status of a query. `scope` says where the fact lives: `"process"` means it is
+ * held only by the running {@link QueryRun} and is lost on restart or reload
+ * (key-state completion rides a transient `keyStateSaved` cue that leaves no
+ * durable record); `"durable"` means it was recomputed from stores
+ * ({@link anchorQueryStatus}).
+ */
+export type QueryStatus =
+  | { state: "active"; phase: "awaitingEvidence"; scope: "process" | "durable" }
+  | { state: "completed"; scope: "process" | "durable" };
+
+/** Result of waiting on a query: settled once accepted evidence satisfied it, or the deadline won. */
+export type QueryOutcome = WaitResult<QueryStatus>;
 
 /** Wait budget for a blocking query. */
 export interface QueryWaitOptions {
@@ -54,11 +74,11 @@ export interface QueryTarget {
 /** Handle on a started query; its tasks belong to the scope that began it. */
 export interface QueryRun {
   readonly prefix: string;
-  /** Process-local: `completed` once the workflow task has returned. */
-  status(): "pending" | "completed";
+  /** Process-local status (`scope: "process"`): completed once the workflow task has returned. */
+  status(): QueryStatus;
   /** Observe completion against a fresh deadline; a timeout leaves the run going. */
   wait(options?: QueryWaitOptions): Operation<QueryOutcome>;
-  /** Halt the workflow, then the workers, joining both. Safe after completion. */
+  /** Halt the workflow. Safe after completion. */
   halt(): Operation<void>;
 }
 
@@ -71,95 +91,95 @@ export function requireQueryRequester(hby: Habery, hab: Hab): void {
   }
 }
 
-/** Durable anchor predicate: the accepted KEL of `prefix` already holds the exact seal. */
+/** Durable anchor status (`scope: "durable"`): the accepted KEL of `prefix` already holds the exact seal. */
 export function anchorQueryStatus(
-  hby: Habery,
+  deps: Pick<QueryDeps, "hby">,
   prefix: string,
   anchor: QueryAnchor,
-): "pending" | "completed" {
-  return hby.db.fetchLastSealingEventByEventSeal(prefix, anchor) ? "completed" : "pending";
+): QueryStatus {
+  return deps.hby.db.fetchLastSealingEventByEventSeal(prefix, anchor)
+    ? { state: "completed", scope: "durable" }
+    : { state: "active", phase: "awaitingEvidence", scope: "durable" };
 }
 
-/** Start a key-state query and its runtime workers in the caller's scope. */
-export function* beginKeyStateQuery(runtime: AgentRuntime, target: QueryTarget): Operation<QueryRun> {
-  const { hby } = runtime;
-  requireQueryRequester(hby, target.hab);
-  const queryCues = new Deck<AgentCue>();
-  const workflow = new KeyStateNoticer(hby.db, runtime.querying, target.prefix, queryCues, {
+/** Start a key-state query in the caller's scope. */
+export function* beginKeyStateQuery(deps: KeyStateQueryDeps, target: QueryTarget): Operation<QueryRun> {
+  requireQueryRequester(deps.hby, target.hab);
+  const workflow = new KeyStateNoticer(deps.hby.db, deps.querying, target.prefix, deps.cues, {
     signer: target.hab.pre,
   });
-  return yield* startQuery(runtime, target, workflow, queryCues);
+  return yield* startQuery(deps, target.prefix, workflow);
 }
 
-/** Start an anchor query and its runtime workers in the caller's scope. */
+/** Start an anchor query in the caller's scope. */
 export function* beginAnchorQuery(
-  runtime: AgentRuntime,
+  deps: QueryDeps,
   target: QueryTarget & { anchor: QueryAnchor },
 ): Operation<QueryRun> {
-  const { hby } = runtime;
-  requireQueryRequester(hby, target.hab);
-  const workflow = new AnchorQuerier(hby.db, runtime.querying, target.prefix, target.anchor, {
+  requireQueryRequester(deps.hby, target.hab);
+  const workflow = new AnchorQuerier(deps.hby.db, deps.querying, target.prefix, target.anchor, {
     signer: target.hab.pre,
   });
-  return yield* startQuery(runtime, target, workflow);
+  return yield* startQuery(deps, target.prefix, workflow);
 }
 
 /**
  * Query current key state for `prefix` and wait for accepted evidence.
  *
- * @returns `completed`, or `timed-out`; a timeout is not permission to treat
- * stale local state as success. Workflow and worker failures propagate.
+ * @returns `settled` (status `completed`), or `timed-out`; a timeout is not permission to treat
+ * stale local state as success. Workflow failures propagate.
  */
 export function* queryKeyState(
-  runtime: AgentRuntime,
+  deps: KeyStateQueryDeps,
   target: QueryTarget,
   options: QueryWaitOptions = {},
 ): Operation<QueryOutcome> {
-  return yield* beginThenWait(beginKeyStateQuery(runtime, target), options);
+  return yield* beginThenWait(beginKeyStateQuery(deps, target), options);
 }
 
 /** Query for an accepted KEL event holding the exact seal `target.anchor`; see {@link queryKeyState}. */
 export function* queryAnchor(
-  runtime: AgentRuntime,
+  deps: QueryDeps,
   target: QueryTarget & { anchor: QueryAnchor },
   options: QueryWaitOptions = {},
 ): Operation<QueryOutcome> {
-  return yield* beginThenWait(beginAnchorQuery(runtime, target), options);
+  return yield* beginThenWait(beginAnchorQuery(deps, target), options);
 }
 
-/** Spawn the workflow first, then the workers wired to the command-owned cue Deck. */
+/** Spawn the workflow in the caller's scope. */
 function* startQuery(
-  runtime: AgentRuntime,
-  target: QueryTarget,
+  deps: QueryDeps,
+  prefix: string,
   workflow: { queryDo(): Operation<void> },
-  queryCues?: Deck<AgentCue>,
 ): Operation<QueryRun> {
   let completed = false;
+  const status = (): QueryStatus =>
+    completed
+      ? { state: "completed", scope: "process" }
+      : { state: "active", phase: "awaitingEvidence", scope: "process" };
   const observing: Task<void> = yield* spawn(function*() {
     yield* workflow.queryDo();
     completed = true;
   });
-  const worker: Task<void> = yield* spawn(() => runAgentRuntime(runtime, { hab: target.hab, queryCues }));
+  deps.changes?.push({ kind: "query", id: prefix });
   return {
-    prefix: target.prefix,
-    status: () => completed ? "completed" : "pending",
-    wait: (options = {}) => waitForQuery(observing, options.timeoutMs ?? QUERY_TIMEOUT_MS),
-    *halt() {
-      try {
-        yield* observing.halt();
-      } finally {
-        yield* worker.halt();
-      }
+    prefix,
+    status,
+    *wait(options = {}) {
+      const outcome = yield* waitForQuery(observing, status, options.timeoutMs ?? QUERY_TIMEOUT_MS);
+      if (outcome.outcome === "settled") deps.changes?.push({ kind: "query", id: prefix });
+      return outcome;
     },
+    halt: () => observing.halt(),
   };
 }
 
 /**
  * Observe completion within the window without transferring task ownership.
  * The race cancels only its observation when the timer wins; the run's `halt`
- * joins the original tasks.
+ * joins the original task.
  */
-function* waitForQuery(observing: Task<void>, timeoutMs: number): Operation<QueryOutcome> {
+function* waitForQuery(observing: Task<void>, status: () => QueryStatus, timeoutMs: number): Operation<QueryOutcome> {
   const done = yield* race([
     call(function*() {
       yield* observing;
@@ -170,7 +190,7 @@ function* waitForQuery(observing: Task<void>, timeoutMs: number): Operation<Quer
       return false;
     }),
   ]);
-  return done ? { status: "completed" } : { status: "timed-out", timeoutMs };
+  return done ? { outcome: "settled", status: status() } : { outcome: "timed-out", status: status(), timeoutMs };
 }
 
 /** begin + wait, halting the run on every exit path. */

@@ -27,6 +27,7 @@ import type { Hab, Habery } from "../identity/habbing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
+import type { WaitResult } from "../runtime/workflow-contract.ts";
 import { buildCesrStreamRequest } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { fetchEndpointUrls, preferredUrl } from "./mailboxing.ts";
@@ -192,9 +193,7 @@ export interface MailboxWaitOptions {
 }
 
 /** Outcome of `waitForMailboxState`; a deadline is a value, not a throw. */
-export type MailboxWaitResult =
-  | { readonly outcome: "settled"; readonly status: MailboxStatus }
-  | { readonly outcome: "timed-out"; readonly status: MailboxStatus };
+export type MailboxWaitResult = WaitResult<MailboxStatus, Record<never, never>>;
 
 /**
  * Observe `read` until it reports the wanted state or the deadline passes. It

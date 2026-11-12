@@ -6,22 +6,27 @@
  * Completion is two independent steps. `receiptEvent` obtains witness receipts
  * for the accepted event. For delegated events, `beginDelegation` places the
  * event in the durable delegating workflow and `waitForDelegation` drives the
- * host's runtime until the delegator's anchor is learned. Begin is separate from
+ * host's runtime has learned the delegator's anchor. Begin is separate from
  * wait so that a host without a blocking caller can begin, return to its user
  * interface and read `delegationStatus` later. `completeEvent` is the
  * convenience that runs both steps in order.
  *
  * Boundaries:
  * - Dependencies are narrow collaborators, not an AgentRuntime (ADR-0013). The
- *   host owns the runtime and its lifetime; `withDelegation` lends it for one
- *   scope.
+ *   host owns the runtime and its lifetime; `withDelegation` lends the
+ *   collaborator for one scope and, for a one-shot host, runs workers in it.
+ * - Waits only observe. They never start runtime workers, and an expired wait is
+ *   a returned `timed-out` value, not an exception.
  * - Witness authorization codes arrive resolved. Prompting is a host concern.
  * - Delegation state is the Anchorer's durable escrow membership; this module
  *   adds none.
  */
 import type { Operation } from "npm:effection@^3.6.0";
+import type { Baser } from "../../db/basing.ts";
+import { dgKey } from "../../db/core/keys.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
+import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { Receiptor, type WitnessAuthMap, WitnessReceiptor } from "../witness/receipting.ts";
 import type { Anchorer, DelegationWorkflowStatus } from "./delegating.ts";
@@ -40,33 +45,29 @@ export interface ReceiptingDeps {
   readonly http: HttpClient;
   /** Borrowed clock for network deadlines. */
   readonly clock: RuntimeClock;
+  /** Optional sink told `{kind:"event", id:"<pre>:<sn>"}` after receipting. */
+  readonly changes?: ChangeSink;
 }
 
 /**
- * Delegation collaborator: the durable workflow owner plus a way to run the
- * host's workers until a condition holds. A host with a long-lived runtime
- * adapts it once; the CLI builds one per command.
+ * Delegation collaborator: the durable workflow owner. Waiting observes its
+ * reads; progress comes from workers the host already runs.
  */
 export interface DelegationCollaborator {
   /** Durable delegating workflow (begin, status, completion reads). */
   readonly anchorer: Pick<Anchorer, "beginLatest" | "workflowStatus" | "complete">;
-  /**
-   * Run host workers until `done()` holds or `timeoutMs` elapses, then stop them.
-   * Timeout and worker failure propagate to the caller.
-   */
-  runUntil(
-    done: () => boolean,
-    options: { hab: Hab; timeoutMs: number; pollMailbox: boolean },
-  ): Operation<void>;
+  /** Optional sink told `{kind:"delegation", id:"<pre>:<sn>"}` on begin and completion. */
+  readonly changes?: ChangeSink;
 }
 
 /** Everything `completeEvent` needs. */
 export interface EventCompletionDeps extends ReceiptingDeps {
   /**
    * Lend the delegation collaborator for one scope. The host creates it on entry
-   * and releases it on exit, success or failure. Called only for delegated events.
+   * and releases it on exit, success or failure. A one-shot host also runs the
+   * workers (signing as `hab`) for that scope. Called only for delegated events.
    */
-  withDelegation<T>(use: (delegation: DelegationCollaborator) => Operation<T>): Operation<T>;
+  withDelegation<T>(hab: Hab, use: (delegation: DelegationCollaborator) => Operation<T>): Operation<T>;
 }
 
 /** Witness receipting choices for one event. */
@@ -93,7 +94,8 @@ export function* receiptEvent(
   pre: string,
   { sn, auths, endpoint = false, force = false }: ReceiptOptions = {},
 ): Operation<void> {
-  if (!deps.hby.habs.get(pre)?.kever?.wits.length) return;
+  const kever = deps.hby.habs.get(pre)?.kever;
+  if (!kever?.wits.length) return;
 
   if (endpoint) {
     yield* new Receiptor(deps.hby, deps.protocol, deps.http, deps.clock).receipt(pre, { sn, auths });
@@ -101,6 +103,7 @@ export function* receiptEvent(
     yield* new WitnessReceiptor(deps.hby, deps.protocol, deps.http, deps.clock, { force })
       .submit(pre, { sn, auths });
   }
+  deps.changes?.push({ kind: "event", id: `${pre}:${sn ?? kever.sn}` });
 }
 
 /** Hex sequence key the delegating workflow uses. */
@@ -121,6 +124,7 @@ export function beginDelegation(
   communicationHab?: Hab,
 ): void {
   delegation.anchorer.beginLatest(pre, sn, { communicationHab });
+  delegation.changes?.push({ kind: "delegation", id: `${pre}:${sn}` });
 }
 
 /** Read the durable workflow state for one delegated event; mutates nothing. */
@@ -132,23 +136,24 @@ export function delegationStatus(
   return delegation.anchorer.workflowStatus(pre, snKey(sn));
 }
 
+/** Outcome of waiting for a delegator's anchor. */
+export type DelegationWaitResult = WaitResult<DelegationWorkflowStatus>;
+
 /**
- * Run the host's workers until the delegated event is complete, then report the
- * workflow state.
- *
- * @throws When `timeoutMs` elapses first, or a worker fails.
+ * Observe the delegated event until the delegator's anchor is learned or the
+ * deadline passes. Starts no worker.
  */
 export function* waitForDelegation(
   delegation: DelegationCollaborator,
   hab: Hab,
   sn: number,
   { timeoutMs = DELEGATION_WAIT_TIMEOUT_MS }: { timeoutMs?: number } = {},
-): Operation<DelegationWorkflowStatus> {
-  yield* delegation.runUntil(
-    () => delegation.anchorer.complete(hab.pre, sn),
-    { hab, timeoutMs, pollMailbox: true },
-  );
-  return delegationStatus(delegation, hab.pre, sn);
+): Operation<DelegationWaitResult> {
+  const done = yield* observeUntil(() => delegation.anchorer.complete(hab.pre, sn), { timeoutMs });
+  const status = delegationStatus(delegation, hab.pre, sn);
+  if (!done) return { outcome: "timed-out", status, timeoutMs };
+  delegation.changes?.push({ kind: "delegation", id: `${hab.pre}:${sn}` });
+  return { outcome: "settled", status };
 }
 
 /** Delegation choices for `completeEvent`; present only for delegated events. */
@@ -168,11 +173,15 @@ export interface CompleteEventOptions extends ReceiptOptions {
   delegation?: DelegationOptions;
 }
 
-/** What completion observed. */
-export interface EventCompletion {
-  /** Delegating workflow phase after waiting; null when not delegated or finished. */
-  delegationPhase: DelegationWorkflowStatus["phase"] | null;
-}
+/**
+ * What completion observed. `status` is the {@link EventStatus} read at return;
+ * a delegation wait that expires is `timed-out`, not an exception.
+ * `delegationPhase` is the delegating workflow phase after waiting, null when not
+ * delegated or finished.
+ */
+export type EventCompletion =
+  & WaitResult<EventStatus>
+  & { readonly delegationPhase: DelegationWorkflowStatus["phase"] | null };
 
 /**
  * Complete a freshly authored event: witness receipts, then, for delegated
@@ -187,12 +196,72 @@ export function* completeEvent(
   { delegation, ...receipt }: CompleteEventOptions = {},
 ): Operation<EventCompletion> {
   yield* receiptEvent(deps, hab.pre, { ...receipt, sn });
-  if (!delegation) return { delegationPhase: null };
+  if (!delegation) {
+    return { outcome: "settled", status: eventStatus(deps.hby, hab.pre, sn), delegationPhase: null };
+  }
 
   const communicationHab = delegation.communicationHab?.();
-  return yield* deps.withDelegation(function*(collaborator) {
+  return yield* deps.withDelegation(hab, function*(collaborator) {
     beginDelegation(collaborator, hab.pre, sn, communicationHab);
-    const status = yield* waitForDelegation(collaborator, hab, sn, { timeoutMs: delegation.timeoutMs });
-    return { delegationPhase: status.phase };
+    const result = yield* waitForDelegation(collaborator, hab, sn, { timeoutMs: delegation.timeoutMs });
+    const status = eventStatus({ db: deps.hby.db, anchorer: collaborator.anchorer }, hab.pre, sn);
+    return result.outcome === "timed-out"
+      ? { outcome: "timed-out", status, timeoutMs: result.timeoutMs, delegationPhase: result.status.phase }
+      : { outcome: "settled", status, delegationPhase: result.status.phase };
   });
+}
+
+/** Collaborators for the pure event status read. */
+export interface EventStatusDeps {
+  /** Accepted KELs, witness receipts and witness sets. A `Habery` fits. */
+  readonly db: Baser;
+  /** Delegating workflow owner; omit for hosts that never delegate. */
+  readonly anchorer?: Pick<Anchorer, "workflowStatus" | "complete">;
+}
+
+/** Steps an accepted single-signature event can be waiting on. */
+export type EventPhase = DelegationWorkflowStatus["phase"] & string;
+
+/** Status of one local event after authoring; see {@link eventStatus}. */
+export type EventStatus =
+  | {
+    state: "active";
+    phase: EventPhase;
+    /** Missing input: witness receipts held versus the size of that event's witness set. */
+    blocked?: { missing: "witnessReceipts"; have: number; of: number };
+  }
+  | { state: "complete" }
+  | { state: "unknown"; reason: "no-accepted-event" };
+
+/**
+ * Pure synchronous status of the event `pre` at `sn`, derived from durable state.
+ *
+ * Receipts are judged against the witness set of THAT event (not the current
+ * key state) via stored `wigs`. A delegating-workflow escrow phase takes
+ * precedence; a delegated event with no escrow and no anchor yet reads as
+ * waiting for the delegator's anchor. Group events are not covered.
+ */
+export function eventStatus(deps: EventStatusDeps, pre: string, sn: number): EventStatus {
+  const workflow = deps.anchorer?.workflowStatus(pre, snKey(sn));
+  if (workflow?.phase) return { state: "active", phase: workflow.phase };
+
+  const said = deps.db.kels.getLast(pre, sn);
+  const serder = said ? deps.db.getEvtSerder(pre, said) : null;
+  if (!said || !serder) return { state: "unknown", reason: "no-accepted-event" };
+
+  if (!deps.db.fullyWitnessed(serder)) {
+    return {
+      state: "active",
+      phase: "waitingWitnessReceipts",
+      blocked: {
+        missing: "witnessReceipts",
+        have: deps.db.wigs.get(dgKey(pre, said)).length,
+        of: deps.db.acceptedEventWitnesses(serder)?.length ?? 0,
+      },
+    };
+  }
+  if (deps.anchorer && deps.db.getKever(pre)?.delegated && !deps.anchorer.complete(pre, sn)) {
+    return { state: "active", phase: "waitingDelegatorAnchor" };
+  }
+  return { state: "complete" };
 }

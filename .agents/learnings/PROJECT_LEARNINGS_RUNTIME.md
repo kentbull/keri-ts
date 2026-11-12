@@ -203,6 +203,14 @@ Unexpected construction/storage/parser/cleanup errors publish/report then propag
 No final-packet cache, manual reply cursor or cross-batch fairness remains.
 The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) defines
 current behavior; Git and PR checks retain implementation evidence.
+Library workflow contract (OOBI, query, event completion; `app/runtime/workflow-contract.ts`):
+
+1. `begin*` returns after local commit; `*Status` is a pure synchronous read; `waitFor*`/`resolve*`/`query*` only observe via `observeUntil` and never start runtime workers.
+2. Functions take small declared collaborator interfaces of concrete owners, never `AgentRuntime` or `Pick` of it; hosts adapt once.
+3. A wait deadline is a returned value `WaitResult<S>` = `{ outcome: "settled" | "timed-out", status, timeoutMs? }` where `status` is the status read at return; only contract, invariant and infrastructure failures throw. The CLI turns a timeout into its fixed error text.
+4. One-shot CLI commands run workers around the wait with `cli/common/runtime-workers.ts`; a wallet's already-running runtime does the work.
+5. Status reads are unions on `state` (`phase`, optional `blocked`); wait results discriminate on `outcome`. Owners may push identity-only `ChangeSink` changes after commit (a failing sink drops them). Key-state query status is process-local (`scope: "process"`), anchor status is durable.
+
 WitnessInquisitor owns pending requests and one current attempt, never workflow observers.
 Concrete query operations own accepted-state waits; the composition routes live
 key-state facts once into an explicitly supplied command-owned Deck with one
@@ -214,7 +222,7 @@ owns workflow choice, worker spawn and the elapsed-deadline race, so a CLI is a 
 caller. An unsatisfied deadline fails without OOBI catch-up. Key-state query status is
 process-local (its cue leaves no durable record); anchor status is durable. OOBI
 resolution likewise lives in `app/bootstrap/oobi-resolving.ts`: begin queues, status
-reads the Oobiery records, resolve is begin plus a bounded runtime wait. HTTP queries acknowledge intake and send-only
+reads the Oobiery records, resolve is begin plus an observing wait. HTTP queries acknowledge intake and send-only
 HTTPMessenger binds an endpoint and HTTP
 client without protocol state or a clock. TCPMessenger binds its endpoint and clock;
 only duplex replies need a protocol receiver. Ordinary sendSource means per-message

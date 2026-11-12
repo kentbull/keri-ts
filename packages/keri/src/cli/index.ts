@@ -29,6 +29,7 @@ export {
   parseStringOption,
 } from "./common/parsing.ts";
 export { writeJsonLine, writeTextLines } from "./common/rendering.ts";
+export { withRuntimeWorkers } from "./common/runtime-workers.ts";
 export { resolveWitnessAuths, type WitnessAuthOptions } from "./common/witness-auth.ts";
 export {
   ipexAdmitCommand,
