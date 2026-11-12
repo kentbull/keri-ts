@@ -171,6 +171,17 @@ export interface DhkeOutgoing {
 }
 
 /**
+ * The group custodian just retained these registries' roots for `gid`; every other
+ * current member should receive a sealed copy (KERIpy's `replicate` cue). It carries
+ * coordinates only, never a root. It is a separate deck from `outgoing` because it is
+ * not wire: a drainer that sends every `outgoing` item would send it.
+ */
+export interface DhkeReplicate {
+  gid: string;
+  registries: string[];
+}
+
+/**
  * Issuer/issuee DH for an explicitly approved pending Grant. Wire
  * intake cannot approve work. Inject as ProtocolProcessor.qvy and register on
  * Revery's existing Router at Route. Full proofs remain owned by KRAM/Revery.
@@ -182,6 +193,8 @@ export class Dhke implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/dhke";
   readonly resource = Dhke.Route;
   readonly outgoing = new Deck<DhkeOutgoing>();
+  /** Completion cues for roots just retained by this group's custodian; feed `RootReplicator.replicate`. */
+  readonly replicated = new Deck<DhkeReplicate>();
   private readonly pendingQueries = new Map<
     string,
     { envelope: KeriDispatchEnvelope; expires: bigint; grant: string }
@@ -574,6 +587,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
     this.operations.clear();
     this.pendingQueries.clear();
     this.outgoing.clear();
+    this.replicated.clear();
   }
 
   /** Retain public query evidence against one exact pending Grant, without creating keys or consent. */
@@ -749,6 +763,8 @@ export class Dhke implements AuxiliaryQueryProcessor {
     op.peer = { ...peer };
     op.completed = true;
     this.clearPrivate(op);
+    // Every current member must hold every root; the custodian replicates.
+    if (this.group) this.replicated.push({ gid: this.hab.pre!, registries: [...roots.keys()] });
   }
 
   private clearPrivate(op: DhkeOperation): void {

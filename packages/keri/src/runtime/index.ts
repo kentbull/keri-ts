@@ -111,6 +111,7 @@ export {
   type DhkeApproval,
   type DhkeContext,
   type DhkeOutgoing,
+  type DhkeReplicate,
   generateKeyPair,
 } from "../acdc/dhking.ts";
 export {
@@ -501,14 +502,25 @@ export { validateSchema as validateAcdcSchema } from "../acdc/scheming.ts";
 export {
   deliverRegistryRoots,
   replicateRegistryRoots,
+  replicateRootCopy,
   resealRegistryRoots,
   type RootCopy,
+  type RootCopyKin,
   RootCopyRecovery,
   type RootCopyReport,
   type RootDelivery,
   RootResealBudgetMs,
   type RootResealFailure,
 } from "../app/credentials/root-replicating.ts";
+export {
+  MemoryRootLedger,
+  type OwedCopy,
+  type OwedCopyStatus,
+  type RootLedger,
+  RootReplicator,
+  type RootReplicatorDeps,
+  type RootReplicatorStatus,
+} from "../app/credentials/root-replicator.ts";
 export { publishPendingTel } from "../app/credentials/tel-publishing.ts";
 export {
   type AgentCue,
