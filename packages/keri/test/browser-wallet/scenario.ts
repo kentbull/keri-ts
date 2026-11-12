@@ -56,6 +56,28 @@ function both(...sides: [string, PromiseSettledResult<unknown>][]): void {
   if (failures.length) throw new Error(failures.join("\n---\n"));
 }
 
+/** The counterparty sends the browser a challenge request, which lands in the browser's `/challenge` mailbox topic. */
+function sendChallenge(peer: Context["peer"], store: string[], recipient: string, words: string): Promise<PeerResult> {
+  return peer([
+    "exn",
+    "send",
+    "-n",
+    store[1],
+    "--head-dir",
+    store[3],
+    "-p",
+    store[5],
+    "-s",
+    "peer",
+    "-r",
+    recipient,
+    "-R",
+    "/challenge/request",
+    "--data",
+    `words=${words}`,
+  ]);
+}
+
 export const steps: Step[] = [
   {
     name: "1 open wallet, request persistent storage",
@@ -220,24 +242,7 @@ export const steps: Step[] = [
       });
       // New mail after the reopen: the poller must read it from the stored cursor, past every old index.
       const topic = "/challenge";
-      await peer([
-        "exn",
-        "send",
-        "-n",
-        store[1],
-        "--head-dir",
-        store[3],
-        "-p",
-        store[5],
-        "-s",
-        "peer",
-        "-r",
-        facts.inception.pre,
-        "-R",
-        "/challenge/request",
-        "--data",
-        "words=one two",
-      ]);
+      await sendChallenge(peer, store, facts.inception.pre, "one two");
       const resumed = await page("awaitMailboxCursor", { topic, above: before.cursor[topic] ?? -1 });
       const lower = Object.entries(before.cursor).filter(([key, index]) =>
         (resumed.cursor[key] ?? -1) < (index as number)
@@ -253,6 +258,11 @@ export const steps: Step[] = [
     needs: ["5 close, reopen, durable state present, mailbox polling resumes"],
     run: async ({ page, peer, facts, store, servers }) => {
       facts.rotation = await page("rotate");
+      // The mailbox has not seen the rotation and refuses the wallet's polling queries until it is posted again.
+      const { cursor } = await page("readInventory");
+      await page("refreshMailbox");
+      await sendChallenge(peer, store, facts.inception.pre, "three four");
+      await page("awaitMailboxCursor", { topic: "/challenge", above: cursor["/challenge"] ?? -1 });
       // The witness holds the receipted rotation; the counterparty learns it from the witness's OOBI.
       const { witness } = servers;
       await peer(["oobi", "resolve", ...store, "-u", `${witness.origin}/oobi/${witness.pre}/controller`]);
