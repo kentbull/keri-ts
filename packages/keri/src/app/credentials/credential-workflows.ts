@@ -26,6 +26,7 @@ import { type TelProcessDecision, validateRegistryInception } from "../../vdr/ev
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { credentialStreamMessages } from "../ipex/ipex-credentialing.ts";
+import type { GroupEventRef } from "../multisig/counseling.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
 import {
   MULTISIG_ISS_ROUTE,
@@ -95,6 +96,8 @@ export interface RegistryResult {
   /** Present for group coordination, with acceptance assessed separately from sending. */
   group?: GroupSendResult & {
     route: typeof MULTISIG_VCP_ROUTE;
+    /** The group anchor that seals the registry inception. */
+    event: GroupEventRef;
     status: TelProcessDecision["kind"];
     accepted: boolean;
   };
@@ -118,6 +121,8 @@ export interface IssueResult {
   status: VerifierDecision["kind"];
   group?: GroupSendResult & {
     route: typeof MULTISIG_ISS_ROUTE;
+    /** The group anchor that seals the issuance. */
+    event: GroupEventRef;
     /** Registry event processor decision, independent of the credential verifier decision. */
     telStatus: TelProcessDecision["kind"];
     /** Whether the credential is actually saved; sending a proposal does not make it so. */
@@ -352,6 +357,7 @@ function* proposeGroupRegistryIncept(
     issuer: hab.pre,
     group: {
       route: MULTISIG_VCP_ROUTE,
+      event: { pre: anchor.serder.pre!, sn: anchor.serder.sn!, said: anchor.serder.said! },
       status: decision.kind,
       accepted: telAccepted(reger, regk, 0, requireSerderSaid(vcp, "registry inception")),
       ...publication,
@@ -431,6 +437,7 @@ function* proposeGroupCredentialIssue(
     status: verifierDecision.kind,
     group: {
       route: MULTISIG_ISS_ROUTE,
+      event: { pre: anchor.serder.pre!, sn: anchor.serder.sn!, said: anchor.serder.said! },
       telStatus: telDecision.kind,
       saved: credentialSaved(reger, creder),
       ...publication,

@@ -11,6 +11,7 @@ import { telAnchorMatches } from "../../vdr/tel-anchor.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { Organizer } from "../identity/organizing.ts";
+import type { GroupEventRef } from "../multisig/counseling.ts";
 import { groupMemberHasKey, isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
 import { MULTISIG_REV_ROUTE } from "../multisig/grouping.ts";
 import type { GroupSendResult } from "../multisig/multisig-messaging.ts";
@@ -32,7 +33,8 @@ export interface CredentialRevokeResult {
   publicationComplete: boolean;
   /** Actual external transport destinations, populated by a completed delivery operation. */
   deliveries: string[];
-  group?: GroupSendResult & { route: typeof MULTISIG_REV_ROUTE };
+  /** Group coordination; `event` is the group anchor that seals the revocation. */
+  group?: GroupSendResult & { route: typeof MULTISIG_REV_ROUTE; event: GroupEventRef };
 }
 
 /**
@@ -76,6 +78,7 @@ export function* revokeCredential(
     rgy.publication.track(event, anchor.serder);
     group = {
       route: MULTISIG_REV_ROUTE,
+      event: { pre: anchor.serder.pre!, sn: anchor.serder.sn!, said: anchor.serder.said! },
       ...(yield* publishGroupVcProposal(hby, input, postman, registry.hab, {
         route: MULTISIG_REV_ROUTE,
         attrs: { gid: registry.hab.pre, said: options.credentialSaid },

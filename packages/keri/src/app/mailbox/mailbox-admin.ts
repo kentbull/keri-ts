@@ -23,6 +23,13 @@ import { concatBytes } from "cesr-ts";
 import { call, type Operation, sleep } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
+import type { Poster } from "../delivery/forwarding.ts";
+import {
+  endpointRoleAccepted,
+  type GroupRoleResult,
+  loadAcceptedEndpointRole,
+  proposeGroupEndpointRole,
+} from "../identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
@@ -178,6 +185,45 @@ export function* completeMailboxAdmin(
     throw new ValidationError("Mailbox removal was not accepted into local state.");
   }
   return status;
+}
+
+/**
+ * Propose a group's mailbox authorization (`/end/role/add`) to the other members, who
+ * approve it with `approveGroupProposal`. Returns without waiting and sends nothing
+ * to the provider; {@link completeGroupMailbox} does that once the role is accepted.
+ * The caller runs the Poster's delivery for the duration.
+ */
+export function* proposeGroupMailbox(
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  postman: Poster,
+  group: Hab,
+  mailbox: string,
+): Operation<GroupRoleResult> {
+  return yield* proposeGroupEndpointRole(hby, protocol, postman, group, {
+    eid: mailbox,
+    role: Roles.mailbox,
+    allow: true,
+  });
+}
+
+/**
+ * Finish a group mailbox add whose end-role reply the members approved: post the
+ * accepted reply to the provider and confirm local state.
+ *
+ * @throws ValidationError while the group has not accepted the mailbox role, or as for `completeMailboxAdmin`.
+ */
+export function* completeGroupMailbox(
+  deps: MailboxAdminDeps,
+  group: Hab,
+  mailbox: string,
+): Operation<MailboxStatus> {
+  if (!endpointRoleAccepted(deps.hby, group.pre, Roles.mailbox, mailbox)) {
+    throw new ValidationError(`Mailbox role for ${mailbox} is not yet approved for group ${group.pre}.`);
+  }
+  const url = requireMailboxEndpointUrl(deps.hby, mailbox);
+  const rpy = loadAcceptedEndpointRole(group, mailbox, Roles.mailbox);
+  return yield* completeMailboxAdmin(deps, group, mailbox, url, rpy, true);
 }
 
 /** Choices for `waitForMailboxState`. */
