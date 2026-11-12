@@ -26,7 +26,9 @@ import { PACKAGE_VERSION } from "keri-ts";
 import { createAgentRuntime, FetchHttpClient, openHabery } from "keri-ts/runtime";
 import { openOwner, WebStoreOpener } from "keri-ts/db";
 import { indexedDbOpener } from "keri-ts/db/indexeddb";
+import { openWalletBaser, Wallet, WalletBaser, WalletDiscloser } from "@keri-ts/wallet/web";
 export const surface = {
+  openWalletBaser, Wallet, WalletBaser, WalletDiscloser,
   Diger, PACKAGE_VERSION, createAgentRuntime, openHabery, openOwner, WebStoreOpener,
   http: new FetchHttpClient(), opener: indexedDbOpener(),
 };
@@ -39,9 +41,9 @@ const REGRESSIONS = [
 ];
 
 /**
- * TODO(wallet-web): remove once `@keri-ts/wallet/web` exists and root `@keri-ts/wallet`
- * no longer value-imports `keri-ts/db/lmdb` (packages/wallet/src/storing.ts). Until then
- * the root is expected to fail; if it starts passing this gate demands the entry be removed.
+ * The root `@keri-ts/wallet` is Node-only on purpose: it exports `createWalletBaser`, which
+ * value-imports `keri-ts/db/lmdb`. `@keri-ts/wallet/web` is the browser entry and is in the
+ * passing consumer above. The root must keep failing so nobody mistakes it for browser-safe.
  */
 const KNOWN_FAILING = [{ name: "@keri-ts/wallet", source: `export * from "@keri-ts/wallet";` }];
 
@@ -161,8 +163,8 @@ for (const { name, source } of REGRESSIONS) {
 
 for (const { name, source } of KNOWN_FAILING) {
   const known = await bundle(source);
-  if (known.problems.length === 0) failures.push([`${name} now bundles for the browser: remove its KNOWN_FAILING TODO`, []]);
-  else console.log(`known failing (TODO(wallet-web)) ${name}:\n${known.problems.map((p) => `    ${p}`).join("\n")}`);
+  if (known.problems.length === 0) failures.push([`${name} now bundles for the browser: the root is meant to be Node-only (use its ./web entry)`, []]);
+  else console.log(`Node-only by design ${name}:\n${known.problems.map((p) => `    ${p}`).join("\n")}`);
 }
 
 // Informational: why the `browser` condition is needed. esbuild adds `browser` on its browser

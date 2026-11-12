@@ -11,5 +11,6 @@ export {
   type PreparedGrantBody,
   WalletDiscloser,
 } from "./src/disclosing.ts";
-export { type AdmittedCredential, createWalletBaser, type IssuedCredential, WalletBaser } from "./src/storing.ts";
+export { createWalletBaser } from "./src/lmdb-storing.ts";
+export { type AdmittedCredential, type IssuedCredential, WalletBaser } from "./src/storing.ts";
 export { type HeldCredential, type PreparedAdmit, Wallet, type WalletOptions } from "./src/wallet.ts";

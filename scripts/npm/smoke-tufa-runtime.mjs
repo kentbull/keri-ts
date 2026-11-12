@@ -4,6 +4,7 @@ import { createObservationBaser, Observer } from "@keri-ts/observer";
 import { Registrar } from "@keri-ts/registrar";
 import * as verifier from "@keri-ts/verifier";
 import * as wallet from "@keri-ts/wallet";
+import * as walletWeb from "@keri-ts/wallet/web";
 import { createHabery } from "keri-ts/db/lmdb";
 import { createAgentRuntime, FetchHttpClient, systemClock } from "keri-ts/runtime";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -22,6 +23,13 @@ for (const name of ["runHostKernel", "startServer", "createProtocolHandler", "cr
 const require = createRequire(join(packageRoot, "package.json"));
 if (typeof verifier.VerifierAgent !== "function") throw new Error("Verifier package missing application");
 if (typeof wallet.Wallet !== "function") throw new Error("Wallet package missing inventory owner");
+if (typeof wallet.createWalletBaser !== "function") throw new Error("Wallet root lost its LMDB factory");
+if (typeof walletWeb.openWalletBaser !== "function" || "createWalletBaser" in walletWeb) {
+  throw new Error("Wallet web entry must expose openWalletBaser and no LMDB factory");
+}
+if (walletWeb.Wallet !== wallet.Wallet || walletWeb.WalletBaser !== wallet.WalletBaser) {
+  throw new Error("Wallet web entry must share the root's owner classes");
+}
 const { run, call } = await import(pathToFileURL(require.resolve("effection")).href);
 const root = await mkdtemp(join(tmpdir(), "tufa-verifier-runtime-"));
 try {

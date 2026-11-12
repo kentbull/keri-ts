@@ -57,6 +57,11 @@ real-engine behavior (durability hints, eviction, blocked ordering) is only chec
 It is public only as `keri-ts/db/indexeddb` (`IndexedDbPersistence`, `indexedDbOpener`), never from
 `keri-ts/db`, whose Node consumers must not type-check DOM types.
 
+`@keri-ts/wallet` splits by backend: the root keeps LMDB `createWalletBaser` and stays Node-only
+(no `browser` condition); `@keri-ts/wallet/web` has the same surface minus LMDB plus
+`openWalletBaser(opener, identity)`. Open application stores through the composition's opener
+(`hby.opener`) so they share its one `WebStoreOpener` queue.
+
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
 do not cast the native environment or infer commit completion from a nested return.
