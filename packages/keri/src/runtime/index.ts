@@ -89,6 +89,7 @@ export {
 export { requireTcpDialer, type TcpDialer } from "../app/transport/tcp-dialer.ts";
 export { TransportError } from "../app/transport/transport-error.ts";
 // Controller state, credentials and protocol operations.
+export { type AcdcV2UpdateOptions, RegistryAuthor } from "../acdc/authoring.ts";
 export {
   type AcdcGraph,
   type AcdcWalkPolicy,
@@ -288,6 +289,20 @@ export {
   type IpexRoute,
   ipexSpurnExn,
 } from "../app/ipex/ipexing.ts";
+export {
+  addMailbox,
+  completeMailboxAdmin,
+  type MailboxAdminDeps,
+  type MailboxAdminResponse,
+  mailboxAdminUrl,
+  type MailboxStatus,
+  mailboxStatus,
+  type MailboxWaitOptions,
+  type MailboxWaitResult,
+  removeMailbox,
+  requireMailboxEndpointUrl,
+  waitForMailboxState,
+} from "../app/mailbox/mailbox-admin.ts";
 export {
   MailboxDirector,
 } from "../app/mailbox/mailbox-director.ts";

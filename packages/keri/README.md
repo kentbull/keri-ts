@@ -16,6 +16,8 @@ npm install keri-ts
 - `keri-ts/db`: backend-neutral storage surface
 - `keri-ts/db/lmdb`: native LMDB storage backend
 - `keri-ts/db/indexeddb`: browser IndexedDB storage backend (`indexedDbOpener`)
+- `keri-ts/runtime/web`: browser host concerns (`barrierHttpClient` output barrier,
+  `acquireStoreLock` single-writer lock, `requestPersistentStorage`)
 
 These entrypoints are the general library surfaces. `keri-ts/cli` is the
 separate command-helper boundary used by Tufa. Runnable CLI/server ownership
@@ -29,7 +31,8 @@ runtime operations from `keri-ts/runtime` and storage from `keri-ts/db`.
 
 ## Browser bundles
 
-`keri-ts`, `keri-ts/runtime`, `keri-ts/db` and `keri-ts/db/indexeddb` carry a
+`keri-ts`, `keri-ts/runtime`, `keri-ts/runtime/web`, `keri-ts/db` and
+`keri-ts/db/indexeddb` carry a
 `browser` export condition that resolves to a build of the same entrypoint
 without the Node polyfill import, so bundlers targeting the browser reach no
 `node:` module. `keri-ts/cli`, `keri-ts/db/lmdb` and `keri-ts/runtime/node` are
@@ -39,6 +42,9 @@ unchanged.
 The graph includes `cesr-ts`, which uses a top-level `await` to instantiate its
 Argon2 WebAssembly, so bundle as ESM targeting ES2022 or later. See the
 `cesr-ts` README for the Content Security Policy note.
+
+esbuild also fails on `effection`'s `main()` runner, which lazily imports
+`node:process`; mark `node:process` external. Vite and webpack need nothing.
 
 ## Maintainer Docs
 

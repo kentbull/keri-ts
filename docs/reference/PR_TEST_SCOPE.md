@@ -90,17 +90,38 @@ has moved is refused; use the current source run. See GitHub's
 The selection job records the exact head and resolved scope in its summary.
 A skipped lane is scoped validation, never a claim that its tests ran.
 
-## Real-browser lane (local only)
+## Real-browser lane
 
 `deno task test:browser` bundles `packages/keri/test/browser/` with
 `deno bundle --platform browser`, serves it from a local static server, and runs the
 shared `storeContract` and `wrapperContract` cases for `WebDBer` over real IndexedDB and
-for `MemStore`, plus an IndexedDB reopen-fidelity case, in Chromium through Playwright.
-It fails unless the browser executed exactly the case names `deno test` registers and
-every one passed. The bundle must contain no `node:` or LMDB import. It is not a
-`keri-ci` unit choice and no workflow runs it; Firefox, WebKit and CI follow separately.
-Install the browser once with `npx playwright-core@1.56.1 install chromium`; binaries
-stay in Playwright's user cache.
+for `MemStore`, an IndexedDB reopen-fidelity case, and the engine-sensitive cases in
+`engine-cases.ts` (aborted and latched batches, two openers on one database name, and a
+few-thousand-row round trip) in Chromium, Firefox and WebKit through Playwright. For each
+engine it fails unless the browser executed exactly the case names `deno test` registers and
+every one passed. Cases report engine behavior through `note`; the runner prints those per
+engine. The bundle must contain no `node:` or LMDB import.
+
+Name engines to run a subset: `deno task test:browser webkit`, or
+`KERI_BROWSER_ENGINES=firefox,webkit`. Install once with
+`npx playwright-core@1.56.1 install chromium firefox webkit`; binaries stay in Playwright's
+user cache. On Linux, `scripts/ci/install-browser-deps.sh` also installs the system
+libraries.
+
+In CI the lane is the `browser-tests` job of the PR stage gate. The selection job decides
+whether it runs, so an unselected PR never sets up browsers. Add `"browser":true` to the
+`keri-ci` block to select it (it is optional and defaults to false), or change files it can
+regress: `packages/keri/src/db/`, `packages/keri/test/browser/`, the runner, the store
+contract, browser CI scripts, or the stage-gate infrastructure. `{"full":true}` and a manual
+dispatch include it; release PRs do not. When selected it is required by `stage-gate`;
+otherwise `stage-gate` accepts it as skipped. The Playwright browser cache is keyed on the
+`playwright-core` version pinned in the runner.
+
+````markdown
+```keri-ci
+{"unit":["db-web"],"interop":[],"package":false,"browser":true}
+```
+````
 
 ## Browser bundle gate (package smoke)
 

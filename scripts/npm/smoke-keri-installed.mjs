@@ -14,6 +14,7 @@ import * as dbIndexedDb from "keri-ts/db/indexeddb";
 import { parseGvrsn } from "keri-ts/cli";
 import * as runtime from "keri-ts/runtime";
 import * as runtimeNode from "keri-ts/runtime/node";
+import * as runtimeWeb from "keri-ts/runtime/web";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
@@ -59,6 +60,9 @@ assert(typeof runtimeNode.TCPMessenger === "function", "keri-ts/runtime/node mis
 assert(typeof dbLmdb.createBaser === "function", "keri-ts/db/lmdb missing createBaser");
 assert(typeof dbLmdb.LMDBer === "function", "keri-ts/db/lmdb missing LMDBer");
 assert(typeof dbLmdb.createHabery === "function", "keri-ts/db/lmdb missing createHabery");
+assert(typeof runtimeWeb.barrierHttpClient === "function", "keri-ts/runtime/web missing barrierHttpClient");
+assert(typeof runtimeWeb.acquireStoreLock === "function", "keri-ts/runtime/web missing acquireStoreLock");
+assert(typeof runtimeWeb.requestPersistentStorage === "function", "keri-ts/runtime/web missing requestPersistentStorage");
 assert(typeof dbIndexedDb.indexedDbOpener === "function", "keri-ts/db/indexeddb missing indexedDbOpener");
 assert(typeof dbIndexedDb.IndexedDbPersistence === "function", "keri-ts/db/indexeddb missing IndexedDbPersistence");
 assert(typeof runtime.openHabery === "function", "keri-ts/runtime missing openHabery");

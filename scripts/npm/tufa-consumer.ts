@@ -4,6 +4,7 @@ import { createObservationBaser, type ObservationBaser, Observer } from "@keri-t
 import { Registrar } from "@keri-ts/registrar";
 import { createVerifierCueBaser, VerifierAgent, type VerifierCueBaser } from "@keri-ts/verifier";
 import { createWalletBaser, Wallet, type WalletOptions } from "@keri-ts/wallet";
+import { openWalletBaser } from "@keri-ts/wallet/web";
 import type { RegistryStore } from "keri-ts/db";
 import type { AgentRuntime, ProtocolProcessor } from "keri-ts/runtime";
 
@@ -36,6 +37,9 @@ export function wallet(options: WalletOptions): Wallet {
 
 /** Expose the wallet inventory acquisition type to the installed compiler. */
 export const walletStore = createWalletBaser;
+
+/** Expose the backend-neutral browser-entry acquisition type to the installed compiler. */
+export const walletWebStore = openWalletBaser;
 
 /** Compose registrar through real concrete protocol owners; Tufa need not depend on it. */
 export function registrar(processor: ProtocolProcessor, store: RegistryStore): Registrar {

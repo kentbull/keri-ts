@@ -57,6 +57,19 @@ real-engine behavior (durability hints, eviction, blocked ordering) is only chec
 It is public only as `keri-ts/db/indexeddb` (`IndexedDbPersistence`, `indexedDbOpener`), never from
 `keri-ts/db`, whose Node consumers must not type-check DOM types.
 
+`@keri-ts/wallet` splits by backend: the root keeps LMDB `createWalletBaser` and stays Node-only
+(no `browser` condition); `@keri-ts/wallet/web` has the same surface minus LMDB plus
+`openWalletBaser(opener, identity)`. Open application stores through the composition's opener
+(`hby.opener`) so they share its one `WebStoreOpener` queue.
+
+Browser host duties live in `keri-ts/runtime/web`. `barrierHttpClient` (ADR-0015 rule 6) waits on
+`WebStoreOpener.queue.flushed()`, not one store's `flushed()`: the queue is shared by every family
+and is the only handle that orders all commits. A latched queue fails the request with
+`OutputBarrierError` and sends nothing; the wrapper drops `tcp` so no dialer bypasses it.
+`acquireStoreLock` takes `navigator.locks` before any `reopen` because the mirror is a snapshot, keyed
+`keri-ts:store:[base,name,durable|temp]` (the IndexedDB database name minus the family); an absent
+API fails closed. Real-browser lock and eviction behavior is unverified until PR 14.
+
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
 do not cast the native environment or infer commit completion from a nested return.

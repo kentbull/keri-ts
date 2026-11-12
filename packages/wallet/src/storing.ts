@@ -1,7 +1,14 @@
 /** Application inventory records, separate from public KEL/TEL/exchange evidence. */
 import type { Operation } from "effection";
-import { Komer, openOwner, type StoreFamily, type StoreIdentity, StoreOwner, Suber } from "keri-ts/db";
-import { lmdbDefaultsFor, LMDBer, type LMDBerOptions } from "keri-ts/db/lmdb";
+import {
+  Komer,
+  openOwner,
+  type StoreFamily,
+  type StoreIdentity,
+  type StoreOpener,
+  StoreOwner,
+  Suber,
+} from "keri-ts/db";
 import { RawRecord } from "keri-ts/runtime";
 
 /** Exact issued view and its accepted registry reference; no derivation secret. */
@@ -64,8 +71,11 @@ export class WalletBaser extends StoreOwner {
     }
   }
 }
-/** Acquire a wallet environment; callers join close after all borrowed users finish. */
-export function* createWalletBaser(options: LMDBerOptions = {}): Operation<WalletBaser> {
-  const store = new LMDBer(options, lmdbDefaultsFor(WalletBaser.Family));
-  return yield* openOwner(new WalletBaser(store), "WalletBaser");
+/**
+ * Acquire a wallet environment from any backend's `StoreOpener`; callers join close after all borrowed users finish.
+ *
+ * Pass the composition's own opener (for example `hby.opener`) so the wallet shares its single store queue.
+ */
+export function* openWalletBaser(opener: StoreOpener, identity: StoreIdentity = {}): Operation<WalletBaser> {
+  return yield* openOwner(new WalletBaser(opener.create(WalletBaser.Family, identity)), "WalletBaser", identity);
 }

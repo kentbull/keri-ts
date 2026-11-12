@@ -1,7 +1,9 @@
 /** Build wallet inventory on public protocol package dependencies. */
 import { build, emptyDir } from "@deno/dnt";
 import {
+  assertBrowserGraphClean,
   assertPackagePathExists,
+  emitBrowserEntrypoint,
   findGeneratedEntrypoint,
   listFilesSync,
   readPackageVersionSync,
@@ -12,13 +14,14 @@ import {
 
 const OUT_DIR = "./npm";
 const ROOT_MARKER = "Wallet application entrypoint; public protocol owners remain borrowed from keri-ts.";
+const WEB_MARKER = "Browser-safe wallet entrypoint: the root surface without LMDB";
 const keriVersion = readPackageVersionSync("../keri/package.json");
 const cesrVersion = readPackageVersionSync("../cesr/package.json");
 
 setIgnoreScriptsDefault();
 await emptyDir(OUT_DIR);
 await build({
-  entryPoints: ["./mod.ts"],
+  entryPoints: ["./mod.ts", { name: "./web", path: "./web.ts" }],
   outDir: OUT_DIR,
   shims: { deno: true },
   configFile: new URL("../deno.json", import.meta.url).href,
@@ -48,7 +51,10 @@ await build({
     main: "./esm/mod.js",
     module: "./esm/mod.js",
     types: "./types/mod.d.ts",
-    exports: { ".": { types: "./types/mod.d.ts", import: "./esm/mod.js" } },
+    exports: {
+      ".": { types: "./types/mod.d.ts", import: "./esm/mod.js" },
+      "./web": { types: "./types/web.d.ts", import: "./esm/web.js" },
+    },
     files: ["esm", "types", "README.md", "LICENSE"],
     dependencies: {
       "@deno/shim-deno": "~0.18.0",
@@ -72,13 +78,30 @@ await build({
       fileName: "mod.d.ts",
       marker: ROOT_MARKER,
     });
-    assertPackagePathExists(OUT_DIR, rootImport);
-    assertPackagePathExists(OUT_DIR, rootTypes);
+    const webImport = findGeneratedEntrypoint({
+      root: `${OUT_DIR}/esm`,
+      outDir: OUT_DIR,
+      fileName: "web.js",
+      marker: WEB_MARKER,
+    });
+    const webTypes = findGeneratedEntrypoint({
+      root: `${OUT_DIR}/types`,
+      outDir: OUT_DIR,
+      fileName: "web.d.ts",
+      marker: WEB_MARKER,
+    });
+    for (const path of [rootImport, rootTypes, webImport, webTypes]) assertPackagePathExists(OUT_DIR, path);
+    // Only `./web` is browser-safe: the root reaches LMDB through `createWalletBaser` and has no browser condition.
+    const webBrowser = emitBrowserEntrypoint(OUT_DIR, webImport);
+    assertBrowserGraphClean(OUT_DIR, [webBrowser]);
     const path = `${OUT_DIR}/package.json`;
     const manifest = JSON.parse(Deno.readTextFileSync(path));
     manifest.main = manifest.module = rootImport;
     manifest.types = rootTypes;
-    manifest.exports = { ".": { types: rootTypes, import: rootImport } };
+    manifest.exports = {
+      ".": { types: rootTypes, import: rootImport },
+      "./web": { types: webTypes, browser: webBrowser, import: webImport },
+    };
     writeJsonFileSync(path, manifest);
     // DNT can leave unreferenced entrypoint copies for mapped dependencies.
     for (const name of ["keri", "cesr"]) removeIfExistsSync(`${OUT_DIR}/esm/${name}`, { recursive: true });
