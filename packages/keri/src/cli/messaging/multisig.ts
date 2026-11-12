@@ -8,7 +8,7 @@
  *   member keys, and republishes the approval EXN
  */
 import { type SerderKERI, type ThresholdSith, type Versionage } from "cesr-ts";
-import { action, type Operation, spawn } from "npm:effection@^3.6.0";
+import { action, type Operation } from "npm:effection@^3.6.0";
 import { registryEventRef, registryEventStatus, settleRegistryEvent } from "../../app/credentials/registry-settling.ts";
 import { MemoryRootLedger, RootReplicator } from "../../app/credentials/root-replicator.ts";
 import {
@@ -20,19 +20,15 @@ import { resolveDelegationCommunicationHab } from "../../app/identity/delegating
 import type { GroupRoleResult } from "../../app/identity/endpoint-roleing.ts";
 import {
   endpointRoleAccepted,
-  groupSigningMembers,
   isLocalGroupHab,
   localGroupMember,
   proposeGroupEndpointRole,
 } from "../../app/identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
-import { uniqueMembers } from "../../app/multisig/group-members.ts";
 import {
   MULTISIG_ICP_ROUTE,
-  MULTISIG_IXN_ROUTE,
   MULTISIG_REV_ROUTE,
   MULTISIG_ROT_ROUTE,
-  MULTISIG_RPY_ROUTE,
   MULTISIG_VCP_ROUTE,
 } from "../../app/multisig/grouping.ts";
 import type { GroupSendResult } from "../../app/multisig/multisig-messaging.ts";
@@ -41,14 +37,21 @@ import {
   type ApprovalPromptContext,
   type ApprovalResult,
   approvePendingMultisigProposal,
-  commitAcceptedGroupMembers,
   eventAccepted,
   type MultisigApprovalCallbacks,
   type MultisigApprovalOptions,
-  publishProposal,
   routeForKelEvent,
 } from "../../app/multisig/multisig-workflows.ts";
-import { type AgentRuntime, runAgentRuntime } from "../../app/runtime/agent-runtime.ts";
+import {
+  type GroupEventResult as ProposedGroupEvent,
+  type GroupProposeDeps,
+  proposeGroupInception,
+  proposeGroupInteraction,
+  proposeGroupRotation,
+  settleProposedRotation,
+} from "../../app/multisig/proposing.ts";
+import { type AgentRuntime } from "../../app/runtime/agent-runtime.ts";
+import { observeUntil } from "../../app/runtime/workflow-contract.ts";
 import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { isV2RegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
@@ -69,10 +72,10 @@ import {
   parseThresholdOption,
   type RotateFileOptions,
 } from "../common/parsing.ts";
+import { withRuntimeWorkers } from "../common/runtime-workers.ts";
 import { resolveWitnessAuths } from "../common/witness-auth.ts";
+import { counselInputs, finishAcceptedEvent, waitForAcceptance } from "./group-wait.ts";
 import { type RootCopyLine, rootCopyLine, type RootResealLine, rootResealLine } from "./root-copy-lines.ts";
-
-const MULTISIG_TOPIC = "multisig";
 
 /**
  * Captured group event state and coordination outcomes, usable after command
@@ -252,59 +255,26 @@ export function* multisigInceptCommand(
   }
 
   return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
-    const member = requireHabByAlias(hby, alias);
-    const created = hby.makeGroupHab(group, member, smids, rmids, undefined, {
-      isith: options.isith,
-      nsith: options.nsith,
-      toad: options.toad,
-      wits: options.wits ?? [],
-      delpre: options.delpre,
-      data: options.data ?? [],
-      version: commandArgs.version,
-    });
-    const { deliveries, messages } = yield* publishProposal(
-      hby,
-      runtime.protocol,
-      runtime.postman,
-      member,
-      uniqueMembers([...smids, ...rmids]),
+    const sent = yield* proposeGroupInception(
+      proposeDeps(hby, runtime),
+      requireHabByAlias(hby, alias),
+      group,
       {
-        route: MULTISIG_ICP_ROUTE,
-        attrs: { smids, rmids, ...(options.delpre ? { delegator: options.delpre } : {}) },
+        smids,
+        rmids,
+        isith: options.isith,
+        nsith: options.nsith,
+        toad: options.toad,
+        wits: options.wits ?? [],
+        delpre: options.delpre,
+        data: options.data ?? [],
+        version: commandArgs.version,
       },
-      created.message,
+      counselInputs(hby, commandArgs.proxy, options.delpre !== undefined, group),
     );
-
-    const accepted = yield* waitForGroupAcceptance(
-      hby,
-      runtime,
-      created.serder,
-      multisigApprovalOptions(hby, {
-        ...commandArgs,
-        group,
-        auto: true,
-      }),
-    );
-    let delegationPhase: string | null = null;
-    if (accepted) {
-      yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs, runtime);
-      delegationPhase = yield* completeDelegationIfNeeded(
-        hby,
-        runtime,
-        created.hab.pre,
-        commandArgs.proxy,
-      );
-    }
-
-    return {
-      route: MULTISIG_ICP_ROUTE,
-      group: created.hab.pre,
-      accepted,
-      messages,
-      deliveries,
-      state: hby.db.getState(created.hab.pre),
-      delegationPhase: delegationPhase,
-    };
+    const accepted = yield* waitForAcceptance(hby, runtime, sent.event, approvalDeadline(commandArgs));
+    const delegationPhase = accepted ? yield* finishAcceptedEvent(hby, runtime, sent.event, commandArgs) : null;
+    return { ...groupEventResult(hby, sent, accepted), delegationPhase };
   });
 }
 
@@ -418,39 +388,16 @@ export function* multisigInteractCommand(
   const data = parseDataItems(commandArgs.data);
 
   return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
-    const created = hby.interactGroupHab(group, undefined, { data, version: commandArgs.version });
-    const smids = groupSigningMembers(hby, created.hab.pre);
-    const { deliveries, messages } = yield* publishProposal(
-      hby,
-      runtime.protocol,
-      runtime.postman,
-      localGroupMember(hby, created.hab.pre),
-      smids,
-      { route: MULTISIG_IXN_ROUTE, attrs: { gid: created.hab.pre, smids } },
-      created.message,
+    const sent = yield* proposeGroupInteraction(
+      proposeDeps(hby, runtime),
+      requireGroupHab(hby, group),
+      data,
+      { fallbackAfterMs: 0 },
+      commandArgs.version,
     );
-    const accepted = yield* waitForGroupAcceptance(
-      hby,
-      runtime,
-      created.serder,
-      multisigApprovalOptions(hby, {
-        ...commandArgs,
-        group,
-        auto: true,
-      }),
-    );
-    if (accepted) {
-      yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs, runtime);
-    }
-    return {
-      route: MULTISIG_IXN_ROUTE,
-      group: created.hab.pre,
-      accepted,
-      messages,
-      deliveries,
-      state: hby.db.getState(created.hab.pre),
-      delegationPhase: null,
-    };
+    const accepted = yield* waitForAcceptance(hby, runtime, sent.event, approvalDeadline(commandArgs));
+    if (accepted) yield* finishAcceptedEvent(hby, runtime, sent.event, commandArgs);
+    return groupEventResult(hby, sent, accepted);
   });
 }
 
@@ -493,11 +440,13 @@ export function* multisigRotateCommand(
   const options = mergeRotateOptions(commandArgs);
 
   return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
-    const rotated = hby.rotateGroupHab(
-      group,
-      commandArgs.smids,
-      commandArgs.rmids,
+    const groupHab = requireGroupHab(hby, group);
+    const sent = yield* proposeGroupRotation(
+      proposeDeps(hby, runtime),
+      groupHab,
       {
+        smids: commandArgs.smids,
+        rmids: commandArgs.rmids,
         isith: options.isith,
         nsith: options.nsith,
         toad: options.toad,
@@ -506,52 +455,18 @@ export function* multisigRotateCommand(
         data: options.data ?? [],
         version: commandArgs.version,
       },
+      counselInputs(hby, commandArgs.proxy, !!hby.db.getKever(groupHab.pre!)?.delpre, group),
     );
-    const smids = commandArgs.smids?.length ? commandArgs.smids : groupSigningMembers(hby, rotated.hab.pre);
-    const rmids = commandArgs.rmids?.length ? commandArgs.rmids : smids;
-    const { deliveries, messages } = yield* publishProposal(
-      hby,
-      runtime.protocol,
-      runtime.postman,
-      localGroupMember(hby, rotated.hab.pre),
-      uniqueMembers([...smids, ...rmids]),
-      { route: MULTISIG_ROT_ROUTE, attrs: { gid: rotated.hab.pre, smids, rmids } },
-      rotated.message,
-    );
-    const accepted = yield* waitForGroupAcceptance(
-      hby,
-      runtime,
-      rotated.serder,
-      multisigApprovalOptions(hby, {
-        ...commandArgs,
-        group,
-        auto: true,
-      }),
-    );
+    const accepted = yield* waitForAcceptance(hby, runtime, sent.event, approvalDeadline(commandArgs));
     let delegationPhase: string | null = null;
     let rootCopies: RootCopyOutcome[] = [];
     if (accepted) {
       // The proposer's own acceptance must commit the rotated membership as a joiner's does.
-      commitAcceptedGroupMembers(hby, rotated.serder, smids, rmids);
-      yield* receiptAcceptedEvent(hby, rotated.hab.pre, commandArgs, runtime);
-      delegationPhase = yield* completeDelegationIfNeeded(
-        hby,
-        runtime,
-        rotated.hab.pre,
-        commandArgs.proxy,
-      );
-      rootCopies = yield* resealAfterRotation(hby, runtime, rotated.hab.pre, rotated.serder.said!);
+      settleProposedRotation({ hby }, sent);
+      delegationPhase = yield* finishAcceptedEvent(hby, runtime, sent.event, commandArgs);
+      rootCopies = yield* resealAfterRotation(hby, runtime, sent.group, sent.event.said);
     }
-    return {
-      route: MULTISIG_ROT_ROUTE,
-      group: rotated.hab.pre,
-      accepted,
-      messages,
-      deliveries,
-      state: hby.db.getState(rotated.hab.pre),
-      delegationPhase: delegationPhase,
-      rootCopies,
-    };
+    return { ...groupEventResult(hby, sent, accepted), delegationPhase, rootCopies };
   });
 }
 
@@ -590,19 +505,12 @@ export function* multisigRpyCommand(
       groupHab,
       { eid, role, allow: commandArgs.allow },
     );
+    // The reply is accepted when the other members' contributions reach this runtime.
     const accepted = commandArgs.approvalTimeoutSeconds > 0
-      ? yield* waitForReplyAcceptance(
-        hby,
-        runtime,
-        groupHab.pre,
-        role,
-        eid,
-        multisigApprovalOptions(hby, {
-          ...commandArgs,
-          group: groupHab.pre,
-          auto: true,
-        }),
-      )
+      ? yield* observeUntil(() => endpointRoleAccepted(hby, groupHab.pre!, role, eid), {
+        timeoutMs: Math.max(0, approvalDeadline(commandArgs) - Date.now()),
+        pollMs: 250,
+      })
       : result.accepted;
 
     return { ...result, accepted };
@@ -633,12 +541,7 @@ function* withMultisigRuntime<TResult>(
       const signer = selected && isLocalGroupHab(context.hby, selected)
         ? localGroupMember(context.hby, selected.pre)
         : selected;
-      const worker = yield* spawn(() => runAgentRuntime(context.runtime, { hab: signer }));
-      try {
-        return yield* use(context);
-      } finally {
-        yield* worker.halt();
-      }
+      return yield* withRuntimeWorkers(context.runtime, { hab: signer }, () => use(context));
     },
   );
 }
@@ -648,6 +551,12 @@ function requireHabByAlias(hby: Habery, alias: string): Hab {
   if (!hab?.pre) {
     throw new ValidationError(`Alias ${alias} is invalid`);
   }
+  return hab;
+}
+
+function requireGroupHab(hby: Habery, group: string): Hab {
+  const hab = hby.habByName(group);
+  if (!hab) throw new ValidationError(`Group alias ${group} is invalid.`);
   return hab;
 }
 
@@ -680,6 +589,27 @@ function mergeRotateOptions(args: MultisigRotateArgs): RotateFileOptions {
     );
   }
   return options;
+}
+
+/** Deadline of this command's approval wait, measured from when the wait starts. */
+function approvalDeadline(args: { approvalTimeoutSeconds: number }): number {
+  return Date.now() + args.approvalTimeoutSeconds * 1000;
+}
+
+function proposeDeps(hby: Habery, runtime: AgentRuntime): GroupProposeDeps {
+  return { hby, protocol: runtime.protocol, postman: runtime.postman, counselor: runtime.counselor };
+}
+
+function groupEventResult(hby: Habery, sent: ProposedGroupEvent, accepted: boolean): GroupEventResult {
+  return {
+    route: sent.route,
+    group: sent.group,
+    accepted,
+    messages: sent.messages,
+    deliveries: sent.deliveries,
+    state: hby.db.getState(sent.group),
+    delegationPhase: null,
+  };
 }
 
 function multisigApprovalOptions(
@@ -923,29 +853,6 @@ function* waitForLocalGroupCompletion(
     deliveries: [],
     messages: [],
   };
-}
-
-/** Approve stored proposals until the endpoint reply is accepted or the deadline expires. */
-function* waitForReplyAcceptance(
-  hby: Habery,
-  runtime: AgentRuntime,
-  groupPre: string,
-  role: string,
-  eid: string,
-  options: MultisigApprovalOptions & { deadline: number },
-): Operation<boolean> {
-  if (endpointRoleAccepted(hby, groupPre, role, eid)) {
-    return true;
-  }
-  while (true) {
-    yield* approvePendingMultisigProposal(hby, runtime, options);
-    if (endpointRoleAccepted(hby, groupPre, role, eid)) {
-      return true;
-    }
-    if (Date.now() >= options.deadline) break;
-    yield* sleep(Math.min(250, options.deadline - Date.now()));
-  }
-  return endpointRoleAccepted(hby, groupPre, role, eid);
 }
 
 /** Complete the delegation workflow for an accepted delegated group event. */

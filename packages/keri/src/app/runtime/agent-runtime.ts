@@ -479,9 +479,14 @@ export function* createAgentRuntime(
     }
   });
   const delegating = new Anchorer(hby, postman, querying, protocol, http, clock);
+  // Group receipting reaches TCP-only witnesses as `WitnessReceiptor` does, as KERIpy's Counselor does.
+  const groupReceiptor = new Receiptor(hby, protocol, http, clock);
   const counselor = new Counselor(
     hby,
-    new Receiptor(hby, protocol, http, clock),
+    {
+      receipt: (pre, options) => groupReceiptor.receipt(pre, { ...options, allowTcp: true }),
+      get: (pre, options) => groupReceiptor.get(pre, options),
+    },
     clock,
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
