@@ -20,5 +20,7 @@ common=(--name wan --base b --passcode WitnessFixturePasscode)
   --config-dir "$root/cf" --config-file wan
 "$python" "$fixture" --test-root "$root/home" --cli-module keri.cli.kli incept "${common[@]}" \
   --alias wan --config "$root/cf" --file "$source/scripts/demo/data/wil-witness-sample.json"
+# WITNESS_PROTOCOL_VERSION=2 serves the witness at KERI v2 (the fixture defaults to v1).
 exec "$python" "$fixture" --test-root "$root/home" "${common[@]}" --alias wan \
-  --config-dir "$root/cf" --config-file wan --http "$HTTP_PORT" --tcp "$TCP_PORT"
+  --config-dir "$root/cf" --config-file wan --http "$HTTP_PORT" --tcp "$TCP_PORT" \
+  ${WITNESS_PROTOCOL_VERSION:+--protocol-version "$WITNESS_PROTOCOL_VERSION"}
