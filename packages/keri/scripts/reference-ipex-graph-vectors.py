@@ -16,7 +16,7 @@ from keri.core import Diger, Noncer, Number, Parser, Salter, Schemer, exchept, m
 from keri.acdc import acdcmap, ipexing
 from keri.peer import Exchanger
 
-REFERENCE = "1f0f68a6ad44a8d159cbbb2bab7bb243bc7a0337"
+REFERENCE = "c5841f30d0d830bad62e0ab91e66d98a0afac20c"
 root = pathlib.Path(ipexing.__file__).resolve().parents[3]
 
 
@@ -140,8 +140,8 @@ with (openHby(name="graph-source", temp=True, salt=salt) as source,
     emit("last delegative wins", group(link=leaf(other, ["I2I", "NI2I"])), "accept")
     emit("last delegative fails", group(link=leaf(other, ["NI2I", "I2I"])), "reject")
     emit("E1E composes with delegative", group(link=leaf(other, ["E1E", "I2I"])), "reject")
-    emit("direct top-level leaf", leaf(good), "accept")
-    emit("edge block list", [group(link=leaf(good))], "accept")
+    emit("direct top-level leaf", leaf(good), "reject")
+    emit("edge block list", [group(link=leaf(good))], "reject")
     for operator in ("OR", "AND"):
         emit(f"{operator} mismatched relation", group(operator, good=leaf(good), bad=leaf(other)), "accept" if operator == "OR" else "reject")
         emit(f"{operator} pending issuer", group(operator, good=leaf(good), pending=leaf(waiting)), "accept" if operator == "OR" else "escrow")

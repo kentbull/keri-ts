@@ -9,25 +9,14 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protoco
 import { Schemer } from "../../../../src/core/scheming.ts";
 import vectors from "../../../fixtures/keripy-ipex-graph-vectors.json" with { type: "json" };
 
-/**
- * Rows whose recorded 1f0f68a6 outcome upstream KERIpy PR 1757 deliberately changes:
- * the Edge Section is one top-level group, never a leaf or list. The wires stay
- * labeled by their actual source until vectors are regenerated from the port.
- */
-const pr1757Outcomes: Readonly<Record<string, string>> = {
-  "direct top-level leaf": "reject",
-  "edge block list": "reject",
-};
-
-for (const recorded of vectors.cases) {
-  const row = { ...recorded, outcome: pr1757Outcomes[recorded.name] ?? recorded.outcome };
+for (const row of vectors.cases) {
   Deno.test(`Python IPEX graph: ${row.name}`, async () => {
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       const exchanger = new Exchanger(hby);
       loadIpexHandlers(hby, exchanger);
       try {
-        assertEquals(vectors.reference, "1f0f68a6ad44a8d159cbbb2bab7bb243bc7a0337");
+        assertEquals(vectors.reference, "c5841f30d0d830bad62e0ab91e66d98a0afac20c");
         assertExists(vectors.modules["src/keri/acdc/chaining.py"]);
         for (const wire of vectors.wires.slice(0, row.through)) {
           for (const frame of yield* call(() => parseBytes(b(wire)))) {

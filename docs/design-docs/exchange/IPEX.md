@@ -38,7 +38,8 @@ Historical wire vectors remain pinned to `ae8284995486855809e7f4988fa1579b63e1ff
 Their E1E and AND intake refusals now agree with TypeScript. Their original blank
 and stale section-claim bytes remain unchanged as historical non-parity evidence:
 that Python Serder accepted both while TS refused them, and only Python IPEX
-accepted the blank claim. Fresh graph vectors pin `1f0f68a6ad44a8d159cbbb2bab7bb243bc7a0337` and use ordinary current-Python
+accepted the blank claim. Fresh graph vectors pin `c5841f30d0d830bad62e0ab91e66d98a0afac20c`, where a
+top-level leaf or Edge block list is refused as in TypeScript, and use ordinary current-Python
 `acdcmap(attribute={d: "", ...})` construction after its section repair, with no
 Compactor preparation or receiver rewriting. Each generator records its exact
 source pin and all imported module hashes. Relative to the historical fixture, the
