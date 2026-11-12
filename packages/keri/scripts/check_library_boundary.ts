@@ -10,6 +10,8 @@
  * discovered by the build script rather than hard-coded here.
  */
 
+import { assertBrowserGraphClean } from "../../../scripts/npm/dnt-helpers.ts";
+
 interface DenoInfoDependency {
   code?: { specifier?: string };
 }
@@ -26,6 +28,7 @@ interface DenoInfoOutput {
 }
 
 interface ExportTarget {
+  browser?: string;
   import: string;
   types: string;
 }
@@ -50,6 +53,12 @@ const EXPECTED_EXPORT_KEYS = [
   "./db/lmdb",
   "./db/indexeddb",
 ];
+
+/**
+ * Export keys whose source graph is gated above and that therefore ship a
+ * polyfill-free `browser` target. The Node-only keys must not have one.
+ */
+const BROWSER_EXPORT_KEYS = [".", "./runtime", "./db", "./db/indexeddb"];
 
 interface SurfaceCheck {
   label: string;
@@ -76,7 +85,8 @@ const SURFACES: SurfaceCheck[] = [
   {
     label: "keri-ts root surface",
     entrypoint: new URL("../mod.ts", import.meta.url),
-    forbidden: [...APP_FORBIDDEN, "node:"],
+    forbidden: [...APP_FORBIDDEN, ...HOST_FORBIDDEN],
+    forbidDenoGlobal: true,
   },
   {
     label: "keri-ts runtime surface",
@@ -183,7 +193,8 @@ function assertNoDenoGlobal(label: string, specifiers: string[]): void {
  *
  * The build script is responsible for discovering DNT output paths. This check
  * only verifies that the normalized manifest has the expected export keys, that
- * each import/types target exists, and that root `main`/`module`/`types` agree
+ * each import/types target exists, browser-safe keys carry a `browser` target
+ * (Node-only keys must not), the browser graph is Node-free, and that root `main`/`module`/`types` agree
  * with `exports["."]`.
  */
 function assertManifestExports(): void {
@@ -222,7 +233,19 @@ function assertManifestExports(): void {
     }
     assertPackageTargetExists(actual.import, `export ${key}.import`);
     assertPackageTargetExists(actual.types, `export ${key}.types`);
+    if (BROWSER_EXPORT_KEYS.includes(key)) {
+      if (!actual.browser) {
+        throw new Error(`Browser-safe export ${key} is missing its browser condition`);
+      }
+      assertPackageTargetExists(actual.browser, `export ${key}.browser`);
+    } else if (actual.browser !== undefined) {
+      throw new Error(`Node-only export ${key} must not declare a browser condition`);
+    }
   }
+  assertBrowserGraphClean(
+    new URL("../npm/", import.meta.url).pathname,
+    BROWSER_EXPORT_KEYS.map((key) => exportsField[key].browser!),
+  );
 
   const rootExport = exportsField["."];
   if (

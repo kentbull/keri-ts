@@ -97,6 +97,12 @@ export {
   evaluateChain,
 } from "../acdc/chaining.ts";
 export {
+  type DerivedUpdate,
+  type DerivedUpdateStore,
+  RegistryCustody,
+  type RegistryCustodyOptions,
+} from "../acdc/custody.ts";
+export {
   decodePublicKey,
   deriveRoot,
   Dhke,
@@ -189,6 +195,21 @@ export {
   loadAcceptedEndpointRole,
   proposeGroupEndpointRole,
 } from "../app/identity/endpoint-roleing.ts";
+export {
+  beginDelegation,
+  completeEvent,
+  type CompleteEventOptions,
+  DELEGATION_WAIT_TIMEOUT_MS,
+  type DelegationCollaborator,
+  type DelegationOptions,
+  delegationStatus,
+  type EventCompletion,
+  type EventCompletionDeps,
+  receiptEvent,
+  type ReceiptingDeps,
+  type ReceiptOptions,
+  waitForDelegation,
+} from "../app/identity/event-completion.ts";
 export {
   acceptedEventReplayMessage,
   type GroupHabCreation,

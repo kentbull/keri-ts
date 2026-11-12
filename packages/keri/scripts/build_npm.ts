@@ -7,7 +7,9 @@
  */
 import { build, emptyDir } from "@deno/dnt";
 import {
+  assertBrowserGraphClean,
   assertPackagePathExists,
+  emitBrowserEntrypoint,
   findGeneratedEntrypoint,
   listFilesSync,
   readPackageVersionSync,
@@ -48,8 +50,10 @@ interface BuiltNpmPackageManifest {
   exports?: Record<string, unknown>;
 }
 
-/** Package import/types pair for one public npm export surface. */
+/** Package import/types pair (plus optional browser target) for one public npm export surface. */
 interface NpmExportTarget {
+  /** Polyfill-free entry for bundlers; present only on browser-safe surfaces. */
+  browser?: string;
   import: string;
   types: string;
 }
@@ -135,7 +139,7 @@ function writeDntImportMap(cesrVersion: string): void {
  * stable entrypoint markers.
  */
 function resolveGeneratedExportTargets(): NpmExportTargets {
-  const targets = {
+  const targets: NpmExportTargets = {
     root: {
       import: findGeneratedEntrypoint(
         { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "index.js", marker: ENTRYPOINT_MARKERS.root },
@@ -214,10 +218,20 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
     },
   };
 
+  // Only the surfaces that `check_library_boundary.ts` proves browser-safe get a
+  // `browser` condition; `cli`, `db/lmdb` and `runtime/node` stay Node-only.
+  for (const target of [targets.root, targets.runtime, targets.db, targets.dbIndexedDb]) {
+    target.browser = emitBrowserEntrypoint(OUT_DIR, target.import);
+  }
+
   for (const target of Object.values(targets)) {
     assertPackagePathExists(OUT_DIR, target.import);
     assertPackagePathExists(OUT_DIR, target.types);
   }
+  assertBrowserGraphClean(
+    OUT_DIR,
+    Object.values(targets).flatMap((target) => target.browser ? [target.browser] : []),
+  );
 
   return targets;
 }
@@ -250,6 +264,7 @@ function normalizeBuiltManifest(): void {
   manifest.types = targets.root.types;
   manifest.exports = {
     ".": {
+      browser: targets.root.browser,
       import: targets.root.import,
       types: targets.root.types,
     },
@@ -258,6 +273,7 @@ function normalizeBuiltManifest(): void {
       types: targets.cli.types,
     },
     "./runtime": {
+      browser: targets.runtime.browser,
       import: targets.runtime.import,
       types: targets.runtime.types,
     },
@@ -266,6 +282,7 @@ function normalizeBuiltManifest(): void {
       types: targets.runtimeNode.types,
     },
     "./db": {
+      browser: targets.db.browser,
       import: targets.db.import,
       types: targets.db.types,
     },
@@ -274,6 +291,7 @@ function normalizeBuiltManifest(): void {
       types: targets.dbLmdb.types,
     },
     "./db/indexeddb": {
+      browser: targets.dbIndexedDb.browser,
       import: targets.dbIndexedDb.import,
       types: targets.dbIndexedDb.types,
     },

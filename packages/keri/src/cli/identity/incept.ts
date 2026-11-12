@@ -1,19 +1,14 @@
 import type { ThresholdSith, Versionage } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
 import { resolveBootstrap } from "../../app/bootstrap/bootstrapping.ts";
-import { createProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
-import {
-  createAgentRuntime,
-  runAgentRuntimeUntil,
-} from "../../app/runtime/agent-runtime.ts";
-import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { assertBootstrapComplete } from "../common/bootstrap.ts";
 
 import { type Configer, createConfiger } from "../../app/identity/configing.ts";
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
-import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
+import { completeEvent } from "../../app/identity/event-completion.ts";
+import { cliEventCompletionDeps } from "../common/event-completion.ts";
 import { setupHby } from "../common/existing.ts";
 import {
   InceptFileOptions,
@@ -167,53 +162,27 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         version: inceptArgs.version,
       });
 
-      if (hab.kever?.wits.length) {
-        if (inceptArgs.endpoint) {
-          const receiptor = new Receiptor(
-            hby,
-            createProtocolProcessor(hby),
-            http,
-            systemClock,
-          );
-          yield* receiptor.receipt(hab.pre, { sn: 0 });
-        } else {
-          const witDoer = new WitnessReceiptor(
-            hby,
-            createProtocolProcessor(hby),
-            http,
-            systemClock,
-          );
-          yield* witDoer.submit(hab.pre, { sn: 0 });
-        }
-      }
-
-      let delegationPhase: string | null = null;
-      if (opts.delpre) {
-        const communicationHab = resolveDelegationCommunicationHab(
-          hby,
-          inceptArgs.proxy,
-        );
-        if (!communicationHab) {
-          throw new ValidationError(
-            `Delegated inception for ${hab.pre} requires --proxy <alias>.`,
-          );
-        }
-        const runtime = yield* createAgentRuntime(hby, http, systemClock);
-        try {
-          runtime.delegating.beginLatest(hab.pre, 0, {
-            communicationHab,
-          });
-
-          yield* runAgentRuntimeUntil(
-            runtime,
-            () => runtime.delegating.complete(hab.pre, 0),
-            { hab, timeoutMs: 120_000, pollMailbox: true },
-          );
-          delegationPhase = runtime.delegating.workflowStatus(hab.pre, "0").phase;
-        } finally {
-          yield* runtime.close();
-        }
-      }
+      const { delegationPhase } = yield* completeEvent(
+        cliEventCompletionDeps(hby, http),
+        hab,
+        0,
+        {
+          endpoint: inceptArgs.endpoint,
+          delegation: opts.delpre
+            ? {
+              communicationHab: () => {
+                const communicationHab = resolveDelegationCommunicationHab(hby, inceptArgs.proxy);
+                if (!communicationHab) {
+                  throw new ValidationError(
+                    `Delegated inception for ${hab.pre} requires --proxy <alias>.`,
+                  );
+                }
+                return communicationHab;
+              },
+            }
+            : undefined,
+        },
+      );
 
       const state = hby.db.getState(hab.pre);
 

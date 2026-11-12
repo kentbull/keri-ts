@@ -182,7 +182,9 @@ body after non-refusal. Pending material is not acceptance. Accepted cloneTel re
 uses framed exact bodies and retained counted openings, with an empty foot otherwise;
 event/seqEvent remain raw access. Replay validates without writing, including readonly
 stores. Local constructor returns, private custody and IPEX proofs never publish implicitly.
-RegistryCustody binds actual Habery/Hab/registry/wallet owners and uses v2
+RegistryCustody (core in `acdc/custody.ts`; the wallet class extends it and supplies
+its `derived-updates.` table as the `DerivedUpdateStore` port, so the core opens no
+table) binds actual Habery/Hab/registry owners and uses v2
 Keeper `rroots.` ciphertext keyed by canonical local AID and registry SAID. New
 roots require the selected accepted issuer; an existing retained root may be
 reused without implying delegation. AEID changes atomically rewrap immutable roots

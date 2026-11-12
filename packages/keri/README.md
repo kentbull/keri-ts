@@ -27,6 +27,19 @@ implementation-module exports do not automatically become package API. npm deep
 imports such as `keri-ts/app/...` and `keri-ts/core/...` are not supported. Import
 runtime operations from `keri-ts/runtime` and storage from `keri-ts/db`.
 
+## Browser bundles
+
+`keri-ts`, `keri-ts/runtime`, `keri-ts/db` and `keri-ts/db/indexeddb` carry a
+`browser` export condition that resolves to a build of the same entrypoint
+without the Node polyfill import, so bundlers targeting the browser reach no
+`node:` module. `keri-ts/cli`, `keri-ts/db/lmdb` and `keri-ts/runtime/node` are
+Node-only and have no `browser` condition. The `import` and `types` targets are
+unchanged.
+
+The graph includes `cesr-ts`, which uses a top-level `await` to instantiate its
+Argon2 WebAssembly, so bundle as ESM targeting ES2022 or later. See the
+`cesr-ts` README for the Content Security Policy note.
+
 ## Maintainer Docs
 
 - `docs/ARCHITECTURE_MAP.md`: package and module ownership map

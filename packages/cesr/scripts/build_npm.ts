@@ -9,7 +9,9 @@
  */
 import { build, emptyDir } from "@deno/dnt";
 import {
+  assertBrowserGraphClean,
   assertPackagePathExists,
+  emitBrowserEntrypoint,
   findGeneratedEntrypoint,
   prependShebangIfMissing,
   readPackageVersionSync,
@@ -52,7 +54,8 @@ function resolvePackageVersion(): string {
  *
  * - `main` and `module` to the discovered ESM root entrypoint
  * - `types` to the discovered declaration root entrypoint
- * - `exports["."]` to the same root import/types pair
+ * - `exports["."]` to the same root import/types pair plus a polyfill-free
+ *   `browser` target
  * - `bin["tephra"]` to the discovered package-level CLI file without a leading
  *   `./`
  *
@@ -86,11 +89,16 @@ function normalizeBuiltManifest(): string {
   assertPackagePathExists(OUT_DIR, rootTypes);
   assertPackagePathExists(OUT_DIR, bin);
 
+  // Polyfill-free sibling of the root entry for bundlers that resolve `browser`.
+  const rootBrowser = emitBrowserEntrypoint(OUT_DIR, rootImport);
+  assertBrowserGraphClean(OUT_DIR, [rootBrowser]);
+
   manifest.main = rootImport;
   manifest.module = rootImport;
   manifest.types = rootTypes;
   manifest.exports = {
     ".": {
+      browser: rootBrowser,
       import: rootImport,
       types: rootTypes,
     },

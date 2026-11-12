@@ -1,7 +1,5 @@
 import type { ThresholdSith, Versionage } from "cesr-ts";
 import type { Hab } from "../../app/identity/habbing.ts";
-import { createProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
-import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import type { WitnessAuthMap } from "../../app/witness/receipting.ts";
 
@@ -19,16 +17,13 @@ import type { WitnessAuthMap } from "../../app/witness/receipting.ts";
  * - KLI-compatible success output
  */
 import { type Operation } from "npm:effection@^3.6.0";
-import {
-  createAgentRuntime,
-  runAgentRuntimeUntil,
-} from "../../app/runtime/agent-runtime.ts";
 import { ValidationError } from "../../core/errors.ts";
 
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
+import { completeEvent } from "../../app/identity/event-completion.ts";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
-import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { withExistingHab } from "../common/context.ts";
+import { cliEventCompletionDeps } from "../common/event-completion.ts";
 import {
   loadRotateFileOptions,
   parseBooleanOption,
@@ -215,55 +210,18 @@ export function* rotateCommand(
         version: rotateArgs.version,
       });
 
-      if (hab.kever?.wits.length) {
-        if (rotateArgs.endpoint) {
-          const receiptor = new Receiptor(
-            hby,
-            createProtocolProcessor(hby),
-            http,
-            systemClock,
-          );
-          yield* receiptor.receipt(hab.pre, {
-            sn: hab.kever.sn,
-            auths,
-          });
-        } else {
-          const witDoer = new WitnessReceiptor(
-            hby,
-            createProtocolProcessor(hby),
-            http,
-            systemClock,
-          );
-          yield* witDoer.submit(hab.pre, {
-            sn: hab.kever.sn,
-            auths,
-          });
-        }
-      }
-
-      let delegationPhase: string | null = null;
-      if (kever.delpre !== null && hab.kever) {
-        const communicationHab = resolveDelegationCommunicationHab(
-          hby,
-          rotateArgs.proxy,
-        );
-        const runtime = yield* createAgentRuntime(hby, http, systemClock);
-        try {
-          runtime.delegating.beginLatest(hab.pre, hab.kever.sn, {
-            communicationHab,
-          });
-          const snh = hab.kever.sn.toString(16);
-
-          yield* runAgentRuntimeUntil(
-            runtime,
-            () => runtime.delegating.complete(hab.pre, hab.kever!.sn),
-            { hab, timeoutMs: 120_000, pollMailbox: true },
-          );
-          delegationPhase = runtime.delegating.workflowStatus(hab.pre, snh).phase;
-        } finally {
-          yield* runtime.close();
-        }
-      }
+      const { delegationPhase } = yield* completeEvent(
+        cliEventCompletionDeps(hby, http),
+        hab,
+        hab.kever!.sn,
+        {
+          auths,
+          endpoint: rotateArgs.endpoint,
+          delegation: kever.delpre !== null && hab.kever
+            ? { communicationHab: () => resolveDelegationCommunicationHab(hby, rotateArgs.proxy) }
+            : undefined,
+        },
+      );
 
       const state = hby.db.getState(hab.pre);
       console.log(`Prefix  ${hab.pre}`);

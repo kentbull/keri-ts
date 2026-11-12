@@ -98,6 +98,12 @@ Operator/publication commands retain this boundary too: validate cleanup options
 before reading key files and preserve count/limit spelling through dispatch.
 Approval waits allow fractional seconds and default only on omission. Inception's
 finite command scope owns acquisition/cleanup without a completion queue.
+Single-signature event completion lives in `app/identity/event-completion.ts`
+(exported from `keri-ts/runtime`); incept, rotate, interact and `witness submit`
+are callers. Receipting is a no-op until accepted key state has witnesses;
+delegation begin, status and wait are separate, status being the Anchorer's
+durable escrow phase. Deps are narrow collaborators; the host lends its runtime
+through `withDelegation` for one scope, and witness auth prompting stays in the CLI.
 
 ## Protocol and output owners
 

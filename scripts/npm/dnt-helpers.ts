@@ -5,6 +5,7 @@
  * on package-specific entrypoints while centralizing the release-sensitive
  * filesystem and manifest operations.
  */
+import { dirname, resolve } from "node:path";
 
 /** Minimal package manifest shape needed by version-aware build scripts. */
 export interface PackageManifest {
@@ -144,4 +145,64 @@ export function prependShebangIfMissing(path: string): void {
     Deno.writeTextFileSync(path, `#!/usr/bin/env node\n${current}`);
   }
   Deno.chmodSync(path, 0o755);
+}
+
+/** DNT-generated side-effect imports that pull Node-only code into an entrypoint. */
+const DNT_ENTRY_IMPORT = /^import "[^"]*_dnt\.(?:polyfills|shims)\.js";\r?\n/gm;
+
+/**
+ * Emit a polyfill-free sibling of a generated entrypoint for the `browser`
+ * export condition and return its package-relative path.
+ *
+ * DNT prepends `import "../_dnt.polyfills.js"` to every entrypoint, and that
+ * module loads `node:module`, `node:url` and `node:path`. The polyfills only
+ * serve `import.meta.dirname`/`filename`/`main`/`resolve`, which no browser-safe
+ * module reads, so the wrapper is the entrypoint minus that import. Everything
+ * else is shared with the `import` target, so the original file is untouched.
+ */
+export function emitBrowserEntrypoint(outDir: string, importTarget: string): string {
+  const relative = importTarget.replace(/^\.\//, "");
+  if (!relative.endsWith(".js")) {
+    throw new Error(`Expected a .js entrypoint to derive a browser target from: ${importTarget}`);
+  }
+  const browserRelative = `${relative.slice(0, -".js".length)}.browser.js`;
+  const source = Deno.readTextFileSync(`${outDir}/${relative}`);
+  Deno.writeTextFileSync(`${outDir}/${browserRelative}`, source.replace(DNT_ENTRY_IMPORT, ""));
+  return `./${browserRelative}`;
+}
+
+/** Module specifiers that must never be reachable from a `browser` target. */
+const BROWSER_FORBIDDEN_SPECIFIER = /^(?:node:|npm:|@deno\/shim-deno(?:\/|$)|lmdb(?:\/|$))|_dnt\.|deno-shim/;
+
+/** Static and dynamic import/export specifiers in DNT's plain ES output. */
+const MODULE_SPECIFIER = /(?:import|export)\s*(?:[^'";]*?\sfrom\s*)?["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
+
+/**
+ * Assert that nothing reachable from the given `browser` targets imports a
+ * Node-only module, DNT's polyfills/shims, the Deno shim or LMDB.
+ *
+ * This walks emitted files the same way a bundler would: relative specifiers are
+ * followed, bare specifiers are checked and left to the dependency's own
+ * `browser` handling.
+ */
+export function assertBrowserGraphClean(outDir: string, browserTargets: string[]): void {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  const pending = browserTargets.map((target) => resolve(outDir, target));
+  while (pending.length > 0) {
+    const path = pending.pop()!;
+    if (seen.has(path)) continue;
+    seen.add(path);
+    for (const match of Deno.readTextFileSync(path).matchAll(MODULE_SPECIFIER)) {
+      const specifier = match[1] ?? match[2];
+      if (BROWSER_FORBIDDEN_SPECIFIER.test(specifier)) {
+        problems.push(`${path} imports ${specifier}`);
+      } else if (specifier.startsWith(".")) {
+        pending.push(resolve(dirname(path), specifier));
+      }
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(`Browser export targets reach Node-only modules:\n  ${problems.join("\n  ")}`);
+  }
 }
