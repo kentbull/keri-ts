@@ -1,5 +1,22 @@
 # @keri-ts/tufa
 
+## 2.2.0
+
+### Minor Changes
+
+- c0b4f45: Delivery now fails with a typed `PeerVersionError` instead of sending KERI v2 to a recipient, endpoint or mailbox provider whose own latest accepted event is v1. A deliberate `--version 2.0` rotation can now upgrade a v1 identifier.
+
+### Patch Changes
+
+- a3afb18: `RegistryRoot.prepare` now derives each `/registry/root` copy's verification hint for its own registry, from the head BUP's held opening or else an ACDC of that registry nested in any locally stored exchange, including a Grant inside a `/multisig/exn` proposal. Before sealing, the sender checks that its root reproduces the BUP with that hint and refuses otherwise. `--acdc` on `tufa vc registry root send|newcomers` is now an override, an empty hint still sends an unhinted copy, and the new `hinted` option refuses instead of sending a copy that cannot verify. `newcomers` no longer applies one hint to every registry.
+- 13d36a2: The DH custodian of a group issuance now sends its retained registry root to every other current signing member once issuance completes: the issuer custodian after `tufa ipex grant --issue`, and the holder custodian at the end of its group `tufa ipex setup`. Copies are fire and forget through the new `replicateRegistryRoots` in `keri-ts/runtime`: each is prepared with a per-registry hint, run under the remaining `--timeout`, and reported as a `root_copy` JSON line after the issuance result. Nothing is retried or recorded, duplicates are harmless, a failed copy never fails the issuance, and `tufa vc registry root send` is the recovery path.
+- cbf76c0: After `tufa multisig rotate` or `tufa multisig join` sees a group rotation accepted, every signer of it that held a key in the prior establishment re-seals each registry root it holds for the group to every current signing member that is new in the rotation or whose contributing key changed, with no elected sender. `RegistryRoot.newcomers` gains a `rekeyed` option, `RegistryRoot.resealed` applies the sender rule, and `resealRegistryRoots` in `keri-ts/runtime` sends the copies fire and forget under a 30 second budget, printed as `root_copy` lines that never fail the rotation. The IPEX design doc and ACDC learnings now describe both automatic triggers and their limits.
+- 815676b: Move `Configer` and `createConfiger` to `keri-ts/runtime/node`. `openHabery` now needs `cf`, `createConfig` or `skipConfig`; `createHabery` still creates the config file by default.
+- c22f1c6: Make `keri-ts/db` and `keri-ts/runtime` backend-neutral and move the native LMDB surface to `keri-ts/db/lmdb`. This breaks imports of `LMDBer`, `createHabery`, the `create*` store factories and `openRegistry`'s LMDB default from their old entrypoints; import them from `keri-ts/db/lmdb` (`openLmdbRegistry` replaces the default).
+- c9d7528: Add the `keri-ts/runtime/node` entrypoint for host-only transport: `TCPMessenger`, `TCPStreamMessenger`, the `tcp-egress` and `socketBytes` helpers, `NodeHttpClient`, `nodeTcpDialer` and `fileBytes`. `keri-ts/runtime` no longer exports them, so it reaches neither `node:` modules nor the `Deno` global through its transport code; import them from `keri-ts/runtime/node` instead. `requireTcpDialer` and `TcpDialer` stay on `keri-ts/runtime`.
+- a127ef9: Route TCP egress through an optional `HttpClient.tcp` dialer, so browser hosts without sockets get a clear error and `NodeHttpClient` supplies the existing TCP behavior.
+- e5beae9: Add the guide for upgrading from 2.0.x. Tufa operators using `--config-file` must move config files from `keri/cf/<name>/<name>.json` to `keri/cf/<name>.json`, as the guide describes.
+
 ## 2.1.0
 
 ### Minor Changes

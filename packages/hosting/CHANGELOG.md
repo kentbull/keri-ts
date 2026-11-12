@@ -1,5 +1,13 @@
 # @keri-ts/hosting
 
+## 2.1.1
+
+### Patch Changes
+
+- c22f1c6: Make `keri-ts/db` and `keri-ts/runtime` backend-neutral and move the native LMDB surface to `keri-ts/db/lmdb`. This breaks imports of `LMDBer`, `createHabery`, the `create*` store factories and `openRegistry`'s LMDB default from their old entrypoints; import them from `keri-ts/db/lmdb` (`openLmdbRegistry` replaces the default).
+- c9d7528: Add the `keri-ts/runtime/node` entrypoint for host-only transport: `TCPMessenger`, `TCPStreamMessenger`, the `tcp-egress` and `socketBytes` helpers, `NodeHttpClient`, `nodeTcpDialer` and `fileBytes`. `keri-ts/runtime` no longer exports them, so it reaches neither `node:` modules nor the `Deno` global through its transport code; import them from `keri-ts/runtime/node` instead. `requireTcpDialer` and `TcpDialer` stay on `keri-ts/runtime`.
+- a127ef9: Route TCP egress through an optional `HttpClient.tcp` dialer, so browser hosts without sockets get a clear error and `NodeHttpClient` supplies the existing TCP behavior.
+
 ## 2.1.0
 
 ### Minor Changes

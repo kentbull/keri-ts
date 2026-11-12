@@ -1,5 +1,11 @@
 # @keri-ts/registrar
 
+## 2.1.1
+
+### Patch Changes
+
+- c22f1c6: Make `keri-ts/db` and `keri-ts/runtime` backend-neutral and move the native LMDB surface to `keri-ts/db/lmdb`. This breaks imports of `LMDBer`, `createHabery`, the `create*` store factories and `openRegistry`'s LMDB default from their old entrypoints; import them from `keri-ts/db/lmdb` (`openLmdbRegistry` replaces the default).
+
 ## 2.1.0
 
 ### Minor Changes
