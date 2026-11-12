@@ -434,6 +434,21 @@ export class Hab {
     return !!this.pre && this.db.getKever(this.pre) !== null;
   }
 
+  /**
+   * Whether the held or stored signing keys currently allow this habitat to sign.
+   * False for a keyless habitat (`makeSignedHab`) until the host holds its signer.
+   */
+  canSign(): boolean {
+    try {
+      const probe = new Uint8Array(1);
+      if (this.kever?.transferable === false) this.sign(probe, false);
+      else this.sign(probe, true);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Return the live accepted-state `Kever` for this habitat when available. */
   get kever(): Kever | null {
     return this.pre ? this.db.getKever(this.pre) : null;
@@ -1583,6 +1598,13 @@ export class Habery {
   }
 
   /**
+   * Prefixes of habitats whose alias config was not applied at open because they
+   * could not sign yet (a keyless habitat before the host holds its signer). The
+   * host calls `hab.reconfigure()` after holding; applying config is retried then.
+   */
+  readonly deferredReconfigure: string[] = [];
+
+  /**
    * Populate the in-memory habitat cache from durable `habs.` + `states.` data.
    *
    * Like KERIpy `loadHabs`, a local group record is held even while its
@@ -1613,6 +1635,7 @@ export class Habery {
       );
       if (!hab.accepted) {
         if (habord.mid) {
+          this.habs.set(hab.pre, hab);
           continue;
         }
         throw new ValidationError(
@@ -1621,7 +1644,13 @@ export class Habery {
       }
       this.habs.set(hab.pre, hab);
     }
+    this.deferredReconfigure.length = 0;
     for (const hab of this.habs.values()) {
+      // Config replies are signed. A habitat that cannot sign yet applies them once its signer is held.
+      if (hab.accepted && hab.configuredSection() && !hab.canSign()) {
+        this.deferredReconfigure.push(hab.pre);
+        continue;
+      }
       hab.reconfigure();
     }
     // Restart recovery: commit members of an accepted establishment event
@@ -1635,7 +1664,6 @@ export class Habery {
    * Commit the members of a local group's latest accepted establishment event
    * when the stored record is stale (KERIpy `GroupHab.recoverAcceptedMembers`).
    *
-          this.habs.set(hab.pre, hab);
    * A process that stopped after a rotation was accepted but before its live
    * `commitAcceptedGroupMembers` leaves `smids`/`rmids` stale. Members are
    * derived from local KELs, trying the stored members first and every AID
