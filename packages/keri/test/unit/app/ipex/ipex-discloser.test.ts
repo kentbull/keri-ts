@@ -2,6 +2,7 @@
 import { parseBytes } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
+import { acdcmap, regcept } from "../../../../src/acdc/messaging.ts";
 import { RegistryStore } from "../../../../src/acdc/registering.ts";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import type { Habery } from "../../../../src/app/identity/habbing.ts";
@@ -57,11 +58,15 @@ Deno.test("IpexDiscloser refuses foreign owners and unselectable fresh issuance"
       const discloser = new IpexDiscloser(hby, registry, exc, receiptorFor(hby));
       let refusal: unknown;
       try {
-        yield* discloser.prepareIssuanceGrantBody("Eunknown", {} as never, {
-          message: "",
-          recipient: hab.pre,
-          plan: [],
-        });
+        yield* discloser.prepareIssuanceGrantBody(
+          "Eunknown",
+          acdcmap(hab.pre, { regid: regcept(hab.pre).said!, attribute: { d: "", i: hab.pre } }),
+          {
+            message: "",
+            recipient: hab.pre,
+            plan: [],
+          },
+        );
       } catch (error) {
         refusal = error;
       }
