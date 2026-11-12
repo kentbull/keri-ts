@@ -23,6 +23,7 @@ function approvalDeps(s: Scenario) {
     postman: s.runtime.postman,
     notifier: s.notifier,
     registryStore: null,
+    vdr: null,
     counselor: { start: (event: GroupEventRef, inputs: unknown) => (started.push({ event, inputs }), true) },
   };
   return { deps, started };
