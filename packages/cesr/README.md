@@ -20,6 +20,21 @@ console.log(frames[0].body.ilk);
 const annotated = annotate(text, { pretty: true });
 ```
 
+## Browser bundles
+
+The package root has a `browser` export condition that resolves to the same
+entrypoint without the Node polyfill import, so bundlers targeting the browser
+reach no `node:` module. The `tephra` CLI is Node-only. The `import` and `types`
+targets are unchanged.
+
+The module graph has a top-level `await` that instantiates the Argon2
+WebAssembly, so bundle as ESM targeting ES2022 or later. `@keri-ts/hash-wasm`
+embeds the WebAssembly as base64 inside its JavaScript and compiles it with
+`WebAssembly.compile`, so there is no separate `.wasm` file to serve. A page
+that enforces a Content Security Policy will probably need `'wasm-unsafe-eval'`
+in `script-src`; this follows from the CSP specification and has not been
+verified in a browser.
+
 ## Buffered decoding
 
 `parse(source)` consumes an async byte iterable and yields complete frames with
