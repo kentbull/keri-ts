@@ -307,6 +307,7 @@ export {
 } from "../app/ipex/ipexing.ts";
 export {
   addMailbox,
+  completeGroupMailbox,
   completeMailboxAdmin,
   type MailboxAdminDeps,
   type MailboxAdminResponse,
@@ -315,6 +316,7 @@ export {
   mailboxStatus,
   type MailboxWaitOptions,
   type MailboxWaitResult,
+  proposeGroupMailbox,
   removeMailbox,
   requireMailboxEndpointUrl,
   waitForMailboxState,
@@ -412,10 +414,14 @@ export {
   listGroupProposals,
 } from "../app/multisig/proposals.ts";
 export {
+  type CredentialProposeDeps,
   type GroupEventResult,
   type GroupInceptionSpec,
   type GroupProposeDeps,
   type GroupRotationSpec,
+  proposeCredentialIssue,
+  proposeCredentialRegistry,
+  proposeCredentialRevocation,
   proposeGroupInception,
   proposeGroupInteraction,
   proposeGroupRotation,

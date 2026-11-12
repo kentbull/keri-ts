@@ -12,17 +12,14 @@ import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
 import { call, type Operation, spawn } from "effection";
 import {
   addMailbox,
-  completeMailboxAdmin,
-  endpointRoleAccepted,
+  completeGroupMailbox,
   type Habery,
   isLocalGroupHab,
-  loadAcceptedEndpointRole,
   type MailboxAdminDeps,
   Organizer,
-  proposeGroupEndpointRole,
+  proposeGroupMailbox,
   removeMailbox,
   requireMailboxEndpointUrl,
-  Roles,
   TopicsRecord,
   ValidationError,
 } from "keri-ts/runtime";
@@ -304,7 +301,7 @@ function* withMailboxWorkflow(
     mailboxOpenOptions(args),
     function*({ hby, hab, runtime }) {
       const mailboxAid = resolveMailboxAid(hby, args.mailbox!);
-      const endpointUrl = requireMailboxEndpointUrl(hby, mailboxAid);
+      requireMailboxEndpointUrl(hby, mailboxAid); // an unknown mailbox fails before any group step
       const deps: MailboxAdminDeps = {
         hby,
         http: new NodeHttpClient(),
@@ -328,11 +325,7 @@ function* withMailboxWorkflow(
             const postman = runtime.postman;
             const worker = yield* spawn(() => postman.deliverDo());
             try {
-              return yield* proposeGroupEndpointRole(hby, runtime.protocol, postman, hab, {
-                eid: mailboxAid,
-                role: Roles.mailbox,
-                allow: true,
-              });
+              return yield* proposeGroupMailbox(hby, runtime.protocol, postman, hab, mailboxAid);
             } finally {
               yield* worker.halt();
             }
@@ -340,13 +333,7 @@ function* withMailboxWorkflow(
           writeGroupEndpointRoleProposal(result);
           return;
         }
-        if (!endpointRoleAccepted(hby, hab.pre, Roles.mailbox, mailboxAid)) {
-          throw new ValidationError(
-            `Mailbox role for ${mailboxAid} is not yet approved for group ${hab.pre}.`,
-          );
-        }
-        const rpy = loadAcceptedEndpointRole(hab, mailboxAid, Roles.mailbox);
-        yield* completeMailboxAdmin(deps, hab, mailboxAid, endpointUrl, rpy, true);
+        yield* completeGroupMailbox(deps, hab, mailboxAid);
         console.log(`added ${mailboxAid}`);
         return;
       }
