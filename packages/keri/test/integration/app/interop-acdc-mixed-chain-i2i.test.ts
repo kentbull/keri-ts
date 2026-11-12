@@ -32,6 +32,7 @@ import {
   withStartedChild,
   workspaceRoot,
 } from "./interop-test-helpers.ts";
+import { v1OnlyKeripyPeer } from "./keripy-runtime.ts";
 
 interface TufaStore {
   name: string;
@@ -243,7 +244,7 @@ async function createTufaStore(
     pre: "",
   };
   await initTufaStore(ctx, store);
-  store.pre = await inceptTufaAlias(ctx, store);
+  store.pre = await inceptTufaAlias(ctx, { ...store, version: "1.0" });
   return store;
 }
 
@@ -404,7 +405,7 @@ async function importSchemaToKli(
     `${store.name} schema import`,
     runCmdWithTimeout(
       ctx.kliCommand,
-      ["vc", "schema", "import_", ...kliStoreArgs(store), "--schema", schemaPath],
+      ["vc", "schema", "import", ...kliStoreArgs(store), "--schema", schemaPath],
       ctx.env,
       30_000,
     ),
@@ -449,8 +450,6 @@ async function inceptKliRegistry(
         "vc",
         "registry",
         "incept",
-        "--version",
-        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -479,8 +478,6 @@ async function createKliCredential(
   const command = [
     "vc",
     "create",
-    "--version",
-    "1.0",
     ...kliStoreArgs(store),
     "--alias",
     store.alias,
@@ -588,8 +585,6 @@ async function grantFromKli(
       [
         "ipex",
         "grant",
-        "--version",
-        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -694,8 +689,6 @@ async function pollKliGrant(
       [
         "ipex",
         "list",
-        "--version",
-        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -760,8 +753,6 @@ async function admitKliGrant(
       [
         "ipex",
         "admit",
-        "--version",
-        "1.0",
         ...kliStoreArgs(store),
         "--alias",
         store.alias,
@@ -883,12 +874,12 @@ async function writeKliIpexAlignmentScript(workDir: string): Promise<string> {
     String.raw`import argparse
 import json
 
-from keri.app import Organizer, serialize
-from keri.cli.common import existing
+from keri.app.cli.common import existing
+from keri.app.connecting import Organizer
+from keri.app.signing import serialize
 from keri.core import coring, serdering
-from keri.kering import Vrsn_1_0
-from keri.peer import cloneMessage
-from keri.vc import ipexAdmitExn, ipexGrantExn
+from keri.peer.exchanging import cloneMessage
+from keri.vc.protocoling import ipexAdmitExn, ipexGrantExn
 from keri.vdr import credentialing
 
 
@@ -896,7 +887,7 @@ def resolve_recipient(hby, recp):
     if recp in hby.kevers:
         return recp
     org = Organizer(hby=hby)
-    contacts = org.findExact("alias", recp)
+    contacts = org.find("alias", recp)
     if len(contacts) != 1:
         raise ValueError(f"expected one contact for alias {recp!r}, got {len(contacts)}")
     return contacts[0]["id"]
@@ -908,15 +899,15 @@ def grant_candidate(hby, rgy, args, message):
     if creder is None:
         raise ValueError(f"invalid credential SAID to grant={args.said}")
     recp = resolve_recipient(hby, args.recipient)
-    acdc = serialize(creder, prefixer, seqner, saider, gvrsn=Vrsn_1_0)
-    iss = rgy.reger.cloneTvtAt(creder.said, gvrsn=Vrsn_1_0)
+    acdc = serialize(creder, prefixer, seqner, saider)
+    iss = rgy.reger.cloneTvtAt(creder.said)
     iserder = serdering.SerderKERI(raw=bytes(iss))
     seqner = coring.Seqner(sn=iserder.sn)
     serder = hby.db.fetchLastSealingEventByEventSeal(
         creder.sad["i"],
         seal=dict(i=iserder.pre, s=seqner.snh, d=iserder.said),
     )
-    anc = hby.db.cloneEvtMsg(pre=serder.pre, fn=0, dig=serder.said, gvrsn=Vrsn_1_0)
+    anc = hby.db.cloneEvtMsg(pre=serder.pre, fn=0, dig=serder.said)
     return ipexGrantExn(
         hab=hab,
         recp=recp,
@@ -925,7 +916,6 @@ def grant_candidate(hby, rgy, args, message):
         iss=iss,
         anc=anc,
         dt=args.timestamp,
-        version=Vrsn_1_0,
     )
 
 
@@ -934,7 +924,7 @@ def admit_candidate(hby, args, message):
     grant, _ = cloneMessage(hby, args.said)
     if grant is None:
         raise ValueError(f"invalid grant SAID to admit={args.said}")
-    return ipexAdmitExn(hab=hab, message=message, grant=grant, dt=args.timestamp, version=Vrsn_1_0)
+    return ipexAdmitExn(hab=hab, message=message, grant=grant, dt=args.timestamp)
 
 
 def main():
@@ -950,7 +940,7 @@ def main():
     parser.add_argument("--recipient", default="")
     args = parser.parse_args()
 
-    hby = existing.setupHby(name=args.name, base=args.base, bran=args.passcode, version=Vrsn_1_0)
+    hby = existing.setupHby(name=args.name, base=args.base, bran=args.passcode)
     rgy = credentialing.Regery(hby=hby, name=args.name, base=args.base) if args.mode == "grant" else None
     try:
         for pad in range(16):
@@ -1028,8 +1018,7 @@ async function alignedKliIpexMessage(
 
 Deno.test({
   name: "Interop: mixed KLI/Tufa four-deep I2I chain presents to interop and Tufa verifiers",
-  // Gap: legacy fork CLI; rewrite for kli vc registry on a GLEIF 1.x profile is a follow-up.
-  ignore: true,
+  ignore: !v1OnlyKeripyPeer(),
 }, async () => {
   const baseCtx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-i2i-" });
@@ -1077,6 +1066,7 @@ Deno.test({
         salt: INTEROP_SALT,
         alias: "provider",
         port: providerPort,
+        version: "1.0",
       });
       try {
         const issuerA = await createKliStore(ctx, {

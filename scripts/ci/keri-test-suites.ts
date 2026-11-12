@@ -85,7 +85,6 @@ export const suites: Record<string, TestSuite> = {
   },
   "interop-parity": {
     files: [
-      "test/integration/app/interop-acdc-kli-tufa.test.ts",
       "test/integration/app/interop-annotate-kli-tufa.test.ts",
       "test/integration/app/interop-kli-tufa.test.ts",
       "test/integration/app/interop-saidify-kli-tufa.test.ts",
@@ -93,6 +92,10 @@ export const suites: Record<string, TestSuite> = {
   },
   "interop-reference-profiles": {
     files: [
+      "test/integration/app/interop-acdc-kli-tufa.test.ts",
+      "test/integration/app/interop-acdc-mixed-chain-i2i.test.ts",
+      "test/integration/app/interop-acdc-mixed-chain-ni2i.test.ts",
+      "test/integration/app/interop-acdc-tufa-kli-holder.test.ts",
       "test/integration/app/interop-reference-profile.test.ts",
       "test/integration/app/interop-mixed-group-cli.test.ts",
       "test/integration/app/interop-group-tel-api.test.ts",
@@ -106,13 +109,6 @@ export const suites: Record<string, TestSuite> = {
     // Actual pinned-main Baser only; legacy protocol traffic belongs to interop-essr-exchange.
     files: ["test/integration/app/interop-essr-storage.test.ts"],
   },
-  "interop-acdc-deep": {
-    // Cold files share a mutable pinned KERIpy venv; run them in separate sequential processes.
-    files: [
-      "test/integration/app/interop-acdc-mixed-chain-i2i.test.ts",
-      "test/integration/app/interop-acdc-mixed-chain-ni2i.test.ts",
-    ],
-  },
   "interop-ipex-disclosure": {
     files: [
       "test/integration/app/interop-ipex-disclosure.test.ts",
@@ -124,11 +120,6 @@ export const suites: Record<string, TestSuite> = {
   },
   "interop-v2-registry": {
     files: ["test/integration/app/interop-v2-registry.test.ts"],
-  },
-  "interop-acdc-extended": {
-    files: [
-      "test/integration/app/interop-acdc-tufa-kli-holder.test.ts",
-    ],
   },
   "interop-delegation": {
     files: [
@@ -331,8 +322,6 @@ export const interop = [
   "interop-keystore-parity",
   "interop-keystore-storage",
   "interop-oobi-bootstrap",
-  "interop-acdc-extended",
-  "interop-acdc-deep",
   "interop-ipex-disclosure",
   "interop-v2-registry",
   "interop-delegation",

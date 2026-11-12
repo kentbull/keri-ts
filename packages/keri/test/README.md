@@ -59,8 +59,6 @@ endurance cases.
 | `interop-keystore-storage` | Compatibility-open and encrypted-store behavior.            |
 | `interop-oobi-bootstrap`   | Endpoint/OOBI bootstrap parity.                             |
 | `interop-acdc-verifier`    | Credential verification workflow.                           |
-| `interop-acdc-extended`    | Tufa issuer to KLI holder.                                  |
-| `interop-acdc-deep`        | Both existing deep mixed-credential chains.                 |
 | `interop-ipex-disclosure`  | Bidirectional IPEX v2 conversations and partial graphs.     |
 | `interop-delegation`       | Existing single/group cross-language delegation.            |
 | `interop-witness-main`     | Existing live witness matrix.                               |
@@ -156,7 +154,7 @@ table-source pins are independent data provenance, not claims about the live pee
 No test silently switches to a sibling checkout, PATH `kli`, or another Python.
 
 Mixed-chain tests use the published `kentbull/interop-verifier` fixture
-`14658341afd47beb0cd8f4dd9f4f636239bb1bbd`, explicitly selecting v1. The fixture
+`0cb31993ba57dab7ddedd2e58c6a4ca934c39724`, explicitly selecting v1. The fixture
 keeps inception, ingress, and OOBIs in one version, rehydrates embedded proofs
 with protocol-specific Serders, and projects issuer AIDs to strings for webhook
 JSON. A nearby verifier checkout never overrides this pin.
