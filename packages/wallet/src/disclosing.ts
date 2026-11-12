@@ -2,54 +2,34 @@
 import {
   type CesrFrame,
   collectPayload,
-  Compactor,
   concatBytes,
   Counter,
-  Diger,
-  type MapperMap,
   nestedPayload,
-  NumberPrimitive,
   parseBytes,
-  Prefixer,
   SealSource,
   SerderACDC,
   SerderKERI,
-  unblindBlindState,
-  unblindBoundState,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation } from "effection";
-import { publicOpeningAttachment } from "keri-ts/db";
 import {
-  acceptedRegistryEvidence,
   type AcdcV2Registry,
   anchorIpexExchange,
-  authenticateIpexNode,
-  type ChainVerdict,
   envelopeFromFrame,
-  evaluateChain,
   exchangeWire,
   type Hab,
   IpexDiscloser,
-  ipexExnBody,
-  ipexGrantWalk,
   type IpexV2BodyOptions,
   isLocalGroupHab,
   type IssuanceGrantOptions,
-  issuedNodeVerdict,
   Kever,
   type PreparedDisclosure,
   type PreparedGrantBody,
   prepareIpexExn,
   type Receiptor,
   type RegistryDisclosure,
-  validateAcdcSchema,
   ValidationError,
   verifyExchangeProofs,
-  vetBinds,
-  vetBlind,
-  vetBound,
-  walkIpexGraph,
   type WitnessAuthMap,
 } from "keri-ts/runtime";
 import type { RegistryCustody } from "./custody.ts";
@@ -116,150 +96,6 @@ export class WalletDiscloser extends IpexDiscloser {
 
   constructor(readonly wallet: Wallet, receiptor: Receiptor, custody?: RegistryCustody) {
     super(owned(wallet, receiptor, custody).hby, wallet.registry, wallet.exc, receiptor, custody);
-  }
-  /** Reduce only the selected attribute view using the existing commitment-preserving Compactor. */
-  private partial(credential: SerderACDC, paths?: readonly string[]): SerderACDC {
-    if (!paths?.length) return credential;
-    if (!credential.sad!.a || typeof credential.sad!.a !== "object" || Array.isArray(credential.sad!.a)) {
-      throw new ValidationError("Attribute disclosure requires an expanded selected attribute map.");
-    }
-    const block = new Compactor({
-      mad: structuredClone(credential.sad!.a) as MapperMap,
-      kind: credential.kind,
-      verify: false,
-    });
-    block.compact([...paths], "a");
-    const partial = new SerderACDC({
-      sad: { ...credential.sad!, a: block.partials![paths.join("|")].mad },
-      kind: credential.kind,
-      makify: true,
-    });
-    if (partial.said !== credential.said) {
-      throw new ValidationError("Disclosure changed the selected credential commitment.");
-    }
-    return partial;
-  }
-  /** Authenticate every selected node, then authorize only the shared complete-root expression. */
-  private requireGraph(origin: string, raw: Uint8Array, pendingPresentation = false): void {
-    const graph = walkIpexGraph(origin, parseBytes(raw), ipexGrantWalk(this.wallet.exc));
-    if (!graph) throw new ValidationError("Selected credential graph is incomplete.");
-    const verdicts = new Map<string, ChainVerdict>();
-    for (const [said, node] of graph.nodes) {
-      if (pendingPresentation) {
-        const schema = validateAcdcSchema(node.body, this.wallet.hby.db);
-        if (schema.kind !== "valid") {
-          throw new ValidationError(schema.kind === "missing" ? `Missing ACDC schema: ${schema.said}` : schema.reason);
-        }
-      }
-      const envelope = envelopeFromFrame(node);
-      const auth = authenticateIpexNode(node.body, envelope, this.wallet.hby.db, this.wallet.registry);
-      let verdict = issuedNodeVerdict(auth);
-      if (pendingPresentation && auth.kind === "reject" && node.body.regid) {
-        // Ordinary node authentication deliberately rejects absent current openings.
-        // File consent may wait for that specific evidence, never for a known invalid state.
-        const chain = acceptedRegistryEvidence(this.wallet.registry, node.body.regid);
-        const binding = chain && vetBinds({
-          ...chain,
-          db: this.wallet.hby.db,
-          acdc: node.body,
-          target: said,
-          blinders: [...envelope.bsqs, ...envelope.bsss],
-        });
-        const historical = authenticateIpexNode(node.body, envelope, this.wallet.hby.db, this.wallet.registry, true);
-        if (
-          binding?.kind === "missing" && binding.reason === "disclosure"
-          && historical.kind === "authenticated" && historical.registration?.state === "issued"
-        ) {
-          verdict = { kind: "unknown", retryable: true, reason: "Missing current registry opening.", schemas: [] };
-        }
-      }
-      verdicts.set(said, verdict);
-    }
-    const current = evaluateChain(graph, verdicts, this.wallet.hby.db);
-    if (current?.kind === "valid") return;
-    if (pendingPresentation && current?.kind === "unknown" && current.retryable) {
-      const historical = new Map<string, ChainVerdict>();
-      for (const [said, node] of graph.nodes) {
-        historical.set(
-          said,
-          issuedNodeVerdict(authenticateIpexNode(
-            node.body,
-            envelopeFromFrame(node),
-            this.wallet.hby.db,
-            this.wallet.registry,
-            true,
-          )),
-        );
-      }
-      if (evaluateChain(graph, historical, this.wallet.hby.db)?.kind === "valid") return;
-    }
-    throw new ValidationError("Current authenticated graph truth is required before use.");
-  }
-  /** Recover a candidate using an explicitly possessed UUID; this neither derives a salt nor grants authority. */
-  unblind(
-    opening: RegistryDisclosure,
-    credential: string,
-    states: readonly string[],
-    bounds: readonly (readonly [number | bigint, string])[] = [],
-  ): RegistryDisclosure | null {
-    if (!opening.u.nonce) throw new ValidationError("Unblinding requires an explicitly possessed disclosure UUID.");
-    const options = { said: opening.d.nonce, uuid: opening.u.nonce, acdc: credential, states: [...states] };
-    return "bn" in opening
-      ? unblindBoundState({ ...options, bounds: [[opening.bn.num, opening.bd.nonce], ...bounds] })
-      : unblindBlindState(options);
-  }
-  /** Attach exact accepted issuer openings from head through vacuous suffix to this credential's binding. */
-  registryProof(
-    credential: SerderACDC,
-    registry: string,
-    retained: readonly RegistryDisclosure[] = [],
-    options: Pick<DisclosureSelection, "derive"> = {},
-  ): Uint8Array {
-    const chain = acceptedRegistryEvidence(this.wallet.registry, registry);
-    if (!chain || chain.updates.some((update) => update.ilk !== "bup")) {
-      throw new ValidationError("Accepted ACDC v2 registry history is required.");
-    }
-    if (options.derive && !this.custody) throw new ValidationError("Explicit derivation requires provisioned custody.");
-    const proofs: Uint8Array[] = [];
-    let binding: SerderACDC | null = null;
-    for (const event of [...chain.updates].reverse()) {
-      const blid = event.sad!.b as string;
-      let opening = retained.find((proof) => proof.d.nonce === blid) ?? this.wallet.registry.publicOpening(event.said!);
-      if (!opening && options.derive) {
-        // Exact retained coordinates are required; missing local material is a refusal.
-        opening = this.custody!.derivedOpening(event);
-      }
-      if (
-        !opening || !vetBlind(opening, blid) || (opening.td.nonce && opening.td.nonce !== credential.said)
-        || vetBound(opening, credential, this.wallet.hby.db)
-      ) {
-        throw new ValidationError("Current exact registry opening is unavailable or binds different evidence.");
-      }
-      proofs.push(publicOpeningAttachment(opening));
-      if (opening.td.nonce) {
-        binding = event;
-        break;
-      }
-    }
-    if (!binding) throw new ValidationError("Registry has no disclosed credential binding.");
-    if (!credential.regid) {
-      proofs.push(
-        Counter.enclose({
-          code: "SealSourceTriples",
-          version: Vrsn_2_0,
-          qb64: concatBytes(
-            new Prefixer({ qb64: registry }).qb64b,
-            NumberPrimitive.fromNum(BigInt(`0x${binding.sad!.n}`)).qb64b,
-            new Diger({ qb64: binding.said! }).qb64b,
-          ),
-        }),
-      );
-    }
-    return concatBytes(
-      Counter.makeGVC(Vrsn_2_0),
-      credential.raw,
-      Counter.enclose({ qb64: concatBytes(...proofs), version: Vrsn_2_0 }),
-    );
   }
   /** Select immutable admitted/transferred nests; proof refresh changes attachments only when explicitly requested. */
   private *selected(selection: DisclosureSelection, offer = false): Operation<Uint8Array> {
@@ -340,15 +176,6 @@ export class WalletDiscloser extends IpexDiscloser {
       ),
     );
   }
-  /** Create an application request; no credential-use approval is invented for negotiation. */
-  *prepareApply(sender: string, options: IpexV2BodyOptions): Operation<PreparedDisclosure> {
-    const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0), exn = ipexExnBody(sender, "/ipex/apply", [], options);
-    return {
-      exn,
-      wire: exchangeWire(hab, exn, undefined, undefined, options.gvrsn ?? Vrsn_2_0),
-      support: new Uint8Array(),
-    };
-  }
   /** Offer only the selected commitment/view without issuer proof attachments. */
   *prepareOffer(
     sender: string,
@@ -363,22 +190,6 @@ export class WalletDiscloser extends IpexDiscloser {
       wire: exchangeWire(hab, exn, nests, undefined, options.gvrsn ?? Vrsn_2_0),
       support: new Uint8Array(),
     };
-  }
-  /** Accept or decline the exact authenticated predecessor and its negotiated anchoring choice. */
-  *prepareReply(
-    sender: string,
-    verb: "agree" | "spurn",
-    priorSaid: string,
-    message = "",
-    recipient?: string,
-    auths?: WitnessAuthMap,
-  ): Operation<PreparedDisclosure> {
-    const hab = this.signer(sender), prior = yield* this.prior(priorSaid);
-    const exn = ipexExnBody(sender, `/ipex/${verb}`, [], { message, prior, recipient });
-    const source = verb === "agree" && (exn.sad!.a as { ax?: boolean[] }).ax?.[0]
-      ? yield* anchorExchange(this.wallet, this.receiptor, hab, exn, auths)
-      : undefined;
-    return { exn, wire: exchangeWire(hab, exn, undefined, source), support: source ? this.kel(hab) : new Uint8Array() };
   }
   /** Select and authorize once before freezing a Grant body, without signing or committing group approval. */
   *prepareGrantBody(
@@ -481,37 +292,6 @@ export class WalletDiscloser extends IpexDiscloser {
     return { frame, completeSigners: [...complete], partialSigners: [...partial] };
   }
 
-  /** Extend the frozen Grant's exact origin proof; ordinary intake still authenticates the supplied presentation evidence. */
-  *attachPresentationProof(
-    prepared: PreparedGrantBody,
-    opening: RegistryDisclosure,
-    source: SealSource,
-  ): Operation<PreparedGrantBody> {
-    const frames = parseBytes(prepared.raw), node = frames[0].body as SerderACDC;
-    if (!node.issuee || opening.td.nonce !== prepared.exn.said || opening.ts.label !== "presented") {
-      throw new ValidationError("Presentation proof must target this exact Grant and disclosed Issuee.");
-    }
-    const seal = Counter.enclose({
-      code: "SealSourceTriples",
-      qb64: concatBytes(new Prefixer({ qb64: node.issuee }).qb64b, source.s.qb64b, source.d.qb64b),
-      version: Vrsn_2_0,
-    });
-    const first = concatBytes(
-      node.raw,
-      Counter.enclose({
-        qb64: concatBytes(...frames[0].attachments.map(group => group.raw), publicOpeningAttachment(opening), seal),
-        version: Vrsn_2_0,
-      }),
-    );
-    const rest = yield* call(() =>
-      Promise.all(frames.slice(1).map(frame => collectPayload(nestedPayload(frame, Vrsn_2_0))))
-    );
-    const raw = concatBytes(Counter.makeGVC(Vrsn_2_0), first, ...rest);
-    const payloads = yield* call(() =>
-      Promise.all(parseBytes(raw).map(frame => collectPayload(nestedPayload(frame, Vrsn_2_0))))
-    );
-    return { exn: prepared.exn, raw, nests: concatBytes(...payloads) };
-  }
   /** Authenticate and authorize the selected graph before the Grant builder and after receipt waits. */
   *prepareGrant(
     sender: string,

@@ -29,6 +29,9 @@ export const DEFAULT_TUFA_CORS_POLICY: TufaCorsPolicy = Object.freeze({
     "Content-Type",
     "CESR-ATTACHMENT",
     "CESR-DESTINATION",
+    // keri-ts sends these cross-origin: genus on v2 detached POSTs, Authorization for witness TOTP codes.
+    "CESR-Genus",
+    "Authorization",
     "Oobi-Aid",
   ]),
   exposeHeaders: Object.freeze([

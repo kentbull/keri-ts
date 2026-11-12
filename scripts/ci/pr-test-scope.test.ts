@@ -135,6 +135,8 @@ Deno.test("PR scope selects the browser lane from an explicit flag or from the p
       "packages/keri/src/db/core/indexeddb-persistence.ts",
       "packages/keri/test/browser/engine-cases.ts",
       "packages/keri/scripts/run_browser_tests.ts",
+      "packages/keri/scripts/browser_lane.ts",
+      "packages/keri/test/browser-transport/probes.ts",
     ]
   ) assertEquals(selectScope({ ...input, files: [file] }).browser, true, file);
   assertEquals(selectScope({ ...input, files: ["packages/keri/src/core/routing.ts"] }).browser, false);
