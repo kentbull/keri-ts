@@ -16,18 +16,34 @@
  *   or a group; every field below is read from the stored, indexed wrapper.
  */
 import { type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import type { Operation } from "npm:effection@^3.6.0";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { isV2RegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
+import type { Regery } from "../../vdr/credentialing.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
-import { type GroupEventRef } from "./counseling.ts";
+import { abortable } from "../runtime/abortable.ts";
+import { collectBytes } from "../transport/byte-source.ts";
+import type { CounselInputs, Counselor, GroupEventRef } from "./counseling.ts";
 import { findLocalGroupMember, groupSigningMembers, uniqueMembers } from "./group-members.ts";
 import { acdcV2RegistryProposal, MULTISIG_RPY_ROUTE, type MultisigChild, multisigChild } from "./grouping.ts";
 import { multisigEmbeddedSection, multisigPayloadSaid, storedGroupMessage } from "./multisig-messaging.ts";
-import { isKelRoute, isVdrRoute, kelApproval, payloadSection } from "./multisig-workflows.ts";
+import {
+  type ApprovalChannels,
+  type ApprovalResult,
+  approveKelProposal,
+  approveRegistryV2Proposal,
+  approveRpyProposal,
+  approveVdrProposal,
+  eventAccepted,
+  isKelRoute,
+  isVdrRoute,
+  kelApproval,
+  payloadSection,
+} from "./multisig-workflows.ts";
 
 /** Page size when reading the notice store; no proposal is hidden behind the first page. */
 const NOTICE_PAGE = 100;
@@ -58,8 +74,17 @@ export interface GroupProposal {
   readonly smids: readonly string[];
   /** Rotation members named by the proposal; empty where it names none. */
   readonly rmids: readonly string[];
-  /** `approved` once the local member's own contribution to this payload is stored. */
-  readonly local: "unapproved" | "approved";
+  /**
+   * Standing of this host's member:
+   * - `approved`: its own contribution to this payload is stored.
+   * - `inapplicable`: the event is already accepted here and names no local signing member (for example a rotation that only
+   *   adds this member as a next member), so there is nothing to sign; hosts should not offer it.
+   * - `unapproved`: otherwise.
+   *
+   * A group with several local members is judged by its recorded joining member, or for a group not joined yet by the first
+   * local member the proposal names. Approval signs for every local member, so the answer holds for all of them.
+   */
+  readonly local: "unapproved" | "approved" | "inapplicable";
   /** Choices approval will need; both false once the proposal is locally approved. */
   readonly needs: GroupProposalNeeds;
   /** The group KEL event this proposal sets up, or the anchor that seals its TEL event; absent for replies. */
@@ -81,6 +106,28 @@ export interface GroupProposalReadDeps {
   readonly notifier: Pick<Notifier, "list"> | null;
   /** ACDC v2 registry store, or null; without it `rip` and `bup` proposals are not recognised. */
   readonly registryStore: RegistryStore | null;
+}
+
+/** Collaborators for {@link approveGroupProposal}. */
+export interface GroupApprovalDeps extends ApprovalChannels, Omit<GroupProposalReadDeps, "exc"> {
+  /** Legacy credential registry owner; needed to approve `vcp`, `iss` and `rev`. */
+  readonly vdr: Regery | null;
+  /** Told of the approved group event; only its `start` is used. */
+  readonly counselor: Pick<Counselor, "start">;
+}
+
+/** Choices a user makes when approving; see {@link GroupProposal.needs}. */
+export interface GroupApprovalChoices extends CounselInputs {
+  /** Local alias for a group not joined yet. */
+  groupAlias?: string;
+  /** Local name for a registry proposal. */
+  registryName?: string;
+}
+
+/** Result of {@link approveGroupProposal}. */
+export interface GroupApprovalResult extends ApprovalResult {
+  /** The group event now counseled, where the proposal sets one up; read its progress with `counselor.status`. */
+  readonly event?: GroupEventRef;
 }
 
 /** Collaborators for {@link dismissGroupProposal}. */
@@ -155,6 +202,8 @@ interface Decoded {
   rmids: readonly string[];
   event?: GroupEventRef;
   kind: GroupProposalKind;
+  /** KEL event already accepted here with no local signing member. */
+  inapplicable?: boolean;
 }
 
 function decode(deps: GroupProposalReadDeps, exn: SerderKERI, route: string, kind: GroupProposalKind): Decoded | null {
@@ -172,6 +221,7 @@ function decode(deps: GroupProposalReadDeps, exn: SerderKERI, route: string, kin
       smids,
       rmids: rmids ?? [],
       event: eventRef(approval.event, approval.group),
+      inapplicable: eventAccepted(hby, approval.event) && !smids.some(mid => hby.habs.has(mid)),
     };
   }
   if (isV2RegistryRoute(route)) {
@@ -221,6 +271,7 @@ function readProposal(deps: GroupProposalReadDeps, said: string): GroupProposal 
   if (!decoded) return null;
   const member = approvingMember(hby, decoded.group, uniqueMembers([...decoded.smids, ...decoded.rmids]));
   const approved = !!member && storedGroupMessage(hby.db, member.pre, exn) !== null;
+  const inapplicable = !approved && decoded.inapplicable === true;
   return {
     said: exn.said,
     kind,
@@ -229,10 +280,10 @@ function readProposal(deps: GroupProposalReadDeps, said: string): GroupProposal 
     proposer: exn.pre,
     smids: decoded.smids,
     rmids: decoded.rmids,
-    local: approved ? "approved" : "unapproved",
+    local: approved ? "approved" : inapplicable ? "inapplicable" : "unapproved",
     needs: {
-      groupAlias: !approved && (kind === "icp" || (kind === "rot" && !hby.habs.has(decoded.group))),
-      registryName: !approved && kind === "vcp",
+      groupAlias: !approved && !inapplicable && (kind === "icp" || (kind === "rot" && !hby.habs.has(decoded.group))),
+      registryName: !approved && !inapplicable && kind === "vcp",
     },
     ...(decoded.event ? { event: decoded.event } : {}),
   };
@@ -298,4 +349,68 @@ export function dismissGroupProposal(deps: GroupProposalDismissDeps, said: strin
     if (typeof attrs.d === "string" && wrappers.has(attrs.d)) stale.push(rid);
   });
   return stale.filter(rid => deps.notifier!.remove(rid)).length;
+}
+
+/**
+ * Approve one proposal, named by its wrapper SAID: sign this member's
+ * contribution to the embedded event, send it to the other members and hand the
+ * group event to the Counselor. Returns without waiting for other members; read
+ * progress with `counselor.status(result.event)`. This is the only call that
+ * signs, and it acts on exactly the SAID given: nothing is selected from the
+ * notice store, so a proposal the caller did not name cannot be approved.
+ *
+ * Calling it is the user's consent, so it never prompts. Repeating it after a
+ * crash resumes: this member's recorded signatures and stored wrapper are
+ * replayed, never replaced, and the group is not joined twice.
+ *
+ * Supports every proposal kind: KEL (`icp`, `rot`, `ixn`), reply (`rpy`), legacy registry and credential (`vcp`, `iss`, `rev`) and
+ * ACDC v2 registry (`rip`, `bup`). For the registry kinds `event` is the group anchor that seals the TEL event.
+ *
+ * @throws ValidationError for a SAID that is not a stored supported proposal, a missing `groupAlias` when the proposal {@link GroupProposal.needs} one, or a proposal that cannot be approved.
+ */
+export function* approveGroupProposal(
+  deps: GroupApprovalDeps,
+  said: string,
+  choices: GroupApprovalChoices = {},
+): Operation<GroupApprovalResult> {
+  const { hby } = deps;
+  const proposal = findGroupProposal(deps, said);
+  const exn = hby.db.exns.get([said]);
+  if (!proposal || !exn) throw new ValidationError(`No group proposal ${said} is stored.`);
+  const route = exn.route ?? "";
+  const payloadSaid = multisigPayloadSaid(exn)!;
+  if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said)) {
+    // Acceptance commits before the asynchronous handler; resume that ordinary intake.
+    const message = yield* abortable(signal => collectBytes(deps.exc.replay(said, signal)));
+    yield* deps.reactor.processBytes(message, { local: true });
+    if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said)) {
+      throw new ValidationError(`Group proposal ${said} is not indexed after replay.`);
+    }
+  }
+  const callbacks = {
+    approveProposal: () => true,
+    chooseGroupAlias: (group: string) => {
+      if (!choices.groupAlias) throw new ValidationError(`A group alias is required to join ${group}.`);
+      return choices.groupAlias;
+    },
+    chooseRegistryName: (registry: string) => {
+      if (!choices.registryName) throw new ValidationError(`A registry name is required for ${registry}.`);
+      return choices.registryName;
+    },
+  };
+  const options = { callbacks, resume: true };
+  const result = isKelRoute(route)
+    ? yield* approveKelProposal(hby, deps, exn, route, options)
+    : isVdrRoute(route)
+    ? yield* approveVdrProposal(hby, deps.vdr, deps, exn, route, options)
+    : isV2RegistryRoute(route)
+    ? yield* approveRegistryV2Proposal(hby, deps, exn, route, options)
+    : yield* approveRpyProposal(hby, deps, exn, route as typeof MULTISIG_RPY_ROUTE, options);
+  if (!result) throw new ValidationError(`Group proposal ${said} cannot be approved.`);
+  const { event } = proposal;
+  if (event) {
+    const { auths, fallbackAfterMs, proxy } = choices;
+    deps.counselor.start(event, { auths, fallbackAfterMs, proxy });
+  }
+  return { ...result, ...(event ? { event } : {}) };
 }
