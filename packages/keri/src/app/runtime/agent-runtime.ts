@@ -1,5 +1,6 @@
 import { WireParseError } from "cesr-ts";
 import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
+import type { AcdcWalkPolicy } from "../../acdc/chaining.ts";
 import { Dhke } from "../../acdc/dhking.ts";
 import { RegistryObserver } from "../../acdc/observing.ts";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../../acdc/registraring.ts";
@@ -187,6 +188,12 @@ export interface AgentRuntimeOptions {
    * persisted; service roles that hold no registries use it.
    */
   registryRoots?: "accept" | "refuse";
+  /**
+   * v2 Grant treatment of an undisclosed far node. `"open"` (default) refuses
+   * an AND group or sole Edge that needs it but lets a valid OR sibling hold;
+   * `"closed"` refuses any Grant missing a far node. Neither mode escrows.
+   */
+  grantWalk?: AcdcWalkPolicy;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -362,6 +369,7 @@ export function* createAgentRuntime(
   loadIpexHandlers(hby, exc, {
     notifier,
     registry: acdc?.store ?? null,
+    grantWalk: options.grantWalk,
   });
   // Construction adopts stored copies an earlier handler-less Exchanger left unescrowed.
   const registryRoot = options.registryRoots !== "refuse" && acdc ? new RegistryRoot(hby, acdc, notifier) : null;

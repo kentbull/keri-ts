@@ -33,7 +33,7 @@ import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../../src/app/ipex/ipex-building.ts";
 import { walkIpexGraph } from "../../../../src/app/ipex/ipex-graph.ts";
 import { authenticateIpexNode } from "../../../../src/app/ipex/ipex-node-authentication.ts";
-import { IpexV2Handler } from "../../../../src/app/ipex/ipex-v2.ts";
+import { ipexGrantWalk, IpexV2Handler } from "../../../../src/app/ipex/ipex-v2.ts";
 import { type IpexRoute, loadIpexHandlers } from "../../../../src/app/ipex/ipexing.ts";
 import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
@@ -1899,7 +1899,7 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
         credential("Near", { d: "", link: { n: far.said, s: pin } });
       const graph = (far: SerderACDC, pin: string | MapperMap) => {
         const root = near(far, pin);
-        const graph = walkIpexGraph(root.said!, [node(root), node(far)], true);
+        const graph = walkIpexGraph(root.said!, [node(root), node(far)], "closed");
         assert(graph && !("kind" in graph));
         return graph;
       };
@@ -1921,7 +1921,7 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
         },
         good: { n: valid.said },
       });
-      const alternativeGraph = walkIpexGraph(alternative.said!, [node(alternative), node(valid)], true);
+      const alternativeGraph = walkIpexGraph(alternative.said!, [node(alternative), node(valid)], "closed");
       assert(alternativeGraph && !("kind" in alternativeGraph));
       assertEquals(
         evaluateRelations(alternativeGraph, hby.db),
@@ -1936,7 +1936,7 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
         },
       });
       const inherited = credential("Near", { d: "", group: { s: edgeSchema.said, link: { n: valid.said } } });
-      const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], true);
+      const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], "closed");
       assert(inheritedGraph && !("kind" in inheritedGraph));
       assertEquals(evaluateRelations(inheritedGraph, hby.db), {
         kind: "unknown",
@@ -2034,6 +2034,67 @@ Deno.test("IPEX accepts, refuses or escrows issuer-identity edge results", async
       root.interact({ data: [{ i: delegate.pre, s: "0", d: delegate.pre }] });
       yield* exchanger.processEscrows();
       assertEquals(state(awaiting.said), [true, false], "the anchor's arrival accepts the unchanged Grant");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("IPEX Grant walk policy decides undisclosed far nodes without escrow", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer"), recipient = hby.makeHab("recipient");
+    const open = new Exchanger(hby), closed = new Exchanger(hby);
+    loadIpexHandlers(hby, open);
+    loadIpexHandlers(hby, closed, { grantWalk: "closed" });
+    const proof = (raw: Uint8Array) =>
+      new TransIdxSigGroup(
+        new Prefixer({ qb64: issuer.pre }),
+        NumberPrimitive.fromNum(BigInt(issuer.kever!.lastEst.s)),
+        new Diger({ qb64: issuer.kever!.lastEst.d }),
+        issuer.sign(raw, true),
+      );
+    const signed = (body: SerderACDC): CesrFrame => ({
+      body,
+      attachments: messageAttachmentGroups({ tsgs: [proof(body.raw)] }, Vrsn_2_0),
+    });
+    const good = acdcmap(issuer.pre, { attribute: { d: "", role: "good" } });
+    const absent = acdcmap(issuer.pre, { attribute: { d: "", role: "absent" } });
+    const id = (body: SerderACDC) => (body.schema as MapperMap).$id as string;
+    /** Nest the origin and `good` only; the plan may still select `absent`. */
+    const send = function*(exchanger: Exchanger, edge: MapperMap, selected: [SerderACDC, string][]) {
+      const origin = acdcmap(issuer.pre, { attribute: { d: "", role: "near" }, issuee: recipient.pre, edge });
+      const nested = JSON.stringify(edge).includes(good.said!) ? [origin, good] : [origin];
+      const serder = ipexExnBody(issuer.pre, "/ipex/grant", nested, {
+        message: crypto.randomUUID(),
+        recipient: recipient.pre,
+        plan: [[id(origin), "/", []], ...selected.map(([body, path]) => [id(body), path, []] as const)],
+      });
+      const decision = yield* exchanger.processEvent({
+        serder,
+        nests: nested.map(signed),
+        tsgs: [proof(serder.raw)],
+      });
+      const said = serder.said!;
+      return [decision.kind, Boolean(hby.db.exns.get(said)), Boolean(hby.db.epse.get(said))];
+    };
+    const either = { d: "", o: "OR", good: { n: good.said! }, absent: { n: absent.said! } };
+    const both = { d: "", good: { n: good.said! }, absent: { n: absent.said! } };
+    const sole = { d: "", absent: { n: absent.said! } };
+    const refused = ["reject", false, false];
+    try {
+      assertEquals([ipexGrantWalk(open), ipexGrantWalk(closed)], ["open", "closed"]);
+      assertEquals(yield* send(open, either, [[good, "/e/good/_/"]]), ["accept", true, false]);
+      assertEquals(yield* send(closed, either, [[good, "/e/good/_/"]]), refused, "closed refuses a missing far node");
+      for (const exchanger of [open, closed]) {
+        assertEquals(yield* send(exchanger, both, [[good, "/e/good/_/"]]), refused, "an AND refuses without escrow");
+        assertEquals(yield* send(exchanger, sole, []), refused, "a sole Edge refuses without escrow");
+        assertEquals(
+          yield* send(exchanger, either, [[good, "/e/good/_/"], [absent, "/e/absent/_/"]]),
+          refused,
+          "a planned node the Grant does not nest is a permanent refusal",
+        );
+      }
     } finally {
       yield* hby.close(true);
     }

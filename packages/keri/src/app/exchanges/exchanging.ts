@@ -344,8 +344,12 @@ export class Exchanger {
 
   /** Resolve the configured body-version route owner without dispatching or changing evidence. */
   handlerFor(serder: SerderKERI): ExchangeRouteHandler | undefined {
-    const route = serder.route ?? "";
-    return this.versionedRoutes.get(route)?.get(serder.pvrsn.major) ?? this.routes.get(route);
+    return this.routeHandler(serder.route ?? "", serder.pvrsn.major);
+  }
+
+  /** Resolve the owner one route and protocol major would dispatch to, without a message body. */
+  routeHandler(route: string, major: number): ExchangeRouteHandler | undefined {
+    return this.versionedRoutes.get(route)?.get(major) ?? this.routes.get(route);
   }
 
   /**

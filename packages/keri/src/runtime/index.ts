@@ -89,7 +89,13 @@ export {
 export { requireTcpDialer, type TcpDialer } from "../app/transport/tcp-dialer.ts";
 export { TransportError } from "../app/transport/transport-error.ts";
 // Controller state, credentials and protocol operations.
-export { type AcdcGraph, type ChainVerdict, evaluateChain } from "../acdc/chaining.ts";
+export {
+  type AcdcGraph,
+  type AcdcWalkPolicy,
+  type ChainVerdict,
+  DEFAULT_GRANT_WALK,
+  evaluateChain,
+} from "../acdc/chaining.ts";
 export {
   decodePublicKey,
   deriveRoot,
@@ -241,6 +247,7 @@ export {
   type IpexNodeAuthentication,
   issuedNodeVerdict,
 } from "../app/ipex/ipex-node-authentication.ts";
+export { ipexGrantWalk } from "../app/ipex/ipex-v2.ts";
 export {
   IPEX_GRANT_ROUTE,
   IPEX_ROUTES,

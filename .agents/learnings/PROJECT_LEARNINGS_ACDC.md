@@ -70,8 +70,18 @@ group or an opaque compact SAID (non-retryable unknown); lists, falsy non-maps a
 top-level `n`/`w` are malformed. I2I/NI2I/DI2I and I1I/DI1I are independent
 latest-wins groups, E1E composes, and any explicit relation suppresses the default.
 Unrecognized/NOT tokens are ANDed non-retryable unknowns, never a short-circuit.
-All pins are evaluated unless the relation is invalid. Grant walks stay closed and
-keep the own-schema gate. String simple edges (classifyEdge) are deferred.
+All pins are evaluated unless the relation is invalid. String simple edges
+(classifyEdge) are deferred.
+
+Grant walk policy (`AcdcWalkPolicy`, `DEFAULT_GRANT_WALK = "open"`, KERIpy parity)
+is set once on the v2 Grant handler (`loadIpexHandlers`/`AgentRuntimeOptions`
+`grantWalk`); group approval, wallet and verifier read it back through
+`ipexGrantWalk(exchanger)` so reuse agrees with admission. The graph carries its
+walk into `evaluateChain`. Open: an undisclosed far node is a non-retryable
+unknown, so a valid OR sibling holds and an AND or sole Edge refuses with no
+escrow (Grant nests are fixed bytes). Closed: the walk refuses. A plan-selected
+node the Grant does not nest refuses under both. Offers always walk open. Grants
+keep the own-schema gate.
 
 DI2I/DI1I ask `core/kel/delegation-ancestry.ts`: fixed-inception checks at every
 hop, DND from accepted inception before the anchor, and an approval that is the

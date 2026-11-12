@@ -2,7 +2,13 @@
 import { type MapperMap, SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { ensure, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
-import { type ChainVerdict, evaluateChain, walkAcdcGraph } from "../../../src/acdc/chaining.ts";
+import {
+  type AcdcWalkPolicy,
+  type ChainVerdict,
+  DEFAULT_GRANT_WALK,
+  evaluateChain,
+  walkAcdcGraph,
+} from "../../../src/acdc/chaining.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { walkIpexGraph } from "../../../src/app/ipex/ipex-graph.ts";
@@ -36,6 +42,7 @@ Deno.test("DI2I composes fixed-inception authority with pins, far-node truth and
       const graph = {
         nodes: new Map([root, target].map(body => [body.said!, { body }])),
         order: [root.said!, target.said!],
+        walk: "closed" as const,
       };
       return evaluateChain(
         graph,
@@ -69,9 +76,13 @@ Deno.test("DI2I composes fixed-inception authority with pins, far-node truth and
 /** Walk then evaluate real views with authenticated nodes; null is malformed at either seam. */
 function walked(db: Parameters<typeof evaluateChain>[2], root: SerderACDC, ...far: SerderACDC[]) {
   const nodes = new Map([root, ...far].map((body) => [body.said!, { body }]));
-  const order = walkAcdcGraph(root.said!, nodes, true);
+  const order = walkAcdcGraph(root.said!, nodes, "closed");
   if (!order) return null;
-  return evaluateChain({ nodes, order }, new Map(order.map((said) => [said, { kind: "valid" } as ChainVerdict])), db);
+  return evaluateChain(
+    { nodes, order, walk: "closed" },
+    new Map(order.map((said) => [said, { kind: "valid" } as ChainVerdict])),
+    db,
+  );
 }
 /** Replace a carried commitment without makify recomputing it. */
 function falseCommitment(body: SerderACDC, said: string, replacement: string): SerderACDC {
@@ -160,7 +171,7 @@ Deno.test("Edge Sections are one expanded group or an opaque compact commitment"
     const hidden = acdcmap(issuer, { attribute: { d: "", role: "near" }, edge: { d: "", source }, compactify: true });
     const compact = near(hidden.sad!.e);
     const nodes = new Map([[compact.said!, { body: compact }]]);
-    assertEquals(walkAcdcGraph(compact.said!, nodes, true), [compact.said!], "compact sections are terminals");
+    assertEquals(walkAcdcGraph(compact.said!, nodes, "closed"), [compact.said!], "compact sections are terminals");
     const verdict = walked(hby.db, compact);
     assert(verdict?.kind === "unknown" && !verdict.retryable, "hidden logic cannot be evaluated or retried");
     for (const malformed of ["", "garbage", [], [{ source }], null, 0, false]) {
@@ -234,7 +245,7 @@ Deno.test("Shared chaining evaluates cross-links independently of BFS disclosure
         attachments: [],
         gvrsn: Vrsn_2_0,
       })),
-      true,
+      "closed",
     );
     assertExists(graph);
     assert(!("kind" in graph));
@@ -260,7 +271,7 @@ for (const op of ["AND", "OR"] as const) {
           edge: { d: "", o: op, good: { n: good.said }, optional: { n: optional.said } },
         });
         const frames = [root, good, optional].map(body => ({ body, attachments: [], gvrsn: Vrsn_2_0 }));
-        const graph = walkIpexGraph(root.said!, frames, true);
+        const graph = walkIpexGraph(root.said!, frames, "closed");
         assertExists(graph);
         const verdicts = new Map(graph.order.map(said => [said, { kind: "valid" } as ChainVerdict]));
         const unresolved: ChainVerdict = other === "invalid"
@@ -305,7 +316,7 @@ Deno.test("Shared OR cannot hide malformed shape or missing/invalid own schemas"
       const graph = walkIpexGraph(
         root.said!,
         [root, good, bad].map(body => ({ body, attachments: [], gvrsn: Vrsn_2_0 })),
-        true,
+        "closed",
       );
       assertExists(graph);
       assertEquals(
@@ -346,5 +357,49 @@ Deno.test("Issued-state policy differs from protocol authentication without chan
     retryable: true,
     reason: "issuer",
     schemas: [],
+  });
+});
+
+Deno.test("Grant walk policy decides an undisclosed far node without escrow", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    yield* ensure(() => hby.close(true));
+    const issuer = hby.makeHab("issuer").pre;
+    const good = acdcmap(issuer, { attribute: { d: "", name: "good" } });
+    const absent = acdcmap(issuer, { attribute: { d: "", name: "absent" } });
+    const missingPin = new Schemer({ sed: { $id: "", version: "1.0.0", type: "object" } });
+    const near = (edge: MapperMap) => acdcmap(issuer, { attribute: { d: "", name: "near" }, edge });
+    /** Disclose `root` and, when it links there, `good`; `absent` is never carried. */
+    const decide = (root: SerderACDC, walk: AcdcWalkPolicy, goodValid = true) => {
+      const carried = JSON.stringify(root.sad!.e).includes(good.said!) ? [root, good] : [root];
+      const nodes = new Map(carried.map((body) => [body.said!, { body }]));
+      const order = walkAcdcGraph(root.said!, nodes, walk);
+      if (!order) return null;
+      const verdicts = new Map(order.map((said) => [said, { kind: "valid" } as ChainVerdict]));
+      if (!goodValid) verdicts.set(good.said!, { kind: "invalid" });
+      return evaluateChain({ nodes, order, walk }, verdicts, hby.db);
+    };
+    const permanent: ChainVerdict = {
+      kind: "unknown",
+      retryable: false,
+      reason: `Far node ${absent.said} is not disclosed.`,
+      schemas: [],
+    };
+    const either = near({ d: "", o: "OR", good: { n: good.said! }, absent: { n: absent.said! } });
+    const both = near({ d: "", good: { n: good.said! }, absent: { n: absent.said! } });
+    const sole = near({ d: "", absent: { n: absent.said! } });
+    // A retryable sibling cannot make the undisclosed conjunct escrowable.
+    const pinned = near({ d: "", good: { n: good.said!, s: missingPin.said }, absent: { n: absent.said! } });
+
+    assertEquals(DEFAULT_GRANT_WALK, "open");
+    assertEquals(decide(either, "open"), { kind: "valid" }, "a valid OR sibling carries the group");
+    assertEquals(decide(either, "open", false), permanent, "no sibling holds; nothing can arrive");
+    for (const root of [both, sole]) assertEquals(decide(root, "open"), permanent);
+    const waiting = decide(pinned, "open");
+    assert(waiting?.kind === "unknown" && !waiting.retryable, "an AND with an undisclosed node never escrows");
+    for (const root of [either, both, sole, pinned]) assertEquals(decide(root, "closed"), null, "closed refuses");
+    // Leaf morphology is still checked for an undisclosed target.
+    const malformed = near({ d: "", o: "OR", good: { n: good.said! }, absent: { n: absent.said!, o: 7 } });
+    assertEquals(decide(malformed, "open"), null);
   });
 });

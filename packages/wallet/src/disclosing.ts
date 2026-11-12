@@ -31,6 +31,7 @@ import {
   evaluateChain,
   type Hab,
   ipexExnBody,
+  ipexGrantWalk,
   type IpexV2BodyOptions,
   isLocalGroupHab,
   issuedNodeVerdict,
@@ -209,7 +210,7 @@ export class WalletDiscloser {
   }
   /** Authenticate every selected node, then authorize only the shared complete-root expression. */
   private requireGraph(origin: string, raw: Uint8Array, pendingPresentation = false): void {
-    const graph = walkIpexGraph(origin, parseBytes(raw), true);
+    const graph = walkIpexGraph(origin, parseBytes(raw), ipexGrantWalk(this.wallet.exc));
     if (!graph) throw new ValidationError("Selected credential graph is incomplete.");
     const verdicts = new Map<string, ChainVerdict>();
     for (const [said, node] of graph.nodes) {
@@ -578,7 +579,7 @@ export class WalletDiscloser {
       Counter.enclose({ qb64: new Uint8Array(), version: Vrsn_2_0 }),
       ...(options.artifacts ?? []).map(artifact => artifact.slice()),
     );
-    const graph = walkIpexGraph(origin.said!, parseBytes(raw), true);
+    const graph = walkIpexGraph(origin.said!, parseBytes(raw), ipexGrantWalk(this.wallet.exc));
     if (!graph) {
       throw new ValidationError("Fresh issuance requires its complete explicitly disclosed credential graph.");
     }

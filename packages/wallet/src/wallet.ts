@@ -19,6 +19,7 @@ import {
   type Exchanger,
   type Habery,
   ipexExnBody,
+  ipexGrantWalk,
   isLocalGroupHab,
   issuedNodeVerdict,
   type Receiptor,
@@ -160,7 +161,7 @@ export class Wallet {
   /** New use requires current node evidence and a valid root under shared issued-state policy. */
   private graphAccepted(grant: string, origin: string): boolean {
     if (!this.exc.verifyAccepted(grant, "/ipex/grant")) return false;
-    const graph = walkIpexGraph(origin, loadNests(this.hby.db, grant), true);
+    const graph = walkIpexGraph(origin, loadNests(this.hby.db, grant), ipexGrantWalk(this.exc));
     if (!graph) return false;
     const verdicts = new Map<string, ChainVerdict>();
     for (const [said, node] of graph.nodes) {

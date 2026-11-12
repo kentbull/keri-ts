@@ -234,7 +234,7 @@ for (const operator of ["I2I", "UNKNOWN"]) {
       assertEquals(p.receiving.verifyAccepted(g.said!, "/ipex/grant"), false);
       assertEquals(p.receiver.db.exns.get(g.said!), null);
       assertEquals(p.receiver.db.enst.get(g.said!), []);
-      const graph = walkIpexGraph(near.said!, [signed(near, p.issuer), signed(far, p.issuer)], true);
+      const graph = walkIpexGraph(near.said!, [signed(near, p.issuer), signed(far, p.issuer)], "closed");
       assert(graph && !("kind" in graph));
       assertEquals(
         evaluateChain(
@@ -631,7 +631,7 @@ Deno.test("wallet disclosure supplies root-first DI2I ancestry to an independent
   });
 });
 
-for (const proof of ["missing", "refused"] as const) {
+for (const proof of ["missing", "refused", "undisclosed"] as const) {
   Deno.test(`wallet OR admits and presents exact views with an unused ${proof} issuer branch`, async () => {
     await withPeers(function*(p) {
       const outsider = p.source.makeHab("optional issuer");
@@ -646,7 +646,8 @@ for (const proof of ["missing", "refused"] as const) {
           optional: { n: optional.said },
         },
       });
-      const nodes = [near, good, optional];
+      // Under the default open Grant walk an undisclosed branch is simply unused.
+      const nodes = proof === "undisclosed" ? [near, good] : [near, good, optional];
       const plan = nodes.map((body, i) =>
         [(body.schema as { $id: string }).$id, i === 0 ? "/" : i === 1 ? "/e/good/_/" : "/e/optional/_/", []] as const
       );
@@ -654,7 +655,8 @@ for (const proof of ["missing", "refused"] as const) {
       const optionalFrame = proof === "missing"
         ? signed(optional, outsider)
         : { body: optional, attachments: [], gvrsn: Vrsn_2_0 };
-      const frame = signed(g, p.issuer, [signed(near, p.issuer), signed(good, p.issuer), optionalFrame]);
+      const nests = [signed(near, p.issuer), signed(good, p.issuer), optionalFrame].slice(0, nodes.length);
+      const frame = signed(g, p.issuer, nests);
       yield* ingest(frame, p.source, p.sending);
       yield* ingest(frame, p.receiver, p.receiving);
       assertEquals(p.receiving.complete(g.said!), true);
