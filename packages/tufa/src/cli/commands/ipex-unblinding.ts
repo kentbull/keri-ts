@@ -39,6 +39,8 @@ export interface PresentationUnblindOptions {
   timeoutMs: number;
   proposer?: string;
   listen?: number;
+  /** Ordinary-state vocabulary frozen on the approved operation; omitted uses the library default. */
+  states?: readonly string[];
 }
 /** Proof exchange completion does not authorize or create a wallet Admit. */
 export interface PresentationUnblindResult {
@@ -96,7 +98,7 @@ export function* runPresentationUnblind(
 function* runUnblind(
   runtime: AgentRuntime,
   grant: string,
-  { timeoutMs, proposer }: PresentationUnblindOptions,
+  { timeoutMs, proposer, states }: PresentationUnblindOptions,
 ): Operation<PresentationUnblindResult> {
   const selected = runtime.ipexAuxiliary;
   if (selected?.kind !== "unblind" || !runtime.acdc || selected.owner.exc !== runtime.exc) {
@@ -112,7 +114,7 @@ function* runUnblind(
   ) {
     throw new ValidationError("Group Unblind requires a current signing member proposer; individual Unblind has none");
   }
-  const xid = protocol.approve(grant);
+  const xid = protocol.approve(grant, { states });
   const input = runtime.exc.retainedInput(grant)!;
   const requester = input.serder.sad!.ri === hab.pre;
   const role = requester ? "requester" : "responder";
@@ -385,7 +387,7 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
       kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
       ...individual
         ? { ipexOwners: "per-identifier" as const, operationStores: { rootReplication: "off" as const } }
-        : { ipexAuxiliary: { kind: "unblind" as const, hab, states } },
+        : { ipexAuxiliary: { kind: "unblind" as const, hab } },
     });
     try {
       const input = parseStringOption(args.input, "input");
@@ -397,6 +399,7 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
         timeoutMs: timeout * 1000,
         proposer: parseStringOption(args.proposer, "proposer"),
         listen,
+        states,
       };
       return individual
         ? yield* runIndividualUnblind(runtime, hab, grant, { ...options, states })

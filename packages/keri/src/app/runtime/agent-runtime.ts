@@ -71,7 +71,7 @@ export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
 /** One explicitly selected local IPEX auxiliary owner; construction never approves a Grant. */
 export type IpexAuxiliarySelection =
   | { kind: "dhke"; hab: Hab }
-  | { kind: "unblind"; hab: Hab; states: readonly string[] };
+  | { kind: "unblind"; hab: Hab };
 
 /** Concrete owner exposed only at composition for finite application orchestration. */
 export type IpexAuxiliary =
@@ -205,7 +205,7 @@ export interface AgentRuntimeOptions {
   acdc?: AcdcRegery;
   /** Sender filtering for v2 non-event ingress; denial always wins. */
   messagePolicy?: MessagePolicy;
-  /** Optional KRAM uses the trusted runtime receiver clock. */
+  /** Optional KRAM uses the trusted runtime receiver clock; enabled without `caches` uses `DEFAULT_KRAM_CACHES`. */
   kram?: KramConfig;
   /** Select one local owner; requires an available v2 registry and explicitly enabled KRAM. */
   ipexAuxiliary?: IpexAuxiliarySelection;
@@ -391,7 +391,7 @@ export function* createAgentRuntime(
   const ipexAuxiliary: IpexAuxiliary | null = selected && ipex
     ? (selected.kind === "dhke"
       ? { kind: "dhke", owner: ipex.dhke(selected.hab) }
-      : { kind: "unblind", owner: ipex.unblind(selected.hab, selected.states) })
+      : { kind: "unblind", owner: ipex.unblind(selected.hab) })
     : null;
   const replies = new QueryReplies(cues);
   const protocol = new ProtocolProcessor(

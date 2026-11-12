@@ -95,7 +95,7 @@ export interface UnblindingDeps {
   readonly hby: Habery;
   readonly exc: Pick<Exchanger, "retainedInput" | "exchangeDeadline" | "complete" | "verifyGrantProofs">;
   /** Per-identifier Unblind owners (`runtime.ipex`), so several identifiers can unblind on one runtime. */
-  readonly unblinds: { unblind(hab: Hab, states: readonly string[]): Unblind };
+  readonly unblinds: { unblind(hab: Hab): Unblind };
   readonly delivery: IssuanceDelivery;
   readonly store: UnblindingOperationStore;
   /** Same clock the exchanger and Unblind owners were composed with. */
@@ -321,7 +321,7 @@ function consent(
       role === "requester" ? "Only the disclosee requests Unblind" : "Only the discloser approves Unblind release",
     );
   }
-  const owner = deps.unblinds.unblind(hab, request.states), xid = owner.approve(grant);
+  const owner = deps.unblinds.unblind(hab), xid = owner.approve(grant, { states: request.states });
   const record: UnblindingRecord = {
     grant,
     xid,
