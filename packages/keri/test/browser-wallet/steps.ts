@@ -8,7 +8,7 @@
  */
 
 import type { SerderACDC } from "cesr-ts";
-import { call, run, sleep, type Task } from "npm:effection@^3.6.0";
+import { call, run, sleep } from "npm:effection@^3.6.0";
 import { openWebWallet, RegistryCustody, WalletAuthor, type WebWallet } from "../../../wallet/web.ts";
 import {
   addMailbox,
@@ -18,17 +18,16 @@ import {
   beginOobi,
   completeEvent,
   deliverIssuanceAdmit,
-  IssuanceOperations,
-  issuanceStatus,
-  MemoryIssuanceOperationStore,
-  posterDelivery,
-  Receiptor,
-  waitForIssuance,
   type EventCompletionDeps,
   eventStatus,
   type Hab,
+  type IssuanceOperations,
+  issuanceStatus,
+  type KramConfig,
   mailboxStatus,
   oobiStatus,
+  Receiptor,
+  waitForIssuance,
   waitForMailboxState,
   waitForOobi,
 } from "../../runtime.ts";
@@ -49,8 +48,8 @@ export interface StepArgs {
 
 let wallet: WebWallet | undefined;
 let hab: Hab | undefined;
-/** The issuance owner of the open wallet and the loop that drives it (see {@link startIssuanceDriver}). */
-let issuance: { ops: IssuanceOperations; driver: Task<void>; failure?: unknown; custody: RegistryCustody } | undefined;
+/** Custody over the open wallet's derivation store; dropped when the wallet closes. */
+let custody: RegistryCustody | undefined;
 /** The credential and registry of the issuance in flight, kept for the step that records it. */
 const inFlight: { credential?: SerderACDC; registry?: string } = {};
 
@@ -118,63 +117,43 @@ function keyState(): { pre: string; sn: number; said: string; wits: string[]; to
 }
 
 /**
- * Compose the issuance owner for the open wallet and drive its `processOnce` from a page-owned loop.
- * Nothing in the runtime calls `processOnce` yet, so every app has to write this loop; it ends with the
- * wallet. The DH owner for the identifier is created first, because traffic for it may arrive at any time.
+ * The runtime-driven issuance owner of the open wallet and a custody over the wallet's own
+ * derivation store. The runtime loop calls `processOnce` and creates the DH owners itself.
  */
-function startIssuanceDriver(): NonNullable<typeof issuance> {
+function issuing(): { ops: IssuanceOperations; custody: RegistryCustody } {
   const { hby, runtime, inventory } = open();
-  runtime.ipex!.dhke(identifier());
-  const custody = new RegistryCustody({ hby, hab: identifier(), registry: runtime.acdc!.store, db: inventory });
-  const ops = new IssuanceOperations({
-    hby,
-    rgy: runtime.acdc!,
-    exc: runtime.exc,
-    receiptor: new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock),
-    dhkes: runtime.ipex!,
-    reactor: runtime.reactor,
-    protocol: runtime.protocol,
-    delivery: posterDelivery(runtime.postman),
-    // A process-local table: the wallet has no durable IssuanceOperationStore yet.
-    store: new MemoryIssuanceOperationStore(),
-    derived: custody.options.store,
-    clock: runtime.clock,
-  });
-  const started: NonNullable<typeof issuance> = {
-    ops,
-    custody,
-    driver: run(function*() {
-      while (true) {
-        try {
-          yield* ops.processOnce();
-        } catch (error) {
-          started.failure ??= error;
-        }
-        yield* sleep(50);
-      }
-    }),
-  };
-  return started;
-}
-
-/** Stop the issuance loop before the wallet closes. */
-async function stopIssuanceDriver(): Promise<void> {
-  const current = issuance;
-  issuance = undefined;
-  await current?.driver.halt();
-}
-
-/** The running issuance owner; a loop failure surfaces here so a step does not wait for a dead loop. */
-function issuing(): NonNullable<typeof issuance> {
-  assert(issuance, "the issuance driver is not running");
-  if (issuance.failure) throw new Error(`processOnce failed: ${describe(issuance.failure)}`);
-  return issuance;
+  const ops = runtime.operations?.issuance;
+  assert(ops, "the runtime has no issuance owner");
+  custody ??= new RegistryCustody({ hby, hab: identifier(), registry: runtime.acdc!.store, db: inventory });
+  return { ops, custody };
 }
 
 /** Error text including causes, for the report. */
 function describe(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
   return `${error.name}: ${error.message}${error.cause ? ` <- ${describe(error.cause)}` : ""}`;
+}
+
+/**
+ * Why a step is stuck: a runtime that crashed closes the wallet's stores and releases its lock, and
+ * `openWebWallet` reports the crash only from `close()`, so closing is the one way to read the cause.
+ */
+async function crashCause(): Promise<string> {
+  if (!wallet) return "";
+  try {
+    wallet.hby.db.kels.getLast(identifier().pre!, 0);
+    return "";
+  } catch {
+    // The stores are closed: the runtime is gone.
+  }
+  const current = wallet;
+  wallet = undefined;
+  try {
+    await current.close();
+    return "";
+  } catch (error) {
+    return `\nruntime failure reported by close(): ${describe(error)}\n${(error as Error).stack ?? ""}`;
+  }
 }
 
 /** Wait until `read` returns a value, polling the library status; fail at the deadline. */
@@ -188,16 +167,9 @@ async function until<T>(label: string, read: () => T | undefined, timeoutMs = 60
     } catch (error) {
       last = error;
     }
-    issuing();
     await run(() => sleep(100));
   }
-  throw new Error(`${label} not reached in ${timeoutMs} ms${last ? `: ${describe(last)}` : ""}`);
-}
-
-/** Step 4a: the identifier takes part in issuance from here on (DH owner, issuance loop). */
-async function enableIssuance() {
-  issuance = startIssuanceDriver();
-  return { driver: "running" };
+  throw new Error(`${label} not reached in ${timeoutMs} ms${last ? `: ${describe(last)}` : ""}${await crashCause()}`);
 }
 
 /** Step 4b (holder): wait for the counterparty's Grant, consent to DH, wait for the Grant to finish, then admit it. */
@@ -215,7 +187,6 @@ async function receiveCredential({ grant }: StepArgs) {
       until: (status) => status.state !== "active" || status.needs === "admit",
     })
   );
-  issuing();
   assert(
     waited.status.state === "active" && waited.status.needs === "admit",
     `issuance did not reach the admit consent: ${JSON.stringify(waited)}`,
@@ -243,7 +214,7 @@ async function issueCredential({ peerPre }: StepArgs) {
   const author = new WalletAuthor(protocolWallet, runtime.acdc!, receiptor, custody);
   const pre = identifier().pre!;
   const inception = await run(() => author.incept("browser-registry", pre));
-  custody.createCustody(inception.said!);
+  // No createCustody here: a DH-issued registry root is derived with the recipient, and a custody root conflicts with it.
   const reg = author.registry("browser-registry", pre);
   const credential = author.create(reg, { issuee: peerPre as string, attribute: { role: "browser issued reader" } });
   const begun = await run(() =>
@@ -263,7 +234,6 @@ async function finishIssuance({ grant }: StepArgs) {
   const { ops, custody } = issuing();
   const said = grant as string;
   const waited = await run(() => waitForIssuance(ops, said, { timeoutMs: 120_000 }));
-  issuing();
   assert(
     waited.outcome === "settled" && waited.status.state === "done",
     `issuance did not complete: ${JSON.stringify(waited)}`,
@@ -282,17 +252,47 @@ async function awaitAdmit({ grant }: StepArgs) {
 }
 
 /** Step 5c: the credentials the wallet holds and issued, read from the inventory. */
-async function readInventory() {
+function readInventory({ mailbox }: StepArgs) {
   const rows = open().wallet.inventory();
-  return { issued: rows.issued.map((row) => row.credential), held: rows.held.map((row) => row.credential) };
+  return Promise.resolve({
+    issued: rows.issued.map((row) => row.credential),
+    held: rows.held.map((row) => row.credential),
+    state: keyState(),
+    cursor: open().hby.db.tops.get([identifier().pre!, mailbox.pre])?.topics ?? {},
+  });
 }
+
+/** Step 5d: wait until the mailbox cursor for `topic` is past `above`, i.e. the reopened poller read new mail. */
+async function awaitMailboxCursor({ mailbox, topic, above }: StepArgs) {
+  const { hby } = open();
+  const cursor = await until(`mailbox cursor ${topic} past ${above}`, () => {
+    const topics = hby.db.tops.get([identifier().pre!, mailbox.pre])?.topics ?? {};
+    return (topics[topic as string] ?? -1) > (above as number) ? topics : undefined;
+  });
+  return { cursor };
+}
+
+/**
+ * TEMPORARY WORKAROUND for a keri-ts defect: `openWebWallet` enables KRAM without cache windows, so
+ * the first timely v2 exn or qry on a fresh store throws "No KRAM cache type for message"
+ * (kram-policy.ts). A fix with built-in default windows is in progress in another PR; remove this
+ * option when it merges. The windows are mailbox sized (60 s lag, as the mailbox interop tests use):
+ * a wallet reads mail some time after it was stamped, so short windows would drop a Grant.
+ */
+const KRAM: KramConfig = { enabled: true, caches: { "~": [1000, 60000, 60000, 300000, 60000, 60000, 300000] } };
 
 /** Step 1: open a new wallet with a passcode and record the persistence request. */
 async function openWallet({ name, bran }: StepArgs) {
   assert(!wallet, "a wallet is already open");
-  wallet = await openWebWallet({ name, bran });
-  const storage = await wallet.storage;
-  return { storage, health: wallet.health().status };
+  wallet = await openWebWallet({ name, bran, runtime: { kram: KRAM } });
+  // Firefox holds the persistence request on a permission prompt that headless runs never answer, so
+  // record "still pending" instead of waiting; the open itself has already returned.
+  const pending = Symbol("pending");
+  const storage = await Promise.race([
+    wallet.storage,
+    new Promise<typeof pending>((resolve) => setTimeout(() => resolve(pending), 10_000)),
+  ]);
+  return { storage: storage === pending ? "pending after 10 s" : storage, health: wallet.health().status };
 }
 
 /** Step 2: resolve the witness, incept with it, collect its receipt and read the event status. */
@@ -323,7 +323,11 @@ async function addMailboxHost({ mailbox }: StepArgs) {
   await resolveOobiUrl(`${mailbox.origin}/oobi/${mailbox.pre}/controller`, "mailbox");
   const pre = identifier().pre!;
   const added = await run(() =>
-    addMailbox({ hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol }, identifier(), mailbox.pre)
+    addMailbox(
+      { hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol },
+      identifier(),
+      mailbox.pre,
+    )
   );
   const waited = await run(() =>
     waitForMailboxState(() => mailboxStatus(hby, pre, mailbox.pre), {
@@ -346,7 +350,7 @@ async function resolvePeer({ peerOobi, peerPre }: StepArgs) {
 
 /** Step 5a: close the wallet and report whether it released its lock. */
 async function closeWallet() {
-  await stopIssuanceDriver();
+  custody = undefined;
   await open().close();
   wallet = undefined;
   return { closed: true };
@@ -355,8 +359,15 @@ async function closeWallet() {
 /** Step 5b: reopen the same wallet in the same page and check the durable state is there. */
 async function reopenWallet(args: StepArgs) {
   const { name, bran, mailbox } = args;
-  const expect = args.expect as { pre: string; sn: number; said: string; issued: string[]; held: string[] };
-  wallet = await openWebWallet({ name, bran });
+  const expect = args.expect as {
+    pre: string;
+    sn: number;
+    said: string;
+    issued: string[];
+    held: string[];
+    cursor: Record<string, number>;
+  };
+  wallet = await openWebWallet({ name, bran, runtime: { kram: KRAM } });
   const { hby } = open();
   const pre = expect.pre;
   hab = hby.habs.get(pre);
@@ -365,11 +376,19 @@ async function reopenWallet(args: StepArgs) {
   assert(state.sn === expect.sn && state.said === expect.said, `key state changed: ${JSON.stringify(state)}`);
   const receipts = receiptCount(pre, 0);
   assert(receipts === 1, `expected 1 receipt after reopen, found ${receipts}`);
-  const status = eventStatus(hby, pre, 0);
-  assert(status.state === "complete", `event status after reopen ${JSON.stringify(status)}`);
+  for (let sn = 0; sn <= expect.sn; sn++) {
+    const status = eventStatus(hby, pre, sn);
+    assert(status.state === "complete", `event ${sn} status after reopen ${JSON.stringify(status)}`);
+  }
   const box = mailboxStatus(hby, pre, mailbox.pre);
   assert(box.state === "authorized", `mailbox after reopen ${JSON.stringify(box)}`);
-  const cursor = hby.db.tops.get([pre, mailbox.pre])?.topics ?? null;
+  const cursor = hby.db.tops.get([pre, mailbox.pre])?.topics ?? {};
+  // The poller may have read mail between the snapshot and the close, so a stored index may only have moved forward.
+  const behind = Object.entries(expect.cursor).filter(([topic, index]) => (cursor[topic] ?? -1) < index);
+  assert(
+    !behind.length,
+    `mailbox cursor went back across reopen: ${JSON.stringify(expect.cursor)} -> ${JSON.stringify(cursor)}`,
+  );
   const rows = open().wallet.inventory();
   const issued = rows.issued.map((row) => row.credential), held = rows.held.map((row) => row.credential);
   assert(
@@ -396,7 +415,7 @@ async function rotate() {
 
 /** Step 7: close and check that the wallet's Web Lock is free. */
 async function closeAndCheckLock({ name }: StepArgs) {
-  await stopIssuanceDriver();
+  custody = undefined;
   await open().close();
   wallet = undefined;
   const { storeLockKey } = await import("../../runtime-web.ts");
@@ -421,12 +440,12 @@ export const steps: Record<string, (args: StepArgs & Record<string, any>) => Pro
   inceptWithWitness,
   addMailboxHost,
   resolvePeer,
-  enableIssuance,
   receiveCredential,
   issueCredential,
   finishIssuance,
   awaitAdmit,
   readInventory,
+  awaitMailboxCursor,
   closeWallet,
   reopenWallet,
   rotate,

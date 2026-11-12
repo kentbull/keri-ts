@@ -60,9 +60,11 @@ async function runPeer(peer: string, args: string[], timeoutMs = 120_000): Promi
   );
   const result = await response.json() as PeerResult;
   if (result.code !== 0) {
-    throw new Error(`tufa ${args.join(" ").replace(/-p \S+/, "-p ***")} exited ${result.code}${
-      result.timedOut ? " (timed out)" : ""
-    }\n${result.stdout}\n${result.stderr}`.slice(0, 4000));
+    throw new Error(
+      `tufa ${args.join(" ").replace(/-p \S+/, "-p ***")} exited ${result.code}${
+        result.timedOut ? " (timed out)" : ""
+      }\n${result.stdout}\n${result.stderr}`.slice(0, 4000),
+    );
   }
   return result;
 }
@@ -75,6 +77,18 @@ async function runEngine(name: string, pageUrl: string, servers: Servers): Promi
     const tab = await browser.newPage();
     tab.on("pageerror", (error) => console.error(`[${name}] page error: ${error.message}`));
     tab.on("console", (message) => console.log(`[${name}] ${message.text()}`));
+    // Non-2xx responses with the request that drew them: the browser console only says "Failed to load resource".
+    tab.on("response", async (response) => {
+      if (response.status() >= 400) {
+        const request = response.request();
+        const body = await response.text().catch(() => "");
+        console.log(
+          `[${name}] HTTP ${response.status()} ${request.method()} ${response.url()} ${
+            request.headers()["cesr-destination"] ?? ""
+          } ${body.slice(0, 300)}`,
+        );
+      }
+    });
     await tab.goto(pageUrl);
     console.log(`\n=== ${name} ${browser.version()}`);
     const base: StepArgs = {
@@ -83,7 +97,14 @@ async function runEngine(name: string, pageUrl: string, servers: Servers): Promi
       name: `wallet-${name}-${crypto.randomUUID().slice(0, 8)}`,
       bran: "abcdefghijklmnopqrstu",
     };
-    const store = ["-n", `peer-${name}-${crypto.randomUUID().slice(0, 8)}`, "--head-dir", "/work/peer", "-p", "abcdefghijklmnopqrstu"];
+    const store = [
+      "-n",
+      `peer-${name}-${crypto.randomUUID().slice(0, 8)}`,
+      "--head-dir",
+      "/work/peer",
+      "-p",
+      "abcdefghijklmnopqrstu",
+    ];
     const context: Context = {
       page: (step, args = {}) =>
         limited(
@@ -130,7 +151,7 @@ async function runEngine(name: string, pageUrl: string, servers: Servers): Promi
         });
       }
       const last = results.at(-1)!;
-      console.log(`${last.status} ${last.name} (${last.ms} ms) ${last.detail.slice(0, 600)}`);
+      console.log(`${last.status} ${last.name} (${last.ms} ms) ${last.detail.slice(0, 3500)}`);
     }
   } finally {
     await browser.close();

@@ -33,6 +33,7 @@ import {
   requestPersistentStorage,
   type StoreLockManager,
 } from "keri-ts/runtime/web";
+import { WalletDerivedUpdates } from "../custody.ts";
 import { openWalletBaser, type WalletBaser } from "../storing.ts";
 import { Wallet } from "../wallet.ts";
 
@@ -79,7 +80,7 @@ export type OpenWebWalletOptions = WebWalletSecret & {
    * default, because DH and Unblind owners need KRAM; obtain them per identifier after open with
    * `runtime.ipex.dhke(hab)` and `runtime.ipex.unblind(hab, states)`. Disabling KRAM fails the open.
    */
-  runtime?: Pick<AgentRuntimeOptions, "kram" | "ipexAuxiliary" | "ipexOwners">;
+  runtime?: Pick<AgentRuntimeOptions, "kram" | "ipexAuxiliary" | "ipexOwners" | "operationStores">;
   host?: WebWalletHost;
 };
 
@@ -177,6 +178,9 @@ function* compose(
           const runtime = yield* createAgentRuntime(hby, http, host.clock ?? systemClock, {
             ipexOwners: "per-identifier",
             ...options.runtime,
+            // The operation owners record blind-derivation coordinates where the wallet's own custody
+            // reads them back; a process-local default would hide them from `recordIssued`.
+            operationStores: { derived: new WalletDerivedUpdates(inventory), ...options.runtime?.operationStores },
             kram: options.runtime?.kram ?? { enabled: true },
           });
           try {

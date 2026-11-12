@@ -77,10 +77,25 @@ export const steps: Step[] = [
     run: async ({ peer, peerConfig, facts, servers, store }) => {
       const { mailbox } = servers;
       await peer(["init", ...store]);
-      await peerConfig({ kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 60000, 300000, 60000, 60000, 300000] } } });
+      await peerConfig({
+        kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 60000, 300000, 60000, 60000, 300000] } },
+      });
       const incepted = await peer([
-        "incept", ...store, "-a", "peer", "-tf", "--icount", "1", "--isith", "1", "--ncount", "1", "--nsith", "1",
-        "--toad", "0",
+        "incept",
+        ...store,
+        "-a",
+        "peer",
+        "-tf",
+        "--icount",
+        "1",
+        "--isith",
+        "1",
+        "--ncount",
+        "1",
+        "--nsith",
+        "1",
+        "--toad",
+        "0",
       ]);
       facts.peerPre = find(incepted.stdout, /Prefix\s+(\S+)/);
       await peer(["oobi", "resolve", ...store, "-u", `${mailbox.origin}/oobi/${mailbox.pre}/controller`]);
@@ -104,20 +119,53 @@ export const steps: Step[] = [
     name: "4a holder: credential from the counterparty, v2 DH issuance",
     needs: ["3b mailbox authorized, OOBIs resolved both ways"],
     run: async ({ page, peer, facts, store }) => {
-      await page("enableIssuance");
       await peer(["vc", "registry", "incept", ...store, "-a", "peer", "--acdc-v2", "--registry-name", "peer-reg"]);
       const body = `/work/peer/body-${crypto.randomUUID()}.cesr`;
       await peer([
-        "vc", "create", ...store, "-a", "peer", "--acdc-v2", "--prepare", "--registry-name", "peer-reg",
-        "-r", facts.inception.pre, "--data", '{"role":"tufa issued reader"}', "--out", body,
+        "vc",
+        "create",
+        ...store,
+        "-a",
+        "peer",
+        "--acdc-v2",
+        "--prepare",
+        "--registry-name",
+        "peer-reg",
+        "-r",
+        facts.inception.pre,
+        "--data",
+        "{\"role\":\"tufa issued reader\"}",
+        "--out",
+        body,
       ]);
       const prepared = await peer([
-        "ipex", "grant", "--issue", ...store, "-a", "peer", "-r", facts.inception.pre, "--credential", body,
-        "--out", `/work/peer/grant-${crypto.randomUUID()}.cesr`,
+        "ipex",
+        "grant",
+        "--issue",
+        ...store,
+        "-a",
+        "peer",
+        "-r",
+        facts.inception.pre,
+        "--credential",
+        body,
+        "--out",
+        `/work/peer/grant-${crypto.randomUUID()}.cesr`,
       ]);
       const grant = find(prepared.stdout, /"grant":"([^"]+)"/);
       const sending = peer([
-        "ipex", "grant", "--issue", ...store, "-a", "peer", "-r", facts.inception.pre, "--resume", grant, "--timeout", "150",
+        "ipex",
+        "grant",
+        "--issue",
+        ...store,
+        "-a",
+        "peer",
+        "-r",
+        facts.inception.pre,
+        "--resume",
+        grant,
+        "--timeout",
+        "150",
       ], 170_000);
       const receiving = page("receiveCredential", { grant });
       const [sent, received] = await Promise.allSettled([sending, receiving]);
@@ -129,7 +177,7 @@ export const steps: Step[] = [
   },
   {
     name: "4b issuer: credential to the counterparty, v2 DH issuance",
-    needs: ["4a holder: credential from the counterparty, v2 DH issuance"],
+    needs: ["3b mailbox authorized, OOBIs resolved both ways"],
     run: async ({ page, peer, facts, store }) => {
       const begun = await page("issueCredential", { peerPre: facts.peerPre });
       await peer(["ipex", "poll", ...store, "-a", "peer", "--timeout", "20"]);
@@ -138,34 +186,82 @@ export const steps: Step[] = [
       const [set, finished] = await Promise.allSettled([setup, finishing]);
       both(["peer", set], ["browser", finished]);
       if (set.status !== "fulfilled" || finished.status !== "fulfilled") throw new Error("unreachable");
-      const admitted = await peer(["ipex", "admit", ...store, "-a", "peer", "--acdc-v2", "--consent", "--said", begun.grant], 150_000);
+      const admitted = await peer([
+        "ipex",
+        "admit",
+        ...store,
+        "-a",
+        "peer",
+        "--acdc-v2",
+        "--consent",
+        "--said",
+        begun.grant,
+      ], 150_000);
       const admit = await page("awaitAdmit", { grant: begun.grant });
       facts.issuedGrant = begun.grant;
       return { begun, finished: finished.value, peerAdmit: admitted.stdout.trim().split("\n").at(-1), admit };
     },
   },
   {
-    name: "5 close, reopen, durable state present",
-    needs: ["4b issuer: credential to the counterparty, v2 DH issuance"],
-    run: async ({ page, facts }) => {
+    name: "5 close, reopen, durable state present, mailbox polling resumes",
+    needs: ["3b mailbox authorized, OOBIs resolved both ways"],
+    run: async ({ page, peer, facts, store }) => {
       const before = await page("readInventory");
       await page("closeWallet");
-      const { pre, sn, said } = facts.inception;
-      facts.reopen = await page("reopenWallet", { expect: { pre, sn, said, ...before } });
-      await page("enableIssuance");
-      return facts.reopen;
+      facts.reopen = await page("reopenWallet", {
+        expect: {
+          pre: facts.inception.pre,
+          sn: before.state.sn,
+          said: before.state.said,
+          issued: before.issued,
+          held: before.held,
+          cursor: before.cursor,
+        },
+      });
+      // New mail after the reopen: the poller must read it from the stored cursor, past every old index.
+      const topic = "/challenge";
+      await peer([
+        "exn",
+        "send",
+        "-n",
+        store[1],
+        "--head-dir",
+        store[3],
+        "-p",
+        store[5],
+        "-s",
+        "peer",
+        "-r",
+        facts.inception.pre,
+        "-R",
+        "/challenge/request",
+        "--data",
+        "words=one two",
+      ]);
+      const resumed = await page("awaitMailboxCursor", { topic, above: before.cursor[topic] ?? -1 });
+      const lower = Object.entries(before.cursor).filter(([key, index]) =>
+        (resumed.cursor[key] ?? -1) < (index as number)
+      );
+      if (lower.length) {
+        throw new Error(`cursor moved backwards: ${JSON.stringify({ before: before.cursor, resumed })}`);
+      }
+      return { reopened: facts.reopen, resumed };
     },
   },
   {
     name: "6 rotate, collect receipt, counterparty sees new key state",
-    needs: ["5 close, reopen, durable state present"],
+    needs: ["5 close, reopen, durable state present, mailbox polling resumes"],
     run: async ({ page, peer, facts, store, servers }) => {
       facts.rotation = await page("rotate");
       // The witness holds the receipted rotation; the counterparty learns it from the witness's OOBI.
       const { witness } = servers;
       await peer(["oobi", "resolve", ...store, "-u", `${witness.origin}/oobi/${witness.pre}/controller`]);
       await peer([
-        "oobi", "resolve", ...store, "-u", `${witness.origin}/oobi/${facts.rotation.pre}/witness/${witness.pre}`,
+        "oobi",
+        "resolve",
+        ...store,
+        "-u",
+        `${witness.origin}/oobi/${facts.rotation.pre}/witness/${witness.pre}`,
       ]);
       const dumped = await peer(["db", "dump", "baser.states", ...store.slice(0, 4), "--prefix", facts.rotation.pre]);
       const seen = { sn: find(dumped.stdout, /"s": "(\w+)"/), said: find(dumped.stdout, /"d": "(\S+)"/) };
@@ -178,7 +274,7 @@ export const steps: Step[] = [
   },
   {
     name: "7 close, store lock released",
-    needs: ["5 close, reopen, durable state present"],
+    needs: ["5 close, reopen, durable state present, mailbox polling resumes"],
     run: async ({ page }) => await page("closeAndCheckLock"),
   },
 ];
