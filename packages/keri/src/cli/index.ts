@@ -90,6 +90,13 @@ export {
   notificationsMarkReadCommand,
   notificationsRemoveCommand,
 } from "./messaging/notifications.ts";
+export {
+  type RootCopyLine,
+  rootCopyLine,
+  RootCopyRecoveryCommand,
+  type RootResealLine,
+  rootResealLine,
+} from "./messaging/root-copy-lines.ts";
 export { annotateCommand } from "./tools/annotate.ts";
 export { benchmarkCommand } from "./tools/benchmark.ts";
 export { dumpEvts } from "./tools/db-dump.ts";

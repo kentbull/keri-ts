@@ -22,6 +22,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { action, call, type Operation, race, scoped, spawn } from "effection";
+import type { RootCopyLine } from "keri-ts/cli";
 import {
   acceptedRegistryEvidence,
   type AgentRuntime,
@@ -37,7 +38,6 @@ import {
   messagize,
   multisigExnBody,
   Receiptor,
-  type RootCopyReport,
   runAgentRuntime,
   timestampMicros,
   ValidationError,
@@ -73,7 +73,7 @@ export interface GroupIssuanceResult {
    */
   proof?: Uint8Array;
   /** The custodian's fire-and-forget root copies to the other members, sent after issuance completes. */
-  rootCopies?: RootCopyReport[];
+  rootCopies?: RootCopyLine[];
 }
 
 /** Resolve exact local owners and the already accepted coordinator; election is never recomputed from a new event. */

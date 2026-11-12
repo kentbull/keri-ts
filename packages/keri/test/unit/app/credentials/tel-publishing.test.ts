@@ -2,6 +2,7 @@ import { createProtocolHandler } from "@keri-ts/hosting";
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
 import { runTufa } from "../../../../../tufa/test/test-helpers.ts";
+import { telEventStatus } from "../../../../src/app/credentials/tel-completion.ts";
 import { publishPendingTel } from "../../../../src/app/credentials/tel-publishing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime, runAgentRuntimeUntil } from "../../../../src/app/runtime/agent-runtime.ts";
@@ -57,6 +58,7 @@ Deno.test("TEL publication resumes receipt and dissemination escrows across reop
       const { reger, publication } = rgy;
       assertEquals(registry.complete(regk), false);
       assertEquals(publication.pendingReceipts().length, 1);
+      assertEquals(telEventStatus(rgy, regk, 0), { state: "active", phase: "awaitingReceipts" });
       assertEquals(observer.vdr!.tvy.tevers.has(regk), false);
 
       refuseReceipts = true;
@@ -79,6 +81,7 @@ Deno.test("TEL publication resumes receipt and dissemination escrows across reop
       assertEquals(resumed.publication.complete(regk), false);
       assertEquals(resumed.publication.pendingReceipts().length, 0);
       assertEquals(resumed.publication.pendingPublications().length, 1);
+      assertEquals(telEventStatus(resumed, regk, 0), { state: "active", phase: "awaitingPublication" });
       assertEquals(observer.vdr!.tvy.tevers.has(regk), false);
       yield* reger.close();
       yield* reger.reopen();
@@ -87,6 +90,8 @@ Deno.test("TEL publication resumes receipt and dissemination escrows across reop
       const recovered = new Regery(issuerHby, { reger });
       yield* publishPendingTel(issuerHby, recovered.publication, receiptor, http, systemClock);
       assertEquals(recovered.publication.complete(regk), true);
+      assertEquals(telEventStatus(recovered, regk, 0), { state: "complete" });
+      assertEquals(telEventStatus(recovered, regk, 7), { state: "unknown", reason: "not-tracked" });
       assertEquals(recovered.publication.pendingPublications().length, 0);
       assertEquals(observer.vdr!.tvy.tevers.get(regk)?.serder.said, regk);
       assertEquals([...reger.ctel.getTopItemIter()][0][1].qb64, anchorSaid);

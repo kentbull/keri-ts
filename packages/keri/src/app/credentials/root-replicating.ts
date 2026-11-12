@@ -28,11 +28,20 @@ export type RootDelivery<C extends RootCopy = RootCopy> =
   | { kin: "sent"; copy: C; deliveries: string[] }
   | { kin: "failed"; copy: C; error: unknown };
 
-/** The operator command that resends a copy automatic replication did not send. */
+/**
+ * The operator command that resends a copy automatic replication did not send.
+ *
+ * @deprecated A Tufa command string is display text, not library API; an embedded wallet has no such CLI.
+ * Read `RootCopyResult.kin` and `error` instead; the CLI layer owns its recovery text.
+ */
 export const RootCopyRecovery = "tufa vc registry root send";
 
 /**
- * One automatic copy's outcome, displayed as a `root_copy` JSON line. `exchange`
+ * One automatic copy's outcome, displayed as a `root_copy` JSON line.
+ *
+ * @deprecated Display-shaped (`phase`, a recovery command, the error flattened to text). Use
+ * `RootCopyResult`, which keeps the error object; the CLI maps results to these lines itself.
+ * `exchange`
  * is the prepared copy's SAID; `transmitted` means handed to the mailbox, not
  * received. A copy not sent carries the error and the recovery command.
  */
@@ -90,17 +99,42 @@ function* within<T>(clock: RuntimeClock, milliseconds: number, operation: Operat
 export type RootCopyKin = "sent" | "deferred" | "refused" | "failed";
 
 /**
+ * The typed outcome of one copy attempt, whatever drove it (`RootReplicator`, the
+ * `replicateRootCopies` and `resealRootCopies` loops).
+ *
+ * `kin` says whether to try again: `sent` means handed to the mailbox, not received
+ * (`deliveries` names where, as `RootDelivery`); `deferred` means local evidence
+ * (the BUP, key state, a hint) is not yet present; `refused` means the copy is not
+ * authorized; `failed` means the budget ended or the Poster could not send it.
+ * Unless `sent`, `error` is the error itself. `exchange` is the prepared copy's SAID
+ * once one was prepared.
+ */
+export interface RootCopyResult {
+  kin: RootCopyKin;
+  group: string;
+  registry: string;
+  sender: string;
+  recipient: string;
+  exchange?: string;
+  deliveries?: string[];
+  error?: unknown;
+}
+
+/** An accepted rotation whose re-seal recipients could not be selected at all. */
+export interface RootExamination {
+  group: string;
+  rotation: string;
+  error: AppError;
+}
+
+/**
  * Prepare and deliver one `/registry/root` copy for `gid` from its local member to
  * `recipient`, before `deadline` (epoch ms of `clock`).
  *
  * The copy is sealed with `RegistryRoot.prepare` and a per-registry derived hint
- * (`hinted`, so a copy that could never verify is reported, not sent). `failure`
- * is null when the Poster transmitted it, else the `AppError` or Poster error
- * that stopped it, classified by `kin`: `deferred` when local evidence (the BUP,
- * key state, a hint) is not yet present, `refused` when the copy is not
- * authorized, `failed` when the budget ended or the Poster could not send it.
- * Any other exception is an invariant failure and escapes. The caller runs
- * `postman.deliverDo` for the duration.
+ * (`hinted`, so a copy that could never verify is reported, not sent). Any
+ * `AppError` ends in the result; any other exception is an invariant failure and
+ * escapes. The caller runs `postman.deliverDo` for the duration.
  */
 export function* replicateRootCopy(
   root: RegistryRoot,
@@ -110,83 +144,76 @@ export function* replicateRootCopy(
   registry: string,
   recipient: string,
   deadline: number,
-): Operation<{ kin: RootCopyKin; report: RootCopyReport; failure: unknown }> {
+): Operation<RootCopyResult> {
   const sender = localGroupMember(root.hby, gid);
-  const report: RootCopyReport = {
-    phase: "root_copy",
-    gid,
-    registry,
-    sender: sender.pre!,
-    recipient,
-    transmitted: false,
-  };
-  let failure: unknown = null, kin: RootCopyKin = "sent";
+  const result: RootCopyResult = { kin: "failed", group: gid, registry, sender: sender.pre!, recipient };
   try {
-    kin = "failed";
     if (clock.now() >= deadline) {
       throw new ValidationError("registry root copies did not complete within their budget");
     }
-    kin = "refused";
     let wire: Uint8Array;
     try {
       wire = root.prepare(sender, recipient, gid, registry, { hinted: true });
     } catch (error) {
-      if (error instanceof RootUnverified) kin = "deferred";
+      result.kin = error instanceof RootUnverified ? "deferred" : "refused";
       throw error;
     }
-    kin = "failed";
-    report.exchange = parseBytes(wire)[0].body.said!;
+    result.exchange = parseBytes(wire)[0].body.said!;
     const outcome = yield* within(
       clock,
       deadline - clock.now(),
       deliverRegistryRoots(postman, sender.pre!, [{ recipient, wire }]),
     );
-    if (!outcome) failure = new ValidationError("registry root copies did not complete within their budget");
-    else if (outcome[0].kin === "failed") failure = outcome[0].error ?? "delivery failed";
-    else kin = "sent";
+    if (!outcome) throw new ValidationError("registry root copies did not complete within their budget");
+    if (outcome[0].kin === "failed") {
+      result.error = outcome[0].error ?? "delivery failed";
+    } else {
+      result.kin = "sent";
+      result.deliveries = outcome[0].deliveries;
+    }
   } catch (error) {
     if (!(error instanceof AppError)) throw error;
-    failure = error;
+    result.error = error;
   }
-  if (failure === null) return { kin, report: { ...report, transmitted: true }, failure };
-  const message = failure instanceof Error ? failure.message : String(failure);
-  return { kin, report: { ...report, error: message, recovery: RootCopyRecovery }, failure };
+  return result;
 }
 
 /**
- * Fire and forget one copy of each of `registries`' held roots for group
- * `ghab` to each recipient, signed by `ghab`'s local member.
+ * Send one copy of each of `registries`' held roots for group `ghab` to each
+ * recipient, signed by `ghab`'s local member, and return one result per copy.
  *
- * `recipients` defaults to every other current signing member. Each copy goes
- * through `replicateRootCopy`, as `tufa vc registry root send` does. `timeoutMs`
- * is this replication's own budget: a copy reached after it ends, or still
- * sending when it ends, is reported unsent. Nothing is retried or recorded and
- * an `AppError` never escapes: every outcome is returned for display. The caller
- * runs `postman.deliverDo` for the duration.
+ * `recipients` defaults to every other current signing member. `timeoutMs` is this
+ * replication's own budget: a copy reached after it ends, or still sending when it
+ * ends, is `failed`. Nothing is retried or recorded and an `AppError` never
+ * escapes. The caller runs `postman.deliverDo` for the duration.
  */
-export function* replicateRegistryRoots(
+export function* replicateRootCopies(
   root: RegistryRoot,
   postman: Poster,
   clock: RuntimeClock,
   ghab: Hab,
   registries: readonly string[],
   { recipients, timeoutMs }: { recipients?: readonly string[]; timeoutMs: number },
-): Operation<RootCopyReport[]> {
+): Operation<RootCopyResult[]> {
   const gid = ghab.pre, sender = localGroupMember(root.hby, gid), deadline = clock.now() + Math.max(timeoutMs, 0);
   const targets = recipients ?? root.members(gid).filter(aid => aid !== sender.pre);
-  const reports: RootCopyReport[] = [];
+  const results: RootCopyResult[] = [];
   for (const registry of registries) {
     for (const recipient of targets) {
-      reports.push((yield* replicateRootCopy(root, postman, clock, gid, registry, recipient, deadline)).report);
+      results.push(yield* replicateRootCopy(root, postman, clock, gid, registry, recipient, deadline));
     }
   }
-  return reports;
+  return results;
 }
 
 /** Budget for re-seal copies from a command without its own `--timeout`, as KERIpy `rootreplicating.Budget`. */
 export const RootResealBudgetMs = 30_000;
 
-/** A re-seal that could not even select its recipients, displayed as a `root_copy` line. */
+/**
+ * A re-seal that could not even select its recipients, displayed as a `root_copy` line.
+ *
+ * @deprecated Display-shaped; see `RootExamination`.
+ */
 export interface RootResealFailure {
   phase: "root_copy";
   gid: string;
@@ -198,11 +225,71 @@ export interface RootResealFailure {
 /**
  * After an accepted group rotation, send held roots to new or rekeyed members.
  *
- * Fire and forget like `replicateRegistryRoots`: only a signer of the rotation
- * that held a prior key sends (`RegistryRoot.resealed`), every such signer
- * sends with no election, a member holding no root for the group sends
- * nothing, and no failure ever fails the rotation. The caller runs
- * `postman.deliverDo` for the duration.
+ * Only a signer of the rotation that held a prior key sends (`RegistryRoot.resealed`),
+ * every such signer sends with no election, and a member holding no root for the
+ * group sends nothing. `examination` is set when the recipients could not be
+ * selected, and then nothing is sent. Fire and forget like `replicateRootCopies`.
+ */
+export function* resealRootCopies(
+  root: RegistryRoot,
+  postman: Poster,
+  clock: RuntimeClock,
+  ghab: Hab,
+  rotation: string,
+  { timeoutMs = RootResealBudgetMs }: { timeoutMs?: number } = {},
+): Operation<{ examination: RootExamination | null; copies: RootCopyResult[] }> {
+  let recipients: string[];
+  try {
+    recipients = root.resealed(ghab, rotation);
+  } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    return { examination: { group: ghab.pre!, rotation, error }, copies: [] };
+  }
+  const registries = root.held(ghab.pre);
+  if (!recipients.length || !registries.length) return { examination: null, copies: [] };
+  const copies = yield* replicateRootCopies(root, postman, clock, ghab, registries, { recipients, timeoutMs });
+  return { examination: null, copies };
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Map a typed result to the legacy display shape; for the deprecated functions below only. */
+function legacyReport(result: RootCopyResult): RootCopyReport {
+  const report: RootCopyReport = {
+    phase: "root_copy",
+    gid: result.group,
+    registry: result.registry,
+    sender: result.sender,
+    recipient: result.recipient,
+    transmitted: false,
+  };
+  if (result.exchange !== undefined) report.exchange = result.exchange;
+  if (result.kin === "sent") return { ...report, transmitted: true };
+  return { ...report, error: errorText(result.error), recovery: RootCopyRecovery };
+}
+
+/**
+ * Fire and forget root copies, reported as display lines.
+ *
+ * @deprecated Use `replicateRootCopies`, which returns typed `RootCopyResult`s with the error object.
+ */
+export function* replicateRegistryRoots(
+  root: RegistryRoot,
+  postman: Poster,
+  clock: RuntimeClock,
+  ghab: Hab,
+  registries: readonly string[],
+  options: { recipients?: readonly string[]; timeoutMs: number },
+): Operation<RootCopyReport[]> {
+  return (yield* replicateRootCopies(root, postman, clock, ghab, registries, options)).map(legacyReport);
+}
+
+/**
+ * Fire and forget re-seal copies after an accepted rotation, reported as display lines.
+ *
+ * @deprecated Use `resealRootCopies`, which returns typed `RootCopyResult`s with the error object.
  */
 export function* resealRegistryRoots(
   root: RegistryRoot,
@@ -210,16 +297,17 @@ export function* resealRegistryRoots(
   clock: RuntimeClock,
   ghab: Hab,
   rotation: string,
-  { timeoutMs = RootResealBudgetMs }: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number } = {},
 ): Operation<(RootCopyReport | RootResealFailure)[]> {
-  let recipients: string[];
-  try {
-    recipients = root.resealed(ghab, rotation);
-  } catch (error) {
-    if (!(error instanceof AppError)) throw error;
-    return [{ phase: "root_copy", gid: ghab.pre, rotation, transmitted: false, error: error.message }];
+  const { examination, copies } = yield* resealRootCopies(root, postman, clock, ghab, rotation, options);
+  if (examination) {
+    return [{
+      phase: "root_copy",
+      gid: examination.group,
+      rotation,
+      transmitted: false,
+      error: examination.error.message,
+    }];
   }
-  const registries = root.held(ghab.pre);
-  if (!recipients.length || !registries.length) return [];
-  return yield* replicateRegistryRoots(root, postman, clock, ghab, registries, { recipients, timeoutMs });
+  return copies.map(legacyReport);
 }

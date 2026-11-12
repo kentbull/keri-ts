@@ -1,5 +1,13 @@
-/** Finite CLI observations over the publication owner's durable facts; host workers make progress. */
-import { type Operation, sleep } from "effection";
+/**
+ * Boolean adapters over the library TEL waits (`app/credentials/tel-completion.ts`)
+ * for callers that still take an epoch-millisecond deadline and ignore the status.
+ * The group multisig commands use these until they switch to the library wait.
+ */
+import type { Operation } from "effection";
+import {
+  waitForIssuedCredential as waitForIssuedCredentialStatus,
+  waitForTelEvent,
+} from "../../app/credentials/tel-completion.ts";
 import type { TelPublication } from "../../vdr/tel-publication.ts";
 
 /** Observe one exact TEL coordinate until completion or an epoch-millisecond deadline; never drive workers here. */
@@ -9,12 +17,7 @@ export function* waitForTelPublication(
   sn: number,
   deadline: number,
 ): Operation<boolean> {
-  while (!publication.complete(pre, sn)) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) return false;
-    yield* sleep(Math.min(50, remaining));
-  }
-  return true;
+  return (yield* waitForTelEvent({ publication }, pre, sn, { deadline })).outcome === "settled";
 }
 
 /** Issuance additionally needs saved credential evidence; publication alone is not verifier acceptance. */
@@ -23,11 +26,5 @@ export function* waitForIssuedCredential(
   said: string,
   deadline: number,
 ): Operation<boolean> {
-  if (!(yield* waitForTelPublication(publication, said, 0, deadline))) return false;
-  while (publication.reger.saved.get(said) === null) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) return false;
-    yield* sleep(Math.min(50, remaining));
-  }
-  return true;
+  return (yield* waitForIssuedCredentialStatus({ publication }, said, { deadline })).outcome === "settled";
 }
