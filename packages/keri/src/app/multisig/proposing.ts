@@ -11,7 +11,10 @@
  *
  * Dependencies are declared collaborators, not an AgentRuntime (ADR-0013).
  */
+import type { SerderACDC } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
+import type { RegistryDisclosure } from "../../acdc/regeventing.ts";
+import type { RegistryStore } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Hab, Habery, MakeGroupHabArgs } from "../identity/habbing.ts";
@@ -20,7 +23,13 @@ import type { CounselInputs, Counselor, GroupEventRef } from "./counseling.ts";
 import { groupSigningMembers, localGroupMember, uniqueMembers } from "./group-members.ts";
 import { MULTISIG_ICP_ROUTE, MULTISIG_IXN_ROUTE, MULTISIG_ROT_ROUTE } from "./grouping.ts";
 import type { GroupSendResult } from "./multisig-messaging.ts";
-import { commitAcceptedGroupMembers, publishProposal } from "./multisig-workflows.ts";
+import {
+  type ApprovalResult,
+  approveAcdcV2Registry,
+  commitAcceptedGroupMembers,
+  publishAcdcV2Registry,
+  publishProposal,
+} from "./multisig-workflows.ts";
 
 /** Collaborators for proposing; nothing else is reachable from here. */
 export interface GroupProposeDeps {
@@ -154,4 +163,52 @@ export function settleProposedRotation(deps: Pick<GroupProposeDeps, "hby">, resu
   const serder = deps.hby.db.getEvtSerder(result.event.pre, result.event.said);
   if (!serder) throw new ValidationError(`No rotation ${result.event.said} is held for ${result.event.pre}.`);
   return commitAcceptedGroupMembers(deps.hby, serder, result.smids, result.rmids);
+}
+
+/** Collaborators for {@link proposeRegistryEvent}. */
+export interface RegistryProposeDeps extends GroupProposeDeps {
+  readonly registryStore: RegistryStore | null;
+}
+
+/** Outcome of {@link proposeRegistryEvent}. */
+export interface RegistryEventResult extends ApprovalResult {
+  /** The group anchor that seals the TEL event, now counseled. */
+  readonly event: GroupEventRef;
+}
+
+/**
+ * Propose an ACDC v2 registry event (`rip` or `bup`): author the group anchor
+ * that seals it, process this member's own contribution, hand the anchor to the
+ * Counselor and publish the proposal. The proposer's contribution is also its
+ * approval. Returns without waiting; the anchor's progress is
+ * `counselor.status(result.event)`. A `bup` needs its `opening`.
+ *
+ * @throws ValidationError for a group that is not joined and accepted, or a TEL event the group cannot propose.
+ */
+export function* proposeRegistryEvent(
+  deps: RegistryProposeDeps,
+  group: Hab,
+  event: SerderACDC,
+  opening?: RegistryDisclosure,
+  inputs?: CounselInputs,
+): Operation<RegistryEventResult> {
+  const { hby } = deps;
+  const approval = yield* approveAcdcV2Registry(hby, deps.protocol, group, event, { opening });
+  const anchorSaid = (approval[0].sad?.a as { anc?: string } | undefined)?.anc;
+  const anchor = anchorSaid ? hby.db.getEvtSerder(group.pre, anchorSaid) : null;
+  if (!anchor || anchor.sn === null) throw new ValidationError("Registry proposal lost its group anchor.");
+  const anchorRef = { pre: group.pre, sn: anchor.sn, said: anchor.said! };
+  deps.counselor.start(anchorRef, inputs);
+  const sent = yield* publishAcdcV2Registry(hby, deps.postman, group, approval);
+  const regid = event.ilk === "rip" ? event.said! : event.regid!;
+  const accepted = deps.registryStore?.seqEvent(regid, Number(BigInt(`0x${event.sad!.n}`)))?.said === event.said;
+  return {
+    route: approval[0].route as "/multisig/rip" | "/multisig/bup",
+    said: approval[0].said!,
+    embedded: event.said!,
+    group: group.pre,
+    accepted,
+    ...sent,
+    event: anchorRef,
+  };
 }

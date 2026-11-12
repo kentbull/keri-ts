@@ -419,6 +419,9 @@ export {
   proposeGroupInception,
   proposeGroupInteraction,
   proposeGroupRotation,
+  proposeRegistryEvent,
+  type RegistryEventResult,
+  type RegistryProposeDeps,
   settleProposedRotation,
 } from "../app/multisig/proposing.ts";
 export {

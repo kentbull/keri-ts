@@ -43,6 +43,7 @@ import { Credentialer, Regery, Registry, serializeCredential } from "../../vdr/c
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import { type AgentRuntime } from "../runtime/agent-runtime.ts";
 
+import type { RegistryStore } from "../../acdc/registering.ts";
 import type { Reger } from "../../db/reger.ts";
 import {
   groupCredentialAnchorReady,
@@ -485,27 +486,20 @@ export function* approvePendingMultisigProposal(
     } else if (isVdrRoute(route)) {
       result = yield* approveVdrProposal(hby, rgy, runtime, exn, route, options);
     } else if (isV2RegistryRoute(route)) {
-      const nests = loadNests(hby.db, exn.said!);
-      const proposal = acdcV2RegistryProposal(exn, nests, runtime.acdc?.store ?? null);
-      const group = proposal?.anchor.pre ? hby.habs.get(proposal.anchor.pre) : null;
-      if (!proposal || !group) continue;
-      const head = group.kever?.serder.said;
-      if (!head) throw new ValidationError("Registry approval requires an accepted local group.");
-      if (!options.callbacks.approveProposal({ route, group: group.pre, embedded: proposal.tel.said! })) continue;
-      if (group.kever?.serder.said !== head || !acdcV2RegistryProposal(exn, nests, runtime.acdc?.store ?? null)) {
-        throw new ValidationError("Group or registry changed while approval was pending.");
-      }
-      const envelope = envelopeFromFrame(nests[0]), opening = [...envelope.bsqs, ...envelope.bsss];
-      if (opening.length > 1) throw new ValidationError("Registry proposal carries multiple openings.");
-      const approval = yield* approveAcdcV2Registry(hby, runtime.protocol, group, proposal.tel, {
-        anchor: proposal.anchor,
-        opening: opening[0],
-      });
-      const published = yield* publishAcdcV2Registry(hby, runtime.postman, group, approval);
-      const regid = proposal.tel.ilk === "rip" ? proposal.tel.said! : proposal.tel.regid!;
-      const accepted =
-        runtime.acdc!.store.seqEvent(regid, Number(BigInt(`0x${proposal.tel.sad!.n}`)))?.said === proposal.tel.said;
-      result = { route, said: exn.said!, embedded: proposal.tel.said!, group: group.pre, accepted, ...published };
+      result = yield* approveRegistryV2Proposal(
+        hby,
+        {
+          exc: runtime.exc,
+          reactor: runtime.reactor,
+          protocol: runtime.protocol,
+          postman: runtime.postman,
+          registryStore: runtime.acdc?.store ?? null,
+        },
+        exn,
+        route,
+        options,
+      );
+      if (!result) continue;
     } else {
       result = yield* approveRpyProposal(hby, runtime, exn, route, options);
     }
@@ -517,6 +511,46 @@ export function* approvePendingMultisigProposal(
     }
   }
   return null;
+}
+
+/** Collaborators the ACDC v2 registry approval adds to the shared channels. */
+export interface RegistryChannels extends ApprovalChannels {
+  readonly registryStore: RegistryStore | null;
+}
+
+/**
+ * Approve and publish this member's contribution to one `rip` or `bup` proposal.
+ * Null when the proposal is not a well-formed one for a joined group or consent
+ * is declined; the proposal then stays inert.
+ */
+export function* approveRegistryV2Proposal(
+  hby: Habery,
+  runtime: RegistryChannels,
+  exn: SerderKERI,
+  route: "/multisig/rip" | "/multisig/bup",
+  options: MultisigApprovalOptions,
+): Operation<ApprovalResult | null> {
+  const nests = loadNests(hby.db, exn.said!);
+  const proposal = acdcV2RegistryProposal(exn, nests, runtime.registryStore);
+  const group = proposal?.anchor.pre ? hby.habs.get(proposal.anchor.pre) : null;
+  if (!proposal || !group) return null;
+  const head = group.kever?.serder.said;
+  if (!head) throw new ValidationError("Registry approval requires an accepted local group.");
+  if (!options.callbacks.approveProposal({ route, group: group.pre, embedded: proposal.tel.said! })) return null;
+  if (group.kever?.serder.said !== head || !acdcV2RegistryProposal(exn, nests, runtime.registryStore)) {
+    throw new ValidationError("Group or registry changed while approval was pending.");
+  }
+  const envelope = envelopeFromFrame(nests[0]), opening = [...envelope.bsqs, ...envelope.bsss];
+  if (opening.length > 1) throw new ValidationError("Registry proposal carries multiple openings.");
+  const approval = yield* approveAcdcV2Registry(hby, runtime.protocol, group, proposal.tel, {
+    anchor: proposal.anchor,
+    opening: opening[0],
+  });
+  const published = yield* publishAcdcV2Registry(hby, runtime.postman, group, approval);
+  const regid = proposal.tel.ilk === "rip" ? proposal.tel.said! : proposal.tel.regid!;
+  const accepted = runtime.registryStore?.seqEvent(regid, Number(BigInt(`0x${proposal.tel.sad!.n}`)))?.said
+    === proposal.tel.said;
+  return { route, said: exn.said!, embedded: proposal.tel.said!, group: group.pre, accepted, ...published };
 }
 
 /**
@@ -712,10 +746,10 @@ export function* approveKelProposal(
  * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
  * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
  */
-function* approveVdrProposal(
+export function* approveVdrProposal(
   hby: Habery,
   rgy: Regery | null,
-  runtime: AgentRuntime,
+  runtime: ApprovalChannels,
   exn: SerderKERI,
   route: MultisigVdrRoute,
   options: MultisigApprovalOptions,
@@ -788,7 +822,8 @@ function* approveVdrProposal(
     localAnchor = storedContribution(hby, prior, "anc", anchorSerder.said!);
   } else {
     const keys = groupEventKeys(hby, groupPre, anchorSerder);
-    const sigers = signLocalGroupEvent(hby, anchorSerder, smids, keys);
+    const sigers = (options.resume ? recordedLocalSignatures(hby, anchorSerder, groupPre, smids) : null)
+      ?? signLocalGroupEvent(hby, anchorSerder, smids, keys);
     localAnchor = messagize(anchorSerder, { sigers, pipelined: false, gvrsn: genus });
   }
   yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localAnchor), { local: true });

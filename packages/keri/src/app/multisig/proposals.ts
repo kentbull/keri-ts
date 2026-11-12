@@ -21,6 +21,7 @@ import type { RegistryStore } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { isV2RegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
+import type { Regery } from "../../vdr/credentialing.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
@@ -34,7 +35,9 @@ import {
   type ApprovalChannels,
   type ApprovalResult,
   approveKelProposal,
+  approveRegistryV2Proposal,
   approveRpyProposal,
+  approveVdrProposal,
   eventAccepted,
   isKelRoute,
   isVdrRoute,
@@ -107,6 +110,8 @@ export interface GroupProposalReadDeps {
 
 /** Collaborators for {@link approveGroupProposal}. */
 export interface GroupApprovalDeps extends ApprovalChannels, Omit<GroupProposalReadDeps, "exc"> {
+  /** Legacy credential registry owner; needed to approve `vcp`, `iss` and `rev`. */
+  readonly vdr: Regery | null;
   /** Told of the approved group event; only its `start` is used. */
   readonly counselor: Pick<Counselor, "start">;
 }
@@ -358,7 +363,8 @@ export function dismissGroupProposal(deps: GroupProposalDismissDeps, said: strin
  * crash resumes: this member's recorded signatures and stored wrapper are
  * replayed, never replaced, and the group is not joined twice.
  *
- * Supports KEL (`icp`, `rot`, `ixn`) and reply (`rpy`) proposals.
+ * Supports every proposal kind: KEL (`icp`, `rot`, `ixn`), reply (`rpy`), legacy registry and credential (`vcp`, `iss`, `rev`) and
+ * ACDC v2 registry (`rip`, `bup`). For the registry kinds `event` is the group anchor that seals the TEL event.
  *
  * @throws ValidationError for a SAID that is not a stored supported proposal, a missing `groupAlias` when the proposal {@link GroupProposal.needs} one, or a proposal that cannot be approved.
  */
@@ -372,9 +378,6 @@ export function* approveGroupProposal(
   const exn = hby.db.exns.get([said]);
   if (!proposal || !exn) throw new ValidationError(`No group proposal ${said} is stored.`);
   const route = exn.route ?? "";
-  if (!isKelRoute(route) && route !== MULTISIG_RPY_ROUTE) {
-    throw new ValidationError(`Approving ${proposal.kind} proposals is not supported yet.`);
-  }
   const payloadSaid = multisigPayloadSaid(exn)!;
   if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said)) {
     // Acceptance commits before the asynchronous handler; resume that ordinary intake.
@@ -395,9 +398,14 @@ export function* approveGroupProposal(
       return choices.registryName;
     },
   };
+  const options = { callbacks, resume: true };
   const result = isKelRoute(route)
-    ? yield* approveKelProposal(hby, deps, exn, route, { callbacks, resume: true })
-    : yield* approveRpyProposal(hby, deps, exn, route, { callbacks, resume: true });
+    ? yield* approveKelProposal(hby, deps, exn, route, options)
+    : isVdrRoute(route)
+    ? yield* approveVdrProposal(hby, deps.vdr, deps, exn, route, options)
+    : isV2RegistryRoute(route)
+    ? yield* approveRegistryV2Proposal(hby, deps, exn, route, options)
+    : yield* approveRpyProposal(hby, deps, exn, route as typeof MULTISIG_RPY_ROUTE, options);
   if (!result) throw new ValidationError(`Group proposal ${said} cannot be approved.`);
   const { event } = proposal;
   if (event) {
