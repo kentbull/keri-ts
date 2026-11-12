@@ -458,9 +458,11 @@ export class Keeper extends StoreOwner {
   }
 
   /**
-   * Retain the first root of a DH exchange together with the Grant that produced it, in one transaction.
-   * The binding is the durable evidence that this exact root belongs to that exchange; it never exists
-   * without the root. Refuses a registry that already holds any root.
+   * Retain the root of a DH exchange together with the Grant that produced it, in one transaction. The
+   * binding is the durable evidence that this exact root belongs to that exchange; it never exists without
+   * the root. A registry that already holds any root is refused, unless `replacing` names the Grant the held
+   * root is currently bound to: only then are root and binding overwritten, so the old root survives until
+   * the new exchange really retains its own. The caller decides that the old root was never used.
    */
   retainExchangeRoot(
     keys: string[],
@@ -468,6 +470,7 @@ export class Keeper extends StoreOwner {
     grant: string,
     currentAeid: string,
     encrypter: Encrypter,
+    replacing?: string,
   ): void {
     if (this.readonly) throw new DatabaseOperationError("Cannot retain registry roots in a read-only keeper");
     if (!this.store.opened) throw new DatabaseNotOpenError("Keeper environment is not open");
@@ -478,13 +481,13 @@ export class Keeper extends StoreOwner {
       if (this.getGbls("aeid") !== currentAeid) {
         throw new DatabaseOperationError("Keeper AEID changed before registry root retention; reopen the manager");
       }
-      if (this.rroots.get(keys)) throw new Error("A registry root is already retained for this AID and registry");
-      if (
-        !this.rroots.put(keys, encrypter.encrypt({ prim: root }))
-        || !this.rrgrants.put(keys, new Saider({ qb64: grant }))
-      ) {
-        throw new DatabaseOperationError("Keeper registry root write failed");
+      if (this.rroots.get(keys) && (replacing === undefined || this.registryRootGrant(keys) !== replacing)) {
+        throw new Error("A registry root is already retained for this AID and registry");
       }
+      if (
+        !this.rroots.pin(keys, encrypter.encrypt({ prim: root }))
+        || !this.rrgrants.pin(keys, new Saider({ qb64: grant }))
+      ) throw new DatabaseOperationError("Keeper registry root write failed");
     });
   }
 

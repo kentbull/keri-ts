@@ -2,10 +2,13 @@
  * Holder side of issuance operations: the exchange consent, reload and expiry, and the separate Admit consent.
  * The issuer runs in its own owner, so both halves of one exchange are the library's code.
  */
-import { parseBytes } from "cesr-ts";
+import { parseBytes, Saider, type SerderACDC } from "cesr-ts";
 import { run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { type Operation } from "npm:effection@^3.6.0";
+import { RegistryAuthor } from "../../../../src/acdc/authoring.ts";
+import { RegistryCustody } from "../../../../src/acdc/custody.ts";
+import { RootDeferred } from "../../../../src/acdc/salting.ts";
 import {
   abandonIssuance,
   admitIssuance,
@@ -31,7 +34,7 @@ function* refuses(op: () => Operation<unknown>, message: string): Operation<void
   }
   throw new Error(`expected refusal: ${message}`);
 }
-import { type Scenario, scenario } from "./issuance-fixtures.ts";
+import { route, type Scenario, scenario } from "./issuance-fixtures.ts";
 
 /** One exchange up to the point where the holder has consented and the issuer has begun. */
 function* started(s: Scenario) {
@@ -343,6 +346,218 @@ Deno.test("a root is bound to the Grant whose exchange retained it: another Gran
     assertEquals(
       first.issuerHab.mgr.ks.registryRootGrant([first.issuerHab.pre!, first.reg.regid]),
       first.grant,
+    );
+  });
+});
+
+/** Both parties end the first exchange explicitly, as a user starting over would. */
+function abandonBoth(issuer: IssuanceOperations, holder: IssuanceOperations, grant: string) {
+  abandonIssuance(issuer, grant, "starting over");
+  abandonIssuance(holder, grant, "starting over");
+  assertEquals([issuanceStatus(issuer, grant).state, issuanceStatus(holder, grant).state], ["abandoned", "abandoned"]);
+}
+
+Deno.test("an exchange abandoned after both roots were retained is replaced by a new Grant on both sides", async () => {
+  await run(function*() {
+    const s = yield* scenario(), first = yield* bothRetained(s), { holderOps, issuerHab, holderHab, reg } = first;
+    const keys = [issuerHab.pre!, reg.regid], oldRoot = issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64;
+    s.issuer.runtime.ipex!.release(issuerHab.pre!);
+    const reloaded = s.owner();
+    abandonBoth(reloaded, holderOps, first.grant);
+    const second = yield* beginIssuance(reloaded, {
+      hab: issuerHab,
+      credential: reg.credential(),
+      options: { recipient: holderHab.pre!, message: "Issue again" },
+    });
+    assertEquals(
+      issuerHab.mgr.ks.registryRootGrant(keys),
+      first.grant,
+      "the old root stays until the new exchange retains",
+    );
+    yield* reloaded.processOnce();
+    approveIssuanceExchange(holderOps, { hab: holderHab, grant: second.grant });
+    yield* exchange(
+      reloaded,
+      holderOps,
+      () =>
+        issuanceStatus(holderOps, second.grant).state === "active"
+        && "needs" in issuanceStatus(holderOps, second.grant),
+    );
+    assertEquals(issuanceStatus(reloaded, second.grant), { state: "done", role: "issuer", phase: "issued" });
+    const ready = issuanceStatus(holderOps, second.grant);
+    assertEquals(ready.state === "active" && [ready.phase, ready.needs], ["awaitingAdmitConsent", "admit"]);
+    const root = issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64;
+    assert(root !== oldRoot, "the root was replaced");
+    assertEquals(holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64, root);
+    assertEquals([
+      issuerHab.mgr.ks.registryRootGrant(keys),
+      holderHab.mgr.ks.registryRootGrant([holderHab.pre!, reg.regid]),
+    ], [
+      second.grant,
+      second.grant,
+    ]);
+    assertEquals(s.holder.rgy.store.headEvent(reg.regid)!.ilk, "bup");
+  });
+});
+
+Deno.test("a second interruption before the new exchange retains its root leaves the old root and a way back", async () => {
+  await run(function*() {
+    const s = yield* scenario(), first = yield* bothRetained(s), { holderOps, issuerHab, holderHab, reg } = first;
+    const held: Uint8Array[] = [], deliver = route([s.issuer, s.holder], s.log);
+    let hold = false;
+    const delivery = {
+      *deliver(sent: { src: string; dest: string; msg: Uint8Array }) {
+        if (hold && parseBytes(sent.msg)[0].body.ilk === "qry") {
+          held.push(sent.msg); // the second query is in flight when the holder restarts
+          return [sent.dest];
+        }
+        return yield* deliver(sent);
+      },
+    };
+    s.issuer.runtime.ipex!.release(issuerHab.pre!);
+    const reloaded = s.owner({ delivery });
+    abandonBoth(reloaded, holderOps, first.grant);
+    hold = true;
+    const second = yield* beginIssuance(reloaded, {
+      hab: issuerHab,
+      credential: reg.credential(),
+      options: { recipient: holderHab.pre!, message: "Issue again" },
+    });
+    yield* reloaded.processOnce(); // the Grant arrives, the query is held back
+    assertEquals(held.length, 1);
+    const keys = [holderHab.pre!, reg.regid], oldRoot = holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64;
+    approveIssuanceExchange(holderOps, { hab: holderHab, grant: second.grant });
+    assertEquals(
+      holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64,
+      oldRoot,
+      "approving overwrites nothing",
+    );
+    assertEquals(holderHab.mgr.ks.registryRootGrant(keys), first.grant);
+
+    // The holder restarts: the second consent is gone, the registry still has its root, and consent works again.
+    s.holder.runtime.ipex!.release(holderHab.pre!);
+    const holderAgain = s.holderOwner();
+    assertEquals(holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64, oldRoot);
+    assertEquals(issuanceStatus(holderAgain, second.grant).state, "interrupted");
+    approveIssuanceExchange(holderAgain, { hab: holderHab, grant: second.grant });
+    hold = false;
+    s.clock.skew += 1100; // the issuer resends its unchanged query
+    for (let i = 0; i < 40 && issuanceStatus(reloaded, second.grant).state === "active"; i++) {
+      yield* reloaded.processOnce();
+      yield* holderAgain.processOnce();
+    }
+    assertEquals(issuanceStatus(reloaded, second.grant), { state: "done", role: "issuer", phase: "issued" });
+    assertEquals(holderHab.mgr.ks.registryRootGrant(keys), second.grant);
+    assert(holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64 !== oldRoot);
+  });
+});
+
+Deno.test("what the rule refuses: an unproven or live exchange, an unbound root, a staged update, an accepted update", async () => {
+  await run(function*() {
+    // The exchange cannot be proven dead: the operations record is missing while the Grant is still pending.
+    const s = yield* scenario(), first = yield* bothRetained(s), { issuerHab, holderHab, reg } = first;
+    const credential = s.issuer.runtime.exc.retainedInput(first.grant)!.nests![0].body as SerderACDC;
+    s.issuer.runtime.ipex!.release(issuerHab.pre!);
+    const lostStore = s.owner({ store: new MemoryIssuanceOperationStore() });
+    const options = { recipient: holderHab.pre!, message: "Issue again" };
+    yield* refuses(
+      () => beginIssuance(lostStore, { hab: issuerHab, credential: reg.credential(), options }),
+      "Registry root conflicts with this live DH operation",
+    );
+
+    // An unbound root has an unknown origin (for instance provisioned custody): it conflicts as it always did.
+    const ended = s.owner();
+    abandonIssuance(ended, first.grant);
+    issuerHab.mgr.ks.rrgrants.rem([issuerHab.pre!, reg.regid]);
+    yield* refuses(
+      () => beginIssuance(ended, { hab: issuerHab, credential: reg.credential(), options }),
+      "Registry root conflicts with this live DH operation",
+    );
+    issuerHab.mgr.ks.rrgrants.put([issuerHab.pre!, reg.regid], new Saider({ qb64: first.grant }));
+
+    // A staged update was derived from the old root, so the root is no longer unused.
+    const custody = new RegistryCustody({
+      hby: s.issuer.hby,
+      hab: issuerHab,
+      registry: s.issuer.rgy.store,
+      store: s.derived,
+    });
+    new RegistryAuthor(s.issuer.rgy, s.issuer.receiptor, custody).stage(
+      s.issuer.rgy.regs.get(reg.regid)!,
+      credential,
+      "issued",
+    );
+    assertEquals(s.issuer.rgy.store.headEvent(reg.regid)!.ilk, "rip", "staged, not accepted");
+    const root = issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64;
+    yield* refuses(
+      () => beginIssuance(ended, { hab: issuerHab, credential: reg.credential(), options }),
+      "Registry root conflicts with this live DH operation",
+    );
+    assertEquals(issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64, root);
+  });
+});
+
+Deno.test("once the update is accepted a new exchange on that registry is refused as before and the root is untouched", async () => {
+  await run(function*() {
+    const s = yield* scenario(), first = yield* bothRetained(s), { issuerOps, issuerHab, holderHab, reg } = first;
+    const pending = yield* prepareIssuanceGrant(issuerOps, {
+      hab: issuerHab,
+      credential: reg.credential(),
+      options: { recipient: holderHab.pre!, message: "Issue again" },
+    }); // a second Grant, pending while the registry is still fresh
+    yield* issuerOps.processOnce(); // the first exchange anchors its update
+    assertEquals(s.issuer.rgy.store.headEvent(reg.regid)!.ilk, "bup");
+    const root = issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64;
+    assertThrows(
+      () => s.issuer.runtime.ipex!.dhke(issuerHab).approve(pending.grant, { replaces: first.grant }),
+      ValidationError,
+    );
+    yield* refuses(
+      () =>
+        prepareIssuanceGrant(issuerOps, {
+          hab: issuerHab,
+          credential: reg.credential(),
+          options: { recipient: holderHab.pre!, message: "Too late" },
+        }),
+      "Fresh issuance requires the issuer's accepted anchored RIP without updates",
+    );
+    assertEquals(issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64, root);
+    assertEquals(issuerHab.mgr.ks.registryRootGrant([issuerHab.pre!, reg.regid]), first.grant);
+  });
+});
+
+Deno.test("a root that no accepted update commits is never offered for copying to other members", async () => {
+  await run(function*() {
+    const s = yield* scenario(), { issuerOps, issuerHab, reg } = yield* bothRetained(s);
+    const copies = s.issuer.runtime.registryRoot!;
+    assertEquals(copies.held(issuerHab.pre!), [reg.regid], "the issuer holds the uncommitted root");
+    // Every copy is authorized through `registry()`, which needs the accepted, anchored update.
+    assertThrows(() => copies.registry(reg.regid), RootDeferred, "not yet accepted locally");
+    yield* issuerOps.processOnce(); // the update is anchored
+    assertEquals(copies.registry(reg.regid).said, reg.regid);
+  });
+});
+
+Deno.test("an expired exchange that left an unused root says to start again, and a later Grant may begin over it", async () => {
+  await run(function*() {
+    const s = yield* scenario(), first = yield* bothRetained(s), { issuerOps, issuerHab, holderHab, reg } = first;
+    const later = yield* prepareIssuanceGrant(issuerOps, {
+      hab: issuerHab,
+      credential: reg.credential(),
+      options: { recipient: holderHab.pre!, message: "Issue again" },
+    });
+    s.issuer.runtime.ipex!.release(issuerHab.pre!);
+    const reloaded = s.owner();
+    s.clock.skew = Number(timestampMicros(s.store.get(first.grant)!.deadline)! / 1000n) - Date.now() + 1;
+    const expired = issuanceStatus(reloaded, first.grant);
+    assertEquals(expired.state, "expired");
+    assert(expired.state === "expired" && expired.reason.includes("Start again with a new Grant"), String(expired));
+    // The first exchange can no longer finish and its root was never used: the later Grant is not blocked.
+    assertEquals((yield* beginIssuance(reloaded, { hab: issuerHab, grant: later.grant })).grant, later.grant);
+    assertEquals(
+      issuerHab.mgr.ks.registryRootGrant([issuerHab.pre!, reg.regid]),
+      first.grant,
+      "replaced only on retention",
     );
   });
 });

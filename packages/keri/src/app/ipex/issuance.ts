@@ -33,6 +33,24 @@
  * decided from stores only. The Grant's exchange deadline bounds everything;
  * passing it reads `expired`.
  *
+ * A registry that holds a retained root refuses a new exchange, except when the
+ * root was never used. For the root bound to Grant G (Keeper `rrgrants.`), from
+ * durable state alone (the first matching row wins):
+ *
+ * | registry head or staged update | exchange of G                              | new Grant            |
+ * | ------------------------------ | ------------------------------------------ | -------------------- |
+ * | accepted or staged update      | any                                        | refused (committed)  |
+ * | none                           | live, or pending, unexpired and resumable  | refused: resume G    |
+ * | none                           | no record and pending                      | refused: cannot prove G dead |
+ * | none                           | ended, expired, not resumable, not pending | replaces the root    |
+ * | none, root has no binding      | any                                        | refused (origin unknown) |
+ *
+ * Replacement is a property of the new exchange: the old root is overwritten
+ * only when the new exchange retains its own, so a second interruption leaves
+ * the old root. A replaceable issuance reads `interrupted` with a reason that
+ * says to start again with a new Grant. A KERIpy peer keeps the old rule and
+ * refuses the new exchange; with a KERIpy holder the issuer needs a fresh registry.
+ *
  * The runtime never writes wallet inventory. Completion is pushed to the
  * `ChangeSink` as `{kind: "issuance", id: <grant>}` and the embedder records it.
  *
@@ -54,7 +72,7 @@ import {
 import { action, call, type Operation, race } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
-import { type Dhke, resumableExchange } from "../../acdc/dhking.ts";
+import { type Dhke, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
@@ -81,7 +99,11 @@ export type IssuanceRole = "issuer" | "holder";
 /** Terminal states that are not completion; each carries a reason. */
 export type IssuanceEndState = "abandoned" | "interrupted" | "expired" | "refused" | "failed";
 
-/** Where an active issuance is. Group and holder phases extend this union. */
+/**
+ * Where an active issuance is. `rootRetained` is the key exchange having completed locally with the update
+ * still to come; after a restart it is the resumable state (`needs` says whose step, see {@link IssuanceNeed}).
+ * Group and holder phases extend this union.
+ */
 export type IssuancePhase =
   | "awaitingExchangeConsent"
   | "exchangingKeys"
@@ -142,7 +164,13 @@ export class MemoryIssuanceOperationStore implements IssuanceOperationStore {
   }
 }
 
-/** Status of one issuance, discriminated on `state`. A pure read. */
+/**
+ * Status of one issuance, discriminated on `state`. A pure read. For a UI: active with `needs` `"anchor"` or
+ * `"finish"` says "approve to finish" ({@link resumeIssuance}); `interrupted` or `expired` whose `reason` ends
+ * "Start again with a new Grant" says "start again" (the held root was never used and the next exchange
+ * replaces it); `interrupted` without that text means nothing was retained yet, or the registry update is
+ * already staged or accepted and this Grant is final.
+ */
 export type IssuanceStatus =
   | {
     state: "active";
@@ -239,6 +267,11 @@ export type BeginIssuanceInput =
   | { hab: Hab; credential: SerderACDC; options: IssuanceGrantOptions; auths?: WitnessAuthMap };
 
 const EXPIRED = "The selected Grant reached its original exchange deadline";
+const RESTARTED = "The process that began this issuance ended; nothing was signed since. Begin a new Grant";
+const START_AGAIN =
+  "Nothing was signed and its retained root was never used. Start again with a new Grant: its key exchange replaces that root";
+const COMMITTED =
+  "The registry update was already staged or accepted; this Grant cannot be resumed and the registry cannot take another key exchange";
 
 function iso(ms: number): string {
   return new Date(ms).toISOString();
@@ -289,9 +322,9 @@ export class IssuanceOperations {
       op.busy = true;
       try {
         const left = op.expires - BigInt(this.deps.clock.now()) * 1000n;
-        if (left <= 0n) this.end(op, "expired", EXPIRED);
+        if (left <= 0n) this.end(op, "expired", expiredReason(this.deps, op.record));
         else if ((yield* race([this.step(op), this.timer(Number(left) / 1000)])) === "expired") {
-          this.end(op, "expired", EXPIRED);
+          this.end(op, "expired", expiredReason(this.deps, op.record));
         }
       } catch (error) {
         this.end(op, "failed", message(error));
@@ -319,7 +352,7 @@ export class IssuanceOperations {
   }
 
   private orphan(record: IssuanceRecord): void {
-    const [state, reason] = orphaned(lapsed(this.deps, record));
+    const [state, reason] = orphaned(this.deps, record);
     this.deps.store.put({ ...record, ended: { state, reason, at: iso(this.deps.clock.now()) } });
     this.deps.changes?.push({ kind: "issuance", id: record.grant });
   }
@@ -412,10 +445,44 @@ function lapsed(deps: Pick<IssuanceDeps, "clock">, { deadline }: IssuanceRecord)
   return expiry !== null && BigInt(deps.clock.now()) * 1000n >= expiry;
 }
 
-function orphaned(lapsed: boolean): ["expired" | "interrupted", string] {
-  return lapsed
-    ? ["expired", EXPIRED]
-    : ["interrupted", "The process that began this issuance ended; nothing was signed since. Begin a new Grant"];
+function orphaned(deps: IssuanceDeps, record: IssuanceRecord): ["expired" | "interrupted", string] {
+  if (lapsed(deps, record)) return ["expired", expiredReason(deps, record)];
+  const root = heldRoot(deps, record);
+  if (root === "none") return ["interrupted", RESTARTED];
+  return ["interrupted", root === "unused" ? `The process that began this issuance ended. ${START_AGAIN}` : COMMITTED];
+}
+
+/** Why a Grant past its deadline ended; says to start again when its exchange left an unused root. */
+function expiredReason(deps: IssuanceDeps, record: IssuanceRecord): string {
+  return heldRoot(deps, record) === "unused" ? `${EXPIRED}. ${START_AGAIN}` : EXPIRED;
+}
+
+/** Whether this record's own exchange retained the root held for its registry, and if so whether the registry is untouched. */
+function heldRoot(deps: IssuanceDeps, record: IssuanceRecord): "none" | "unused" | "committed" {
+  const hab = deps.hby.habs.get(record.hab), credential = deps.exc.retainedInput(record.grant)?.nests?.[0]?.body;
+  const registry = credential instanceof SerderACDC ? credential.regid : undefined;
+  if (!hab || !registry || hab.mgr.ks.registryRootGrant([hab.pre!, registry]) !== record.grant) return "none";
+  return registryUncommitted(deps.rgy.store, registry) ? "unused" : "committed";
+}
+
+/** Whether the exchange of `grant` can still finish: live here, resumable, or not provably dead. */
+function exchangeAlive(ops: IssuanceOperations, grant: string): boolean {
+  if (ops.live.has(grant)) return true;
+  const record = ops.deps.store.get(grant);
+  if (!record) return !!ops.deps.exc.retainedInput(grant, { pending: true });
+  if (record.ended) return false;
+  return !!record.issued || !!record.done || resumable(ops.deps, record);
+}
+
+/**
+ * The Grant of a dead exchange whose unused root a new exchange on `registry` replaces. None when the
+ * registry holds no root, or an unbound, committed or still-finishable one: the DH owner then refuses with
+ * its unchanged conflict error, which is also what a CLI re-run sees. Reads stores and the table only.
+ */
+function replacedRoot(ops: IssuanceOperations, hab: Hab, registry: string): { replaces?: string } {
+  const bound = hab.mgr.ks.registryRootGrant([hab.pre!, registry]);
+  if (!bound || !registryUncommitted(ops.deps.rgy.store, registry) || exchangeAlive(ops, bound)) return {};
+  return { replaces: bound };
 }
 
 /**
@@ -508,7 +575,8 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
   const grant = "grant" in input ? input.grant : (yield* prepareIssuanceGrant(ops, input)).grant;
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "issuer");
   const { raw, grantWire } = yield* grantWires(retained);
-  const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant), query = dh.start(grant), now = iso(deps.clock.now());
+  const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant, replacedRoot(ops, hab, credential.regid!));
+  const query = dh.start(grant), now = iso(deps.clock.now());
   const record: IssuanceRecord = {
     grant,
     xid,
@@ -558,7 +626,7 @@ export function issuanceStatus(ops: Pick<IssuanceOperations, "deps" | "live">, g
       deadline: record.deadline,
     };
   }
-  const [state, reason] = orphaned(over);
+  const [state, reason] = orphaned(ops.deps, record);
   return { state, role, reason };
 }
 
@@ -605,7 +673,7 @@ export function approveIssuanceExchange(
   { hab, grant }: { hab: Hab; grant: string },
 ): IssuanceBegun {
   const { deps } = ops, { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "holder");
-  const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant);
+  const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant, replacedRoot(ops, hab, credential.regid!));
   const record: IssuanceRecord = {
     grant,
     xid,

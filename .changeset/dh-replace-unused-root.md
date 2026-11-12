@@ -1,0 +1,5 @@
+---
+"keri-ts": minor
+---
+
+Change the DH rule for a registry that already holds a retained root. A new exchange (`Dhke.approve` with the new `replaces` option, used by `beginIssuance` and `approveIssuanceExchange`) may now replace a root that was never used: the registry has no accepted or staged update and the exchange that retained the root is dead (ended, expired or abandoned, never one that can still resume). The old root is overwritten only when the new exchange retains its own, so a second interruption leaves the old root. After a reload that interrupted a holder or issuer before the update, the wallet can start again with a new Grant on the same registry instead of needing a fresh registry. Status reasons say "Start again with a new Grant" for that state. Refusals are otherwise unchanged: a registry with an accepted or staged update, a root of unknown origin, a live or resumable exchange, and any `tufa ipex` re-run while the old Grant is still pending. A KERIpy peer keeps the old rule and refuses such a replacement, so with a KERIpy holder the issuer still needs a fresh registry.

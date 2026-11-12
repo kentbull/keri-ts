@@ -174,6 +174,20 @@ export function resumableExchange(
   return held ? scope : null;
 }
 
+/**
+ * Whether `registry` has no committed state: its head is still the inception and no update event of any
+ * kind is stored, accepted or merely staged. Only then can a retained root be unused, because every
+ * derivation from a root, and every copy of it to another member (which `RegistryRoot` authorizes only for
+ * an accepted, issuer-anchored update), starts from a staged or accepted update.
+ */
+export function registryUncommitted(registryStore: RegistryStore, registry: string): boolean {
+  if (registryStore.headEvent(registry)?.ilk !== "rip") return false;
+  for (const [, event] of registryStore.baser.evts.getTopItemIter()) {
+    if (event.regid === registry && event.ilk === "bup") return false;
+  }
+  return true;
+}
+
 interface DhkeOperation {
   xid: string;
   grant: string;
@@ -196,14 +210,20 @@ interface DhkeOperation {
     index: number;
     key: string;
   } | null;
+  /** Registry to the Grant its held root was bound to when approved with `replaces`; that root may be superseded on retention. */
+  replaces: Map<string, string>;
   completed: boolean;
   abandoned: boolean;
 }
 
-/** Group consent names its own accepted coordinator and elected member; individuals omit both. */
+/**
+ * Group consent names its own accepted coordinator and elected member; individuals omit both. `replaces`
+ * names a dead exchange's Grant whose unused root a new exchange may supersede; see {@link Dhke.approve}.
+ */
 export interface DhkeApproval {
   coordinator?: GroupCoordinator;
   custodian?: string;
+  replaces?: string;
 }
 
 /** Delivery of signed wire; sign asks members to review/contribute, never authorizes them. */
@@ -273,8 +293,18 @@ export class Dhke implements AuxiliaryQueryProcessor {
     }
   }
 
-  /** Select one live fresh issuance and freeze its exact bodies, parties and registry order. */
-  approve(grant: string, { coordinator, custodian }: DhkeApproval = {}): string {
+  /**
+   * Select one live fresh issuance and freeze its exact bodies, parties and registry order.
+   *
+   * A registry that already holds a root refuses (`Registry root conflicts with this live DH operation`),
+   * except when `replaces` names the Grant the held root is bound to and the registry is still uncommitted
+   * ({@link registryUncommitted}): that root was never used, so this exchange may supersede it. The caller
+   * has established that exchange is dead; this owner refuses while it still has a live operation for it.
+   * Nothing is overwritten here: the old root stays until this exchange retains its own, so a second
+   * interruption leaves the old root, not none. A KERIpy peer keeps the old rule and refuses such a
+   * replacement: with a KERIpy holder the issuer needs a fresh registry instead.
+   */
+  approve(grant: string, { coordinator, custodian, replaces }: DhkeApproval = {}): string {
     this.pruneQueries();
     this.hab.mgr.requireRegistryRootAccess();
     for (const op of this.operations.values()) {
@@ -291,6 +321,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
       }
     }
     const op = this.frozen(grant, { coordinator, custodian }, false);
+    this.claimReplacements(op, replaces);
     this.roots(op);
     this.operations.set(op.xid, op);
     this.replayQuery(op.xid);
@@ -307,7 +338,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
    *
    * @throws ValidationError unless the Grant is pending and every registry in its scope holds this Grant's root.
    */
-  resume(grant: string, { coordinator, custodian }: DhkeApproval = {}): string {
+  resume(grant: string, { coordinator, custodian }: Pick<DhkeApproval, "coordinator" | "custodian"> = {}): string {
     this.pruneQueries();
     this.hab.mgr.requireRegistryRootAccess();
     for (const op of this.operations.values()) {
@@ -327,7 +358,11 @@ export class Dhke implements AuxiliaryQueryProcessor {
   }
 
   /** Freeze the exact pending Grant, parties and registry order into an operation; registers nothing. */
-  private frozen(grant: string, { coordinator, custodian }: DhkeApproval, completed: boolean): DhkeOperation {
+  private frozen(
+    grant: string,
+    { coordinator, custodian }: Pick<DhkeApproval, "coordinator" | "custodian">,
+    completed: boolean,
+  ): DhkeOperation {
     const scope = grantScope(this.hab, this.exc, grant);
     if (typeof scope === "string") throw new ValidationError(scope);
     const { input, issuer, issuee, xid, registries } = scope;
@@ -348,6 +383,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
       proposal: null,
       contribution: null,
       custody: null,
+      replaces: new Map(),
       completed,
       abandoned: false,
     };
@@ -759,9 +795,24 @@ export class Dhke implements AuxiliaryQueryProcessor {
 
   private roots(op: DhkeOperation): void {
     for (const registry of op.registries) {
-      if ((this.hab.mgr.getRegistryRoot(this.hab.pre!, registry) !== null) !== op.completed) {
+      const held = this.hab.mgr.getRegistryRoot(this.hab.pre!, registry) !== null;
+      if (held !== op.completed && !(held && op.replaces.has(registry))) {
         throw new ValidationError("Registry root conflicts with this live DH operation");
       }
+    }
+  }
+
+  /** Mark each held root that `replaces` names as supersedable, from stores; any other held root still conflicts. */
+  private claimReplacements(op: DhkeOperation, replaces: string | undefined): void {
+    if (replaces === undefined) return;
+    for (const other of this.operations.values()) {
+      if (other.grant === replaces && !other.abandoned) {
+        throw new ValidationError("Registry root conflicts with this live DH operation");
+      }
+    }
+    for (const registry of op.registries) {
+      const bound = this.hab.mgr.ks.registryRootGrant([this.hab.pre!, registry]);
+      if (bound === replaces && registryUncommitted(this.registryStore, registry)) op.replaces.set(registry, bound);
     }
   }
 
@@ -835,7 +886,12 @@ export class Dhke implements AuxiliaryQueryProcessor {
     this.hab.mgr.requireRegistryRootAccess();
     const { aeid } = this.hab.mgr, encrypter = new Encrypter({ verkey: aeid });
     for (const [registry, root] of roots) {
-      this.hab.mgr.ks.retainExchangeRoot([this.hab.pre!, registry], root, op.grant, aeid, encrypter);
+      const replacing = op.replaces.get(registry);
+      // Recheck at commit time, from stores: the root must still be unused, and the Keeper still compares its binding.
+      if (replacing !== undefined && !registryUncommitted(this.registryStore, registry)) {
+        throw new ValidationError("Registry root conflicts with this live DH operation");
+      }
+      this.hab.mgr.ks.retainExchangeRoot([this.hab.pre!, registry], root, op.grant, aeid, encrypter, replacing);
     }
     op.peer = { ...peer };
     op.completed = true;
