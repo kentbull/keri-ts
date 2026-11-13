@@ -24,3 +24,22 @@ export {
   type WebWalletHost,
   type WebWalletSecret,
 } from "./src/web/open-web-wallet.ts";
+export {
+  type AdmitDelivery,
+  Credentials,
+  type EndedStatus,
+  type IdentifierEvent,
+  Identifiers,
+  type InceptOptions,
+  type IssueOptions,
+  type IssueOutcome,
+  Mailboxes,
+  type MailboxOutcome,
+  type OobiOutcome,
+  Oobis,
+  type ReceiveOutcome,
+  type RotateOptions,
+  WALLET_TIMEOUTS,
+  type WalletApi,
+  WalletStoppedError,
+} from "./src/web/wallet-api.ts";

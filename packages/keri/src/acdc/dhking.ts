@@ -842,7 +842,12 @@ export class Dhke implements AuxiliaryQueryProcessor {
     for (const registry of op.registries) {
       const held = this.hab.mgr.hasRegistryRoot(this.hab.pre!, registry);
       if (held !== op.completed && !(held && op.replaces.has(registry))) {
-        throw new ValidationError("Registry root conflicts with this live DH operation");
+        throw new ValidationError(
+          held
+            ? "Registry root conflicts with this live DH operation: a DH-issued registry must not have a custody root, "
+              + "so do not call createCustody for it before issuance (use a registry without custody)"
+            : "Registry root conflicts with this live DH operation",
+        );
       }
     }
   }

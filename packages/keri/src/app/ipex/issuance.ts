@@ -742,6 +742,52 @@ export function issuanceStatus(
   return { state, role, reason };
 }
 
+/** A pending Grant addressed to a local identifier that no one has consented to yet. */
+export interface PendingGrant {
+  /** SAID of the Grant exchange. */
+  grant: string;
+  /** The local identifier the Grant is addressed to. */
+  holder: string;
+  /** The AID that sent the Grant. */
+  issuer: string;
+  /** SAID of the disclosed credential. */
+  credential: string;
+  /** The credential's registry. */
+  registry: string;
+  /** The Grant's exchange deadline (ISO 8601). */
+  deadline: string;
+}
+
+/**
+ * Pure read of the Grants waiting for the holder's exchange consent: authenticated pending v2 Grants addressed
+ * to a local identifier (to `hab` when given) for which {@link approveIssuanceExchange} would be accepted.
+ * `issuanceStatus` throws for a Grant until it is stored; this lists the stored ones, so an embedder needs no poll.
+ */
+export function pendingIssuanceGrants(ops: IssuanceOperations, { hab }: { hab?: Hab } = {}): PendingGrant[] {
+  const { deps } = ops, found: PendingGrant[] = [];
+  for (const [[grant]] of [...deps.hby.db.epse.getTopItemIter()]) {
+    const holder = grantParties(deps, grant)?.holder;
+    if (!holder || (hab && holder.pre !== hab.pre)) continue;
+    try {
+      const status = issuanceStatus(ops, grant);
+      if (status.state !== "active" || status.needs !== "exchange") continue;
+      const { retained, credential, deadline } = selectGrant(ops, holder, grant, "holder");
+      found.push({
+        grant,
+        holder: holder.pre!,
+        issuer: retained.serder.pre!,
+        credential: credential.said!,
+        registry: credential.regid!,
+        deadline,
+      });
+    } catch (error) {
+      // Not consentable (a group identifier, a Grant with sources): it is not pending for this holder.
+      if (!(error instanceof ValidationError)) throw error;
+    }
+  }
+  return found;
+}
+
 /** Whether `hab` holds a registry root for the credential registry this Grant discloses. */
 function heldRoot(deps: IssuanceDeps, hab: Hab, grant: string): boolean {
   const credential = deps.exc.retainedInput(grant)?.nests?.[0]?.body;
