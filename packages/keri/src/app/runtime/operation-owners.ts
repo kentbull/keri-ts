@@ -59,7 +59,7 @@ export interface OperationStores {
   derived?: DerivedUpdateStore;
   /** The embedder's credential inventory, from which presentation selects issued and held credentials. Without it only replies and `apply` can be presented. */
   views?: CredentialViews;
-  /** Receives identity-only changes after commit; defaults to the runtime's Signaler when it has one. */
+  /** Receives workflow identities after commit (and, from the cue worker, KRAM refusals with their facts); defaults to the runtime's Signaler when it has one. */
   changes?: ChangeSink;
 }
 

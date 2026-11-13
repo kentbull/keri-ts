@@ -1,5 +1,6 @@
 import type { Dater, SealEvent, SerderACDC, SerderKERI, Siger } from "cesr-ts";
 import type { DispatchOrdinal } from "./dispatch.ts";
+import type { KramLateReason } from "./mailbox/kram-time.ts";
 import type { MbxTopicCursor } from "./mailbox/mailbox-topics.ts";
 import type { KeyStateRecord, RegStateRecord, VcStateRecord } from "./records.ts";
 
@@ -308,6 +309,31 @@ export interface OobiFailedCue extends CueBase {
 }
 
 /**
+ * A remote message this receiver's KRAM refused after its sender authenticated. Transient: nothing durable backs it.
+ *
+ * Only the three {@link KramLateReason}s produce it, because KRAM decides them after a signature or anchored seal
+ * verified. It never fires for a local envelope, whose caller already receives the refusal, nor for the
+ * unauthenticated reasons, which stay in the log.
+ */
+export interface KramRefusedCue extends CueBase {
+  kin: "kramRefused";
+  /** SAID of the refused message. */
+  said: string;
+  /** Sender prefix the message authenticated as. */
+  sender: string;
+  ilk: string;
+  /** Message route, or null for ilks without one. */
+  route: string | null;
+  reason: KramLateReason;
+  /** Sender-claimed message timestamp. */
+  stamp: string;
+  /** ISO 8601 last receiver instant the message was acceptable; absent for `unknownThread`. */
+  deadline?: string;
+  /** Exchange id (the `xip` SAID or the v2 `exn` `x`); absent when the message has none. */
+  xid?: string;
+}
+
+/**
  * A prompt that an identifier's rotation completed (fully witnessed and, for `drt`, anchored): its mailboxes
  * should be told. Not in {@link AgentCue}: a publisher-owned deck carries it, and the durable marker in
  * `Baser.kpub` is the source of truth, so a lost cue is found again by state derivation.
@@ -346,4 +372,5 @@ export type AgentCue =
   | RemoteMemberedSigCue
   | OobiQueuedCue
   | OobiResolvedCue
-  | OobiFailedCue;
+  | OobiFailedCue
+  | KramRefusedCue;

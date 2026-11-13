@@ -53,6 +53,7 @@ flowchart TD
   S --> T[Poster queued execution]
   A -->|keyStateSaved| K[Command-owned query Deck]
   K --> N[Single KeyStateNoticer]
+  A -->|kramRefused| G[runtime.changes ChangeSink]
   B[Mailboxer payload storage] --> M
 ```
 
@@ -67,6 +68,12 @@ query/introduction packet and joins its transport attempt. HTTP receives replies
 through independent intake; TCP may process same-socket replies. An unavailable explicit signer
 stays unresolved; no multi-Hab guessing occurs. Schema/credential recovery notices
 remain notify-only rather than becoming invented logs queries.
+
+`kramRefused` is the one cue that goes to the host's `ChangeSink` instead of a protocol owner. `Kramer.intake`
+publishes it after staging commits, for a remote message refused as `timeliness`, `lifetime` or `unknownThread`,
+the reasons KRAM decides only after a signature or anchored seal verified. The worker pulls it before pushing, so a
+faulty sink cannot wedge the Deck, and drops it without a sink. It is transient, with no durable record, and the
+other drains discard it as an unknown kind. See the wallet library guide for how an application reads it.
 
 Hab.processCuesIter yields raw wire messages for receipt, reply and replay cues.
 Typed cues retain their `kin` discriminator; there is no emission wrapper or

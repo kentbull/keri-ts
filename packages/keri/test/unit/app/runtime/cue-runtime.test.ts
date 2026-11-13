@@ -2,12 +2,18 @@ import { call, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { SerderKERI, Vrsn_1_0, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
+import { Signaler } from "../../../../src/app/notifications/signaling.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { processCuesOnce } from "../../../../src/app/runtime/cue-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
+import {
+  type ChangeSink,
+  MemoryChangeSink,
+  signalerChangeSink,
+} from "../../../../src/app/runtime/workflow-contract.ts";
 import { CesrHttpRefusal } from "../../../../src/app/transport/cesr-egress.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
-import type { AgentCue } from "../../../../src/core/cues.ts";
+import type { AgentCue, KramRefusedCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { UnsupportedTelReplayError } from "../../../../src/db/replay/tel-replay.ts";
@@ -277,4 +283,93 @@ Deno.test("cue delivery allows application progress while retaining actual HTTP 
       yield* hby.close(true);
     }
   });
+});
+
+/** A refusal as KRAM publishes it; `said` varies so a test can tell messages apart. */
+function refusal(said: string): KramRefusedCue {
+  return {
+    kin: "kramRefused",
+    said,
+    sender: "ESender",
+    ilk: "exn",
+    route: "/ipex/grant",
+    reason: "timeliness",
+    stamp: "2026-10-13T11:00:00.000000+00:00",
+    deadline: "2026-10-13T11:00:06.000000+00:00",
+  };
+}
+
+Deno.test("processCuesOnce publishes kramRefused to the runtime change sink and removes it", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const changes = new MemoryChangeSink();
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      operationStores: { changes },
+    });
+    try {
+      assertStrictEquals(runtime.changes, changes, "the injected operation sink is the runtime's sink");
+      const cue = refusal("ESaid");
+      runtime.cues.push(cue);
+      yield* processCuesOnce(runtime);
+      assertEquals(changes.changes, [{ kind: "kramRefused", id: "ESaid", refusal: cue }]);
+      assertEquals(runtime.cues.length, 0);
+
+      // A faulty sink must not wedge the head of the Deck.
+      const failure = new Error("sink failed");
+      const broken: ChangeSink = {
+        push: () => {
+          throw failure;
+        },
+      };
+      const faulty = { ...runtime, changes: broken };
+      runtime.cues.push(refusal("EOther"));
+      let caught: unknown;
+      try {
+        yield* processCuesOnce(faulty);
+      } catch (error) {
+        caught = error;
+      }
+      assertStrictEquals(caught, failure);
+      assertEquals(runtime.cues.length, 0, "the cue was pulled before the sink saw it");
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("processCuesOnce drops kramRefused when the runtime has no sink", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    try {
+      const bare = { ...runtime, changes: null };
+      runtime.cues.push(refusal("ESaid"));
+      yield* processCuesOnce(bare);
+      assertEquals(runtime.cues.length, 0);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("signalerChangeSink carries the refusal and collapses a resent message", () => {
+  const signaler = new Signaler();
+  try {
+    const sink = signalerChangeSink(signaler);
+    const cue = refusal("ESaid");
+    sink.push({ kind: "kramRefused", id: "ESaid", refusal: cue });
+    sink.push({ kind: "kramRefused", id: "ESaid", refusal: cue });
+    sink.push({ kind: "kramRefused", id: "EOther", refusal: refusal("EOther") });
+    assertEquals(
+      signaler.list().map((signal) => [signal.topic, signal.attrs, signal.ckey]),
+      [
+        ["/workflow/kramRefused", { id: "ESaid", ...cue }, "kramRefused:ESaid"],
+        ["/workflow/kramRefused", { id: "EOther", ...refusal("EOther") }, "kramRefused:EOther"],
+      ],
+    );
+  } finally {
+    signaler.close();
+  }
 });
