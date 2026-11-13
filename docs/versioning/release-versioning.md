@@ -26,6 +26,21 @@ Package manifests own versions independently for each published package.
 manifests and generates runtime version modules. Ordinary generation is deterministic;
 release builds explicitly add `build.<run>.<sha>` metadata.
 
+### Dependents are released with their dependencies
+
+Published packages pin their internal dependencies exactly, because patch releases can change types.
+So a release of any package must also release every package that depends on it, pinned to the new
+version; otherwise a consumer resolves two copies of the dependency (Deno ignores overrides). The graph
+is cesr-ts, then keri-ts, then hosting and wallet, then registrar, then verifier and observer, then tufa.
+
+Each package declares its internal dependencies in the `dependencies` of its `package.json`, at the
+dependency's current version. That is the one source: Changesets reads it, so a bump of a dependency
+bumps every dependent by at least a patch, transitively, and rewrites the pins; the `build_npm.ts`
+scripts read the same sibling versions. `version:check` (part of `quality:check`) runs
+`scripts/ci/check-internal-dependencies.ts`, which fails when a pin is not its dependency's current
+version, meaning a dependent was not bumped, or when a build script reads a sibling version its
+`package.json` does not declare. Adding a new internal dependency to a package means declaring it there.
+
 ## Prepare an authorized release
 
 1. Work from reviewed, clean source on a topic branch. Add package Changesets for

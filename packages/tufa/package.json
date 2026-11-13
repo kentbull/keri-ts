@@ -3,6 +3,15 @@
   "version": "2.2.2",
   "description": "Trust Utilities for Agents CLI application package",
   "license": "Apache-2.0",
+  "dependencies": {
+    "cesr-ts": "2.2.1",
+    "keri-ts": "2.2.3",
+    "@keri-ts/wallet": "2.2.3",
+    "@keri-ts/hosting": "2.2.2",
+    "@keri-ts/observer": "2.2.0",
+    "@keri-ts/verifier": "2.2.0",
+    "@keri-ts/registrar": "2.2.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kentbull/keri-ts.git",
