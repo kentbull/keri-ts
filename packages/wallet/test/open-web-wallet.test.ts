@@ -1,5 +1,5 @@
 /** `openWebWallet` composes lock, IndexedDB stores, runtime and barrier; fakes stand in for the browser. */
-import { MtrDex, Signer } from "cesr-ts";
+import { concatBytes, Counter, MtrDex, Signer, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
@@ -281,5 +281,43 @@ Deno.test("presentation, Unblind, Admit resend and mailbox removal are wired and
     await assertRejects(() => w.mailboxes.remove(a.pre, "Emailbox"), Error, "No endpoint URL");
   } finally {
     await w.close();
+  }
+});
+
+Deno.test("groups and proposals: refusals, an empty consent list, and a group inception that needs its co-members' endpoints", async () => {
+  const first = await page().open({ name: "member-a" }), second = await page().open({ name: "member-b" });
+  try {
+    const a = await first.identifiers.incept({ alias: "a" }), b = await second.identifiers.incept({ alias: "b" });
+    assertEquals(first.proposals.list(), []);
+    assertEquals(first.proposals.dismiss("Eunknown"), 0);
+    await assertRejects(() => first.proposals.approve("Eunknown"), Error, "No group proposal");
+    await assertRejects(() => first.groups.rotate(a.pre), Error, "not a local group");
+    await assertRejects(() => first.groups.join("Eunknown", { alias: "g" }), Error, "not a proposal to join");
+    await assertRejects(() => first.groups.inceptRegistry("Eunknown", "r"), Error, "not a local group");
+    await assertRejects(
+      () => first.groups.incept({ alias: "a", member: a.pre, smids: [a.pre, b.pre] }),
+      Error,
+      "already exists",
+    );
+    assertEquals(first.credentials.pending(), []);
+
+    // The proposer knows its co-member's key state, as it would after resolving the co-member's OOBI.
+    for (const wire of second.hby.db.clonePreIter(b.pre, 0, Vrsn_2_0)) {
+      await run(function*() {
+        yield* first.runtime.reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire));
+      });
+    }
+    // The library signs this member's contribution, then needs a route to every co-member to publish the proposal.
+    // A co-member whose endpoint roles are unknown is a refusal, not a wait; the group stays held locally.
+    await assertRejects(
+      () => first.groups.incept({ alias: "pair", member: a.pre, smids: [a.pre, b.pre], timeoutMs: 200 }),
+      Error,
+      "No end roles",
+    );
+    const held = first.hby.habByName("pair");
+    assert(held, "the proposer holds the group habitat");
+  } finally {
+    await first.close();
+    await second.close();
   }
 });

@@ -15,6 +15,25 @@ export {
 export { type AdmittedCredential, type IssuedCredential, openWalletBaser, WalletBaser } from "./src/storing.ts";
 export { type HeldCredential, type PreparedAdmit, Wallet, type WalletOptions } from "./src/wallet.ts";
 export {
+  type GroupCounsel,
+  type GroupEventOutcome,
+  type GroupInceptOptions,
+  type GroupIssueOutcome,
+  type GroupMailboxOutcome,
+  type GroupMailboxProposal,
+  type GroupPresentOutcome,
+  type GroupReceiveOutcome,
+  type GroupRotateOptions,
+  Groups,
+  type GroupWaitOptions,
+  type ProposalApproveOptions,
+  type ProposalFamily,
+  type ProposalOutcome,
+  Proposals,
+  type ProposalStanding,
+  type WalletProposal,
+} from "./src/web/group-api.ts";
+export {
   openWebWallet,
   type OpenWebWalletOptions,
   type PageLifecycleTargets,

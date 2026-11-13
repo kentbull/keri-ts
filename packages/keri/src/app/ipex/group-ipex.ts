@@ -123,6 +123,8 @@ export interface GroupIpexProposal {
   wrapper: string;
   /** AID of the member that proposed it. */
   proposer: string;
+  /** SAID of the exchange the message answers (an Admit's Grant), when it names one. */
+  prior?: string;
   /** Whether this member already holds a recorded contribution (approving again reuses it). */
   approved: boolean;
   complete: boolean;
@@ -345,6 +347,7 @@ export function groupIpexProposals(ops: Pick<GroupIpexOperations, "deps">, hab?:
       group,
       wrapper: wrapper.said!,
       proposer: wrapper.pre!,
+      ...(typeof embedded.sad?.p === "string" && embedded.sad.p ? { prior: embedded.sad.p } : {}),
       approved: groupIpexApproved(hby, group, embedded),
       complete: exc.complete(embedded.said!),
     });
