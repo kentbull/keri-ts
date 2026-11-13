@@ -304,7 +304,14 @@ export {
   type IpexRoute,
   ipexSpurnExn,
 } from "../app/ipex/ipexing.ts";
-export { type KelPublishingDeps, type MailboxPublication, tellMailboxes } from "../app/mailbox/kel-publishing.ts";
+export {
+  type KelPublicationStatus,
+  KelPublisher,
+  type KelPublisherDeps,
+  kelPublisherDo,
+  type KelPublisherStatus,
+} from "../app/mailbox/kel-publisher.ts";
+export { type KelPublishingDeps, type MailboxPublication } from "../app/mailbox/kel-publishing.ts";
 export {
   addMailbox,
   completeGroupMailbox,
@@ -573,6 +580,7 @@ export {
   type RemoteMemberedSigCue,
   type ReplayCue,
   type ReplyCue,
+  type RotatedCue,
   type StreamCue,
   type TelQueryCue,
   type TransactionStateSavedCue,

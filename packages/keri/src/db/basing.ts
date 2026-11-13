@@ -51,6 +51,7 @@ import {
   FirstSeenReplayCouple,
   HabitatRecord,
   type HabitatRecordShape,
+  KelPublishedRecord,
   KeyStateRecord,
   type KeyStateRecordShape,
   LocationRecord,
@@ -291,6 +292,8 @@ export class Baser extends StoreOwner {
   public rrpe!: CesrSuber<Dater>;
   /** keri-ts only. Sent `/registry/root` copies; (group, registry, recipient) -> recipient key sealed to and send time. Never a root. */
   public rrsn!: Komer<RootSentRecord>;
+  /** keri-ts only. The KEL a mailbox was last given: (identifier, mailbox) -> establishment SAID, time and outcome. */
+  public kpub!: Komer<KelPublishedRecord>;
   public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
   public reps!: CesrIoSetSuber<Diger>; // Successful signed challenge-response exchange SAIDs.
   public wkas!: IoSetKomer<WellKnownAuthN>; // Authorized well-known OOBI records.
@@ -710,6 +713,9 @@ export class Baser extends StoreOwner {
 
       // Registry root copies sent, keyed by group, registry and recipient.
       this.rrsn = new Komer<RootSentRecord>(this.store, { subkey: "rrsn.", recordClass: RootSentRecord });
+
+      // KEL last given to each mailbox, keyed by identifier and mailbox.
+      this.kpub = new Komer<KelPublishedRecord>(this.store, { subkey: "kpub.", recordClass: KelPublishedRecord });
 
       // Accepted signed challenge-response exchange-message SAIDs keyed by the
       // signer prefix.

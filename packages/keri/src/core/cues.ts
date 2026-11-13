@@ -308,6 +308,18 @@ export interface OobiFailedCue extends CueBase {
 }
 
 /**
+ * A prompt that an identifier's rotation completed (fully witnessed and, for `drt`, anchored): its mailboxes
+ * should be told. Not in {@link AgentCue}: a publisher-owned deck carries it, and the durable marker in
+ * `Baser.kpub` is the source of truth, so a lost cue is found again by state derivation.
+ */
+export interface RotatedCue {
+  kin: "rotated";
+  pre: string;
+  sn: number;
+  said: string;
+}
+
+/**
  * Gate E runtime cue union.
  *
  * Maintainer rule:
