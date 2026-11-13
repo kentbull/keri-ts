@@ -19,10 +19,14 @@
  * - With no named recipient, every principal that is not a local habitat (a local group is processed by its hosted
  *   co-member through dispatch, so the edge receives one copy under its member AID).
  * - Never kept: {@link ownTraffic}, a message whose originator is a local habitat, a principal of the host, or a
- *   member of the recipient group (an edge's own traffic, or a local group's own events).
- * - Kept only when the body verifies its SAID, carries attached authentication, and the agent's decision is not a
- *   `drop`, `reject` or `duplicate`. Accept, escrow (including KRAM `pending`/`missing` and an `unverified`
- *   reply) and a processor that reports no decision are kept: the edge is the verifier and re-verifies everything.
+ *   member of the recipient group (an edge's own traffic, or a local group's own events); and a message whose topic,
+ *   derived from its remote route, the mailbox store cannot key.
+ * - Kept only when the body verifies its SAID, carries attached authentication, and the agent's own processor
+ *   decided it ({@link keptDecision}). The edge is the verifier of signatures and state and re-verifies everything,
+ *   so a decision that waits on state is kept: `accept`, `escrow`, KRAM `pending`/`missing` and an `unverified`
+ *   reply. The agent never keeps what it could not decode: dispatch refuses malformed field values as a typed
+ *   `reject` or `drop` before any escrow decision (`core/wire-fields.ts`), and those are not kept; nor is a message
+ *   no processor decided, except a receipt, whose processor decodes it and reports none.
  */
 import {
   type CesrFrame,
@@ -41,11 +45,13 @@ import {
   REPLY_MAILBOX_TOPIC,
 } from "../../core/mailbox/mailbox-topics.ts";
 import { Roles } from "../../core/roles.ts";
+import { storableTopic } from "../../db/mailbox/mailboxing.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { isAcceptedGroupMember } from "../multisig/group-members.ts";
 import { type DispatchDecision, envelopeFromFrame } from "../protocol/parsering.ts";
 import { abortable } from "../runtime/abortable.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
+import { mailboxTopicKey } from "./mailboxing.ts";
 import { mailboxTopicForRoute } from "./topic-routing.ts";
 
 /**
@@ -205,16 +211,18 @@ export interface RawArrival {
 export function* keepRawArrival(director: MailboxDirector, arrival: RawArrival): Operation<number> {
   const hby = director.hby;
   const body = arrival.frame.body;
-  if (!director.mailboxer || !keptDecision(arrival.decision)) return 0;
-  if (!(body instanceof SerderKERI || body instanceof SerderACDC) || !saidVerifies(body)) return 0;
+  if (!director.mailboxer || !(body instanceof SerderKERI || body instanceof SerderACDC)) return 0;
+  if (!keptDecision(body, arrival.decision) || !saidVerifies(body)) return 0;
   const recipient = body instanceof SerderKERI ? rawRecipient(hby, body) : null;
   const topic = rawMailboxTopic(body, recipient);
   if (topic === null || !authenticated(arrival.frame)) return 0;
   const originator = body instanceof SerderKERI ? body.pre : body.issuer;
   if (!rawPrincipals(hby, originator, recipient, arrival.hostAid).length) return 0;
   const wire = yield* abortable((signal) => collectPayload(framePayload(arrival.frame), signal));
-  // Re-read accepted authority in the same synchronous turn as publication.
-  const principals = rawPrincipals(hby, originator, recipient, arrival.hostAid);
+  // Re-read accepted authority in the same synchronous turn as publication. The topic comes from a remote route; one
+  // the mailbox store cannot key is not kept, never a store fault.
+  const principals = rawPrincipals(hby, originator, recipient, arrival.hostAid)
+    .filter((principal) => storableTopic(mailboxTopicKey(principal, topic)));
   for (const principal of principals) director.publish(principal, topic, wire);
   return principals.length;
 }
@@ -255,14 +263,28 @@ function agentPrincipals(hby: Habery, hostAid: string): string[] {
 }
 
 /**
- * Whether the agent's decision leaves the message worth delivering: not refused, and not a repeat of what it holds.
+ * Whether the agent's decision shows it decoded the message and leaves it worth delivering: decided by a processor,
+ * not refused, and not a repeat of what it holds. See the module rules.
  *
- * @param decision Dispatch decision; undefined for a processor that reports none (receipts, an absent processor).
- * @returns False for `drop`, `reject` and `duplicate`.
+ * Malformed fields are the dispatch processors' typed `reject` or `drop`; this reads only the decision they return.
+ *
+ * @param body Dispatched message body.
+ * @param decision Dispatch decision; undefined when no processor reported one.
+ * @returns True for `accept`, `escrow`, `pending`, `missing` and `unverified`, and for a receipt with no decision;
+ *   false otherwise.
  */
-function keptDecision(decision: DispatchDecision | undefined): boolean {
-  if (!decision) return true;
-  return decision.kind !== "drop" && decision.kind !== "reject" && decision.kind !== "duplicate";
+function keptDecision(body: SerderKERI | SerderACDC, decision: DispatchDecision | undefined): boolean {
+  if (!decision) return body instanceof SerderKERI && body.ilk === Ilks.rct;
+  switch (decision.kind) {
+    case "accept":
+    case "escrow":
+    case "pending":
+    case "missing":
+    case "unverified":
+      return true;
+    default:
+      return false;
+  }
 }
 
 /** Whether the body's SAID matches its content. */

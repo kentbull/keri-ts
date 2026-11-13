@@ -15,9 +15,9 @@ import type { Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
 import type { Habery } from "../identity/habbing.ts";
-import { fetchEndpointUrls, preferredUrl } from "../mailbox/mailboxing.ts";
+import { fetchEndpointUrls } from "../mailbox/mailboxing.ts";
 import type { HttpClient, HttpRequestInit, HttpResponse, HttpStreamResponse } from "../transport/http-client.ts";
-import type { MessengerUrls } from "../transport/messengering.ts";
+import { messengerUrl, type MessengerUrls } from "../transport/messengering.ts";
 import type { TcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
 
@@ -64,11 +64,12 @@ export class RelayOnlyError extends TransportError {
  * Read the relay's accepted location, as `Hab.endsFor` reads any endpoint's locations.
  *
  * Locations are accepted only from `/loc/scheme` replies verified against the relay's KEL, so a non-null result
- * means the relay's OOBI (or an equivalent introduction) has resolved.
+ * means the relay's OOBI (or an equivalent introduction) has resolved. A location no messenger can use
+ * ({@link messengerUrl}: one the HTTP client refuses, or a TCP URL without a port) reads as unresolved.
  *
  * @param hby Borrowed accepted-state store holding the relay's location replies.
  * @param relay The configured relay agent.
- * @returns The relay's preferred URL and scheme map, or null until a supported location is accepted.
+ * @returns The relay's preferred URL and scheme map, or null until a usable location is accepted.
  */
 export function relayEndpoint(hby: Habery, relay: Relay): RelayEndpoint | null {
   const accepted = fetchEndpointUrls(hby, relay.aid);
@@ -76,7 +77,7 @@ export function relayEndpoint(hby: Habery, relay: Relay): RelayEndpoint | null {
   if (accepted.https) urls.https = accepted.https;
   if (accepted.http) urls.http = accepted.http;
   if (accepted.tcp) urls.tcp = accepted.tcp;
-  const url = preferredUrl(accepted);
+  const url = messengerUrl(urls);
   return url ? { eid: relay.aid, url, urls } : null;
 }
 

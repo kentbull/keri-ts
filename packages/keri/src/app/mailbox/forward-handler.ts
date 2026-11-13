@@ -1,18 +1,24 @@
 /** Authenticated /fwd intake: deliver locally or re-forward for senders this host serves, else store for recipients. */
 import {
+  type CesrBody,
   type CesrFrame,
   collectPayload,
   concatBytes,
   Counter,
   Diger,
   nestedPayload,
+  parseBytes,
   parsePather,
+  ParserError,
+  type Payload,
   SerderACDC,
   SerderKERI,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
 import type { Kever } from "../../core/kel/kever.ts";
+import { readPrefixer } from "../../core/wire-fields.ts";
+import { storableTopic } from "../../db/mailbox/mailboxing.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
@@ -21,6 +27,8 @@ import type { Reactor } from "../protocol/reactor.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { authorizedStoringHost, keepsForPickup, ownTraffic } from "./agent-inbox.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
+import { mailboxTopicKey } from "./mailboxing.ts";
+import { transportMailboxTopic } from "./topic-routing.ts";
 
 /** The single path one accepted `/fwd` takes, decided from accepted state in the turn that takes it. */
 type ForwardPath =
@@ -99,21 +107,21 @@ export class ForwardHandler implements ExchangeRouteHandler {
   }
 
   /**
-   * Verify that the embedded exchange has the mailbox modifiers and one
-   * extractable forwarded payload.
+   * Verify that the exchange names a {@link ForwardAddress} and carries one forwarded message: a legacy embed that
+   * rebuilds into exactly one complete message ({@link legacyForwardedMessage}), or one SAID-bound v2 child. Any
+   * other shape is refused here, so the Exchanger rejects the `/fwd` and nothing is stored, relayed or ingested.
    *
    * @param args Signed forwarding exchange, attachment evidence and optional nested frames; children retain their own authentication requirements.
-   * @returns Whether required modifiers and one bound forwarded payload are structurally valid.
+   * @returns Whether the address and one bound forwarded message are structurally valid.
    */
   verify(args: {
     serder: SerderKERI;
     attachments: ExchangeAttachment[];
     nests?: readonly CesrFrame[];
   }): boolean {
-    const modifiers = args.serder.ked?.q as Record<string, unknown> | undefined;
-    if (typeof modifiers?.pre !== "string" || typeof modifiers?.topic !== "string") return false;
+    if (!forwardAddress(args.serder)) return false;
     if (args.serder.pvrsn.major < 2) {
-      return !args.nests?.length && extractForwardedMessage(args.serder, args.attachments) !== null;
+      return !args.nests?.length && legacyForwardedMessage(args.serder, args.attachments) !== null;
     }
     if (args.nests?.length !== 1) return false;
     const signed = (args.serder.a as Record<string, unknown>)?.evt;
@@ -159,31 +167,27 @@ export class ForwardHandler implements ExchangeRouteHandler {
     /** Receiving hosted endpoint whose authority must cover the addressed recipient. */
     mailboxAid?: string | null;
   }): void | Operation<void> {
-    const modifiers = args.serder.ked?.q as Record<string, unknown> | undefined;
-    const recipient = typeof modifiers?.pre === "string" ? modifiers.pre : null;
-    const topic = typeof modifiers?.topic === "string" ? modifiers.topic : null;
-    const child = args.serder.pvrsn.major >= 2 ? args.nests?.[0] : undefined;
-    const forwarded = child ? null : extractForwardedMessage(args.serder, args.attachments);
+    const address = forwardAddress(args.serder);
     const mailboxAid = args.mailboxAid;
-    if (!recipient || !topic || (!child && !forwarded)) {
-      return;
+    if (!address) return;
+    if (args.serder.pvrsn.major < 2) {
+      const message = legacyForwardedMessage(args.serder, args.attachments);
+      if (!message) return;
+      const path = this.forwardPath(forwardSource(args.serder, message.frame.body), address.recipient, mailboxAid);
+      return path ? this.deliver(path, address, message.wire) : undefined;
     }
-
-    const source: ForwardSource = {
-      sender: args.serder.pre,
-      origin: child ? childOrigin(child) : embeddedOrigin(args.serder),
-    };
-    const path = this.forwardPath(source, recipient, mailboxAid);
-    if (!path) return;
-    if (!child) return this.deliver(path, recipient, topic, forwarded!);
+    const child = args.nests?.[0];
+    if (!child) return;
+    const source = forwardSource(args.serder, child.body);
+    if (!this.forwardPath(source, address.recipient, mailboxAid)) return;
     // deno-lint-ignore no-this-alias -- The operation owns this one child's delivery.
     const self = this;
     return call(function*() {
-      // Mailbox LMDB and Poster take one finite message; collect one child, never the whole exchange stream.
-      const wire = yield* abortable((signal) => collectPayload(nestedPayload(child, Vrsn_2_0), signal));
+      const wire = yield* collectNestedMessage(child);
+      if (!wire) return;
       // Re-read accepted authority in the same synchronous turn as delivery.
-      const current = self.forwardPath(source, recipient, mailboxAid);
-      if (current) yield* call(() => self.deliver(current, recipient, topic, wire));
+      const current = self.forwardPath(source, address.recipient, mailboxAid);
+      if (current) yield* call(() => self.deliver(current, address, wire));
     });
   }
 
@@ -231,13 +235,13 @@ export class ForwardHandler implements ExchangeRouteHandler {
    * Take one decided path for complete child wire.
    *
    * @param path Path decided in this turn.
-   * @param recipient Final recipient AID.
-   * @param topic `/fwd` mailbox topic.
-   * @param wire Complete child message, signed by its originator.
+   * @param address Final recipient AID and `/fwd` mailbox topic.
+   * @param wire Exactly one complete child message, signed by its originator.
    * @returns The ingest operation for a local recipient; storage (including an ingested child's pickup copy, written
    *   before ingest in the turn its authority was read) and Poster admission complete synchronously.
    */
-  private deliver(path: ForwardPath, recipient: string, topic: string, wire: Uint8Array): void | Operation<void> {
+  private deliver(path: ForwardPath, address: ForwardAddress, wire: Uint8Array): void | Operation<void> {
+    const { recipient, topic } = address;
     switch (path.kind) {
       case "store":
         this.mailboxDirector.publish(recipient, topic, wire);
@@ -334,28 +338,90 @@ function servesSource(hby: Habery, source: ForwardSource, hostAid: string): bool
     && authorizedStoringHost(hby, source.origin, hostAid);
 }
 
-/**
- * Originator of a v2 nested child: a KERI message's `i`, an ACDC's issuer.
- *
- * @param child Bound nested child frame.
- * @returns Originator AID, or null when the child names none.
- */
-function childOrigin(child: CesrFrame): string | null {
-  const body = child.body;
-  if (body instanceof SerderKERI) return body.pre;
-  if (body instanceof SerderACDC) return body.issuer;
-  return null;
+/** Where one `/fwd` delivers: its `q.pre` recipient and `q.topic` mailbox topic, both checked usable. */
+interface ForwardAddress {
+  /** Final recipient AID: a well-formed identifier prefix. */
+  readonly recipient: string;
+  /** Mailbox topic as the `/fwd` names it: nonempty in bare form, and storable under the recipient. */
+  readonly topic: string;
 }
 
 /**
- * Originator of a legacy `e.evt` embed: its `i` field.
+ * Read the `/fwd` address, or null when this host could not store or relay under it.
  *
- * @param serder Legacy forwarding exchange.
- * @returns Originator AID, or null when the embed names none.
+ * The recipient must parse as one identifier prefix, since it becomes a Poster destination and a mailbox key. The
+ * topic must be nonempty in bare form (a forwarded delivery requires one, and the Poster refuses an empty topic as a
+ * programmer error) and storable as a mailbox key under that recipient, so a stored, ingested or relayed child never
+ * reaches the mailbox store with a key it would refuse as a fault.
+ *
+ * @param serder Forwarding exchange.
+ * @returns The usable address, or null.
  */
-function embeddedOrigin(serder: SerderKERI): string | null {
-  const evt = (serder.ked?.e as Record<string, unknown> | undefined)?.evt as Record<string, unknown> | undefined;
-  return typeof evt?.i === "string" ? evt.i : null;
+function forwardAddress(serder: SerderKERI): ForwardAddress | null {
+  const modifiers = serder.ked?.q as Record<string, unknown> | undefined;
+  const recipient = modifiers?.pre, topic = modifiers?.topic;
+  if (typeof recipient !== "string" || typeof topic !== "string") return null;
+  // The whole string must be the prefix: a shorter qb64 followed by trailing text is not one.
+  if (readPrefixer(recipient)?.qb64 !== recipient || transportMailboxTopic(topic).length === 0) return null;
+  return storableTopic(mailboxTopicKey(recipient, topic)) ? { recipient, topic } : null;
+}
+
+/**
+ * The `/fwd` signer and the forwarded message's own originator: a KERI message's `i`, an ACDC's issuer.
+ *
+ * @param serder Authenticated forwarding exchange.
+ * @param body Body of the one forwarded message.
+ * @returns Who the request speaks for.
+ */
+function forwardSource(serder: SerderKERI, body: CesrBody): ForwardSource {
+  const origin = body instanceof SerderKERI ? body.pre : body instanceof SerderACDC ? body.issuer : null;
+  return { sender: serder.pre, origin };
+}
+
+/** The one message a legacy `/fwd` carries, decided once from its embed and `/e/evt` attachments. */
+interface ForwardedMessage {
+  /** Exactly one complete CESR message: the embedded body followed by its own attachments. */
+  readonly wire: Uint8Array;
+  /** The message `wire` parses as. */
+  readonly frame: CesrFrame;
+}
+
+/**
+ * The one frame `wire` parses as, or null when it is not exactly one complete CESR message with its attachments.
+ *
+ * `ParserError` is the decoder's refusal of the bytes; nothing else here reads a store or does I/O, so any other
+ * error is a fault and propagates.
+ *
+ * @param wire Candidate child wire.
+ * @returns The single parsed frame, or null.
+ */
+function oneCompleteMessage(wire: Uint8Array): CesrFrame | null {
+  try {
+    const frames = parseBytes(wire);
+    return frames.length === 1 ? frames[0] : null;
+  } catch (error) {
+    if (error instanceof ParserError) return null;
+    throw error;
+  }
+}
+
+/**
+ * Collect a v2 child's own wire, or null when it does not re-enclose as exactly one complete message.
+ *
+ * @param child Bound nested child, borrowed for this operation.
+ * @returns The child's complete wire, or null.
+ */
+function* collectNestedMessage(child: CesrFrame): Operation<Uint8Array | null> {
+  let payload: Payload;
+  try {
+    payload = nestedPayload(child, Vrsn_2_0);
+  } catch (error) {
+    if (error instanceof ParserError) return null;
+    throw error;
+  }
+  // Mailbox LMDB and Poster take one finite message; collect one child, never the whole exchange stream.
+  const wire = yield* abortable((signal) => collectPayload(payload, signal));
+  return oneCompleteMessage(wire) ? wire : null;
 }
 
 /**
@@ -382,35 +448,41 @@ function hasLocalStoreForwardHost(
 }
 
 /**
- * Reconstruct legacy forwarded wire without assigning outer attachments to the child.
+ * Rebuild the legacy embed into its one message, or null when it is not exactly one complete message.
+ *
+ * The body is serialized from `e.evt`, followed by only the attachment material pathed to `/e/evt`; other pathed
+ * groups belong to the outer `/fwd`. The result must parse as exactly one complete message with its attachments, so
+ * an embed that is not a message, or whose pathed attachments are not that message's complete attachments, is
+ * refused here and never reaches the mailbox store, this runtime's ingress or the Poster.
  *
  * @param serder Legacy forwarding exchange containing an e.evt body.
  * @param attachments Pathed attachments; only /e/evt material belongs to the embedded message.
- * @returns Reconstructed child wire, or null without an embedded event.
+ * @returns The forwarded message, or null.
  */
-function extractForwardedMessage(
+function legacyForwardedMessage(
   serder: SerderKERI,
   attachments: readonly ExchangeAttachment[],
-): Uint8Array | null {
+): ForwardedMessage | null {
   const embeds = serder.ked?.e as Record<string, unknown> | undefined;
   const evt = embeds?.evt;
   if (!evt || typeof evt !== "object" || Array.isArray(evt)) {
     return null;
   }
-
-  // Rebuild the embedded event from SAD plus only the attachment material
-  // pathed to `/e/evt`; other pathed groups belong to the outer `/fwd` message.
-  const embedded = embeddedSerderRaw(evt as Record<string, unknown>);
-  const messageParts: Uint8Array[] = [embedded];
-
-  for (const attachment of attachments) {
-    const atc = forwardedAttachmentForPath(attachment.raw, "/e/evt");
-    if (atc) {
-      messageParts.push(atc);
+  const parts: Uint8Array[] = [];
+  try {
+    parts.push(embeddedSerderRaw(evt as Record<string, unknown>));
+    for (const attachment of attachments) {
+      const atc = forwardedAttachmentForPath(attachment.raw, "/e/evt");
+      if (atc) parts.push(atc);
     }
+  } catch (error) {
+    // The embed's SAD and the pathed groups are remote input; the codec refuses what it cannot serialize or read.
+    if (error instanceof ParserError) return null;
+    throw error;
   }
-
-  return concatBytes(...messageParts);
+  const wire = concatBytes(...parts);
+  const frame = oneCompleteMessage(wire);
+  return frame ? { wire, frame } : null;
 }
 
 /**
