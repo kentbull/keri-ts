@@ -1,13 +1,14 @@
 /** Optional receiver-owned KRAM intake composed from policy, atomic staging and pruning. */
 import type { Baser } from "../../db/basing.ts";
 import { makeNowIso8601, timestampMicros } from "../../time/mod.ts";
-import type { AgentCue } from "../cues.ts";
+import type { AgentCue, KramRefusedCue } from "../cues.ts";
 import { Deck } from "../deck.ts";
 import type { KeriDispatchEnvelope } from "../dispatch.ts";
 import { consoleLogger, type Logger } from "../logger.ts";
 import { type KramConfig, KramPolicy } from "./kram-policy.ts";
 import { KramPruner, type KramPruneResult } from "./kram-pruning.ts";
 import { type KramStageRefusal, stageKram } from "./kram-staging.ts";
+import { isKramLateReason, kramExchangeId } from "./kram-time.ts";
 
 /** Expected pending/refusal outcomes; cancellation, corruption and infrastructure failures throw. */
 export type KramRefusal = KramStageRefusal | { kind: "pending"; key: readonly string[] };
@@ -62,8 +63,34 @@ export class Kramer {
         q: result.sn === null ? {} : { s: result.sn.toString(16) },
       });
     }
-    if (result.kind === "drop") this.report(envelope, result);
+    if (result.kind === "drop") {
+      this.report(envelope, result);
+      const cue = this.refusedCue(envelope, result);
+      if (cue) this.cues.push(cue);
+    }
     return result;
+  }
+
+  /**
+   * Describe a refusal the application may want to hear about, or null. Staging has already committed. A local
+   * caller receives its own refusal, and only the reasons KRAM decides after authentication are safe to signal:
+   * `timestamp`, `replay` and `authentication` are reachable by anyone who can post bytes.
+   */
+  private refusedCue(envelope: KeriDispatchEnvelope, refusal: KramDrop): KramRefusedCue | null {
+    if (envelope.local || !isKramLateReason(refusal.reason)) return null;
+    const { serder } = envelope;
+    const xid = kramExchangeId(serder), deadline = "deadline" in refusal ? refusal.deadline : undefined;
+    return {
+      kin: "kramRefused",
+      said: serder.said!,
+      sender: serder.pre!,
+      ilk: serder.ilk!,
+      route: serder.route,
+      reason: refusal.reason,
+      stamp: serder.stamp!,
+      ...(deadline === undefined ? {} : { deadline }),
+      ...(xid ? { xid } : {}),
+    };
   }
 
   /**

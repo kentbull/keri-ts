@@ -73,7 +73,7 @@ import {
 import type { RetryPolicy } from "./retry-backoff.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { SignerConditions } from "./signer-conditions.ts";
-import { signalerChangeSink } from "./workflow-contract.ts";
+import { type ChangeSink, signalerChangeSink } from "./workflow-contract.ts";
 import { observeUntil } from "./workflow-contract.ts";
 
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
@@ -106,6 +106,8 @@ export interface AgentRuntime {
   signaler: Signaler | null;
   /** Ordinary protocol facts, consumed by the composed cue workers. */
   cues: Deck<AgentCue>;
+  /** Where the cue worker publishes `kramRefused` cues: the injected operation sink, else the Signaler's; null with neither. */
+  readonly changes: ChangeSink | null;
   /** Demand-driven input lifetime; protocol decisions stay with ProtocolProcessor. */
   reactor: Reactor;
   /** Shared protocol mutations, publication and background escrow processing. */
@@ -427,13 +429,9 @@ export function* createAgentRuntime(
     grantWalk: options.grantWalk,
   });
   // Construction adopts stored copies an earlier handler-less Exchanger left unescrowed.
+  const changes = options.operationStores?.changes ?? (signaler ? signalerChangeSink(signaler) : undefined);
   const registryRoot = options.registryRoots !== "refuse" && acdc
-    ? new RegistryRoot(
-      hby,
-      acdc,
-      notifier,
-      options.operationStores?.changes ?? (signaler ? signalerChangeSink(signaler) : undefined),
-    )
+    ? new RegistryRoot(hby, acdc, notifier, changes)
     : null;
   if (registryRoot) exc.addHandler(registryRoot);
   const mailboxDirector = yield* resource<MailboxDirector>(function*(provide) {
@@ -564,6 +562,7 @@ export function* createAgentRuntime(
     notifier,
     signaler,
     cues,
+    changes: changes ?? null,
     reactor,
     protocol,
     replies,

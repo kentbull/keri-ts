@@ -63,6 +63,7 @@ import {
   requireMailboxEndpointUrl,
   type RetiredIdentifier,
   retireIdentifier,
+  type RuntimeChange,
   type RuntimeClock,
   type UnblindingEndState,
   type UnblindingStatus,
@@ -72,7 +73,6 @@ import {
   waitForOobi,
   waitForPresentation,
   waitForUnblinding,
-  type WorkflowChange,
 } from "keri-ts/runtime";
 export { type AdmitDelivery, type TrackedIssuances, WALLET_TIMEOUTS, WalletStoppedError } from "./surface.ts";
 import { WalletAuthor } from "../authoring.ts";
@@ -111,7 +111,7 @@ export type ChangeSinkSource = () => ChangeSink | undefined;
  */
 export function walletChangeSink(tracked: TrackedIssuances, forward: ChangeSinkSource): ChangeSink {
   return {
-    push(change: WorkflowChange) {
+    push(change: RuntimeChange) {
       forward()?.push(change);
       // A retained registry root copy may be what a member's recorder was waiting for: try them all.
       const grants = change.kind === "issuance" ? [change.id] : change.kind === "root" ? [...tracked.keys()] : [];

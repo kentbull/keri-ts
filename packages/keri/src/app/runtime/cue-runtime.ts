@@ -41,6 +41,12 @@ export function* processCuesOnce(
   for (let index = 0; index < count; index++) {
     const cue = runtime.cues.peekHead();
     if (!cue) break;
+    if (cue.kin === "kramRefused") {
+      // Pulled first: a faulty sink must not wedge the head of the Deck.
+      runtime.cues.pull();
+      runtime.changes?.push({ kind: "kramRefused", id: cue.said, refusal: cue });
+      continue;
+    }
     if (cue.kin === "query") {
       runtime.querying.enqueueCue(cue, interpreter);
     } else if (cue.kin === "stream") {

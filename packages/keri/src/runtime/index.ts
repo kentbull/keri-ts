@@ -591,6 +591,7 @@ export {
   type InvalidCue,
   type KelQueryFields,
   type KeyStateSavedCue,
+  type KramRefusedCue,
   type NoticeBadCloneFNCue,
   type NoticeCue,
   type OobiFailedCue,
@@ -652,7 +653,12 @@ export {
   setLogLevel,
 } from "../core/logger.ts";
 export type { KramStageRefusal } from "../core/mailbox/kram-staging.ts";
-export type { KramRefusalReason, KramTimeRefusal } from "../core/mailbox/kram-time.ts";
+export {
+  isKramLateReason,
+  type KramLateReason,
+  type KramRefusalReason,
+  type KramTimeRefusal,
+} from "../core/mailbox/kram-time.ts";
 export { DEFAULT_KRAM_CACHES, type KramConfig, Kramer, type KramRefusal } from "../core/mailbox/kraming.ts";
 export {
   CREDENTIAL_MAILBOX_TOPIC,
@@ -868,8 +874,10 @@ export {
 } from "../app/queries/query-workflows.ts";
 export {
   type ChangeSink,
+  type KramRefusedChange,
   MemoryChangeSink,
   observeUntil,
+  type RuntimeChange,
   signalerChangeSink,
   type WaitResult,
   type WorkflowChange,

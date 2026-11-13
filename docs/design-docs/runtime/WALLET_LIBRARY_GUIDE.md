@@ -186,8 +186,28 @@ Defined in `app/runtime/workflow-contract.ts` and followed by every library work
   `timed-out`, each with the status read at return. Remote and time-driven outcomes are values;
   only caller-contract, invariant and infrastructure failures throw.
 - Owners publish a `WorkflowChange` (`kind`, `id`) to a `ChangeSink` after commit. The sink is a
-  hint: consumers re-read status. A sink must not throw into a workflow.
+  hint: consumers re-read status. A sink must not throw into a workflow. The one exception is
+  `KramRefusedChange`, which carries its facts (see below).
 - Nothing in an operation blocks on a remote without a timeout.
+
+### Refused remote messages
+
+When this receiver's KRAM refuses a message another party sent, in a mailbox poll or on ingress, the cue worker pushes a
+`KramRefusedChange` (`kind: "kramRefused"`, `id` the message SAID, `refusal` a `KramRefusedCue`) to the same
+`ChangeSink`. Unlike a workflow change there is no status to re-read, so `refusal` carries `sender`, `ilk`, `route`,
+`reason`, the message `stamp`, a `deadline` (absent for `unknownThread`) and the exchange id `xid` when the message
+has one. With the Signaler sink it appears as a signal on `/workflow/kramRefused`, collapsed per SAID. A local caller
+never gets it: its own call already reports the refusal.
+
+What it proves is narrow: a message signed by `sender` arrived too late (`timeliness`), after its exchange closed
+(`lifetime`) or outside any live exchange (`unknownThread`). It does not prove the sender is misbehaving now. For a
+multi-key sender one valid signature is enough to produce it, and old authentic bytes re-posted after the replay row
+was pruned produce it too. Match `xid` against the exchange the user is waiting on and treat the rest as
+informational: an application that re-reads mailbox history gets a burst of them.
+
+Only these three reasons are signalled. `timestamp`, `replay` and `authentication` are reachable by anyone who can post
+bytes, so they appear only in the log. The change is transient: it is lost on restart like any cue, and nothing
+durable backs it.
 
 ## Operation owners
 
@@ -353,7 +373,8 @@ Group work is a set of explicit library calls plus the `Counselor`.
   group is derived from the Grant, the proposal or the credential's registry, not passed in:
   `proposeGroupIssuance(ops, draft, options?)` (prepare, then the custodian's own approval in one consent),
   `approveGroupIssuance(ops, grant, options?)` (an issuer member's consent),
-  `approveGroupIssuanceExchange(ops, grant, coordinator?)` (a holder group member), `followGroupIssuanceProof` and
+  `approveGroupIssuanceExchange(ops, grant, coordinator?)` (a holder group member), `followGroupIssuanceProof` (an
+  issuer or holder member that contributes nothing, such as one of signing weight 0; signs nothing) and
   `groupIssuanceProof`. `groupIssuanceElection(ops, group, coordinator?)` is a pure read of the custodian a coordinator
   elects and whether the local member is it; the coordinator is an optional pin that defaults to the group's latest
   establishment event, and the custodian is always the election's. `approveGroupIssuance` refuses a proposal the elected
