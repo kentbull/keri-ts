@@ -127,6 +127,7 @@ Deno.test("completeEvent opens the delegation scope only for delegated events, a
     outcome: "settled",
     status: unknownEvent,
     delegationPhase: null,
+    mailboxes: [],
   });
   assertEquals(scopes, 0);
 
@@ -140,7 +141,7 @@ Deno.test("completeEvent opens the delegation scope only for delegated events, a
       },
     })
   );
-  assertEquals(result, { outcome: "settled", status: unknownEvent, delegationPhase: null });
+  assertEquals(result, { outcome: "settled", status: unknownEvent, delegationPhase: null, mailboxes: [] });
   assertEquals(calls, ["resolve", "scope", "begin EDelegate 0 proxy=EProxy"]);
 
   const stalled = fakeDelegation();
@@ -156,6 +157,7 @@ Deno.test("completeEvent opens the delegation scope only for delegated events, a
       status: { state: "active", phase: "waitingDelegatorAnchor" },
       timeoutMs: 20,
       delegationPhase: "waitingDelegatorAnchor",
+      mailboxes: [],
     },
   );
 
