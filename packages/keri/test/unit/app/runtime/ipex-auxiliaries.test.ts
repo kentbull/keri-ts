@@ -116,6 +116,21 @@ Deno.test("each identifier receives only its own DH queries, and both kinds coex
   });
 });
 
+Deno.test("a runtime that refuses peer queries drops them unrecorded, so a resend reaches the consenting runtime", async () => {
+  await run(function*() {
+    const { a, remote, runtime } = yield* wallet(() => ({ kram: KRAM, ipexQueries: "refuse" }));
+    const seen: string[] = [];
+    spyQueries(runtime.ipex!.dhke(a), "dhke-a", seen);
+    yield* approve(runtime.ipex!.dhke(a), "xid-a");
+    const wire = frame(remote, Dhke.Route, "xid-a");
+    const result = yield* runtime.protocol.dispatch(wire);
+    assertEquals(result.decision, { kind: "drop", reason: "missingProcessor" });
+    assertEquals(seen, []);
+    // Dropped before KRAM intake: nothing is recorded, so the identical resend is not a replay later.
+    assertEquals([...runtime.hby.db.msgc.getTopItemIter()].length, 0);
+  });
+});
+
 Deno.test("a message for an identifier with no owner is handled as without any owner", async () => {
   await run(function*() {
     const { a, remote, runtime } = yield* wallet();

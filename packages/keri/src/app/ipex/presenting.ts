@@ -46,7 +46,7 @@ import type { Hab, Habery } from "../identity/habbing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
-import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
+import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
 import type { IpexV2BodyOptions } from "./ipex-building.ts";
 import {
@@ -199,14 +199,6 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Wait on the host's clock so cancellation releases the timer. */
-function* wait(clock: RuntimeClock, milliseconds: number): Operation<void> {
-  yield* action<void>((resolve) => {
-    const timer = clock.setTimeout(resolve, milliseconds);
-    return () => clock.clearTimeout(timer);
-  });
-}
-
 /** Whether the exchange's deadline has passed; an exchange without one never lapses. */
 function lapsed(deps: Pick<PresentationDeps, "clock">, deadline: string | null | undefined): boolean {
   const expiry = timestampMicros(deadline);
@@ -253,7 +245,7 @@ export class PresentationOperations {
   /** Resolves only when the deadline passes; never resolves for an exchange without one. */
   private *timer(left: bigint | null): Operation<"expired" | "waiting"> {
     if (left === null) return yield* action<never>(() => () => {});
-    yield* wait(this.deps.clock, Number(left) / 1000);
+    yield* waitOnClock(this.deps.clock, Number(left) / 1000);
     return "expired";
   }
 

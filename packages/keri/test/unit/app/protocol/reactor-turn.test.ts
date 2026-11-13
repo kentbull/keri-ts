@@ -13,7 +13,7 @@ import {
 import { Oobiery } from "../../../../src/app/bootstrap/oobiery.ts";
 import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
-import { queryEnvelopeFromDispatch } from "../../../../src/app/protocol/parsering.ts";
+import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../../src/app/protocol/parsering.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { abortable } from "../../../../src/app/runtime/abortable.ts";
 import {
@@ -223,6 +223,34 @@ Deno.test("mailbox authorization is captured before unrelated escrow work", asyn
       }
     } finally {
       protocol.exc.processEscrows = processEscrows;
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a mailbox poll for a group is authorized when signed by a current member, not by an outsider", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const [alice, bob, outsider] = ["alice", "bob", "outsider"].map((name) => hby.makeHab(name));
+      const group = hby.makeGroupHab("team", alice, [alice.pre, bob.pre], undefined, undefined, {
+        isith: "2",
+        nsith: "2",
+        toad: 0,
+      }).hab;
+      const protocol = protocolFixture(hby);
+      const authorized = (signer: typeof alice) =>
+        protocol.kvy.isMailboxQueryAuthorized(
+          queryEnvelopeFromDispatch(
+            envelopeFromFrame(
+              parseBytes(signer.query(group.pre, group.pre, { route: "mbx", q: { topics: { "/reply": 0 } } }))[0],
+            ),
+          ),
+        );
+      assertEquals(authorized(alice), true, "a member signs the group's poll with its own keys");
+      assertEquals(authorized(bob), true);
+      assertEquals(authorized(outsider), false, "a key outside the group's key list cannot read its mailbox");
+    } finally {
       yield* hby.close(true);
     }
   });

@@ -60,7 +60,7 @@ import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { exchange } from "../../core/exchange/protocol-exchanging.ts";
 import { Reger } from "../../db/reger.ts";
-import { withAgentRuntime } from "../common/context.ts";
+import { type CommandHaberyOptions, withAgentRuntime } from "../common/context.ts";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "../common/parsing.ts";
 import { withRuntimeWorkers } from "../common/runtime-workers.ts";
 
@@ -508,7 +508,7 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<IpexP
       ipex: result.status.ipex,
       saved: result.status.saved,
     };
-  });
+  }, { ipexQueries: "refuse" });
 }
 
 /**
@@ -731,12 +731,14 @@ interface IpexRuntimeContext {
 function* withIpexRuntime<TResult>(
   args: IpexBaseArgs,
   use: (context: IpexRuntimeContext) => Operation<TResult>,
+  runtime?: CommandHaberyOptions["runtime"],
 ): Operation<TResult> {
   requireNonEmpty(args.name, "Name");
   return yield* withAgentRuntime(
     args,
     {
       compat: args.compat ?? false,
+      runtime,
     },
     function*({ hby, runtime }) {
       const rgy = runtime.vdr;

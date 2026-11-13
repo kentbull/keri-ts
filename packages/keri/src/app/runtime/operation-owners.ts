@@ -1,7 +1,7 @@
 /**
  * Composition and loop of the runtime's operations owners.
  *
- * With `ipexOwners: "per-identifier"` the runtime owns one `IssuanceOperations`, one
+ * The runtime owns one `IssuanceOperations`, one
  * `PresentationOperations` and one `UnblindingOperations`, each an in-memory live table
  * with status derived from the protocol stores, and,
  * when it has a registry root owner, one `RootReplicator`. `runAgentRuntime` runs each
@@ -23,6 +23,8 @@ import type { Habery } from "../identity/habbing.ts";
 import { type IssuanceDeps, IssuanceOperations, posterDelivery } from "../ipex/issuance.ts";
 import { PresentationOperations } from "../ipex/presenting.ts";
 import { UnblindingOperations } from "../ipex/unblinding-workflow.ts";
+import type { Counselor } from "../multisig/counseling.ts";
+import type { Multiplexor } from "../multisig/grouping.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import type { Receiptor } from "../witness/receipting.ts";
@@ -80,7 +82,7 @@ export class OwnerHealth {
   last: OwnerFault | null = null;
 }
 
-/** What the runtime composes for `ipexOwners`. */
+/** What the runtime composes for its operations owners. */
 export interface ComposedOwners {
   operations: RuntimeOperations;
   rootReplicator: RootReplicator | null;
@@ -98,12 +100,16 @@ export interface OwnerParts {
   ipex: IpexAuxiliaries;
   clock: RuntimeClock;
   registryRoot: RegistryRoot | null;
+  /** Delegates the DH wrappers of group issuance; one owner per runtime registers. */
+  mux: Multiplexor;
+  /** Counsels the group anchor of a custodian's registry update. */
+  counselor: Counselor;
   changes?: ChangeSink;
 }
 
 /** Construct the owners over their in-memory tables; the derivation store defaults to the registry database. */
 export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): ComposedOwners {
-  const { hby, acdc, exc, protocol, reactor, postman, receiptor, ipex, clock, registryRoot } = parts;
+  const { hby, acdc, exc, protocol, reactor, postman, receiptor, ipex, clock, registryRoot, mux, counselor } = parts;
   const changes = stores.changes ?? parts.changes, delivery = posterDelivery(postman);
   const wake = new OwnerWake();
   const issuance: IssuanceDeps = {
@@ -119,6 +125,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
     clock,
     changes,
     wake: wake.notify,
+    group: { mux, registry: { hby, protocol, postman, counselor, registryStore: acdc.store } },
   };
   const operations: RuntimeOperations = {
     issuance: new IssuanceOperations(issuance),

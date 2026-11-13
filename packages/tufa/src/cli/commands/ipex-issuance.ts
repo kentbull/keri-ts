@@ -1,6 +1,6 @@
 /** Finite individual issuance over the selected runtime's DH owner; wallet owns issuance and Admit stays separate. */
 import { type IssuanceGrantOptions, RegistryCustody, type Wallet } from "@keri-ts/wallet";
-import { bytesEqual, parseBytes, SerderACDC, SerderKERI, type Versionage } from "cesr-ts";
+import { bytesEqual, parseBytes, SerderACDC, type SerderKERI, type Versionage } from "cesr-ts";
 import { action, call, type Operation, scoped, spawn } from "effection";
 import {
   parseBooleanOption,
@@ -27,7 +27,6 @@ import {
   posterDelivery,
   prepareIssuanceGrant,
   Receiptor,
-  runAgentRuntime,
   type RuntimeClock,
   systemClock,
   ValidationError,
@@ -40,8 +39,7 @@ import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
 import { authoringWitnessAuths } from "../support/witness-auth.ts";
 import {
-  acceptGroupIssuanceProof,
-  awaitGroupIssuanceProof,
+  acceptGroupDerivedProof,
   prepareGroupDerivedIssuance,
   runGroupDerivedIssuance,
 } from "./ipex-group-issuance.ts";
@@ -262,24 +260,13 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
               throw new ValidationError("Final group proof requires --said and exact group selection");
             }
             // Mailbox delivery on `multisig` is the default; --proof FILE is the fallback.
-            const verified = proofFile
-              ? yield* acceptGroupIssuanceProof(
-                runtime,
-                wallet,
-                grant,
-                selection,
-                yield* call(() => Deno.readFile(proofFile)),
-              )
-              : yield* scoped(function*() {
-                const host = yield* spawn(() =>
-                  runAgentRuntime(runtime, { hab: localGroupMember(hby, hab.pre), pollMailbox: true })
-                );
-                try {
-                  return yield* awaitGroupIssuanceProof(runtime, wallet, grant, selection, timeout * 1000);
-                } finally {
-                  yield* host.halt();
-                }
-              });
+            const verified = yield* acceptGroupDerivedProof(
+              runtime,
+              selection,
+              grant,
+              proofFile ? yield* call(() => Deno.readFile(proofFile)) : undefined,
+              timeout * 1000,
+            );
             if (!verified) throw new ValidationError("Final group proof requires its accepted current issued BUP");
             return { grant, registryIssued: true, admitted: false };
           }
@@ -317,7 +304,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
               artifacts: yield* call(() => Promise.all(artifacts.map(path => Deno.readFile(path)))),
             };
             const prepared = selection
-              ? yield* prepareGroupDerivedIssuance(runtime, wallet, credential, options, selection)
+              ? yield* prepareGroupDerivedIssuance(runtime, credential, options, selection)
               : yield* prepareDerivedIssuance(runtime, wallet, hab, credential, options);
             if ("proposal" in prepared) proposal = prepared.proposal;
             selected = prepared.grant;
@@ -371,7 +358,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
               grant: selected,
               proposal,
               ...selection,
-            }, { timeoutMs: timeout * 1000, auths, witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1"), listen });
+            }, { timeoutMs: timeout * 1000, auths, listen });
             const { proof, ...facts } = completed;
             if (proof && proofOutput) {
               yield* call(() => Deno.writeFile(proofOutput, proof, { createNew: true, mode: 0o600 }));

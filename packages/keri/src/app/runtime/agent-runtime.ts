@@ -211,6 +211,14 @@ export interface AgentRuntimeOptions {
    */
   registryRoots?: "accept" | "refuse";
   /**
+   * DH and Unblind peer queries. `"retain"` (default) lets the per-identifier owners take a query that arrives
+   * before their consent and hold it in memory for the consent that follows. `"refuse"` is for a runtime that
+   * lives shorter than that wait and never consents (a command that only drains a mailbox): a query it took
+   * would be recorded as seen by KRAM and lost with the process, and the sender's identical resend would then
+   * be dropped as a replay. Refused, it is dropped unrecorded and a later resend reaches the consenting runtime.
+   */
+  ipexQueries?: "retain" | "refuse";
+  /**
    * v2 Grant treatment of an undisclosed far node. `"open"` (default) refuses
    * an AND group or sole Edge that needs it but lets a valid OR sibling hold;
    * `"closed"` refuses any Grant missing a far node. Neither mode escrows.
@@ -349,7 +357,7 @@ export function* createAgentRuntime(
   // Every runtime with a v2 registry store owns the per-identifier DH and Unblind owners: one dispatch path.
   const ipex = registry
     ? yield* resource<IpexAuxiliaries>(function*(provide) {
-      const owners = new IpexAuxiliaries(exc, registry, revery, now, options.kram?.enabled === true);
+      const owners = new IpexAuxiliaries(exc, registry, revery, now, options.kram?.enabled === true, options.ipexQueries !== "refuse");
       try {
         owners.registerReplyRoutes(revery.rtr);
         yield* provide(owners);
@@ -468,6 +476,8 @@ export function* createAgentRuntime(
       ipex,
       clock,
       registryRoot,
+      mux,
+      counselor,
       changes: signaler ? signalerChangeSink(signaler) : undefined,
     }, options.operationStores)
     : null;

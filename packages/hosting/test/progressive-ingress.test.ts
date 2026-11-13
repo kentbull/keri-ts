@@ -42,6 +42,7 @@ import {
   readCesrRequestBytes,
 } from "keri-ts/runtime";
 import { acceptedEventReplayMessage } from "../../keri/src/app/identity/habbing.ts";
+import { collectKelSubmission } from "../../keri/src/app/mailbox/kel-submission.ts";
 import { abortable } from "../../keri/src/app/runtime/abortable.ts";
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
@@ -556,6 +557,43 @@ Deno.test("v2 sender refusal cannot reopen a previously authorized HTTP mailbox 
     }
   });
 });
+Deno.test("a mailbox host that holds only the inception refuses a rotated requester until the rotation is posted", async () => {
+  await run(function*() {
+    const client = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const host = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const service = host.makeHab("mailbox");
+    const runtime = yield* createAgentRuntime(host, new FetchHttpClient(), systemClock, { enableMailboxStore: true });
+    try {
+      const wallet = client.makeHab("wallet", undefined, { transferable: true, toad: 0 });
+      yield* runtime.reactor.processBytes(collectKelSubmission(client, wallet.pre).replay);
+      wallet.rotate({});
+      const handler = createProtocolHandler(runtime, { serviceHab: service });
+      const post = (body: Uint8Array) =>
+        handler(
+          new Request("http://localhost/", {
+            method: "POST",
+            headers: { "content-type": "application/cesr" },
+            body: new Uint8Array(body),
+          }),
+        );
+      const poll = wallet.query(wallet.pre, service.pre, { route: "mbx", q: { topics: { "/reply": 0 } } });
+      const refused = yield* call(() => post(poll));
+      assertEquals(refused.status, 403);
+      assertEquals(yield* call(() => refused.text()), "Query requester is not authorized");
+      const posted = yield* call(() => post(collectKelSubmission(client, wallet.pre).replay));
+      assertEquals(posted.status, 204);
+      const served = yield* call(() => post(poll));
+      assertEquals(served.status, 200);
+      assertEquals(served.headers.get("content-type")?.startsWith("text/event-stream"), true);
+      yield* call(() => served.body?.cancel());
+    } finally {
+      yield* runtime.close();
+      yield* host.close(true);
+      yield* client.close(true);
+    }
+  });
+});
+
 Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and refuses pending, denied and replayed requests", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
