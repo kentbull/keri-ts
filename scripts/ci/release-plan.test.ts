@@ -9,6 +9,7 @@ import {
   plan,
   requiredJobs,
   shardsFor,
+  trainOwned,
   type Tree,
 } from "./release-plan.ts";
 
@@ -138,4 +139,13 @@ Deno.test("evidence is still required when the tree needs the serial check", asy
   );
   assertEquals(decision.runCheck, true);
   assertEquals(decision.shards[0].name, "legacy");
+});
+
+Deno.test("only an annotated tag with the Release-Train marker is train-owned", () => {
+  assertEquals(trainOwned("tag", "keri 2.2.3\n\nRelease-Train: yes\n"), true);
+  assertEquals(trainOwned("tag", "release-train: TRUE"), true);
+  assertEquals(trainOwned("tag", "keri 2.2.3"), false);
+  assertEquals(trainOwned("tag", "Release-Train: no"), false);
+  // A lightweight tag reads its commit's message, which must never opt a tag into the train.
+  assertEquals(trainOwned("commit", "Release-Train: yes"), false);
 });

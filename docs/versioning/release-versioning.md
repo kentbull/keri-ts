@@ -141,6 +141,16 @@ with these rules:
   workflow ran before sharding) with what the tag has; if the tag lacks even those
   tasks the plan fails. The check is never skipped without evidence.
 
+Tags and the train. Pushing a `<package>-v*` tag starts that package's workflow at
+once, which would overlap a train for the same tag. A tag whose annotation contains
+the line `Release-Train: yes` is train-owned: its tag-push run plans, sees the marker
+and skips every other job (check, artifact, publish, GitHub release), and the train
+releases it. Create such tags with `git tag -a <tag> -m "<package> <version>" -m "Release-Train: yes"`
+and push them before dispatching the train. A lightweight tag, or an annotated tag
+without the marker, still releases on push as a single release; GitHub offers no way
+to push a tag without triggering its `push` workflows (only `[skip ci]` in the head
+commit message, which cannot be added to an existing release commit).
+
 Use the train to release several packages at once or a whole version bump; use a
 single package workflow (push its tag) for one package. The train never creates or
 moves tags.

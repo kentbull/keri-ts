@@ -272,6 +272,17 @@ export async function plan(
   }
 }
 
+/** The marker line an annotated tag carries when a release-train run, not the tag push, releases it. */
+export const trainMarker = /^Release-Train:[ \t]*(yes|true)[ \t]*$/im;
+
+/**
+ * Whether a pushed tag is owned by a release train: an annotated tag whose message has the marker line. A
+ * lightweight tag has no message of its own (the commit's would be read instead), so it is never train-owned.
+ */
+export function trainOwned(objectType: string, message: string): boolean {
+  return objectType === "tag" && trainMarker.test(message);
+}
+
 /** Run a git command in the checkout and return its trimmed output. */
 async function git(...args: string[]): Promise<string> {
   const out = await new Deno.Command("git", { args, stdout: "piped", stderr: "piped" }).output();
@@ -285,6 +296,11 @@ async function main(): Promise<void> {
   const repo = Deno.env.get("GITHUB_REPOSITORY");
   const token = Deno.env.get("GH_TOKEN");
   if (!pkg) throw new Error("Usage: PACKAGE=<package> release-plan.ts");
+  const owned = Deno.env.get("GITHUB_EVENT_NAME") === "push" && Deno.env.get("GITHUB_REF_TYPE") === "tag"
+    && trainOwned(
+      await git("cat-file", "-t", `refs/tags/${Deno.env.get("GITHUB_REF_NAME")}`),
+      await git("for-each-ref", "--format=%(contents)", `refs/tags/${Deno.env.get("GITHUB_REF_NAME")}`),
+    );
   const sha = await git("rev-parse", "HEAD");
   const tree = await git("rev-parse", "HEAD^{tree}");
   const decision = repo && token
@@ -294,7 +310,10 @@ async function main(): Promise<void> {
       reason: "no GitHub credentials; running the check",
       shards: (await shardsFor(pkg, workingTree)).shards,
     };
-  const summary = `## Release check for ${pkg}\n\nCommit ${sha} (tree ${tree}): ${
+  const ownedNote = owned
+    ? "\n\nThis tag carries the Release-Train marker, so a release-train run releases it and this run does nothing.\n"
+    : "";
+  const summary = `${ownedNote}## Release check for ${pkg}\n\nCommit ${sha} (tree ${tree}): ${
     decision.runCheck ? "run the sharded check" : "skip the check"
   } because ${decision.reason}.\n`;
   console.log(JSON.stringify({ pkg, sha, tree, ...decision }));
@@ -302,7 +321,7 @@ async function main(): Promise<void> {
   if (output) {
     await Deno.writeTextFile(
       output,
-      `check_needed=${decision.runCheck}\ncheck_shards=${JSON.stringify(decision.shards)}\n`,
+      `check_needed=${decision.runCheck}\ncheck_shards=${JSON.stringify(decision.shards)}\ntrain_owned=${owned}\n`,
       { append: true },
     );
   }

@@ -36,6 +36,7 @@ jobs:
     outputs:
       check_needed: ${{ steps.plan.outputs.check_needed }}
       check_shards: ${{ steps.plan.outputs.check_shards }}
+      train_owned: ${{ steps.plan.outputs.train_owned }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,7 +64,7 @@ jobs:
   # Whole job skipped when the plan found a green run; one runner per unit shard otherwise.
   check:
     needs: plan
-    if: needs.plan.outputs.check_needed == 'true'
+    if: needs.plan.outputs.check_needed == 'true' && needs.plan.outputs.train_owned != 'true'
     name: release check (${{ matrix.shard.name }})
     strategy:
       fail-fast: false
@@ -111,7 +112,7 @@ jobs:
   artifact:
     needs: [plan, check]
     # Runs after a green check or after the plan skipped it; never after a failed or cancelled check.
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.check.result == 'success' || needs.check.result == 'skipped') }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.train_owned != 'true' && (needs.check.result == 'success' || needs.check.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
