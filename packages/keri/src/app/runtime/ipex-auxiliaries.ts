@@ -52,9 +52,9 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
     private readonly now: () => number,
     /** Whether the runtime's KRAM is on; DH and Unblind approval need the rows only KRAM writes. */
     private readonly kram: boolean,
-    /** Whether Unblind peer queries are taken; false drops them before KRAM records them. */
-    private readonly queries: boolean = true,
   ) {}
+
+  private restored = false;
 
   /** Every live DH owner, for hosts draining their completion cues. */
   dhkeOwners(): IterableIterator<Dhke> {
@@ -63,6 +63,20 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
 
   /** Every live Unblind owner, for hosts delivering the replies they owe. */
   unblindOwners(): IterableIterator<Unblind> {
+    if (!this.restored) {
+      // A request persisted before a restart is owed its reply by an owner nothing has created yet.
+      this.restored = true;
+      const owed = new Set([...this.exc.hby.db.heldu.getTopItemIter()].map(([[pre]]) => pre));
+      for (const pre of owed) {
+        const hab = this.exc.hby.habs.get(pre);
+        if (!hab) continue;
+        try {
+          this.unblind(hab);
+        } catch (error) {
+          if (!(error instanceof ValidationError)) throw error;
+        }
+      }
+    }
     return this.unblinds.values();
   }
 
@@ -101,6 +115,7 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
 
   /** Close and unregister both owners of `pre`; process-local approvals and retries are cleared. */
   release(pre: string): void {
+    this.restored = false;
     for (const owners of [this.dhkes, this.unblinds] as Map<string, Owner>[]) {
       owners.get(pre)?.close();
       owners.delete(pre);
@@ -130,7 +145,6 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
 
   private select(serder: SerderKERI): Owner | null {
     const kind = serder.route === Dhke.Route ? "dhke" : serder.route === Unblind.Route ? "unblind" : null;
-    if (!this.queries && kind === "unblind") return null;
     return kind && this.claimant(kind, serder.pre, (serder.sad?.q as { x?: unknown } | undefined)?.x);
   }
 

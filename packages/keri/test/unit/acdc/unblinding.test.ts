@@ -721,3 +721,99 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     }
   });
 });
+
+// KRAM records an accepted request as seen, so its resend is a replay and a group requester cannot re-date it:
+// the request the discloser owes a reply to is persisted, and a reopened owner answers it with no resend.
+for (const keys of [1, 2]) {
+  Deno.test(`a discloser answers a request received before its owner was lost, with no resend (${keys} requester key(s))`, async () => {
+    await run(function*() {
+      const stamp = makeNowIso8601(new Date());
+      const hbys = [];
+      for (const bran of ["PresenterPasscodeABCD", "VerifierPasscodeABCDE"]) {
+        const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, bran });
+        yield* ensure(() => hby.close(true));
+        hbys.push(hby);
+      }
+      const [senderHby, verifierHby] = hbys;
+      const sender = senderHby.makeHab("presenter", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+      const verifier = verifierHby.makeHab("verifier", undefined, {
+        icount: keys,
+        isith: `${keys}`,
+        ncount: keys,
+        nsith: `${keys}`,
+      });
+      const parties = [];
+      for (const [hby, hab] of [[senderHby, sender], [verifierHby, verifier]] as const) {
+        const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
+        yield* ensure(() => baser.close(true));
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+          acdc: new Regery(hby, baser),
+          kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+        });
+        yield* ensure(() => runtime.close());
+        parties.push({ hby, hab, runtime, store: runtime.ipex!.unblind(hab) });
+      }
+      const [presenter, observer] = parties;
+      for (const wire of senderHby.db.clonePreIter(sender.pre, 0)) yield* observer.runtime.reactor.processBytes(wire);
+      for (const wire of verifierHby.db.clonePreIter(verifier.pre, 0)) yield* presenter.runtime.reactor.processBytes(wire);
+      const rip = regcept(sender.pre, { stamp });
+      yield* observer.runtime.reactor.processBytes(sender.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] }));
+      for (const party of parties) yield* party.runtime.reactor.processBytes(rip.raw);
+      const root = new Salter({ raw: new TextEncoder().encode("public-test-root"), code: MtrDex.Salt_128 });
+      sender.mgr.putRegistryRoot(sender.pre, rip.said!, root);
+      const credential = acdcmap(sender.pre, { regid: rip.said!, attribute: { d: "", i: verifier.pre, name: "Ada" } });
+      const first = makeBlindState({ salt: root.qb64, sn: 1, acdc: credential.said!, state: "issued" });
+      const event1 = blindate(rip.said!, rip.said!, first.d.nonce, { stamp });
+      yield* observer.runtime.reactor.processBytes(
+        sender.interact({ data: [{ i: rip.said!, s: "1", d: event1.said! }] }),
+      );
+      for (const party of parties) yield* party.runtime.reactor.processBytes(event1.raw);
+      const child: CesrFrame = {
+        body: credential,
+        gvrsn: Vrsn_2_0,
+        attachments: [parseAttachmentGroup(publicOpeningAttachment(first), Vrsn_2_0, "txt").group],
+      };
+      const grant = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
+        kind: Kinds.json,
+        recipient: verifier.pre,
+        message: "Live presentation",
+        date: stamp,
+      });
+      const wire = yield* call(() =>
+        collectPayload(framePayload({
+          body: grant,
+          gvrsn: Vrsn_2_0,
+          attachments: parseBytes(sender.endorse(grant, { gvrsn: Vrsn_2_0 }))[0].attachments,
+          nests: [child],
+        }))
+      );
+      for (const party of parties) yield* party.runtime.reactor.processBytes(wire);
+      // Only the verifier learns the later TEL suffix, which its query then carries.
+      let prior = event1;
+      for (const sn of [2, 3]) {
+        const proof = makeBlindState({ salt: root.qb64, sn, acdc: sn === 3 ? credential.said! : "", state: sn === 3 ? "issued" : "" });
+        const event = blindate(rip.said!, prior.said!, proof.d.nonce, { sn, stamp });
+        yield* observer.runtime.reactor.processBytes(
+          sender.interact({ data: [{ i: rip.said!, s: sn.toString(16), d: event.said! }] }),
+        );
+        yield* observer.runtime.reactor.processBytes(event.raw);
+        prior = event;
+      }
+      observer.store.approve(grant.said!);
+      const query = observer.store.start(grant.said!);
+
+      // The presenter's runtime takes the request; its reply is owed but nothing has driven it yet.
+      yield* presenter.runtime.reactor.processBytes(query);
+      assertExists(presenter.hby.db.heldu.get([sender.pre!, grant.said!]), "the accepted request is persisted");
+      const resend = yield* presenter.runtime.protocol.dispatch(parseBytes(query)[0]);
+      assertEquals(resend.decision, { kind: "drop", reason: "replay" }, "the identical resend cannot help");
+
+      // The owner and its memory are lost; the reopened one is owed the reply and answers with no resend.
+      presenter.runtime.ipex!.release(sender.pre!);
+      const reopened = [...presenter.runtime.ipex!.unblindOwners()].find(owner => owner.hab.pre === sender.pre);
+      assertExists(reopened, "an owner is made for the identifier that owes a reply");
+      assertEquals(reopened.awaitingReply(), [{ xid: grant.said!, grant: grant.said! }]);
+      assertEquals(reopened.outgoing.pull()?.kin, "reply");
+    });
+  });
+}

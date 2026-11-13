@@ -190,7 +190,7 @@ Deno.test("an authenticated query for a live Grant the discloser sent is answere
   });
 });
 
-Deno.test("a reloaded discloser answers a repeated query from stored state, with no approve call", async () => {
+Deno.test("a reloaded discloser answers the request it accepted before the restart, with no resend and no approve call", async () => {
   await run(function*() {
     const f = yield* fixture();
     const requester = f.mk(f.observer), g = f.grant.said!;
@@ -200,10 +200,9 @@ Deno.test("a reloaded discloser answers a repeated query from stored state, with
     f.presenter.runtime.ipex!.release(f.sender.pre!);
     const responder = f.mk(f.presenter);
     yield* responder.processOnce();
-    assertEquals(f.sent.length, 1, "nothing was replied while the owner was gone");
-    // KRAM refuses the identical query as a replay, so the requester renews it, as `requery` is for.
-    const renewed = f.observer.runtime.ipex!.unblind(f.verifier).requery(g);
-    yield* f.presenter.runtime.reactor.processBytes(renewed);
+    // The request KRAM accepted before the restart is persisted, so the reloaded owner owes and sends the reply
+    // although the requester's identical resend would be a replay.
+    assertEquals(f.sent.length, 2, "the reply goes out from the persisted request");
     yield* drive(requester, responder, g);
     assertEquals(unblindingStatus(responder, g).state, "done");
     assertEquals(unblindingStatus(requester, g).state, "done");

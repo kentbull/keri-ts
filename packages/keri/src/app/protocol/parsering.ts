@@ -724,9 +724,10 @@ export function copyAuxiliaryQuery(envelope: KeriDispatchEnvelope): KeriDispatch
 
 /**
  * Serialize an auxiliary query without nested evidence so a later process can rebuild it: its own frame with
- * every attachment group, then the normalized proof KRAM may have completed from earlier inputs.
+ * every attachment group (plus `children`, nested evidence already encoded as counted frames), then the
+ * normalized proof KRAM may have completed from earlier inputs.
  */
-export function auxiliaryQueryWire(envelope: KeriDispatchEnvelope): Uint8Array {
+export function auxiliaryQueryWire(envelope: KeriDispatchEnvelope, children: readonly Uint8Array[] = []): Uint8Array {
   const version = envelope.gvrsn ?? envelope.serder.gvrsn ?? envelope.serder.pvrsn;
   const frame = concatBytes(
     Counter.makeGVC(version),
@@ -734,7 +735,7 @@ export function auxiliaryQueryWire(envelope: KeriDispatchEnvelope): Uint8Array {
     Counter.enclose({
       code: "AttachmentGroup",
       version,
-      qb64: concatBytes(...envelope.attachmentGroups.map(group => group.raw)),
+      qb64: concatBytes(...envelope.attachmentGroups.map(group => group.raw), ...children),
     }),
   );
   const proof = serializeMessage(envelope.serder, { tsgs: envelope.tsgs, gvrsn: version, genusify: true });
