@@ -13,6 +13,7 @@
  */
 import type { Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import { Roles } from "../../core/roles.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { fetchEndpointUrls, preferredUrl } from "../mailbox/mailboxing.ts";
 import type { HttpClient, HttpRequestInit, HttpResponse, HttpStreamResponse } from "../transport/http-client.ts";
@@ -43,6 +44,17 @@ export class RelayUnresolvedError extends ValidationError {
   override readonly name: string = "RelayUnresolvedError";
 }
 
+/**
+ * The sending identity has not authorized the relay as its `mailbox`; nothing was sent. The agent relays only for a
+ * sender that named it its mailbox, so a wrapper sent before that would be dropped there without an answer.
+ */
+export class RelayUnauthorizedError extends ValidationError {
+  override readonly name: string = "RelayUnauthorizedError";
+}
+
+/** Why the relay cannot carry a message now; see {@link relayRefusal}. */
+export type RelayRefusal = RelayUnresolvedError | RelayUnauthorizedError;
+
 /** Refuses a request whose origin is neither the relay's OOBI origin nor an accepted relay location. */
 export class RelayOnlyError extends TransportError {
   override readonly name: string = "RelayOnlyError";
@@ -66,6 +78,43 @@ export function relayEndpoint(hby: Habery, relay: Relay): RelayEndpoint | null {
   if (accepted.tcp) urls.tcp = accepted.tcp;
   const url = preferredUrl(accepted);
   return url ? { eid: relay.aid, url, urls } : null;
+}
+
+/**
+ * Whether `pre` has authorized the relay as its mailbox: the accepted row `ends.[pre, mailbox, relay.aid]` is
+ * allowed. This is the row the agent reads to decide that it serves the sender, and the edge holds it because it
+ * signed and accepted the end-role reply itself (`addMailbox`).
+ *
+ * @param hby Borrowed accepted-state store holding end-role replies.
+ * @param pre Local identifier that signs what goes to the relay (for a group, its local member).
+ * @param relay The configured relay agent.
+ * @returns True when the mailbox role naming the relay is accepted and allowed.
+ */
+export function relayAuthorized(hby: Habery, pre: string, relay: Relay): boolean {
+  return hby.db.ends.get([pre, Roles.mailbox, relay.aid])?.allowed === true;
+}
+
+/**
+ * Decide whether the relay can carry a message signed by `signer` now, before anything is prepared or sent.
+ *
+ * The relay must have an accepted location. A message it is to forward also needs `signer` to have authorized it as
+ * mailbox; a message addressed to the relay itself (`signer` null) needs no authorization, as the relay consumes it
+ * rather than forwarding it. Onboarding needs neither path: the mailbox add is posted to the relay's `/mailboxes`
+ * admin resource and carries the KEL that introduces the edge.
+ *
+ * @param hby Borrowed accepted-state store holding the relay's location and the signer's end roles.
+ * @param relay The configured relay agent.
+ * @param signer Local identifier that signs the forwarding wrapper or query; null for a message to the relay itself.
+ * @returns The refusal to report, or null when the relay can carry the message.
+ */
+export function relayRefusal(hby: Habery, relay: Relay, signer: string | null): RelayRefusal | null {
+  if (!relayEndpoint(hby, relay)) {
+    return new RelayUnresolvedError(`Relay ${relay.aid} has no accepted location; its OOBI has not resolved.`);
+  }
+  if (signer !== null && !relayAuthorized(hby, signer, relay)) {
+    return new RelayUnauthorizedError(`${signer} has not authorized relay ${relay.aid} as its mailbox.`);
+  }
+  return null;
 }
 
 /**

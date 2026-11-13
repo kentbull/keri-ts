@@ -87,7 +87,9 @@ export function retireIdentifier(runtime: AgentRuntime, pre: string): RetiredIde
   if (refusal) throw new ValidationError(refusal);
   const { hby } = runtime;
   const hab = hby.habs.get(pre);
-  const mailboxes = hab ? [...new Set(mailboxPollEndpoints(hab).map((endpoint) => endpoint.eid))] : [];
+  const mailboxes = hab
+    ? [...new Set(mailboxPollEndpoints(hab, runtime.mailboxPoller.relay).map((endpoint) => endpoint.eid))]
+    : [];
   const { name, released } = hby.retireHab(pre);
   hby.db.transaction(() => {
     hby.db.tops.trim([pre], { topive: true });
