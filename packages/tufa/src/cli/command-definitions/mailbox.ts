@@ -33,7 +33,8 @@ export function registerMailboxCmds(
         "--head-dir <dir>",
         "Directory override for database and keystore root (default fallback: ~/.tufa)",
       )
-      .option("-p, --passcode <passcode>", "Encryption passcode for keystore"),
+      .option("-p, --passcode <passcode>", "Encryption passcode for keystore")
+      .option("--relay", "Relay for edges: forward the messages of senders that authorized this host as their mailbox"),
     dispatch,
     {
       name: "mailbox.start",
@@ -52,6 +53,7 @@ export function registerMailboxCmds(
         compat: options.compat || false,
         headDirPath: options.headDir,
         passcode: options.passcode,
+        relay: options.relay || false,
       }),
     },
   );

@@ -45,7 +45,11 @@ export interface RecoverGroupOptions {
 
 /** Everything `recoverWebWallet` takes. */
 export interface RecoverWebWalletOptions {
-  /** How to open the wallet again: the same options the host gave `openWebWallet`, held signers included. */
+  /**
+   * How to open the wallet again: the same options the host gave `openWebWallet`, held signers and `delivery`
+   * included. `delivery` passes through unchanged, so a wallet that delivered through its agent reopens behind the
+   * same relay and resolves the member OOBIs and rejoins through it.
+   */
   open: OpenWebWalletOptions;
   /** The group to rejoin when its record is missing after the reopen. */
   group?: RecoverGroupOptions;
@@ -89,7 +93,9 @@ export type RecoveredWebWallet =
  * signed inception: the result is `skipped: "member-missing"`. The host then adopts its keyless member with
  * `wallet.hby.makeSignedHab(alias, undefined, { serder, sigers })`, passing the member's inception and the
  * signatures it kept, holds the member's signer (`heldSigners` at open, or `wallet.hby.mgr.hold([signer])`),
- * resolves the co-members' OOBIs (`wallet.oobis.resolve`) and calls `wallet.groups.rejoin`. Neither path restores
+ * resolves the co-members' OOBIs (`wallet.oobis.resolve`) and calls `wallet.groups.rejoin`; behind a relay it also
+ * takes the onboarding steps `wallet.relayStatus()` lists again, since the wiped store lost its mailbox roles.
+ * Neither path restores
  * credentials, registry state or exchanges. A `joined` rejoin with `written: true` says this identifier was already
  * a member and the store had no record of the group, so it holds none of the group's credentials either: refill
  * them from a co-member (its `listGroupDisclosures` and `exportDisclosureStream`, the registry root copy, then

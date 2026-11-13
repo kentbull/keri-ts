@@ -30,12 +30,18 @@ modules.
 
 ## Opening a browser wallet
 
-`openWebWallet({ name, bran })` (or `seed` with `aeid`) composes, in order: one
+`openWebWallet({ name, bran, delivery })` (or `seed` with `aeid`) composes, in order: one
 `indexedDbOpener` (which takes the Web Locks single-writer lock for the wallet's identity), an
 encrypted Habery (an unencrypted keeper is refused with `UnencryptedKeeperError`), the
 persistent-storage request, the wallet inventory on the same queue, `createAgentRuntime` over
 the output-barrier HTTP client, and `runAgentRuntime` with mailbox polling. The barrier holds
 every request until the commit that preceded it is durable (ADR-0015 rule 6).
+
+`delivery` is required and has no default: a relay `{ aid, oobi }` (the agent's AID and its own OOBI) makes the
+wallet an edge that reaches only that agent ([Delivering through an agent](#delivering-through-an-agent)), and
+`"direct"` is the explicit opt-in to delivering to each party's endpoints, mailboxes and witnesses. A relay with an
+empty AID or an OOBI that is not an absolute HTTP(S) URL rejects the open with `ValidationError` before any store
+opens. `recoverWebWallet` reopens with the same `delivery`.
 
 Defaults a host can override through `runtime`: KRAM is on with `WALLET_KRAM_CACHES` (5 minute
 drift, 24 hour acceptance and pruning windows, so a wallet offline for hours can drain its
@@ -187,9 +193,13 @@ the admission before it delivers the Admit, so consent is on record whatever the
 exchange derives a registry's root with the recipient and the registry takes it once.
 
 `health()` returns `ok`, `latched` (a persistence write failed), `stopped` (the runtime task ended
-without `close()`; `cause` says why: a fault in any runtime loop ends the runtime), `mailbox-unreachable`
-(the runtime gave up telling a mailbox a rotated KEL; see below), `signer-unavailable` or `closed`.
-Precedence: `closed`, `stopped`, `latched`, `mailbox-unreachable`, `signer-unavailable`, `ok`. A call on a stopped or closed wallet rejects with `WalletStoppedError`.
+without `close()`; `cause` says why: a fault in any runtime loop ends the runtime), `relay-unresolved`
+and `relay-unauthorized` (relay onboarding is incomplete; see
+[Delivering through an agent](#delivering-through-an-agent)), `mailbox-unreachable` (the runtime gave
+up telling a mailbox a rotated KEL; see below), `signer-unavailable` (a local identifier's signer is
+not held) or `closed`. Precedence: `closed`, `stopped`, `latched`, `relay-unresolved`,
+`relay-unauthorized`, `mailbox-unreachable`, `signer-unavailable`, `ok`. Each is derived when read. A
+call on a stopped or closed wallet rejects with `WalletStoppedError`.
 `mailboxes.publication(pre)` and `mailboxes.waitForPublication(pre)` report where each mailbox stands
 in being told the identifier's KEL.
 
@@ -578,6 +588,37 @@ itself: it pushes an `unauthorized` record for a 403 onto the KEL publisher's `p
 forgets what the mailbox was given and posts it again), and the worker backs off. A successful poll pushes a `polled`
 record, which re-arms a given-up publication. `MailboxPoller.prompt(pre)` makes it re-select the workers of an identifier
 at once.
+
+## Delivering through an agent
+
+A wallet opened with `delivery: { aid, oobi }` is an edge: it signs locally and hands everything it sends to that
+agent inside a `/fwd` exchange, queries and polls only the agent, and resolves other OOBIs by asking the agent
+(`AgentRuntimeOptions.relay`, `app/delivery/relaying.ts`). An egress guard refuses any request to another origin
+before it leaves the page. The agent runs relay mode (`tufa agent --relay` or `tufa mailbox start --relay`) and
+forwards only for a sender that authorized it as its `mailbox`: the same role stores what is sent to the edge.
+
+The agent is useful only once onboarding is done. `wallet.relayStatus()` lists what is still missing, derived from
+accepted state on each call (`relayOnboarding`), and `health()` reports it as `relay-unresolved` (first step
+missing) or `relay-unauthorized` (with the identifiers still to authorize). Take the steps in this order:
+
+1. **Resolve the agent's OOBI** (`resolve-oobi`). The runtime queues it at open; `oobis.resolve(relay.oobi)` waits
+   for it. This gives the edge the agent's KEL, end roles and location, which it holds and verifies itself.
+2. **Authorize the agent for each single-signature identifier** (`authorize-member`):
+   `mailboxes.add(pre, relay.aid)`. It goes to the agent's `/mailboxes` resource and carries the identifier's KEL.
+3. **Incept the group**, if any: `groups.incept` as usual; the proposal reaches the co-members through the agent.
+4. **Authorize the agent for the group** (`authorize-group`): `groups.proposeMailbox(group, relay.aid)`, the
+   co-members approve it, then `groups.completeMailbox(group, relay.aid)` posts it.
+
+What the agent can and cannot do. It can drop, delay, reorder and observe everything the edge sends and receives,
+including plaintext CESR mail. It cannot forge or alter a signed message: the edge signs locally and every recipient
+verifies against the signer's KEL, and the edge verifies what the agent returns the same way. The edge's view of
+third-party key state is the agent's: it can verify that what it receives is valid, not that it is current, and an
+agent can withhold a rotation. `sent` from Poster means the agent accepted the wrapper, not that the recipient
+received it.
+
+Refused behind a relay for now, failing closed as `TransportError` (`RelayOnlyError`) rather than going direct:
+delegation, TEL receipting, witness TOTP registration and well-known authentication. Use `"direct"` for a wallet
+that needs them.
 
 ## Known limits in 2.2.0
 

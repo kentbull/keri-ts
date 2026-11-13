@@ -57,7 +57,7 @@ async function resolveOobiUrl(url: string, alias?: string): Promise<void> {
 /** Step: open a new wallet with a passcode. */
 async function openWallet({ name, bran }: GroupStepArgs) {
   assert(!wallet, "a wallet is already open");
-  wallet = await openWebWallet({ name, bran });
+  wallet = await openWebWallet({ name, bran, delivery: "direct" });
   return { health: wallet.health().status };
 }
 
@@ -70,7 +70,7 @@ async function reopenWallet({ name, bran, member, group }: GroupStepArgs) {
   const deadline = Date.now() + 15_000;
   for (;;) {
     try {
-      wallet = await openWebWallet({ name, bran });
+      wallet = await openWebWallet({ name, bran, delivery: "direct" });
       break;
     } catch (error) {
       if (Date.now() > deadline || !describe(error).includes("already open")) throw error;

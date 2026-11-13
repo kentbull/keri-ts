@@ -62,6 +62,7 @@ export {
   UnencryptedKeeperError,
   WALLET_KRAM_CACHES,
   type WebWallet,
+  type WebWalletDelivery,
   type WebWalletHealth,
   type WebWalletHost,
   type WebWalletSecret,
