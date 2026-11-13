@@ -53,7 +53,8 @@ import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { WitnessAuthMap } from "../witness/receipting.ts";
-import { groupWitnesser, isLocalGroupHab, localGroupMember } from "./group-members.ts";
+import { groupSigningMembers, groupWitnesser, isLocalGroupHab, localGroupMember } from "./group-members.ts";
+import { type GroupDelivery, remoteGroupMembers } from "./multisig-messaging.ts";
 
 /** Exact group event a Counselor tracks. */
 export interface GroupEventRef {
@@ -124,6 +125,26 @@ export interface GroupMailboxes {
   rotated(cue: RotatedCue): void;
 }
 
+/**
+ * Sends a completed event to members that may never have seen the signatures that completed it (a member that signed
+ * nothing, or one whose own signature was not needed). One outcome per member; a transport failure is the member's
+ * `failed` outcome and not an error.
+ */
+export interface GroupForwarding {
+  forward(event: GroupEventRef, members: readonly string[]): Operation<GroupDelivery[]>;
+}
+
+/** Forwarding attempts of one completed event before the Counselor stops retrying its failed members. */
+export const FORWARD_ATTEMPTS = 8;
+
+/** A completed event still owed to some members. */
+interface Forward {
+  event: GroupEventRef;
+  members: string[];
+  attempts: number;
+  nextAt: number;
+}
+
 /** Grace before a non-elected member submits receipts itself. */
 export const DEFAULT_FALLBACK_AFTER_MS = 60_000;
 /** First and longest wait between receipt attempts for one event. */
@@ -173,6 +194,9 @@ function receiptProgress(db: Baser, serder: SerderKERI): { have: number; need: n
 /** Counsels group events through signature and witness stages. */
 export class Counselor {
   private readonly runs = new Map<string, Run>();
+  /** Completed events this member, as the elected one, still owes to other members; memory only. */
+  private readonly forwards = new Map<string, Forward>();
+  private readonly forwarded = new Map<string, GroupDelivery[]>();
 
   /**
    * @param hby Borrowed identities and stores; the Counselor opens nothing.
@@ -191,6 +215,7 @@ export class Counselor {
     private readonly delegation?: GroupDelegation,
     private readonly mailboxes?: GroupMailboxes,
     private readonly receiptRetry: Readonly<RetryPolicy> = DEFAULT_RECEIPT_RETRY,
+    private readonly forwarding?: GroupForwarding,
   ) {
     this.anchorQuery = delegation && { hby, querying: delegation.querying, retryPasses: new Map() };
   }
@@ -314,10 +339,51 @@ export class Counselor {
   *processOnce(): Operation<void> {
     // A runtime calls this every turn; with nothing counseled, three row counts are the whole cost.
     const db = this.hby.db;
-    if (db.gpse.cnt() === 0 && db.gdee.cnt() === 0 && db.gpwe.cnt() === 0) return;
+    if (db.gpse.cnt() === 0 && db.gdee.cnt() === 0 && db.gpwe.cnt() === 0 && this.forwards.size === 0) return;
     this.processSignatures();
     yield* this.processDelegation();
     yield* this.processWitnesses();
+    yield* this.forwardCompleted();
+  }
+
+  /** What became of the completed `event` this member forwarded to the others, per member; empty before it did. */
+  forwardOutcomes(event: GroupEventRef): readonly GroupDelivery[] {
+    return this.forwarded.get(this.runKey(event)) ?? [];
+  }
+
+  /** Send each completed event to the members that may not have it; failed members are retried with a doubling delay. */
+  private *forwardCompleted(): Operation<void> {
+    if (!this.forwarding) return;
+    for (const [key, owed] of [...this.forwards]) {
+      const now = this.clock.now();
+      if (now < owed.nextAt) continue;
+      let outcomes: GroupDelivery[];
+      try {
+        outcomes = yield* this.forwarding.forward(owed.event, owed.members);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        outcomes = owed.members.map((recipient) => ({
+          recipient,
+          exnSaid: owed.event.said,
+          payloadSaid: owed.event.said,
+          outcome: "failed" as const,
+          deliveries: [],
+          reason,
+        }));
+      }
+      const failed = outcomes.filter((outcome) => outcome.outcome === "failed");
+      this.forwarded.set(key, [
+        ...(this.forwarded.get(key)?.filter((prior) => !outcomes.some((o) => o.recipient === prior.recipient)) ?? []),
+        ...outcomes,
+      ]);
+      owed.attempts++;
+      if (!failed.length || owed.attempts >= FORWARD_ATTEMPTS) {
+        this.forwards.delete(key);
+        continue;
+      }
+      owed.members = failed.map((outcome) => outcome.recipient);
+      owed.nextAt = now + Math.min(this.receiptRetry.baseMs * 2 ** owed.attempts, this.receiptRetry.maxMs);
+    }
   }
 
   /** Move events accepted with their escrowed SAID on to delegation or witnesses. */
@@ -402,6 +468,17 @@ export class Counselor {
     this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
   }
 
+  /** The elected member owes the completed event to the members that did not sign it into existence. */
+  private owe(event: GroupEventRef): void {
+    if (!this.forwarding || !groupWitnesser(this.hby, event.pre, event)) return;
+    const members = remoteGroupMembers(
+      this.hby,
+      localGroupMember(this.hby, event.pre),
+      groupSigningMembers(this.hby, event.pre),
+    );
+    if (members.length) this.forwards.set(this.runKey(event), { event, members, attempts: 0, nextAt: 0 });
+  }
+
   /** Record completion of a counseled event and drop its row from `table`. */
   private finish(table: Baser["gpse"], event: GroupEventRef, row: [NumberPrimitive, Diger]): void {
     const db = this.hby.db;
@@ -411,6 +488,7 @@ export class Counselor {
     });
     this.runs.delete(this.runKey(event));
     this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
+    this.owe(event);
     const ilk = db.getEvtSerder(event.pre, event.said)?.ilk;
     if (ilk === Ilks.rot || ilk === Ilks.drt) {
       this.mailboxes?.rotated({ kin: "rotated", pre: event.pre, sn: event.sn, said: event.said });

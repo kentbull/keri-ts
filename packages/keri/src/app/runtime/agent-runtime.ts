@@ -50,6 +50,7 @@ import {
 import { mailboxerOptionsForHabery } from "../mailbox/mailboxing.ts";
 import { mailboxTopicForRoute } from "../mailbox/topic-routing.ts";
 import { Counselor } from "../multisig/counseling.ts";
+import { groupEventForwarding } from "../multisig/event-forwarding.ts";
 import { loadMultisigHandlers, type Multiplexor } from "../multisig/grouping.ts";
 import { noterOptionsForHabery, Notifier } from "../notifications/notifying.ts";
 import { Signaler } from "../notifications/signaling.ts";
@@ -532,6 +533,7 @@ export function* createAgentRuntime(
       },
     },
     options.counselorReceiptRetry,
+    groupEventForwarding(hby, postman),
   );
   const owned = acdc && ipex
     ? composeOwners({

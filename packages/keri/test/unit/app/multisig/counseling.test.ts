@@ -16,6 +16,7 @@ import {
   Counselor,
   DEFAULT_FALLBACK_AFTER_MS,
   type GroupEventRef,
+  type GroupForwarding,
   type GroupReceipting,
   waitForGroupEvent,
 } from "../../../../src/app/multisig/counseling.ts";
@@ -157,13 +158,23 @@ function counselor(
   clock = { t: 0 },
   delegated = false,
   mailboxes?: ConstructorParameters<typeof Counselor>[5],
+  forwarding?: GroupForwarding,
 ) {
   const receipting = new FakeReceipting(side.hby, wits);
   const changes = new MemoryChangeSink();
   const anchorer = new FakeAnchorer();
   const queries: unknown[] = [];
   const delegation = delegated ? { anchorer, querying: { enqueue: (q: unknown) => queries.push(q) } } : undefined;
-  const c = new Counselor(side.hby, receipting, { now: () => clock.t }, changes, delegation, mailboxes);
+  const c = new Counselor(
+    side.hby,
+    receipting,
+    { now: () => clock.t },
+    changes,
+    delegation,
+    mailboxes,
+    undefined,
+    forwarding,
+  );
   return { clock, receipting, changes, anchorer, queries, c };
 }
 
@@ -997,5 +1008,52 @@ Deno.test("the real Anchorer, begun by the Counselor, completes and the Counselo
     assert(anchorer.complete(gid, 0));
     yield* c.processOnce();
     assertEquals(c.status(dip), { state: "complete" });
+  });
+});
+
+Deno.test("the elected member forwards a completed event to the other members, retrying the ones it could not reach", async () => {
+  await run(function*() {
+    const sides = yield* members(3);
+    const gid = pair(sides);
+    const event = ref(sides[0].hby.db.getEvtSerder(gid, gid)!);
+    const sent: string[][] = [];
+    let reachable = false;
+    const forwarding: GroupForwarding = {
+      *forward(forwarded, to) {
+        sent.push([...to]);
+        return to.map((recipient) => {
+          const failed = !reachable && recipient === pres(sides)[2];
+          return {
+            recipient,
+            exnSaid: forwarded.said,
+            payloadSaid: forwarded.said,
+            outcome: failed ? "failed" as const : "delivered" as const,
+            deliveries: [],
+            ...(failed ? { reason: "no route" } : {}),
+          };
+        });
+      },
+    };
+    const elected = counselor(sides[0], [], { t: 0 }, false, undefined, forwarding);
+    const other = counselor(sides[1], [], { t: 0 }, false, undefined, forwarding);
+    elected.c.start(event);
+    other.c.start(event);
+    yield* elected.c.processOnce();
+    yield* other.c.processOnce();
+    assertEquals(sent, [[pres(sides)[1], pres(sides)[2]]], "only the elected member forwards, to every other member");
+    assertEquals(
+      elected.c.forwardOutcomes(event).map(({ recipient, outcome }) => [recipient, outcome]),
+      [[pres(sides)[1], "delivered"], [pres(sides)[2], "failed"]],
+    );
+    // The member it could not reach is tried again after the delay, alone, and never again once it took the event.
+    reachable = true;
+    yield* elected.c.processOnce();
+    assertEquals(sent.length, 1, "not before the retry delay");
+    elected.clock.t = 2_000;
+    yield* elected.c.processOnce();
+    assertEquals(sent, [[pres(sides)[1], pres(sides)[2]], [pres(sides)[2]]]);
+    elected.clock.t = 60_000;
+    yield* elected.c.processOnce();
+    assertEquals(sent.length, 2);
   });
 });

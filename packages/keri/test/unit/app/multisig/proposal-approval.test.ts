@@ -4,12 +4,13 @@ import { call, type Operation, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { groupEndorseReply } from "../../../../src/app/identity/endpoint-roleing.ts";
 import type { GroupEventRef } from "../../../../src/app/multisig/counseling.ts";
-import { multisigInceptExn, multisigRpyExn } from "../../../../src/app/multisig/grouping.ts";
+import { multisigInceptExn, multisigRotateExn, multisigRpyExn } from "../../../../src/app/multisig/grouping.ts";
 import { signGroupMessage, storedGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
 import { approveGroupProposal, findGroupProposal } from "../../../../src/app/multisig/proposals.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import { reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
+import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { learn, peerInteraction, readDeps, receive, type Scenario, scenario } from "./proposal-fixture.ts";
 
 /** Approval deps over a scenario; the Counselor is a recorder. */
@@ -102,6 +103,44 @@ Deno.test("a member that only receives takes an interaction the proposer's signa
       assertEquals(s.left.db.kels.getLast(s.group, ixn.serder.sn!), ixn.serder.said, "accepted on receipt");
       assertEquals(s.left.db.getKever(s.group)!.sn, ixn.serder.sn);
       assertEquals(findGroupProposal(readDeps(s), signed.exnSaid)?.local, "inapplicable", "nothing is left to sign");
+    }, "1");
+  });
+});
+
+Deno.test("a weight-0 member takes an interaction the others' signatures complete, without approving", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const { signed, ixn } = yield* peerInteraction(s, [{ n: 3 }]);
+      assertEquals(s.left.db.kels.getLast(s.group, ixn.serder.sn!), ixn.serder.said);
+      assertEquals(findGroupProposal(readDeps(s), signed.exnSaid)?.local, "inapplicable");
+    }, ["0", "1"]);
+  });
+});
+
+Deno.test("a member that only receives takes a rotation its own keys complete, and a reply the group's keys complete", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const rpy = replyEvent("/end/role/add", { cid: s.group, role: "mailbox", eid: s.bob.pre }, {
+        pre: s.group,
+        pvrsn: Vrsn_2_0,
+      });
+      const peerRpy = groupEndorseReply(s.right, s.group, rpy, Vrsn_2_0);
+      yield* receive(s, signGroupMessage(s.bob, s.alice.pre, yield* multisigRpyExn(s.group, s.bob, peerRpy)).message);
+      assertEquals(s.left.db.ends.get([s.group, "mailbox", s.bob.pre])?.allowed, true, "the reply is accepted");
+
+      s.alice.rotate();
+      s.bob.rotate();
+      yield* call(() => learn(s.left, s.bob));
+      yield* call(() => learn(s.right, s.alice));
+      const rot = s.right.rotateGroupHab("group", s.mids, s.mids, { isith: "1", nsith: "1", toad: 0 });
+      const rotation = signGroupMessage(
+        s.bob,
+        s.alice.pre,
+        yield* multisigRotateExn(s.group, s.bob, s.mids, s.mids, messagize(rot.serder, { sigers: rot.sigers })),
+      );
+      yield* receive(s, rotation.message);
+      assertEquals(s.left.db.kels.getLast(s.group, rot.serder.sn!), rot.serder.said, "the rotation is accepted");
+      assertEquals(findGroupProposal(readDeps(s), rotation.exnSaid)?.local, "inapplicable");
     }, "1");
   });
 });
