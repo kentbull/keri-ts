@@ -271,3 +271,5 @@ and 31 rows respectively. Keep peer preparation on the concrete row (main for
 ESSR storage, candidate for v2 registry/disclosure/KRAM, services for v2
 registry). Each job retains its 15-minute cap and separate timing artifact;
 `fail-fast: false` preserves failure evidence from all selected scopes.
+
+- 2026-11-12: 2.2.0 release-candidate qualification ran the full PR battery on master 6fcda417 (PR qualify/2-2-0-rc).
