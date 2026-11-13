@@ -18,6 +18,7 @@ import {
 import type { HttpClient } from "../transport/http-client.ts";
 import { requestWithHeaderTimeout } from "../transport/httping.ts";
 import { TransportError } from "../transport/transport-error.ts";
+import { keepsForPickup } from "./agent-inbox.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import { mailboxPollEndpoints } from "./mailboxing.ts";
@@ -56,7 +57,8 @@ export const MAILBOX_POLLER_PACING: Readonly<DoerPacing> = Object.freeze({
  *
  * Each endpoint has an independent worker and durable progress in the director.
  * Retrieved records are lent to the awaited consumer; protocol intake stays outside.
- * A provider store in the same runtime is never scanned for local recipient input.
+ * A provider store in the same runtime is never scanned for local recipient input, and this runtime never polls its
+ * own endpoint for a local group whose mail it processes on arrival (see {@link MailboxPoller.deliveredOnArrival}).
  */
 export class MailboxPoller {
   /**
@@ -244,6 +246,7 @@ export class MailboxPoller {
     if (topics.length > 0) {
       for (const target of this.remotePollTargets(only)) {
         for (const endpoint of mailboxPollEndpoints(target.hab, this.relay)) {
+          if (this.deliveredOnArrival(target.targetPre, endpoint.eid)) continue;
           // The signer is part of the identity: a group whose local member was replaced gets a new worker.
           wanted.set(`${target.targetPre}:${target.signerHab.pre}:${endpoint.key}`, { target, endpoint });
         }
@@ -315,6 +318,24 @@ export class MailboxPoller {
           break;
       }
     }
+  }
+
+  /**
+   * Whether `subject`'s mail at `eid` already reached local processing when it arrived, so polling `eid` for it would
+   * process every stored message a second time. That holds when this runtime is the provider (it owns the mailbox
+   * store), `eid` is one of its own habitats and it keeps `subject`'s mail for pickup ({@link keepsForPickup}: for a
+   * local subject, a group that authorized `eid` as mailbox or agent). Such a host ingests every `/fwd` for the group
+   * on arrival (`ForwardHandler`) and dispatches every raw arrival before keeping it; the copy it stores is for the
+   * group's remote members, who poll it from here. Any other local subject at a local endpoint (a single-sig habitat
+   * whose mailbox is this host) is still polled over loopback HTTP, which is its only local delivery of stored mail.
+   * Without a mailbox store this runtime is not the provider, so it polls as any remote client would.
+   *
+   * @param subject Local mailbox subject AID.
+   * @param eid Selected provider AID.
+   * @returns True when the endpoint must not be polled for this subject.
+   */
+  private deliveredOnArrival(subject: string, eid: string): boolean {
+    return !!this.mailboxDirector.mailboxer && this.hby.habs.has(eid) && keepsForPickup(this.hby, subject, eid);
   }
 
   /**

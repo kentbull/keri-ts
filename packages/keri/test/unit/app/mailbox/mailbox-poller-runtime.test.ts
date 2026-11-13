@@ -20,7 +20,7 @@ import {
   type MailboxPollBatch,
   MailboxPoller,
 } from "../../../../src/app/mailbox/mailbox-poller.ts";
-import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
+import { mailboxTopicKey, openMailboxerForHabery } from "../../../../src/app/mailbox/mailboxing.ts";
 import {
   createAgentRuntime,
   runAgentRuntime,
@@ -1109,6 +1109,55 @@ Deno.test("poller signs group poll with replacement member", async () => {
       assert(bodies.every((body) => body.includes(`"q":{"topics":{"/reply":0},"i":"${group.pre}"`)));
     } finally {
       yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a mailbox host never polls itself for a local group it keeps mail for, but still for a single-sig", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const mailboxer = yield* openMailboxerForHabery(hby);
+    try {
+      const { alice, group, http, bodies } = groupWithMailbox(hby);
+      // This Habery's own host is the mailbox of both a local single-sig habitat and the local group.
+      const host = hby.makeHab("host", undefined, { transferable: false });
+      const solo = makeTransferableHab(hby, "solo");
+      const url = "http://host.mailbox.test/";
+      hby.db.locs.pin([host.pre, "http"], { url });
+      for (const pre of [solo.pre, group.pre]) hby.db.ends.pin([pre, Roles.mailbox, host.pre], { allowed: true });
+      const own: string[] = [];
+      http.registerOrigin(url, async (request) => {
+        own.push(new TextDecoder().decode(await request.arrayBuffer()));
+        return new Response(null, { status: 204 });
+      });
+      for (const store of [mailboxer, null]) {
+        own.length = 0;
+        bodies.length = 0;
+        const clock = new ManualRuntimeClock();
+        const director = new MailboxDirector(hby, store ? { mailboxer: store } : {});
+        const poller = new MailboxPoller(hby, director, http, clock, null);
+        poller.registerTopic("/reply");
+        const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
+        try {
+          // The single-sig habitat's only local delivery of stored mail is the loopback poll, with or without a store.
+          yield* tockUntil(clock, () => signedBy(own, solo) > 0, "the single-sig subject polls its local mailbox");
+          // The group's remote mailbox is polled either way.
+          yield* tockUntil(clock, () => signedBy(bodies, alice) > 0, "the group polls its remote mailbox");
+          if (store) {
+            // The provider ingests the group's mail on arrival, so it never polls its own endpoint for the group.
+            for (let turn = 0; turn < 50; turn++) yield* runtimeTurn();
+            assertEquals(signedBy(own, alice), 0);
+          } else {
+            // Without the store this runtime is not the provider, and polls the group's mailbox like any client.
+            yield* tockUntil(clock, () => signedBy(own, alice) > 0, "a runtime without the store polls the group");
+          }
+        } finally {
+          yield* waitForTaskHalt(worker);
+        }
+      }
+    } finally {
+      yield* mailboxer.close(true);
       yield* hby.close(true);
     }
   });
