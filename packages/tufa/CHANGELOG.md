@@ -1,5 +1,19 @@
 # @keri-ts/tufa
 
+## 2.2.3
+
+### Patch Changes
+
+- b8ec57c: Republish pinned to keri-ts 2.2.3, so a host does not resolve a second copy of keri-ts.
+- Updated dependencies [b8ec57c]
+- Updated dependencies [b8ec57c]
+- Updated dependencies [b8ec57c]
+- Updated dependencies [b8ec57c]
+  - @keri-ts/hosting@2.2.3
+  - @keri-ts/observer@2.2.1
+  - @keri-ts/registrar@2.2.1
+  - @keri-ts/verifier@2.2.1
+
 ## 2.2.2
 
 ### Patch Changes

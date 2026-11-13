@@ -634,7 +634,13 @@
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
           "npm:effection@^3.6.0"
-        ]
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:cesr-ts@2.2.1",
+            "npm:keri-ts@2.2.3"
+          ]
+        }
       },
       "packages/keri": {
         "dependencies": [
@@ -644,45 +650,95 @@
           "npm:cbor-x@1.6.0",
           "npm:commander@^10.0.1",
           "npm:effection@^3.6.0"
-        ]
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:cesr-ts@2.2.1"
+          ]
+        }
       },
       "packages/multisync": {
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3"
-        ]
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:cesr-ts@2.2.1",
+            "npm:keri-ts@2.2.3"
+          ]
+        }
       },
       "packages/observer": {
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
           "jsr:@std/assert@0.217",
           "npm:effection@^3.6.0"
-        ]
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:@keri-ts/hosting@2.2.3",
+            "npm:@keri-ts/registrar@2.2.1",
+            "npm:cesr-ts@2.2.1",
+            "npm:keri-ts@2.2.3"
+          ]
+        }
       },
       "packages/registrar": {
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
           "jsr:@std/assert@0.217",
           "npm:effection@^3.6.0"
-        ]
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:@keri-ts/hosting@2.2.3",
+            "npm:cesr-ts@2.2.1",
+            "npm:keri-ts@2.2.3"
+          ]
+        }
       },
       "packages/tufa": {
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
           "npm:effection@^3.6.0"
-        ]
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:@keri-ts/hosting@2.2.3",
+            "npm:@keri-ts/observer@2.2.1",
+            "npm:@keri-ts/registrar@2.2.1",
+            "npm:@keri-ts/verifier@2.2.1",
+            "npm:@keri-ts/wallet@2.2.3",
+            "npm:cesr-ts@2.2.1",
+            "npm:keri-ts@2.2.3"
+          ]
+        }
       },
       "packages/verifier": {
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
           "npm:effection@^3.6.0"
-        ]
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:@keri-ts/registrar@2.2.1",
+            "npm:cesr-ts@2.2.1",
+            "npm:keri-ts@2.2.3"
+          ]
+        }
       },
       "packages/wallet": {
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
           "jsr:@std/assert@0.217",
           "npm:effection@^3.6.0"
-        ]
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:cesr-ts@2.2.1",
+            "npm:keri-ts@2.2.3"
+          ]
+        }
       }
     }
   }
