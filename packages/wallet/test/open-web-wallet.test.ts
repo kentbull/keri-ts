@@ -2,6 +2,7 @@
 import { concatBytes, Counter, MtrDex, Signer, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
+import { Schemer } from "keri-ts/runtime";
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
 import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
@@ -379,5 +380,43 @@ Deno.test("the wallet's error classes report their own names, in a bundle that m
     } finally {
       Object.defineProperty(Error_, "name", original);
     }
+  }
+});
+
+Deno.test("pinSchema keeps a schema document, and a group present sends the verb it names and refuses any other", async () => {
+  const w = await page().open();
+  try {
+    const schemer = new Schemer({ sed: { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object" } });
+    assertEquals(w.credentials.pinSchema(schemer.raw), schemer.said);
+    assertEquals(w.hby.db.schema.get(schemer.said)?.said, schemer.said, "the table holds the pinned document");
+
+    const a = await w.identifiers.incept({ alias: "a" }), b = await w.identifiers.incept({ alias: "b" });
+    const solo = await w.groups.incept({ alias: "solo", member: a.pre, smids: [a.pre], timeoutMs: 2000 });
+    const group = w.hby.habByName("solo")!;
+    assert(solo && group, "a one-member group is its own quorum");
+    const options = { recipient: b.pre, message: "", plan: [] };
+
+    const applied = await w.credentials.present({ verb: "apply", pre: group.pre!, options }, { timeoutMs: 2000 });
+    assert("said" in applied);
+    assertEquals(w.hby.db.exns.get([applied.said])?.route, "/ipex/apply", "the verb picked the message");
+
+    await assertRejects(
+      () => w.credentials.present({ verb: "bogus", pre: group.pre!, options } as never),
+      Error,
+      "cannot send the verb bogus",
+    );
+    // An Offer takes the Offer path: it asks the wallet for the credential it offers, where a Grant would not.
+    await assertRejects(
+      () =>
+        w.credentials.present({ verb: "offer", pre: group.pre!, selection: { said: "Eunknown" }, options } as never),
+      Error,
+    );
+    assertEquals(
+      [...w.hby.db.exns.getTopItemIter()].filter(([, body]) => body.route === "/ipex/grant").length,
+      0,
+      "no Grant was made in place of the Offer",
+    );
+  } finally {
+    await w.close();
   }
 });
