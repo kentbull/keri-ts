@@ -5,6 +5,7 @@ through /, HttpEnd and the normal KERIpy parser/verification path.
 """
 from contextlib import contextmanager
 import copy
+import inspect
 import time
 import traceback
 from urllib.request import Request, urlopen
@@ -14,15 +15,13 @@ from hio.base import doing
 from hio.core import http
 from keri import Kinds, Vrsn_2_0
 from keri.acdc import RegBaser, Regery, Registrar, acdcmap, admit, agree, apply, grant, loadHandlers, offer, spurn
-from keri.acdc.chaining import Verdicts
-from keri.acdc.dhking import Dhke
-from keri.acdc.unblinding import Unblind
-from keri.cli.common.sending import messageParts
+# keri.acdc.chaining, dhking, unblinding, keri.cli.common.sending and CESR_GENUS_HEADER exist only on the
+# candidate profile; the methods that need them import them, so the peer also starts on upstream main.
 from keri.core.scheming import Schemer
 from keri.core.kraming import Pruner
 from keri.app import openCF, openHby
 from keri.app.indirecting import HttpEnd, createHttpServer
-from keri.app.httping import CESR_ATTACHMENT_HEADER, CESR_CONTENT_TYPE, CESR_DESTINATION_HEADER, CESR_GENUS_HEADER
+from keri.app.httping import CESR_ATTACHMENT_HEADER, CESR_CONTENT_TYPE, CESR_DESTINATION_HEADER
 from keri.core import Codens, Counter, Diger, Kevery, Number, Parser, SealSource, SerderACDC, exchange, messagize
 from keri.peer import Exchanger
 from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage, serializeParsedSubstream
@@ -68,11 +67,15 @@ class IpexPeer:
         loadHandlers(hby=hby, exc=self.exc, notifier=self.recorder, rgy=self.rgy, **grant_walk_options(grant_walk))
         self.kvy = Kevery(db=hby.db, lax=False, local=False, cf=cf,
                           enableKram=True, exc=self.exc, rvy=self.hab.rvy)
+        # Only the candidate's Parser routes v2 registry events (rip/bup) to a Regery; upstream main has no such route.
+        routes = dict(rgy=self.rgy) if "rgy" in inspect.signature(Parser).parameters else {}
         self.parser = Parser(version=Vrsn_2_0, kvy=self.kvy, exc=self.exc,
-                             rgy=self.rgy, rvy=self.hab.rvy, framed=False)
+                             rvy=self.hab.rvy, framed=False, **routes)
         self.dh = self.unblind = None
         self.operation = None
         if derived:
+            from keri.acdc.dhking import Dhke
+            from keri.acdc.unblinding import Unblind
             assert self.hab.mgr.aeid and self.hab.mgr.encrypter and self.hab.mgr.decrypter
             self.dh = Dhke(self.hab, self.exc)
             self.unblind = Unblind(self.hab, self.exc, self.rgy, states=("issued", "revoked", ""))
@@ -123,6 +126,8 @@ class IpexPeer:
 
     def post(self, wire, remote=None):
         """Detach each exact SAD and its complete proof subtree for normal CESR HTTP intake."""
+        from keri.app.httping import CESR_GENUS_HEADER
+        from keri.cli.common.sending import messageParts
         destination = remote or self.remote
         for serder, attachments in messageParts(wire):
             for url in destination.get("urls", [destination["url"]]):
@@ -293,6 +298,7 @@ class IpexPeer:
 
     def current_grant(self, said):
         """Reverify the exact retained view and require issued state for its single registry node."""
+        from keri.acdc.chaining import Verdicts
         body, nests, verdict, records = self.exc.reverifyGrant(said)
         assert verdict is not None and verdict.verdict == Verdicts.valid
         assert len(nests) == 1
