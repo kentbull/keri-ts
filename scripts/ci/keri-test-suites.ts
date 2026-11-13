@@ -112,6 +112,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/ipex/issuance-holder.test.ts",
       "test/unit/app/ipex/group-issuance-colocated.test.ts",
       "test/unit/app/ipex/group-admit.test.ts",
+      "test/unit/app/ipex/group-weight-zero.test.ts",
       "test/unit/app/ipex/group-ipex-kram.test.ts",
       "test/unit/app/ipex/presenting.test.ts",
       "test/unit/app/ipex/ipex-v2.test.ts",

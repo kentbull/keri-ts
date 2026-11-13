@@ -551,26 +551,30 @@ export function approveGroupIssuanceExchange(
 }
 
 /**
- * Follow a group issuance that has already been contributed to, only to verify and accept the custodian's final
- * proof: the file-free path of an issuer member that left after contributing and returns for the proof. The group
- * is the Grant's sender. Signs nothing. The proof may already be stored (it arrives by mailbox), or be supplied as
- * bytes.
+ * Follow a group issuance only to verify and accept the custodian's final proof, signing nothing. It serves any
+ * member that does not contribute to the key exchange: an issuer member that left after contributing and returns
+ * for the proof, or a holder member the group completed without, such as one whose signing weight is 0. The group
+ * is the Grant's sender when that is a local group, otherwise its recipient. The proof may already be stored (it
+ * arrives by mailbox), or be supplied as bytes.
  *
- * @throws ValidationError for a Grant this runtime's groups did not send, or one already begun.
+ * @throws ValidationError for a Grant that is not pending for a local group, or one already begun.
  */
 export function* followGroupIssuanceProof(
   ops: IssuanceOperations,
   said: string,
   options: GroupFollowOptions = {},
 ): Operation<IssuanceBegun> {
-  const { deps } = ops;
-  if (ops.liveOf(said, "issuer") || partyComplete(deps, said, "issuer")) {
+  const { deps } = ops, sent = deps.exc.retainedInput(said)?.serder.pre;
+  const sender = sent ? deps.hby.habs.get(sent) : undefined;
+  const role: IssuanceRole = sender && isLocalGroupHab(deps.hby, sender) ? "issuer" : "holder";
+  if (ops.liveOf(said, role) || partyComplete(deps, said, role)) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const { grant, nodes } = pendingGrant(deps, said);
-  const party = GroupParty.resolve(deps, localGroup(deps, grant.pre), options.coordinator);
+  const group = localGroup(deps, role === "issuer" ? grant.pre : grant.sad!.ri);
+  const party = GroupParty.resolve(deps, group, options.coordinator);
   if (options.proof) yield* deps.reactor.processBytes(options.proof);
-  return ops.beginGroup(new GroupIssuance(party, "issuer", grant, nodes, { mode: "proofOnly" }));
+  return ops.beginGroup(new GroupIssuance(party, role, grant, nodes, { mode: "proofOnly" }));
 }
 
 /**
