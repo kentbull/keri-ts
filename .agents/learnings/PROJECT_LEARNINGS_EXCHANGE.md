@@ -287,6 +287,7 @@ accepted historical inception/rotation or infer acceptance from a resend. Stored
 epath values include their counter; serialize only their path/proof payload so
 reconstruction does not double the counter.
 Group Admit peer approval borrows the existing protocol runtime through `joinIpexProposal`; only v1 uses legacy credential settlement. Tufa `joinWalletIpex` records v2 inventory only after explicit local approval and accepted threshold. Review and partial signatures do not admit.
+Refill reads (`app/ipex/disclosure-replaying.ts`) list a group's Grants whose `erpy.` Admit is in `exns.` (threshold met overall, so a weight-0 member counts after accepting it) and replay one as KELs, TELs, Grant, Admit from stored proofs without signing. Streams from co-members carry the same events in the same order but each store's own retained attachments; schemas, roots and `/multisig/*` wrappers are not in them.
 
 IPEX command helpers return typed snapshots only after owned cleanup. Tufa
 projects final success JSON; poll results carry ordinary Serders rather than
