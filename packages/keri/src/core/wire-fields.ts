@@ -7,14 +7,26 @@
  * of a processor ends its loop (the mailbox poller, the escrow doer, HTTP ingress). Processor boundaries therefore read
  * remote field values through these readers and turn a null into their own typed refusal (ADR-0005) before any escrow
  * decision or store write: `Kevery.decideEvent` and `processReceipt`, the reply route handlers and `Revery`'s
- * datetime read, `Exchanger` admission and `queryEnvelopeFromDispatch`.
+ * datetime read, `Exchanger` admission and `queryEnvelopeFromDispatch`. Accepted KEL events are remote-authored too:
+ * their raw `a` seals are read through `readEventSeal` wherever an anchor is searched.
  *
  * Only the cesr codec's own malformed-input taxonomy (`ParserError` and its subclasses) is read as malformed input, and
  * only while constructing a primitive from a string the message carried. That construction reads no store, so a
  * `ParserError` there cannot be corrupt durable state or I/O; every other error propagates. Numbers are checked as
  * text before any `BigInt` conversion, so cesr's `SyntaxError`/`RangeError` for bad hex is never relied on.
  */
-import { Dater, Diger, Ilks, type MatterInit, ParserError, Prefixer, type SerderKERI, Verfer } from "cesr-ts";
+import {
+  Dater,
+  Diger,
+  Ilks,
+  type MatterInit,
+  NumberPrimitive,
+  ParserError,
+  Prefixer,
+  SealEvent,
+  type SerderKERI,
+  Verfer,
+} from "cesr-ts";
 import { encodeDateTimeToDater } from "../time/mod.ts";
 
 /** A cesr primitive class built from qualified text; its constructor reads nothing but its input. */
@@ -109,4 +121,21 @@ export function kelEventFieldDefect(serder: SerderKERI): string | null {
     ?? (ilk === Ilks.dip && serder.delpre !== null && !readPrefixer(serder.delpre)
       ? `delegator ${JSON.stringify(serder.delpre)}`
       : null);
+}
+
+/**
+ * Read one raw `a` entry as an event seal `{i, s, d}`, or null when it is another seal shape or carries a value that
+ * does not decode.
+ *
+ * An accepted event's seals are not value-checked at acceptance (KERIpy keeps them as raw dicts), so any identifier can
+ * anchor junk in its own KEL. Anchor searches (delegation approval, sealing-event lookup) therefore read each entry
+ * through this reader and skip a null instead of throwing. KERIpy filters by the same field shape
+ * (`tuple(seal) == SealEvent._fields`) and compares raw strings, so a malformed value can never match a real event.
+ */
+export function readEventSeal(value: unknown): SealEvent | null {
+  if (!SealEvent.isSad(value)) return null;
+  const pre = readPrefixer(value.i);
+  const sn = readOrdinal(value.s);
+  const said = readDiger(value.d);
+  return pre && sn !== null && said ? SealEvent.fromTuple([pre, NumberPrimitive.fromNum(BigInt(sn)), said]) : null;
 }

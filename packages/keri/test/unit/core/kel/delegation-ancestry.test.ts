@@ -1,5 +1,5 @@
 /** Real KEL evidence exercises KERIpy PR 1757's isDelegated ancestry contract. */
-import { Diger, SealSource } from "cesr-ts";
+import { Diger, SealSource, type SerderKERI } from "cesr-ts";
 import { ensure, run } from "effection";
 import { assertEquals, assertExists, assertNotEquals, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
@@ -194,5 +194,58 @@ Deno.test("Protected KEL intake cannot grant delegated authority through an unre
     assertEquals(receiver.db.aess.get(key), before, "parent intake leaves an existing hint intact");
     assertEquals(delegationAncestry(receiver.db, child.pre, root.pre).kind, "valid");
     assertEquals(receiver.db.aess.get(key), before, "fallback approval lookup remains read-only");
+  });
+});
+
+/** Seals any identifier can anchor in its own accepted KEL: an unknown shape and an event seal with junk values. */
+const junkSeals = [{ nope: true }, { i: "junk", s: "zz", d: "junk" }];
+
+Deno.test("isDelegated skips a delegator's unknown or malformed seals instead of throwing", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    yield* ensure(() => hby.close(true));
+    const root = hby.makeHab("root"), child = hby.makeHab("child", undefined, { delpre: root.pre });
+    root.interact({ data: junkSeals });
+    assertEquals(delegationAncestry(hby.db, child.pre, root.pre).kind, "pending");
+    root.interact({ data: [...junkSeals, seal(child.pre)] });
+    hby.db.aess.rem(dgKey(child.pre, child.pre)); // Force the walk over every first-seen delegator event.
+    assertEquals(delegationAncestry(hby.db, child.pre, root.pre).kind, "valid");
+  });
+});
+
+Deno.test("A delegated inception is decided when its delegator anchored unknown or malformed seals", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    yield* ensure(() => source.close(true));
+    const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    yield* ensure(() => receiver.close(true));
+    // The remote delegator anchors junk in its own KEL, then names itself as the delegator of a new dip.
+    const root = source.makeHab("root"), child = source.makeHab("child", undefined, { delpre: root.pre });
+    root.interact({ data: junkSeals });
+    const junk = root.kever!.serder;
+    root.interact({ data: [...junkSeals, seal(child.pre)] });
+    const approval = root.kever!.serder;
+    const process = (serder: SerderKERI, sscs: SealSource[]) =>
+      receiver.kevery.processEvent({
+        serder,
+        sigers: source.db.sigs.get(dgKey(serder.pre!, serder.said!)),
+        wigers: [],
+        frcs: [],
+        ssts: [],
+        sscs,
+        local: false,
+      });
+    for (let sn = 0; sn <= 2; sn++) {
+      assertEquals(
+        process(source.db.getEvtSerder(root.pre, source.db.kels.getLast(root.pre, sn)!)!, []).kind,
+        "accept",
+      );
+    }
+    const hint = (event: SerderKERI) => SealSource.fromTuple([event.sner!, new Diger({ qb64: event.said! })]);
+    // A source seal naming the junk event makes validation read its seals: no approval there, so it waits.
+    assertEquals(process(child.kever!.serder, [hint(junk)]).kind, "escrow");
+    // The approval carries the same junk ahead of the real seal; the junk is skipped and the seal still matches.
+    assertEquals(process(child.kever!.serder, [hint(approval)]).kind, "accept");
+    assertEquals(receiver.db.getKever(child.pre)?.delpre, root.pre);
   });
 });

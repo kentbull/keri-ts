@@ -1,5 +1,5 @@
-import { Diger } from "cesr-ts";
 import { type RegistrySealFields, VcStateRecord } from "../core/records.ts";
+import { readDiger } from "../core/wire-fields.ts";
 import { timestampMicros } from "../time/mod.ts";
 import { qualifiedPrefix } from "./registry-tsn-record.ts";
 
@@ -11,11 +11,7 @@ function ordinal(value: unknown): value is string {
 
 /** Require the full qualified digest rather than accepting trailing bytes. */
 function qualifiedDigest(value: unknown): value is string {
-  try {
-    return typeof value === "string" && new Diger({ qb64: value }).qb64 === value;
-  } catch {
-    return false;
-  }
+  return readDiger(value)?.qb64 === value;
 }
 
 /** Accepted notice seals are either absent or complete, unlike raw TEL projections. */

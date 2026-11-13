@@ -9,6 +9,7 @@
  * DID URL dereferencing is intentionally represented but not implemented yet.
  */
 import type { Schemer } from "../../core/scheming.ts";
+import { readUrl } from "../../core/wire-fields.ts";
 import type { Habery } from "../identity/habbing.ts";
 
 export type SchemaReference =
@@ -26,7 +27,9 @@ export function parseSchemaReference(reference: string): SchemaReference {
     return { kind: "did", url: reference };
   }
   if (reference.startsWith("http://") || reference.startsWith("https://")) {
-    const parsed = new URL(reference);
+    // The reference is a remote credential's `s`; one that does not parse names no cached schema.
+    const parsed = readUrl(reference);
+    if (!parsed) return { kind: "oobi", url: reference };
     const parts = parsed.pathname.split("/").filter((part) => part.length > 0);
     const oobiIndex = parts.lastIndexOf("oobi");
     const said = oobiIndex >= 0 && oobiIndex + 2 === parts.length ? parts[oobiIndex + 1] : undefined;

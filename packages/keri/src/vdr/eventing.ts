@@ -44,11 +44,12 @@ import {
   type Router,
   unverifiedReplyDecision,
 } from "../core/routing.ts";
+import { readDater, readSequenceNumber } from "../core/wire-fields.ts";
 import type { Baser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { BrokerProcessReplyArgs } from "../db/escrowing.ts";
 import type { Reger } from "../db/reger.ts";
-import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { backerThreshold, resolveBackerState } from "./backer-state.ts";
 import { credentialRecord } from "./credential-tsn-record.ts";
 import { qualifiedPrefix, registryRecord } from "./registry-tsn-record.ts";
@@ -150,18 +151,22 @@ function okSaid(serder: SerderKERI): string {
   return serder.said;
 }
 
+/** The event's `i`, which must be exactly one qualified prefix: TEL escrows key rows by it and split keys on `.`. */
 function okPre(serder: SerderKERI): string {
-  if (!serder.pre) {
-    throw new ValidationError("TEL event missing prefix.");
+  const pre = serder.pre;
+  if (!qualifiedPrefix(pre)) {
+    throw new ValidationError(`TEL event prefix ${JSON.stringify(pre)} is missing or not a qualified prefix.`);
   }
-  return serder.pre;
+  return pre;
 }
 
+/** The event's hex `s`, read without cesr's throwing `sn` getter; a missing, non-hex or unsafe value is refused. */
 function okSn(serder: SerderKERI): number {
-  if (serder.sn === null) {
-    throw new ValidationError("TEL event missing sequence number.");
+  const sn = readSequenceNumber(serder);
+  if (sn === null) {
+    throw new ValidationError(`TEL event sequence number ${JSON.stringify(serder.ked?.s)} is missing or malformed.`);
   }
-  return serder.sn;
+  return sn;
 }
 
 function okKed(serder: SerderKERI): Record<string, unknown> {
@@ -950,6 +955,9 @@ export class Tevery {
     try {
       decision = this.reger.transaction((): TelProcessDecision => {
         const serder = args.serder;
+        // Parsed wire bodies are not SAID-checked by the parser. An unverified body would be stored in escrow, then
+        // fail re-parsing on every escrow pass, and could pre-empt the genuine event holding the same anchored `d`.
+        if (!serder.verify()) return reject("TEL event body does not verify against its SAID.", serder);
         const ilk = telIlk(serder);
         const pre = okPre(serder);
         const sn = okSn(serder);
@@ -1117,9 +1125,10 @@ export class Tevery {
   ): RegistryReplyDecision {
     const rvy = this.replyVerifier();
     const record = registryRecord(serder.ked?.a);
-    const stamp = serder.ked?.dt;
+    // A `dt` that parses as a timestamp can still fail to encode as a Dater (no fraction, `Z`); read it once here.
+    const dater = readDater(serder.ked?.dt);
     if (
-      !record || !qualifiedPrefix(aid) || typeof stamp !== "string" || timestampMicros(stamp) === null
+      !record || !qualifiedPrefix(aid) || !dater
       || route !== `/tsn/registry/${aid}`
       || serder.said !== diger.qb64 || !serder.verify()
     ) {
@@ -1158,7 +1167,7 @@ export class Tevery {
         aid,
         serder,
         diger,
-        dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
+        dater,
         cigars,
         tsgs,
       });
@@ -1218,7 +1227,6 @@ export class Tevery {
     if (fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(stored[key]))) {
       return reject("Registry state metadata mismatch.");
     }
-    const dater = new Dater({ qb64: encodeDateTimeToDater(stamp) });
     const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
 
     rvy.writeReply(proof);
@@ -1235,9 +1243,9 @@ export class Tevery {
   ): CredentialReplyDecision {
     const rvy = this.replyVerifier();
     const record = credentialRecord(serder.ked?.a);
-    const stamp = serder.ked?.dt;
+    const dater = readDater(serder.ked?.dt);
     if (
-      !record || !qualifiedPrefix(aid) || typeof stamp !== "string" || timestampMicros(stamp) === null
+      !record || !qualifiedPrefix(aid) || !dater
       || route !== `/tsn/credential/${aid}` || serder.said !== diger.qb64 || !serder.verify()
     ) return unverifiedReplyDecision("Invalid credential transaction-state notice.");
     const vci = record.i, regk = record.ri, sn = Number.parseInt(record.s, 16);
@@ -1276,7 +1284,7 @@ export class Tevery {
         aid,
         serder,
         diger,
-        dater: new Dater({ qb64: encodeDateTimeToDater(stamp) }),
+        dater,
         cigars,
         tsgs,
       });
@@ -1351,12 +1359,7 @@ export class Tevery {
     const cues: AgentCue[] = [{ kin: "txnStateSaved", record }];
 
     rvy.writeReply(proof);
-    this.reger.txnsb.updateReply(
-      aid,
-      serder,
-      diger,
-      new Dater({ qb64: encodeDateTimeToDater(stamp) }),
-    );
+    this.reger.txnsb.updateReply(aid, serder, diger, dater);
     if (previous?.qb64 !== diger.qb64) rvy.removeReply(previous);
     if (queryCues.length) rvy.cues.extend(queryCues);
     if (cues.length) rvy.cues.extend(cues);
@@ -1493,8 +1496,8 @@ export class Tevery {
       case Ilks.iss:
       case Ilks.rev: {
         const regk = stringField(okKed(serder), "ri");
-        if (!regk) {
-          throw new ValidationError("TEL credential event missing ri.");
+        if (!qualifiedPrefix(regk)) {
+          throw new ValidationError("TEL credential event missing or malformed ri.");
         }
         return regk;
       }
@@ -1502,8 +1505,8 @@ export class Tevery {
       case Ilks.brv: {
         const ra = sealRecord(okKed(serder).ra);
         const regk = ra && "i" in ra && typeof ra.i === "string" ? ra.i : null;
-        if (!regk) {
-          throw new ValidationError("Backer TEL event missing ra.i.");
+        if (!qualifiedPrefix(regk)) {
+          throw new ValidationError("Backer TEL event missing or malformed ra.i.");
         }
         return regk;
       }

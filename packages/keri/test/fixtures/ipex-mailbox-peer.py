@@ -156,9 +156,9 @@ class RelayControl:
         """Issue one v2 credential to `recipient`.
 
         With `registry`, incept a v2 registry and issue as an anchored blinded update (`rip`, `bup`) whose TEL
-        events travel ahead of the Grant. A private opening travels only in the Grant (on the node); a `public`
-        one is published on the `bup` itself and the Grant carries none, so any reader of the TEL learns the
-        state. Without `registry`, the credential is authenticated by the issuer's signature on the node.
+        events travel ahead of the Grant, which carries the opening on its node. A `public` opening is also
+        published on the `bup`, so any reader of the TEL learns the state without an Unblind or key exchange; a
+        private one travels only in the Grant. Without `registry`, the issuer's signature authenticates the node.
         """
         peer = self.peer
         hab = peer.hab
@@ -182,7 +182,9 @@ class RelayControl:
         assert reg.anchorMsg(update.said)
         empty = Counter.enclose(qb64=b"", code=Codens.AttachmentGroup, version=Vrsn_2_0)
         published = Counter.enclose(qb64=Blinder.enclose([opening]), code=Codens.AttachmentGroup, version=Vrsn_2_0)
-        origin = messagize(full, gvrsn=Vrsn_2_0) if public else messagize(full, bonds=[opening.data], gvrsn=Vrsn_2_0)
+        # The Grant's node always carries its opening (KERIpy verifies a registry node only from disclosed proofs);
+        # a public opening is also published on the `bup`, so any reader of the TEL holds it.
+        origin = messagize(full, bonds=[opening.data], gvrsn=Vrsn_2_0)
         self.issued = dict(full=full, origin=origin, events=[(rip, empty), (update, published if public else empty)],
                            recipient=recipient)
         return dict(credential=full.said, schema=full.sad["s"]["$id"], registry=reg.regk,
@@ -247,17 +249,14 @@ class RelayControl:
                                                registry=nest.serder.regid)
                                           for nest in loadParsedNestedSubstreams(self.peer.hby, said)]
                                    if body else [])
-        heads, openings = {}, {}
-        store = self.peer.rgy.store
+        heads = {}
         for regk in registries:
-            head = store.headEvent(regk)
+            head = self.peer.rgy.store.headEvent(regk)
             heads[regk] = head.said if head else None
-            # Only the candidate retains openings; upstream main's RegistryStore has no opening store.
-            openings[regk] = bool(head and hasattr(store, "opening") and store.opening(head.said) is not None)
         return dict(oobis=oobis, known={pre: (self.peer.kvy.kevers[pre].sn if pre in self.peer.kvy.kevers else None)
                                        for pre in pres},
                     ends={pre: {role: list(eids) for role, eids in self.peer.hab.endsFor(pre).items()} for pre in pres},
-                    exchanges=exchanges, registries=heads, openings=openings, received=self.peer.received)
+                    exchanges=exchanges, registries=heads, received=self.peer.received)
 
 
 def relay(port, root):

@@ -27,13 +27,24 @@ import type { Notifier } from "../notifications/notifying.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import type { HttpClient } from "../transport/http-client.ts";
-import { sendWitnessMessage } from "../witness/receipt-client.ts";
+import { deliverWitnessMessage, type WitnessDelivery } from "../witness/receipt-client.ts";
 import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 
 export const DELEGATE_REQUEST_ROUTE = "/delegate/request";
 
 /** Runtime passes to wait between repeated delegator-witness anchor queries. */
 const DELEGATION_ANCHOR_QUERY_RETRY_PASSES = 8;
+
+/** Keep the delegation request row after the delegator could not take it; the next pass sends it again. */
+function retainedForDelegator(pre: string, said: string, error: unknown): DelegationWorkflowResult {
+  return {
+    kind: "keep",
+    pre,
+    said,
+    phase: "waitingWitnessReceipts",
+    reason: `Delegation request is not delivered yet: ${error instanceof Error ? error.message : String(error)}`,
+  };
+}
 
 /** Durable phase for one delegated event as it moves through approval. */
 export type DelegationPhase =
@@ -765,7 +776,7 @@ export class Anchorer {
     }, { notify: true });
     // Admission alone cannot release the next send or the delegation phase transition.
     const requested = yield* postman.wait(request);
-    if (requested.kin === "failed") throw requested.error;
+    if (requested.kin === "failed") return retainedForDelegator(pre, said, requested.error);
     const replay = postman.send({
       src: communicationHab.pre,
       dest: delpre,
@@ -773,7 +784,7 @@ export class Anchorer {
       topic: DELEGATE_MAILBOX_TOPIC,
     }, { notify: true });
     const replayed = yield* postman.wait(replay);
-    if (replayed.kin === "failed") throw replayed.error;
+    if (replayed.kin === "failed") return retainedForDelegator(pre, said, replayed.error);
     // KERIpy issues the first delegator-witness anchor query in the same
     // publish phase that forwards the delegation request and raw event bytes.
     // Keep that ordering here so delegate-side approval discovery does not
@@ -837,9 +848,9 @@ export class Anchorer {
     // event is learned locally; pinning `aess.` is what lets delegated unescrow
     // and later reopen paths prove the authorization.
     pinAuthorizingSeal(this.hby, serder, delegating);
-    this.hby.db.dune.rem(keys);
 
     if ((hab.kever?.wits.length ?? 0) === 0) {
+      this.hby.db.dune.rem(keys);
       this.hby.db.cdel.appendOn(pre, completionDiger(serder));
       this.clearWorkflowPins(serder);
       return {
@@ -851,7 +862,18 @@ export class Anchorer {
       };
     }
 
-    yield* this.publishDelegator(serder);
+    // A delegator or witness that cannot take the publication keeps this row for the next pass.
+    const published = yield* this.publishDelegator(serder);
+    if (published.kind === "unreachable") {
+      return {
+        kind: "keep",
+        pre,
+        said,
+        phase: "waitingDelegatorAnchor",
+        reason: `Delegation publication is not delivered yet: ${published.error.message}`,
+      };
+    }
+    this.hby.db.dune.rem(keys);
     this.hby.db.dpub.pin(keys, serder);
     return {
       kind: "advance",
@@ -926,8 +948,10 @@ export class Anchorer {
    * Send the delegation chain before the approving event, awaiting actual Poster or witness transmission outcomes.
    *
    * @param serder Accepted delegator event to publish after its required delegation chain.
+   * @returns `unreachable` with the first remote failure (a witness or the delegator that is down, refuses or
+   * has no usable endpoint); nothing past it is attempted. Local faults still throw.
    */
-  private *publishDelegator(serder: SerderKERI): Operation<void> {
+  private *publishDelegator(serder: SerderKERI): Operation<WitnessDelivery> {
     const pre = workflowPre(serder);
     const hab = localHabByPre(this.hby, pre, "Delegation witness publication");
     const transportHab = this.publicationTransportHab(serder, hab);
@@ -942,7 +966,8 @@ export class Anchorer {
     // matches the witness-visible material KERIpy sends for delegated approval.
     for (const msg of this.hby.db.cloneDelegation(kever)) {
       for (const witness of kever.wits) {
-        yield* sendWitnessMessage(transportHab, witness, msg, this.http, this.clock, this.protocol);
+        const delivery = yield* deliverWitnessMessage(transportHab, witness, msg, this.http, this.clock, this.protocol);
+        if (delivery.kind === "unreachable") return delivery;
       }
     }
 
@@ -957,10 +982,25 @@ export class Anchorer {
         msg: approvedEvent,
       }, { notify: true });
       const outcome = yield* postman.wait(evt);
-      if (outcome.kin === "failed") throw outcome.error;
+      if (outcome.kin === "failed") {
+        return {
+          kind: "unreachable",
+          witness: kever.delpre,
+          error: outcome.error instanceof Error ? outcome.error : new Error(String(outcome.error)),
+        };
+      }
     }
     for (const witness of kever.wits) {
-      yield* sendWitnessMessage(transportHab, witness, approvedEvent, this.http, this.clock, this.protocol);
+      const delivery = yield* deliverWitnessMessage(
+        transportHab,
+        witness,
+        approvedEvent,
+        this.http,
+        this.clock,
+        this.protocol,
+      );
+      if (delivery.kind === "unreachable") return delivery;
     }
+    return { kind: "delivered" };
   }
 }
