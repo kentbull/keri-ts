@@ -52,6 +52,7 @@ import {
   presentationStatus,
   rebuildIssuanceAdmit,
   Receiptor,
+  receiveIssuance,
   removeMailbox,
   requestUnblind,
   requireMailboxEndpointUrl,
@@ -104,11 +105,14 @@ export function walletChangeSink(tracked: TrackedIssuances, forward: ChangeSinkS
   return {
     push(change: WorkflowChange) {
       forward()?.push(change);
-      if (change.kind !== "issuance") return;
-      try {
-        if (tracked.get(change.id)?.()) tracked.delete(change.id);
-      } catch {
-        // Recorded by the issuing call or the next one; see above.
+      // A retained registry root copy may be what a member's recorder was waiting for: try them all.
+      const grants = change.kind === "issuance" ? [change.id] : change.kind === "root" ? [...tracked.keys()] : [];
+      for (const grant of grants) {
+        try {
+          if (tracked.get(grant)?.()) tracked.delete(grant);
+        } catch {
+          // Recorded by the issuing call or the next change; see above.
+        }
       }
     },
   };
@@ -638,41 +642,23 @@ export class Credentials {
       return await this.#groups.receive(grant, hab, { timeoutMs, message });
     }
     return await this.#scope.go(function*(): Operation<ReceiveOutcome> {
-      let status = issuanceStatus(ops, grant);
-      if (status.role === "issuer") throw new ValidationError("This Grant was issued by this wallet.");
-      if (status.state === "active" && status.needs === "exchange") approveIssuanceExchange(ops, { hab, grant });
-      const waited = yield* waitForIssuance(ops, grant, {
+      let held: AdmittedCredential | undefined;
+      const received = yield* receiveIssuance(ops, {
+        hab,
+        grant,
+        message,
         timeoutMs,
-        until: (s) => s.state !== "active" || s.needs === "admit",
-      });
-      status = waited.status;
-      if (waited.outcome === "timed-out") return { outcome: "timed-out", grant, timeoutMs, status };
-      if (status.state !== "active" && status.state !== "done") return { outcome: "ended", grant, status };
-      if (status.state === "done") {
-        // Admitted by an earlier call; the inventory holds it.
-        const held = wallet.db.admitted.get([grant]);
-        const admit = hby.db.erpy.get([grant])!.qb64;
-        const record = held ?? (yield* call(() => wallet.recordAdmission(grant, admit, { consent: true })));
-        return {
-          outcome: "admitted",
-          grant,
-          admit,
-          held: record,
-          delivery: {
-            state: "undelivered",
-            reason: "Admitted by an earlier call; use resendAdmit to deliver it again.",
-          },
-        };
-      }
-      const admitted = yield* admitIssuance(ops.deps, { hab, grant, message });
-      // The inventory record precedes delivery: whatever happens to the network, consent is on record.
-      const held = yield* call(() => wallet.recordAdmission(grant, admitted.admit.said!, { consent: true }));
-      const delivery = yield* delivered(
-        runtime.clock,
         deliveryTimeoutMs,
-        () => deliverIssuanceAdmit(ops.deps, hab, admitted),
-      );
-      return { outcome: "admitted", grant, admit: admitted.admit.said!, held, delivery };
+        // The inventory record precedes delivery: whatever happens to the network, consent is on record.
+        *onAdmitted(admitted) {
+          held = yield* call(() => wallet.recordAdmission(grant, admitted.admit.said!, { consent: true }));
+        },
+      });
+      if (received.outcome !== "admitted") return received;
+      // An earlier call admitted the Grant: the inventory holds it, or records it now.
+      held ??= wallet.db.admitted.get([grant])
+        ?? (yield* call(() => wallet.recordAdmission(grant, received.admit, { consent: true })));
+      return { outcome: "admitted", grant, admit: received.admit, held, delivery: received.delivery };
     });
   }
 

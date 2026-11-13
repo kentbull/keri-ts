@@ -341,3 +341,22 @@ Deno.test("a tracked issuance is recorded on its issuance change, and one that c
   assertEquals([attempts, tracked.has("grant")], [2, false], "a recorded issuance is untracked");
   assertEquals(forwarded, ["event:grant", "issuance:grant", "issuance:grant"], "every change is forwarded");
 });
+
+Deno.test("a retained registry root copy gives every tracked recorder another try", () => {
+  const tracked = new Map<string, () => boolean>();
+  const sink = walletChangeSink(tracked, () => undefined);
+  let ready = false;
+  const attempts: string[] = [];
+  for (const grant of ["one", "two"]) {
+    tracked.set(grant, () => {
+      attempts.push(grant);
+      if (!ready) throw new Error("the root copy has not arrived");
+      return true;
+    });
+  }
+  sink.push({ kind: "root", id: "registry" });
+  assertEquals([attempts, tracked.size], [["one", "two"], 2], "a failed recording stays tracked");
+  ready = true;
+  sink.push({ kind: "root", id: "registry" });
+  assertEquals(tracked.size, 0, "the root copy lets both record");
+});
