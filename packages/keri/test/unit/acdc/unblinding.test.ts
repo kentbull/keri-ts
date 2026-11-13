@@ -621,6 +621,12 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     // The finite command replaces its fixture listener on the same signed endpoint.
     yield* call(finiteListener.stop);
     // Start the ordinary nonproposer command first; one setup cannot publish a group query.
+    // A group member names the signing member that authors the reply; without one it is told so.
+    assertThrows(
+      () => answerUnblind(sender.runtime.operations!.unblinding, grant.said!),
+      ValidationError,
+      "current signing member proposer",
+    );
     const peerRequest = yield* spawn(() =>
       libraryUnblind(verifiers[1].runtime, verifiers[1].hab, grant.said!, {
         timeoutMs: 15000,

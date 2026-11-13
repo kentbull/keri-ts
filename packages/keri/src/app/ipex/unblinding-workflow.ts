@@ -483,6 +483,9 @@ function consent(
   options: UnblindingOptions,
 ): Consent {
   const { deps } = ops, selected = selectGrant(ops, grant, role, options.proposer), { hab } = selected;
+  if (role === "responder" && !isLocalGroupHab(deps.hby, hab)) {
+    throw new ValidationError("An individual discloser answers an authenticated query without consent");
+  }
   const owner = deps.unblinds.unblind(hab), xid = owner.approve(grant, { states: options.states });
   const begun = { grant, xid, role };
   // A current authenticated view needs no empty auxiliary query or new proof writes.
@@ -560,9 +563,6 @@ export function answerUnblind(
   options: UnblindingOptions = {},
 ): UnblindingBegun {
   const { deps } = ops;
-  if (!options.proposer) {
-    throw new ValidationError("An individual discloser answers an authenticated query without consent");
-  }
   const { op, begun } = consent(ops, grant, "responder", options);
   registerUnblindRoutes(ops);
   ops.settled.delete(grant);
