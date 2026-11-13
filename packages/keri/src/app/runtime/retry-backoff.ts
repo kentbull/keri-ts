@@ -44,6 +44,11 @@ export class RetryBackoff {
 
   constructor(private readonly policy: Readonly<RetryPolicy> = DEFAULT_RETRY_POLICY) {}
 
+  /** Host-clock time (ms) of the next attempt. */
+  get next(): number {
+    return this.#next;
+  }
+
   /** Whether an attempt may be made at `now`. */
   due(now: number): boolean {
     return now >= this.#next;

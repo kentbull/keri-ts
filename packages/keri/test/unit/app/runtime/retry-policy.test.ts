@@ -25,7 +25,7 @@ Deno.test("a DeliveryOutbox retries after the supplied base delay", async () => 
   const ticking = { now: () => now } as RuntimeClock;
   const transport = {
     *deliver() {
-      if (failing) throw new Error("offline");
+      if (failing) throw new Error("offline", { cause: new Error("refused") });
       delivered++;
       return ["http://peer/"];
     },
@@ -34,12 +34,14 @@ Deno.test("a DeliveryOutbox retries after the supplied base delay", async () => 
     const outbox = new DeliveryOutbox({ baseMs: 10, maxMs: 40, boundMs: 1000 });
     outbox.enqueue({ src: "a", dest: "b", msg: new Uint8Array([1]) });
     assertEquals(yield* outbox.drain(transport, ticking), false);
+    assertEquals(outbox.failure, { attempts: 1, reason: "offline <- refused", retryAt: new Date(10).toISOString() });
     failing = false;
     now = 9;
     assertEquals(yield* outbox.drain(transport, ticking), false, "not due before the supplied delay");
     now = 10;
     assertEquals(yield* outbox.drain(transport, ticking), true);
     assertEquals(delivered, 1);
+    assertEquals(outbox.failure, null);
   });
   void clock;
 });
