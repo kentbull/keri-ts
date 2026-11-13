@@ -340,9 +340,11 @@ export class Groups {
    * Record `group` again after the wallet lost its store, with `member` (re-adopted at open) as its local
    * member. Resolves the group's OOBI, waits for its accepted key state and reads the members from that state
    * only. The other members' key state must be known too: resolve their OOBIs first, or the result is
-   * `timed-out` with `waiting: "member-key-state"`. `joined` at once when the group already names `member`.
-   * Only `joined` writes. Credentials, registry state and exchanges are not restored by this call; they come
-   * back by ordinary KERI replay from a co-member.
+   * `timed-out` with `waiting: "member-key-state"`. `joined` at once, with `written: false`, when the group already
+   * names `member`. Only `joined` writes. Credentials, registry state and exchanges are not restored by this call.
+   * `written: true` means this identifier was already a member and this store had no record of the group, so it
+   * holds none of the group's credentials either: the signal to refill them from a co-member, which then
+   * `credentials.importStream` and `credentials.rebuild` take in (see the wallet library guide).
    *
    * @throws ValidationError when `member` is not a single-signature identifier of this wallet, or the group is
    * already recorded with another member (use {@link Groups.replaceMember}).
