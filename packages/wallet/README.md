@@ -63,6 +63,41 @@ endpoint) rejects. After `timed-out` the runtime keeps the operation going: call
 `unblind` again resumes it, and a finished `issue` is recorded in the inventory by the wallet.
 Group identifiers are not covered yet.
 
+### Groups
+
+A group acts through its members' separate consents. The proposer starts something; every other member sees
+the same item in `proposals.list()` and consents with `proposals.approve(id)`. The wallet chooses the library call
+from the proposal's kind (a key or reply event, a registry event, a group IPEX message, a group issuance Grant), and
+the runtime's Counselor and owners finish the work.
+
+```ts
+// Proposer: a 2-of-2 group over this wallet's identifier and a co-member whose key state is known.
+const g = await w.groups.incept({ alias: "pair", member: icp.pre, smids: [icp.pre, coMember] });
+if (g.outcome === "timed-out") await w.groups.wait(g.event); // the other member has not approved yet
+
+// The other member's wallet:
+const [proposal] = w.proposals.list(); // { id, family: "event", type: "icp", ... }
+await w.proposals.approve(proposal.id, { groupAlias: "pair" }); // joins, then waits for the Counselor
+
+await w.groups.rotate(g.group, { smids }); // also interact, inceptRegistry
+await w.groups.proposeMailbox(g.group, mailbox); // members approve it as a proposal ...
+await w.groups.completeMailbox(g.group, mailbox); // ... then one member posts it
+
+// Credentials keep their single-signature calls; a group identifier selects the group path.
+await w.groups.inceptRegistry(g.group, "members");
+await w.credentials.issue({ pre: g.group, registry: "members", credential: { issuee: holder, attribute } }); // custodian
+await w.credentials.receive(grant); // a holder group member: consent, Admit, record
+await w.credentials.present({ verb: "grant", pre: g.group, selection, options });
+await w.credentials.unblind(grant); // as disclosee or as discloser
+```
+
+Group calls return the same typed outcomes with the status read at return: `complete`, `superseded`,
+`unknown` or `timed-out` for an event; `approved`, `complete`, `ended` or `timed-out` for `proposals.approve`.
+`proposals.list({ all: true })` includes proposals already consented to. `proposals.dismiss(id)` removes an
+event proposal's local notices (KERI has no reject message). Only the group's elected custodian begins a group
+issuance; its other issuer members consent through `proposals.approve`. A group Admit and a group presentation are
+delivered by the elected lead member once every contribution is in.
+
 `recordIssued` verifies accepted local issuance and accepts an explicit blinded
 opening. `recordAdmission(..., {consent: true})` requires current authenticated
 root truth, the intended local holder and the actual accepted response.
