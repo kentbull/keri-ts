@@ -1,0 +1,249 @@
+name: Release train
+
+# Releases several packages from their package tags in one run: independent packages publish in parallel,
+# each stage only after the packages it depends on are visible on npm. The per-package tag workflows stay
+# and are unchanged for single releases. See docs/versioning/release-versioning.md.
+on:
+  workflow_dispatch:
+    inputs:
+      tag_cesr:
+        description: "cesr tag to release (default: the latest cesr-v* tag)"
+        required: false
+        default: ""
+        type: string
+      tag_keri:
+        description: "keri tag to release (default: the latest keri-v* tag)"
+        required: false
+        default: ""
+        type: string
+      tag_hosting:
+        description: "hosting tag to release (default: the latest hosting-v* tag)"
+        required: false
+        default: ""
+        type: string
+      tag_wallet:
+        description: "wallet tag to release (default: the latest wallet-v* tag)"
+        required: false
+        default: ""
+        type: string
+      tag_registrar:
+        description: "registrar tag to release (default: the latest registrar-v* tag)"
+        required: false
+        default: ""
+        type: string
+      tag_verifier:
+        description: "verifier tag to release (default: the latest verifier-v* tag)"
+        required: false
+        default: ""
+        type: string
+      tag_observer:
+        description: "observer tag to release (default: the latest observer-v* tag)"
+        required: false
+        default: ""
+        type: string
+      tag_tufa:
+        description: "tufa tag to release (default: the latest tufa-v* tag)"
+        required: false
+        default: ""
+        type: string
+      publish:
+        description: Publish to npm (false builds and checks everything and publishes nothing)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: release-train
+  cancel-in-progress: false
+
+env:
+  DENO_VERSION: "2.9.8"
+
+jobs:
+  # Resolve every tag, drop packages npm already has, order the rest by dependency stage, and list the
+  # commits that still lack a recorded green stage-gate run. Nothing below starts for a package dropped here.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      qualify: ${{ steps.plan.outputs.qualify }}
+      stage1: ${{ steps.plan.outputs.stage1 }}
+      stage2: ${{ steps.plan.outputs.stage2 }}
+      stage3: ${{ steps.plan.outputs.stage3 }}
+      stage4: ${{ steps.plan.outputs.stage4 }}
+      stage5: ${{ steps.plan.outputs.stage5 }}
+      stage6: ${{ steps.plan.outputs.stage6 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: resolve the train
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ inputs.publish }}
+          TAG_CESR: ${{ inputs.tag_cesr }}
+          TAG_KERI: ${{ inputs.tag_keri }}
+          TAG_HOSTING: ${{ inputs.tag_hosting }}
+          TAG_WALLET: ${{ inputs.tag_wallet }}
+          TAG_REGISTRAR: ${{ inputs.tag_registrar }}
+          TAG_VERIFIER: ${{ inputs.tag_verifier }}
+          TAG_OBSERVER: ${{ inputs.tag_observer }}
+          TAG_TUFA: ${{ inputs.tag_tufa }}
+        run: deno run --no-config --no-lock --allow-read --allow-write --allow-env --allow-net=api.github.com,registry.npmjs.org --allow-run=git scripts/ci/release-train.ts plan
+
+  # Qualify once: run the stage gate for each commit without a recorded green run, so every package's
+  # release check is then skipped on that evidence. Skipped whole when every commit already has one.
+  qualify:
+    needs: plan
+    if: needs.plan.outputs.qualify != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: run the stage gate for the commits being released
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFY: ${{ needs.plan.outputs.qualify }}
+        run: deno run --no-config --no-lock --allow-write --allow-env --allow-net=api.github.com scripts/ci/release-train.ts qualify
+
+  stage-1:
+    needs: [plan, qualify]
+    # Runs only when this stage has packages and nothing before it failed or was cancelled.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.stage1 != '[]' && !contains(needs.*.result, 'failure') }}
+    name: stage 1 (${{ matrix.release.package }})
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.plan.outputs.stage1) }}
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/npm-release.yml
+    with:
+      package: ${{ matrix.release.package }}
+      tag: ${{ matrix.release.tag }}
+      wait_for: ${{ matrix.release.wait_for }}
+      publish: ${{ inputs.publish }}
+
+  stage-2:
+    needs: [plan, qualify, stage-1]
+    # Runs only when this stage has packages and nothing before it failed or was cancelled.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.stage2 != '[]' && !contains(needs.*.result, 'failure') }}
+    name: stage 2 (${{ matrix.release.package }})
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.plan.outputs.stage2) }}
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/npm-release.yml
+    with:
+      package: ${{ matrix.release.package }}
+      tag: ${{ matrix.release.tag }}
+      wait_for: ${{ matrix.release.wait_for }}
+      publish: ${{ inputs.publish }}
+
+  stage-3:
+    needs: [plan, qualify, stage-1, stage-2]
+    # Runs only when this stage has packages and nothing before it failed or was cancelled.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.stage3 != '[]' && !contains(needs.*.result, 'failure') }}
+    name: stage 3 (${{ matrix.release.package }})
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.plan.outputs.stage3) }}
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/npm-release.yml
+    with:
+      package: ${{ matrix.release.package }}
+      tag: ${{ matrix.release.tag }}
+      wait_for: ${{ matrix.release.wait_for }}
+      publish: ${{ inputs.publish }}
+
+  stage-4:
+    needs: [plan, qualify, stage-1, stage-2, stage-3]
+    # Runs only when this stage has packages and nothing before it failed or was cancelled.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.stage4 != '[]' && !contains(needs.*.result, 'failure') }}
+    name: stage 4 (${{ matrix.release.package }})
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.plan.outputs.stage4) }}
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/npm-release.yml
+    with:
+      package: ${{ matrix.release.package }}
+      tag: ${{ matrix.release.tag }}
+      wait_for: ${{ matrix.release.wait_for }}
+      publish: ${{ inputs.publish }}
+
+  stage-5:
+    needs: [plan, qualify, stage-1, stage-2, stage-3, stage-4]
+    # Runs only when this stage has packages and nothing before it failed or was cancelled.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.stage5 != '[]' && !contains(needs.*.result, 'failure') }}
+    name: stage 5 (${{ matrix.release.package }})
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.plan.outputs.stage5) }}
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/npm-release.yml
+    with:
+      package: ${{ matrix.release.package }}
+      tag: ${{ matrix.release.tag }}
+      wait_for: ${{ matrix.release.wait_for }}
+      publish: ${{ inputs.publish }}
+
+  stage-6:
+    needs: [plan, qualify, stage-1, stage-2, stage-3, stage-4, stage-5]
+    # Runs only when this stage has packages and nothing before it failed or was cancelled.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.stage6 != '[]' && !contains(needs.*.result, 'failure') }}
+    name: stage 6 (${{ matrix.release.package }})
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.plan.outputs.stage6) }}
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/npm-release.yml
+    with:
+      package: ${{ matrix.release.package }}
+      tag: ${{ matrix.release.tag }}
+      wait_for: ${{ matrix.release.wait_for }}
+      publish: ${{ inputs.publish }}

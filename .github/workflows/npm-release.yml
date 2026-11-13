@@ -9,6 +9,16 @@ on:
       publish:
         required: true
         type: boolean
+      # Set by the release train: the package tag to build, test and release instead of the triggering ref.
+      tag:
+        required: false
+        type: string
+        default: ""
+      # Set by the release train: JSON array of `name@version` that must be visible on npm before building.
+      wait_for:
+        required: false
+        type: string
+        default: "[]"
 
 env:
   DENO_DIR: ${{ github.workspace }}/.deno-cache
@@ -28,6 +38,8 @@ jobs:
       check_shards: ${{ steps.plan.outputs.check_shards }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
 
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
@@ -53,6 +65,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
 
       - id: setup
         uses: ./.github/actions/common-release-setup
@@ -92,6 +106,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
 
       - name: select package
         id: meta
@@ -165,8 +180,14 @@ jobs:
           cache-key-extra: ${{ inputs.package }}
 
       - name: require a release commit from master
-        if: github.event_name == 'push'
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+        if: github.event_name == 'push' || inputs.tag != ''
+        run: git merge-base --is-ancestor HEAD origin/master
+
+      - name: wait for the packages this release depends on to be visible on npm
+        if: inputs.wait_for != '[]'
+        env:
+          WAIT_FOR: ${{ inputs.wait_for }}
+        run: deno run --no-config --no-lock --allow-env --allow-net=registry.npmjs.org scripts/ci/release-train.ts visible
 
       - name: rebuild LMDB-js for KERI compatibility
         if: inputs.package != 'cesr'
@@ -181,9 +202,9 @@ jobs:
 
       - name: build exact npm artifacts
         env:
-          BUILD_METADATA: build.${{ github.run_number }}.${{ github.sha }}
           PACKAGE: ${{ inputs.package }}
         run: |
+          export BUILD_METADATA="build.${GITHUB_RUN_NUMBER}.$(git rev-parse HEAD)"
           deno task version:generate:ci
           case "$PACKAGE" in
             cesr) (cd packages/cesr && deno task build:npm) ;;
@@ -200,6 +221,10 @@ jobs:
               (cd packages/tufa && deno run -A scripts/build_npm.ts)
               ;;
           esac
+
+      - name: verify the built dependencies match the planned graph
+        if: inputs.package != 'multisync'
+        run: deno run --no-config --no-lock --allow-read scripts/ci/release-train.ts verify "${{ inputs.package }}"
 
       - name: verify Tufa's released dependencies
         if: inputs.package == 'tufa'
@@ -313,7 +338,7 @@ jobs:
           fi
 
   github-release:
-    if: inputs.publish && github.event_name == 'push'
+    if: inputs.publish && (github.event_name == 'push' || inputs.tag != '')
     needs: [artifact, publish]
     runs-on: ubuntu-latest
     permissions:
@@ -329,11 +354,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TITLE: ${{ needs.artifact.outputs.title }} ${{ needs.artifact.outputs.version }}
+          RELEASE_TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
         run: |
           TARBALL=$(find release-tarball -type f -name '*.tgz' | head -1)
           test -n "$TARBALL"
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$TARBALL" --clobber
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$TARBALL" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$TARBALL" --title "$TITLE" --generate-notes --verify-tag
+            gh release create "$RELEASE_TAG" "$TARBALL" --title "$TITLE" --generate-notes --verify-tag
           fi
