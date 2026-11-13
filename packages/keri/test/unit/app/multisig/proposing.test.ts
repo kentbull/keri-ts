@@ -1,6 +1,7 @@
 /** propose* group events, settling proposed rotation members and the inapplicable proposal state. */
 import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
+import { Poster } from "../../../../src/app/delivery/forwarding.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import type { GroupEventRef } from "../../../../src/app/multisig/counseling.ts";
 import { multisigInceptExn } from "../../../../src/app/multisig/grouping.ts";
@@ -19,6 +20,8 @@ import { learn, readDeps, receive, type Scenario, scenario } from "./proposal-fi
 function proposeDeps(s: Scenario) {
   const started: GroupEventRef[] = [];
   const sent: Array<{ dest: string; route: string }> = [];
+  // The fixture's members have no end roles; the stubbed transport reaches them, so the reachability check agrees.
+  s.runtime.postman.canReach = () => true;
   s.runtime.postman.send = evt => {
     const text = new TextDecoder().decode(evt.msg);
     sent.push({ dest: evt.dest, route: text.match(/"r":"([^"]+)"/)?.[1] ?? "" });
@@ -50,6 +53,24 @@ Deno.test("proposeGroupInception creates, counsels and publishes a new group", a
       assertEquals(sent, [{ dest: s.bob.pre, route: "/multisig/icp" }]);
       assertEquals(result.messages.length, 1);
       assertEquals(result.rmids, s.mids);
+    }, "2");
+  });
+});
+
+Deno.test("proposeGroupInception refuses a member no route reaches and leaves no group behind", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const { deps, started } = proposeDeps(s);
+      s.runtime.postman.canReach = Poster.prototype.canReach.bind(s.runtime.postman);
+      let refused = "";
+      try {
+        yield* proposeGroupInception(deps, s.alice, "unreachable", { smids: s.mids, isith: "1", nsith: "1", toad: 0 });
+      } catch (error) {
+        refused = (error as Error).message;
+      }
+      assertEquals(refused.includes("cannot be reached"), true);
+      assertEquals(started, []);
+      assertEquals(s.left.habByName("unreachable") ?? null, null);
     }, "2");
   });
 });
