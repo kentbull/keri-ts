@@ -35,8 +35,10 @@ import { IpexV2Handler } from "../app/ipex/ipex-v2.ts";
 import { isLocalGroupHab, latestGroupContribution, localGroupMember } from "../app/multisig/group-members.ts";
 import {
   type AuxiliaryQueryProcessor,
+  auxiliaryQueryWire,
   envelopeFromFrame,
   type MessageDropDecision,
+  restoreAuxiliaryQuery,
 } from "../app/protocol/parsering.ts";
 import { abortable } from "../app/runtime/abortable.ts";
 import { Deck } from "../core/deck.ts";
@@ -127,6 +129,8 @@ export class Unblind implements AuxiliaryQueryProcessor {
   readonly resource = Unblind.Route;
   readonly outgoing = new Deck<UnblindOutgoing>();
   private readonly operations = new Map<string, UnblindOperation>();
+  /** Whether the persisted requests this identifier owes replies to were taken up by this owner. */
+  private restored = false;
   readonly hab: Hab;
   readonly exc: Exchanger;
   readonly rvy: Revery;
@@ -404,11 +408,34 @@ export class Unblind implements AuxiliaryQueryProcessor {
       this.live(op);
       op.requested = selected;
       op.requestedByPeer = true;
+      // KRAM now holds this query as seen, so a resend of it is a replay and a group cannot re-date it: the
+      // owed reply must outlive this owner. The accepted request is the durable record; the operation is a cache.
+      this.hab.db.heldu.pin([this.hab.pre!, op.xid], auxiliaryQueryWire(envelope, this.publicEvents(envelope.nests)));
       if (!this.group) this.respond(op.xid);
       return { kind: "accept" };
     } catch (error) {
       if (error instanceof ValidationError) return { kind: "drop", reason: "invalidQuery" };
       throw error;
+    }
+  }
+
+  /**
+   * Take up the requests this identifier owes a reply to after its owner was lost: each persisted request is
+   * processed again as when first accepted, and one that no longer holds (the Grant ended, its evidence changed)
+   * is dropped. Done once per owner, before the first look at what is owed.
+   */
+  private restoreHeld(): void {
+    if (this.restored) return;
+    this.restored = true;
+    for (const [[, xid], wire] of [...this.hab.db.heldu.getTopItemIter([this.hab.pre!])]) {
+      if (this.operations.has(xid)) continue;
+      let decision;
+      try {
+        decision = this.processQuery(restoreAuxiliaryQuery(wire));
+      } catch (error) {
+        if (!(error instanceof ValidationError)) throw error;
+      }
+      if (decision?.kind !== "accept") this.hab.db.heldu.rem([this.hab.pre!, xid]);
     }
   }
 
@@ -615,6 +642,12 @@ export class Unblind implements AuxiliaryQueryProcessor {
 
   /** Discard approved work and unsent replies; delivered bytes remain caller-owned. */
   abandon(xid: string): void {
+    this.forget(xid);
+    this.hab.db.heldu.rem([this.hab.pre!, xid]);
+  }
+
+  /** Drop an operation's process-local approval, messages and openings; a persisted request stays. */
+  private forget(xid: string): void {
     const op = this.operation(xid);
     const keep = [...this.outgoing].filter(item =>
       ![op.query, op.reply, op.contribution]
@@ -690,7 +723,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
 
   /** Release all process-local approvals, opening references and retry bytes without changing stores. */
   close(): void {
-    for (const xid of this.operations.keys()) this.abandon(xid);
+    for (const xid of this.operations.keys()) this.forget(xid);
     this.operations.clear();
     this.outgoing.clear();
   }
@@ -712,6 +745,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
    * Hosts adopt these to deliver the reply; a group discloser's replies need member contributions instead.
    */
   awaitingReply(): { xid: string; grant: string }[] {
+    this.restoreHeld();
     if (this.group) return [];
     return [...this.operations.values()]
       .filter((op) => op.sender === this.hab.pre && op.requestedByPeer && !op.abandoned)

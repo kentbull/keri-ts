@@ -72,9 +72,9 @@ Changed:
   delay (`RetryBackoff`) until the Grant deadline, or until `ISSUANCE_RETRY_BOUND_MS` (10 minutes)
   for a group issuer without a deadline.
 - A DH query that reaches an Issuee before its consent is persisted (`Baser.heldq`), so it
-  survives a restart. `AgentRuntimeOptions.ipexQueries: "refuse"` now concerns Unblind queries.
+  survives a restart, and so does an Unblind request the discloser owes a reply to (`Baser.heldu`).
 - New durable tables, ignored by KERIpy: `rrsn.` (root copies sent, keyed group, registry,
-  recipient), `Baser.heldq` (held DH queries) and, in the registry database, `dvus.`
+  recipient), `Baser.heldq` (held DH queries), `Baser.heldu` (owed Unblind requests) and, in the registry database, `dvus.`
   (blind-derivation coordinates). The first pass on a store from before `rrsn.` sends one root copy per other member
   per held registry once.
 - `OWNER_LOOP_MS` does not exist in any release; the owners run on one fiber with

@@ -214,14 +214,6 @@ export interface AgentRuntimeOptions {
    */
   registryRoots?: "accept" | "refuse";
   /**
-   * Unblind peer queries. `"retain"` (default) lets the per-identifier Unblind owner take an authenticated query for
-   * a live Grant and owe its reply. `"refuse"` is for a runtime that lives shorter than that reply and never
-   * drives it (a command that only drains a mailbox): the query would be recorded as seen by KRAM and the owed
-   * reply lost with the process. Refused, it is dropped unrecorded and a resend reaches the driving runtime.
-   * DH queries need no such option: one received before consent is persisted and survives a restart.
-   */
-  ipexQueries?: "retain" | "refuse";
-  /**
    * v2 Grant treatment of an undisclosed far node. `"open"` (default) refuses
    * an AND group or sole Edge that needs it but lets a valid OR sibling hold;
    * `"closed"` refuses any Grant missing a far node. Neither mode escrows.
@@ -360,14 +352,7 @@ export function* createAgentRuntime(
   // Every runtime with a v2 registry store owns the per-identifier DH and Unblind owners: one dispatch path.
   const ipex = registry
     ? yield* resource<IpexAuxiliaries>(function*(provide) {
-      const owners = new IpexAuxiliaries(
-        exc,
-        registry,
-        revery,
-        now,
-        options.kram?.enabled === true,
-        options.ipexQueries !== "refuse",
-      );
+      const owners = new IpexAuxiliaries(exc, registry, revery, now, options.kram?.enabled === true);
       try {
         owners.registerReplyRoutes(revery.rtr);
         yield* provide(owners);
