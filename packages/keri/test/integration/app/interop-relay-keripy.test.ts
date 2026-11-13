@@ -173,8 +173,6 @@ interface PeerState {
   exchanges: Record<string, PeerExchange>;
   /** Accepted TEL head SAID of each asked registry. */
   registries: Record<string, string | null>;
-  /** Whether the KERIpy peer holds an opening of each asked registry's head (candidate only). */
-  openings: Record<string, boolean>;
   received: string[];
 }
 
@@ -190,8 +188,9 @@ interface StateQuery {
  * How a credential is authenticated and how its state is opened.
  * - `private`: a v2 registry; the issued state is an anchored blindable update (`bup`) whose opening travels only
  *   in the Grant, on the node.
- * - `public`: a v2 registry whose `bup` carries its opening in the published TEL; the Grant carries none, and any
- *   reader of the TEL learns the state without an Unblind or key exchange ("unblinded" for keri-ts).
+ * - `public`: the same, and the `bup` also carries its opening in the published TEL, so any reader of the TEL
+ *   learns the state without an Unblind or key exchange ("unblinded" for keri-ts). Both issuers also attach the
+ *   opening to the Grant's node.
  * - `signed`: no registry; the issuer's signature on the node.
  */
 type Credential = "private" | "public" | "signed";
@@ -500,8 +499,10 @@ function unwitnessed(hby: Habery): Receiptor {
 
 /**
  * The edge issues a publicly opened v2 credential to the KERIpy peer and grants it through the agent; the Grant's
- * proof support carries the edge's KEL and the TEL with the published opening. The KERIpy peer accepts the Grant,
- * holds the TEL head and its opening, and answers with an Admit.
+ * proof support carries the edge's KEL and the TEL with the published opening, and the node carries the opening
+ * too. The KERIpy peer accepts the Grant (verifying the issued state from that opening, with no Unblind or key
+ * exchange), holds the edge's TEL head and answers with an Admit. The candidate does not retain a published opening
+ * from TEL intake (retention is caller policy there), so only its acceptance shows the state it read.
  */
 function* issueToKeriPy(py: KeriPyRelayPeer, agentKind: AgentKind): Operation<void> {
   const side = yield* singleSigRelay(py, agentKind, function* () {});
@@ -518,12 +519,12 @@ function* issueToKeriPy(py: KeriPyRelayPeer, agentKind: AgentKind): Operation<vo
   const { said: grant } = yield* present(edge.operations!.presentation, {
     verb: "grant",
     hab: edgeHab,
-    selection: { transferred: node, presenterAuthorized: true },
+    // `refresh` attaches the current registry proof: the public opening the edge published with its TEL.
+    selection: { transferred: node, presenterAuthorized: true, refresh: true },
     options: { recipient: py.pre, message: "Relay issuance" },
   });
   const accepted = yield* keriPyAdmits(side, py, grant, credential.said!, registry.regk!);
   assertEquals(accepted.registries[registry.regk!], update.said, "the KERIpy peer holds the edge's TEL head");
-  assertEquals(accepted.openings[registry.regk!], true, "the KERIpy peer holds the published opening of that head");
   assertOnlyAgent(side);
 }
 
@@ -584,11 +585,6 @@ Deno.test("relay single-sig -> KERIpy candidate", async () => {
 
 Deno.test({
   name: "a publicly opened v2 credential issued by KERIpy is admitted and read by keri-ts",
-  // NOT FINISHED: the test's construction is incomplete, so this proves nothing yet in either direction. The
-  // fixture's public issue builds the Grant origin with `messagize(full)` and no opening, which the candidate
-  // refuses before anything is sent: "ValueError: Missing authenticator for msg=..." (keri/core/eventing.py
-  // messagize). Remove `ignore` once the origin is built without that authenticator check.
-  ignore: true,
   async fn() {
     await withKeriPyPeer("candidate", (py) => run(() => receiveCheck(py, "transferable", "public")));
   },
@@ -596,11 +592,6 @@ Deno.test({
 
 Deno.test({
   name: "a publicly opened v2 credential issued by keri-ts is admitted and read by KERIpy",
-  // NOT FINISHED: the test's construction is incomplete. Selecting the bare issued node with
-  // `{ transferred, presenterAuthorized: true }` is refused locally before anything is sent: "ValidationError:
-  // Current authenticated graph truth is required before use." (packages/keri/src/app/ipex/ipex-discloser.ts:501,
-  // requireGraph). The issuer's own selection path is still to be chosen. Remove `ignore` once it is.
-  ignore: true,
   async fn() {
     await withKeriPyPeer("candidate", (py) => run(() => issueToKeriPy(py, "transferable")));
   },
