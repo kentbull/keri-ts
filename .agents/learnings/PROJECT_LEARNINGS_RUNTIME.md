@@ -429,7 +429,9 @@ and cleanup failures still propagate. A 403 means the provider cannot authentica
 key state it holds: the poller does not post the KEL; it calls `onUnauthorized` (the runtime's
 `kelPublisher.repair`, which forgets what the mailbox was given so the publisher posts the KEL again) and
 backs off. A keri-ts mailbox host authorizes a group's poll when it is signed by a member whose own threshold
-is met and whose key is in the group's current key list.
+is met and who provably controlled a group-current key: the poll carries a signature by a key in both key lists, or
+the host holds a verifying signature by such a key on an establishment event in the member's KEL (a listed key alone
+proves nothing).
 A completed rotation is announced with a `RotatedCue` (from `completeEvent` and the Counselor's `finish`) to the
 runtime's `KelPublisher`, which tells the mailboxes on its own fiber. The durable state is `Baser.kpub.`
 (identifier, mailbox) -> last establishment SAID answered 2xx, plus `failed` when a publication used its budget;

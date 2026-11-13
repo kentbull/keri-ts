@@ -31,7 +31,7 @@ import type { AgentCue, ReplayCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
-import { incept, query } from "../../../../src/core/protocol-eventing.ts";
+import { incept, query, rotate } from "../../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import { makeNowIso8601 } from "../../../../src/time/mod.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
@@ -231,7 +231,7 @@ Deno.test("mailbox authorization is captured before unrelated escrow work", asyn
   });
 });
 
-Deno.test("a mailbox poll for a group is authorized when signed by a current member, not by an outsider", async () => {
+Deno.test("a mailbox poll for a group is authorized for a member, including one that rotated ahead of the group, and not for an outsider or a forged key listing", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
@@ -254,47 +254,62 @@ Deno.test("a mailbox poll for a group is authorized when signed by a current mem
       assertEquals(authorized(bob), true);
       assertEquals(authorized(outsider), false, "a key outside the group's key list cannot read its mailbox");
 
-      // Current behaviour pending a design decision: a member that rotated its own keys ahead of the group no
-      // longer signs with a group key, so its poll is refused (the alternative is for the member to sign the
-      // group's poll with its contributed group key). The other member is still served.
+      // A member that rotated its own identifier ahead of the group is still the group's member: its inception
+      // was signed with a key the group lists. Rotating again does not change that.
       alice.rotate();
-      assertEquals(authorized(alice), false);
+      assertEquals(authorized(alice), true, "a member that rotated ahead of the group is served");
       assertEquals(authorized(bob), true);
       assertEquals(authorized(outsider), false);
+      alice.rotate();
+      assertEquals(authorized(alice), true, "a member that rotated twice is served");
 
       // Listing a group key in one's own inception proves nothing: an identifier of keys [own, group key] with
-      // threshold 1, signing with its own key alone, is refused.
+      // threshold 1, never signing with the group key, is refused, and still is after it rotates.
       const attacker = hby.makeHab("attacker");
-      const [ownKey] = attacker.kever!.verfers;
-      const forged = incept([ownKey.qb64, group.kever!.verfers[0].qb64], {
+      const forged = incept([attacker.kever!.verfers[0].qb64, group.kever!.verfers[0].qb64], {
         isith: "1",
         nsith: "1",
         ndigs: attacker.kever!.ndigs,
         toad: 0,
       });
-      const accepted = hby.kevery.processEvent({
-        serder: forged,
-        sigers: attacker.sign(forged.raw, true),
-        wigers: [],
-        frcs: [],
-        sscs: [],
-        ssts: [],
-        local: true,
+      const accept = (serder: typeof forged) =>
+        hby.kevery.processEvent({
+          serder,
+          sigers: attacker.sign(serder.raw, true),
+          wigers: [],
+          frcs: [],
+          sscs: [],
+          ssts: [],
+          local: true,
+        }).kind;
+      const forgedAuthorized = () => {
+        const poll = query("mbx", { i: group.pre, src: group.pre, topics: { "/reply": 0 } }, {
+          pre: forged.pre!,
+          stamp: makeNowIso8601(),
+        });
+        const endorsed = messagize(poll, {
+          sigers: attacker.sign(poll.raw, true),
+          seal: SealLast.fromTuple([new Prefixer({ qb64: forged.pre! })]),
+        });
+        return protocol.kvy.isMailboxQueryAuthorized(
+          queryEnvelopeFromDispatch(envelopeFromFrame(parseBytes(endorsed)[0])),
+        );
+      };
+      const ndigs = attacker.kever!.ndigs;
+      assertEquals(accept(forged), "accept");
+      assertEquals(forgedAuthorized(), false, "a group key listed in the requester's inception is not possession");
+      attacker.rotate();
+      const rotation = rotate(forged.pre!, [attacker.kever!.verfers[0].qb64], forged.said!, {
+        sn: 1,
+        isith: "1",
+        nsith: "1",
+        ndigs: attacker.kever!.ndigs,
+        toad: 0,
       });
-      assertEquals(accepted.kind, "accept");
-      const forgedQuery = query("mbx", { i: group.pre, src: group.pre, topics: { "/reply": 0 } }, {
-        pre: forged.pre!,
-        stamp: makeNowIso8601(),
-      });
-      const endorsed = messagize(forgedQuery, {
-        sigers: attacker.sign(forgedQuery.raw, true),
-        seal: SealLast.fromTuple([new Prefixer({ qb64: forged.pre! })]),
-      });
-      assertEquals(
-        protocol.kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(envelopeFromFrame(parseBytes(endorsed)[0]))),
-        false,
-        "a group key listed in the requester's inception is not possession of it",
-      );
+      assertEquals(ndigs.length, 1);
+      assertEquals(accept(rotation), "accept");
+      assertEquals(hby.db.getKever(forged.pre!)!.sn, 1);
+      assertEquals(forgedAuthorized(), false, "rotating does not turn a listed group key into a signed one");
     } finally {
       yield* hby.close(true);
     }
