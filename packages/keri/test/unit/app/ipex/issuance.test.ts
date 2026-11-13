@@ -174,8 +174,8 @@ Deno.test("a failed delivery is retried with backoff and the issuance goes on on
     s.fail.on = false;
     s.clock.skew += 1100;
     yield* ops.processOnce();
-    assert(s.log.length >= 3, "the queued Grant is delivered, then the query");
-    assert(text(s.log.at(-2)!.msg).includes("/ipex/grant"));
+    assert(text(s.log[1].msg).includes("/ipex/grant"), "the queued Grant is delivered first");
+    assert(s.log.length >= 3 && text(s.log[2].msg).includes("/ipex/dhke"), "then the query");
     assertEquals(issuanceStatus(ops, grant).state, "active");
   });
 });
