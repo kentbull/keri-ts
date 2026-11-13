@@ -38,6 +38,7 @@ import {
   type IssuanceOperations,
   type IssuanceStatus,
   issuanceStatus,
+  type KelPublicationStatus,
   type MailboxStatus,
   mailboxStatus,
   type OobiRecord,
@@ -320,6 +321,7 @@ export class Identifiers extends Surface {
       http: runtime.http,
       clock: runtime.clock,
       changes,
+      rotated: runtime.kelPublisher.rotated,
       *withDelegation(_hab, use) {
         return yield* use({ anchorer: runtime.delegating, changes });
       },
@@ -468,6 +470,31 @@ export class Mailboxes extends Surface {
       }
     });
   }
+
+  /**
+   * Where each mailbox of `pre` stands in being told its KEL after a rotation, derived from state: `published`
+   * (it holds the latest establishment event), `pending` (being sent or waiting out a retry delay), `waiting`
+   * (gated: `unwitnessed`, `unanchored` or `no-url`) or `timed-out` (the runtime gave up after five minutes;
+   * a new rotation, a successful poll of that mailbox or reopening the wallet tries again).
+   */
+  publication(pre: string): readonly KelPublicationStatus[] {
+    return this.parts.runtime.kelPublisher.status().entries.filter((entry) => entry.pre === pre);
+  }
+
+  /**
+   * Wait until every mailbox of `pre` is `published` or `timed-out`, or `timeoutMs` passes (`timed-out` result).
+   * Only observes: the runtime's publisher does the posting.
+   */
+  async waitForPublication(
+    pre: string,
+    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
+  ): Promise<{ outcome: "settled" | "timed-out"; entries: readonly KelPublicationStatus[] }> {
+    const publisher = this.parts.runtime.kelPublisher;
+    return await this.go(function*() {
+      const waited = yield* publisher.waitForPublication(pre, { timeoutMs });
+      return { outcome: waited.outcome, entries: waited.status.entries.filter((entry) => entry.pre === pre) };
+    });
+  }
 }
 
 // --- credentials -----------------------------------------------------------------------------------------
@@ -527,8 +554,12 @@ export type ReceiveOutcome =
 export interface IssueOptions {
   /** The issuing identifier. */
   pre: string;
-  /** Registry name; incepted on the first use and reused after. A DH-issued registry has no custody root. */
-  registry: string;
+  /**
+   * Registry name, incepted on first use. A DH exchange derives the registry's root with the recipient and
+   * the registry takes that exchange once, so a registry carries one credential: leave this out and the
+   * wallet incepts a fresh registry for each issuance. A DH-issued registry has no custody root.
+   */
+  registry?: string;
   /** The credential: issuee, attributes, schema, edges and rules. */
   credential: Omit<AcdcMapOptions, "regid">;
   /** Recipient of the Grant; defaults to the credential's issuee. */
@@ -640,7 +671,7 @@ export class Credentials extends Surface {
    */
   async issue(options: IssueOptions): Promise<IssueOutcome> {
     const { hby, runtime, wallet, inventory } = this.parts;
-    const { pre, registry: name, timeoutMs = WALLET_TIMEOUTS.issue } = options;
+    const { pre, registry: name = `credential-${crypto.randomUUID()}`, timeoutMs = WALLET_TIMEOUTS.issue } = options;
     const hab = this.individual(pre), ops = this.owner();
     const recipient = options.recipient ?? options.credential.issuee;
     if (!recipient) throw new ValidationError("A recipient or an issuee is required.");
@@ -673,7 +704,8 @@ export class Credentials extends Surface {
       } catch {
         // A caller's notification must not break the issuance it reports.
       }
-      // The credential's derivation opening is read from the registry head the finished exchange leaves.
+      // The credential's derivation opening is read from the registry head the finished exchange leaves. The
+      // registry took one DH exchange, so that head is this credential's update.
       const record = (): IssuedCredential => {
         const known = inventory.issued.get([credential.said!]);
         if (known) return known;

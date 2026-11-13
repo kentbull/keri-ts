@@ -219,7 +219,8 @@ semantics, rollback and savepoint behavior.
 - Wrappers and domain code depend on `DBer` and `Table`; lmdb-js types and `env`
   stay inside the LMDB backend.
 - `keri-ts/db` becomes backend-neutral and the native backend moves behind an
-  explicit subpath. ADR-0011's entrypoint list is amended when that split lands.
+  explicit subpath (`keri-ts/db/lmdb`). ADR-0011's entrypoint list carries the split, with
+  `keri-ts/db/indexeddb`, `keri-ts/runtime/web` and the `@keri-ts/wallet` entries.
 - One parameterized suite runs the same assertions against every backend, and
   backends are qualified in real browser engines before any wallet claim.
 - A browser wallet adds a durability wait before output, so a slow store delays

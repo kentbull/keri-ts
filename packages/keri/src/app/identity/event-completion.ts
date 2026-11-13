@@ -9,10 +9,11 @@
  * host's runtime has learned the delegator's anchor. Begin is separate from
  * wait so that a host without a blocking caller can begin, return to its user
  * interface and read `delegationStatus` later. `completeEvent` is the
- * convenience that runs both steps in order. A completed rotation (`rot` or `drt`) is then published: the
- * KEL goes to every mailbox the identifier has an authorized role with, because a mailbox authenticates the
- * identifier's polls against the key state it holds. An interaction event changes no keys, so it needs no
- * publication.
+ * convenience that runs both steps in order. A completed rotation (`rot` or `drt`) is then announced with a
+ * {@link RotatedCue} to the host's `KelPublisher`, which tells the identifier's mailboxes (a mailbox
+ * authenticates the identifier's polls against the key state it holds). The announcement is a prompt:
+ * the publisher derives what is owed from state, so a host without one loses nothing durable. An interaction
+ * event changes no keys, so it announces nothing.
  *
  * Boundaries:
  * - Dependencies are narrow collaborators, not an AgentRuntime (ADR-0013). The
@@ -26,9 +27,9 @@
  */
 import { Ilks } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
+import type { RotatedCue } from "../../core/cues.ts";
 import type { Baser } from "../../db/basing.ts";
 import { dgKey } from "../../db/core/keys.ts";
-import { type MailboxPublication, tellMailboxes } from "../mailbox/kel-publishing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
@@ -73,6 +74,8 @@ export interface EventCompletionDeps extends ReceiptingDeps {
    * workers (signing as `hab`) for that scope. Called only for delegated events.
    */
   withDelegation<T>(hab: Hab, use: (delegation: DelegationCollaborator) => Operation<T>): Operation<T>;
+  /** Where a completed rotation is announced; the runtime's `kelPublisher.rotated` fits. */
+  readonly rotated?: { push(cue: RotatedCue): unknown };
 }
 
 /** Witness receipting choices for one event. */
@@ -186,22 +189,14 @@ export interface CompleteEventOptions extends ReceiptOptions {
  */
 export type EventCompletion =
   & WaitResult<EventStatus>
-  & {
-    readonly delegationPhase: DelegationWorkflowStatus["phase"] | null;
-    /**
-     * Mailboxes a completed rotation was published to, told or failed with the reason. Empty for any other
-     * event, an incomplete rotation or an identifier with no mailbox. A failure never fails the rotation: the
-     * poller posts the KEL again when a mailbox refuses it.
-     */
-    readonly mailboxes: readonly MailboxPublication[];
-  };
+  & { readonly delegationPhase: DelegationWorkflowStatus["phase"] | null };
 
-/** Publish a completed rotation to the identifier's mailboxes; any other event publishes nothing. */
-function* publishRotation(deps: EventCompletionDeps, pre: string, sn: number, status: EventStatus) {
-  if (status.state !== "complete") return [];
+/** Announce a completed rotation so its mailboxes are told; any other event announces nothing. */
+function announceRotation(deps: EventCompletionDeps, pre: string, sn: number, status: EventStatus): void {
+  if (status.state !== "complete" || !deps.rotated) return;
   const said = deps.hby.db.kels.getLast(pre, sn);
   const ilk = said ? deps.hby.db.getEvtSerder(pre, said)?.ilk : null;
-  return ilk === Ilks.rot || ilk === Ilks.drt ? yield* tellMailboxes(deps, pre) : [];
+  if (said && (ilk === Ilks.rot || ilk === Ilks.drt)) deps.rotated.push({ kin: "rotated", pre, sn, said });
 }
 
 /**
@@ -219,12 +214,8 @@ export function* completeEvent(
   yield* receiptEvent(deps, hab.pre, { ...receipt, sn });
   if (!delegation) {
     const status = eventStatus(deps.hby, hab.pre, sn);
-    return {
-      outcome: "settled",
-      status,
-      delegationPhase: null,
-      mailboxes: yield* publishRotation(deps, hab.pre, sn, status),
-    };
+    announceRotation(deps, hab.pre, sn, status);
+    return { outcome: "settled", status, delegationPhase: null };
   }
 
   const communicationHab = delegation.communicationHab?.();
@@ -238,11 +229,10 @@ export function* completeEvent(
         status,
         timeoutMs: result.timeoutMs,
         delegationPhase: result.status.phase,
-        mailboxes: [],
       };
     }
-    const mailboxes = yield* publishRotation(deps, hab.pre, sn, status);
-    return { outcome: "settled", status, delegationPhase: result.status.phase, mailboxes };
+    announceRotation(deps, hab.pre, sn, status);
+    return { outcome: "settled", status, delegationPhase: result.status.phase };
   });
 }
 

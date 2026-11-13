@@ -37,7 +37,7 @@ import { Anchorer, loadDelegationHandlers } from "../identity/delegating.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { loadIpexHandlers } from "../ipex/ipexing.ts";
 import { ForwardHandler } from "../mailbox/forward-handler.ts";
-import { tellMailboxes } from "../mailbox/kel-publishing.ts";
+import { KelPublisher, kelPublisherDo } from "../mailbox/kel-publisher.ts";
 import { MailboxDirector } from "../mailbox/mailbox-director.ts";
 import { type MailboxPollBatch, MailboxPoller } from "../mailbox/mailbox-poller.ts";
 import { mailboxerOptionsForHabery } from "../mailbox/mailboxing.ts";
@@ -137,6 +137,8 @@ export interface AgentRuntime {
    * caller registered with `start`/`supply`; `runAgentRuntime` runs its loop.
    */
   counselor: Counselor;
+  /** Tells an identifier's mailboxes its KEL after a rotation; `runAgentRuntime` runs its fiber. */
+  kelPublisher: KelPublisher;
   /**
    * Background unsigned-request sender, run independently of reply intake.
    * Pending sender work excludes semantic query waits; their invoking operations
@@ -433,12 +435,18 @@ export function* createAgentRuntime(
   }
   // Copies ride the credential topic; the refuser adds no mailbox topic of its own.
   if (options.registryRoots === "refuse") exc.addHandler(new RouteRefuser(RegistryRoot.Route));
+  const kelPublisher = new KelPublisher({
+    hby,
+    http,
+    clock,
+    changes: signaler ? signalerChangeSink(signaler) : undefined,
+  });
   const mailboxPoller = new MailboxPoller(
     hby,
     mailboxDirector,
     http,
     clock,
-    {},
+    { onPolled: (pre, mailbox) => kelPublisher.prompt(pre, mailbox) },
   );
   for (
     const topic of [
@@ -471,7 +479,7 @@ export function* createAgentRuntime(
     clock,
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
-    { tell: (pre) => tellMailboxes({ hby, http }, pre) },
+    { rotated: (cue) => kelPublisher.rotated.push(cue) },
   );
   const owned = acdc && ipex
     ? composeOwners({
@@ -516,6 +524,7 @@ export function* createAgentRuntime(
     postman,
     delegating,
     counselor,
+    kelPublisher,
     querying,
     replyStreams,
     vdr,
@@ -921,6 +930,7 @@ export function* runAgentRuntime(
         yield* runtimeTurn();
       }
     }),
+    yield* spawn(() => kelPublisherDo(runtime.kelPublisher, runtime.clock)),
     ...(runtime.operations && runtime.ipex
       ? [
         yield* spawn(() =>

@@ -5,7 +5,7 @@
  * evidence file of the Python CLI, which `tufa ipex --issue` has no counterpart for (its `--out` is an
  * exclusive-create write of the prepared Grant), so nothing of it is ported.
  */
-import { parseBytes } from "cesr-ts";
+import { bytesEqual, parseBytes } from "cesr-ts";
 import { type Operation, run, sleep } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import {
@@ -162,13 +162,33 @@ Deno.test("a holder that never replies leaves the wait timed-out; abandon is loc
   });
 });
 
-Deno.test("a failed delivery ends the issuance as failed with the transport's reason", async () => {
+Deno.test("a failed delivery is retried with backoff and the issuance goes on once the transport recovers", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
     const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
     s.fail.on = true;
     yield* ops.processOnce();
-    assertEquals(issuanceStatus(ops, grant), { state: "failed", role: "issuer", reason: "transport failed" });
+    assertEquals(issuanceStatus(ops, grant).state, "active", "the first failure does not end the issuance");
+    yield* ops.processOnce();
+    assertEquals(s.log.length, 1, "no new attempt before the backoff has passed");
+    s.fail.on = false;
+    s.clock.skew += 1100;
+    yield* ops.processOnce();
+    assert(text(s.log[1].msg).includes("/ipex/grant"), "the queued Grant is delivered first");
+    assert(s.log.length >= 3 && text(s.log[2].msg).includes("/ipex/dhke"), "then the query");
+    assertEquals(issuanceStatus(ops, grant).state, "active");
+  });
+});
+
+Deno.test("delivery failures last no longer than the Grant deadline: the issuance then reads expired", async () => {
+  await run(function*() {
+    const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
+    const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
+    s.fail.on = true;
+    yield* ops.processOnce();
+    s.clock.skew = pastDeadline(s.issuer, grant);
+    yield* ops.processOnce();
+    assertEquals(issuanceStatus(ops, grant).state, "expired");
   });
 });
 
@@ -373,7 +393,7 @@ Deno.test("a query the peer never got is replaced by a freshly dated one, which 
   });
 });
 
-Deno.test("a peer that took the query and lost it before consenting is answered by the next fresh query", async () => {
+Deno.test("a peer that took the query and lost it before consenting still answers it from the persisted copy", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);
     const { grant } = yield* beginIssuance(ops, {
@@ -383,10 +403,33 @@ Deno.test("a peer that took the query and lost it before consenting is answered 
     });
     yield* ops.processOnce(); // Grant and query reach the holder, which retains the query for its consent
     const holderDh = s.holder.runtime.ipex!.dhke(s.holder.habs[0]);
-    holderDh.close(); // the process that held it ends: the retained query goes, the KRAM replay record stays
+    holderDh.close(); // the process that held it ends: KRAM keeps the replay record, the persisted query stays
     holderApproves(s, grant);
-    assertEquals(holderDh.outgoing.length, 0, "no query is left to answer");
-    s.clock.skew += 1100;
+    assertEquals(holderDh.outgoing.length, 1, "consent replays the persisted query without a resend");
+    yield* settle(s, ops, [grant]);
+    assertEquals(issuanceStatus(ops, grant), { state: "done", role: "issuer", phase: "issued" });
+  });
+});
+
+Deno.test("a fresh query that reaches a peer holding a persisted one replaces it, and consent answers the latest", async () => {
+  await run(function*() {
+    const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);
+    const { grant } = yield* beginIssuance(ops, {
+      hab: s.issuer.habs[0],
+      credential: reg.credential(),
+      options: grantOptions(s),
+    });
+    yield* ops.processOnce();
+    const holderDh = s.holder.runtime.ipex!.dhke(s.holder.habs[0]);
+    holderDh.close();
+    const db = s.holder.hby.db, first = db.heldq.get([grant]);
+    assert(first);
+    s.clock.skew += 1100; // past the single-key window: the issuer signs a fresh query on its next resend
+    yield* ops.processOnce();
+    const latest = db.heldq.get([grant]);
+    assert(latest && !bytesEqual(latest, first), "the successor replaced the persisted query");
+    holderApproves(s, grant);
+    assertEquals(holderDh.outgoing.length, 1);
     yield* settle(s, ops, [grant]);
     assertEquals(issuanceStatus(ops, grant), { state: "done", role: "issuer", phase: "issued" });
   });

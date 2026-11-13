@@ -127,7 +127,6 @@ Deno.test("completeEvent opens the delegation scope only for delegated events, a
     outcome: "settled",
     status: unknownEvent,
     delegationPhase: null,
-    mailboxes: [],
   });
   assertEquals(scopes, 0);
 
@@ -141,7 +140,7 @@ Deno.test("completeEvent opens the delegation scope only for delegated events, a
       },
     })
   );
-  assertEquals(result, { outcome: "settled", status: unknownEvent, delegationPhase: null, mailboxes: [] });
+  assertEquals(result, { outcome: "settled", status: unknownEvent, delegationPhase: null });
   assertEquals(calls, ["resolve", "scope", "begin EDelegate 0 proxy=EProxy"]);
 
   const stalled = fakeDelegation();
@@ -157,7 +156,6 @@ Deno.test("completeEvent opens the delegation scope only for delegated events, a
       status: { state: "active", phase: "waitingDelegatorAnchor" },
       timeoutMs: 20,
       delegationPhase: "waitingDelegatorAnchor",
-      mailboxes: [],
     },
   );
 
@@ -300,4 +298,34 @@ Deno.test("signalerChangeSink publishes through a real Signaler and never throws
   signaler.close();
   sink.push({ kind: "oobi", id: "u2" });
   assertEquals(signaler.count(), 0);
+});
+
+Deno.test("completeEvent announces a completed rotation, and only a rotation, to the host's publisher", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const hab = hby.makeHab("wallet", undefined, { transferable: true, toad: 0 });
+      const cues: unknown[] = [];
+      const deps = {
+        hby,
+        protocol: {},
+        http: {},
+        clock: systemClock,
+        rotated: { push: (cue: unknown) => cues.push(cue) },
+        withDelegation() {
+          throw new Error("not delegated");
+        },
+      } as unknown as EventCompletionDeps;
+      yield* completeEvent(deps, hab, 0);
+      hab.interact();
+      yield* completeEvent(deps, hab, hab.kever!.sn);
+      assertEquals(cues, [], "an inception and an interaction announce nothing");
+      hab.rotate({});
+      const sn = hab.kever!.sn;
+      yield* completeEvent(deps, hab, sn);
+      assertEquals(cues, [{ kin: "rotated", pre: hab.pre, sn, said: hab.kever!.serder.said }]);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });

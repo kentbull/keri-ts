@@ -228,23 +228,19 @@ Deno.test("KERIpy test_counselor: signatures stage across inception and three ro
   });
 });
 
-Deno.test("a completed group rotation, and only a rotation, is published to the group's mailboxes", async () => {
+Deno.test("a completed group rotation, and only a rotation, is announced for the group's mailboxes", async () => {
   await run(function*() {
     const sides = yield* members(2);
     const [s0, s1] = sides;
     const told: string[] = [];
-    const { c } = counselor(s0, [], { t: 0 }, false, {
-      *tell(pre) {
-        told.push(pre);
-      },
-    });
+    const { c } = counselor(s0, [], { t: 0 }, false, { rotated: (cue) => told.push(cue.pre) });
     const smids = pres(sides);
     const created = [s0, s1].map(s => incept(s, smids, { isith: "2", nsith: "2", toad: 0, wits: [] }));
     const gid = created[0].serder.pre!;
     c.start(ref(created[0].serder));
     deliver(s0.hby, created[1]);
     yield* c.processOnce();
-    assertEquals(told, [], "an inception is not published");
+    assertEquals(told, [], "an inception announces nothing");
     deliver(s1.hby, created[0]);
     rotateMembers(sides, sides);
     const proposals = sides.map(s => rotate(s, smids, smids, { isith: "2", nsith: "2", toad: 0 }));
@@ -253,7 +249,7 @@ Deno.test("a completed group rotation, and only a rotation, is published to the 
     deliver(s0.hby, proposals[1]);
     yield* c.processOnce();
     assert(c.complete(event));
-    assertEquals(told, [gid], "the completed rotation is published once");
+    assertEquals(told, [gid], "the completed rotation is announced once");
   });
 });
 

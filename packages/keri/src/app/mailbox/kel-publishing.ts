@@ -1,20 +1,26 @@
 /**
  * Telling a mailbox host an identifier's KEL. A host authenticates a mailbox poll against the key state it
  * holds, which is only as new as the last KEL it was given, so a rotation it has not been told about makes it
- * refuse the owner's polls. Both the completion of a rotation and the poller's repair of a refusing mailbox
- * use the one post below.
+ * refuse the owner's polls. The publisher (`KelPublisher`) and the poller's repair of a refusing mailbox use
+ * the one post below and record it in the same marker, `Baser.kpub`.
  */
-import type { Operation } from "npm:effection@^3.6.0";
+import { type Operation, scoped } from "npm:effection@^3.6.0";
+import type { Baser } from "../../db/basing.ts";
 import type { Habery } from "../identity/habbing.ts";
+import { localGroupMember } from "../multisig/group-members.ts";
+import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { buildCesrStreamRequest } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
+import { requestWithHeaderTimeout } from "../transport/httping.ts";
 import { collectKelSubmission } from "./kel-submission.ts";
-import { authorizedMailboxes, fetchEndpointUrls, preferredUrl } from "./mailboxing.ts";
 
-/** What posting the KEL to one mailbox came to; a failure carries its reason and is never thrown. */
+/** Longest a mailbox may take to answer the post, in milliseconds. */
+export const KEL_PUBLISH_HEADER_TIMEOUT_MS = 10_000;
+
+/** What posting the KEL to one mailbox came to; a failure carries its reason (and status) and is never thrown. */
 export type MailboxPublication =
   | { readonly mailbox: string; readonly outcome: "told" }
-  | { readonly mailbox: string; readonly outcome: "failed"; readonly reason: string };
+  | { readonly mailbox: string; readonly outcome: "failed"; readonly reason: string; readonly status?: number };
 
 /** Collaborators the post needs; nothing else is reachable from here. */
 export interface KelPublishingDeps {
@@ -22,6 +28,8 @@ export interface KelPublishingDeps {
   readonly hby: Habery;
   /** Borrowed HTTP implementation. */
   readonly http: HttpClient;
+  /** Borrowed clock for the header deadline. */
+  readonly clock: RuntimeClock;
 }
 
 /**
@@ -30,39 +38,65 @@ export interface KelPublishingDeps {
  * a host answers with the response to the first message of a body.
  */
 export function* postKelToMailbox(
-  { hby, http }: KelPublishingDeps,
+  { hby, http, clock }: KelPublishingDeps,
   pre: string,
   endpoint: { eid: string; url: string },
+  { timeoutMs = KEL_PUBLISH_HEADER_TIMEOUT_MS }: { timeoutMs?: number } = {},
 ): Operation<MailboxPublication> {
   const { replay } = collectKelSubmission(hby, pre);
   const request = buildCesrStreamRequest(replay, { destination: endpoint.eid });
   try {
-    const response = yield* http.request(endpoint.url, {
-      method: "POST",
-      headers: request.headers,
-      body: request.body,
+    return yield* scoped(function*(): Operation<MailboxPublication> {
+      const response = yield* requestWithHeaderTimeout(
+        http,
+        clock,
+        endpoint.url,
+        { method: "POST", headers: request.headers, body: request.body },
+        timeoutMs,
+      );
+      if (!response) return { mailbox: endpoint.eid, outcome: "failed", reason: `no answer within ${timeoutMs} ms` };
+      return response.ok
+        ? { mailbox: endpoint.eid, outcome: "told" }
+        : { mailbox: endpoint.eid, outcome: "failed", reason: `HTTP ${response.status}`, status: response.status };
     });
-    return response.ok
-      ? { mailbox: endpoint.eid, outcome: "told" }
-      : { mailbox: endpoint.eid, outcome: "failed", reason: `HTTP ${response.status}` };
   } catch (error) {
     return { mailbox: endpoint.eid, outcome: "failed", reason: error instanceof Error ? error.message : String(error) };
   }
 }
 
 /**
- * Tell every mailbox `pre` currently has an authorized role with its KEL. Idempotent: a host that already
- * holds the events drops the duplicates. One mailbox failing does not stop the others.
+ * The establishment events a mailbox must hold to authenticate `pre`: the identifier's own latest one and, for
+ * a local group, the local signing member's, because the member signs the group's polls and the host needs its
+ * key state to verify them. `collectKelSubmission` is the one place that decides what the post carries; these
+ * heads are what the record is compared with.
  */
-export function* tellMailboxes(deps: KelPublishingDeps, pre: string): Operation<MailboxPublication[]> {
-  const told: MailboxPublication[] = [];
-  for (const eid of authorizedMailboxes(deps.hby.db, pre)) {
-    const url = preferredUrl(fetchEndpointUrls(deps.hby, eid));
-    told.push(
-      url
-        ? yield* postKelToMailbox(deps, pre, { eid, url })
-        : { mailbox: eid, outcome: "failed", reason: "no endpoint URL is stored for the mailbox" },
-    );
-  }
-  return told;
+export function kelHeads(hby: Habery, pre: string): { d: string; m?: string } | null {
+  const kever = hby.db.getKever(pre);
+  if (!kever) return null;
+  if (!hby.db.getHab(pre)?.mid) return { d: kever.lastEst.d };
+  const member = localGroupMember(hby, pre).kever;
+  return member ? { d: kever.lastEst.d, m: member.lastEst.d } : { d: kever.lastEst.d };
+}
+
+/**
+ * Record that `mailbox` was given the KEL of `pre` up to `heads`, and clear any earlier give-up. The record holds
+ * coordinates only; the publisher derives what is owed by comparing it with the identifier's current heads.
+ */
+export function pinKelPublished(
+  db: Baser,
+  pre: string,
+  mailbox: string,
+  heads: { d: string; m?: string },
+  clock: Pick<RuntimeClock, "now">,
+): void {
+  db.kpub.pin([pre, mailbox], {
+    d: heads.d,
+    ...(heads.m ? { m: heads.m } : {}),
+    dt: new Date(clock.now()).toISOString(),
+  });
+}
+
+/** Whether `record` shows the mailbox holds `heads`. */
+export function holdsHeads(record: { d: string | null; m?: string } | null, heads: { d: string; m?: string }): boolean {
+  return record?.d === heads.d && (heads.m === undefined || record.m === heads.m);
 }
