@@ -112,6 +112,11 @@ Deno.test("app/protocol/oobi - hosted-prefix selection only allows the matched l
             return [];
           },
         },
+        ends: {
+          getTopItemIter() {
+            return [];
+          },
+        },
       },
     },
   } as unknown as AgentRuntime;

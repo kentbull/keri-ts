@@ -135,6 +135,12 @@ class SourceNotYetKnown extends ValidationError {
 /** Milliseconds between requests for the issuer's KEL while a query waits for its anchoring event. */
 const KEL_ASK_MS = 5000;
 
+/**
+ * Auxiliary query processor for `/ipex/unblind`: the discloser answers an authenticated query for a live Grant it
+ * sent, and the disclosee, once it approved a Grant, sends the query and receives the openings. It keeps its
+ * operations in the registry database so a restart resumes them, and queues outgoing queries and answers in
+ * `outgoing` for the transport owner. See the module comment for the consent rules.
+ */
 export class Unblind implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/unblind";
   readonly resource = Unblind.Route;

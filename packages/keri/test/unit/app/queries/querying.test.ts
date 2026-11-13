@@ -22,7 +22,7 @@ import type { AgentCue, QueryCue, QueryInstruction, QueryRequest, TelQueryCue } 
 import { Deck } from "../../../../src/core/deck.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import { reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
-import { Roles } from "../../../../src/core/roles.ts";
+import { EndpointRoles, Roles } from "../../../../src/core/roles.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
 import { httpClient } from "../../../support/http-client.ts";
 
@@ -513,6 +513,9 @@ Deno.test("query cues transfer once through the application owner after witness 
     const witness = hby.makeHab("witness", undefined, { transferable: false, ncount: 0 });
     const subject = hby.makeHab("subject");
     const runtime = yield* createAgentRuntime(hby, queryHttp([]), systemClock);
+    // A receipt is sent only to a controller with an end role to reach.
+    hby.db.ends.pin([subject.pre!, EndpointRoles.controller, subject.pre!], { allowed: true });
+    hby.db.locs.pin([subject.pre!, "https"], { url: "https://subject.test/" });
     const queryCues = new Deck<AgentCue>();
     const notice: AgentCue = { kin: "keyStateSaved", ksn: subject.kever!.state() };
     const recovery: AgentCue = { kin: "query", pre: subject.pre, route: "logs", q: {} };
