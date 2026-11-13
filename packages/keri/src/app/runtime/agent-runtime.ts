@@ -209,9 +209,9 @@ export interface AgentRuntimeOptions {
   /** Construct a provider mailbox store. Omitted leaves it absent; injected mailboxer stays borrowed. */
   enableMailboxStore?: boolean;
   /**
-   * Agent side of relay mode: `/fwd` intake re-sends the child of a sender that authorized this host as its
-   * `mailbox` or `agent` through this runtime's Poster. Requires a mailbox store, which hosts `/fwd` intake.
-   * Omitted or false keeps store-only intake.
+   * Agent side of relay mode: `/fwd` intake delivers the child of a sender that authorized this host as its
+   * `mailbox` or `agent`, through this runtime's own ingress to a local habitat and through its Poster to anyone
+   * else. Requires a mailbox store, which hosts `/fwd` intake. Omitted or false keeps store-only intake.
    */
   relaying?: boolean;
   /**
@@ -468,7 +468,7 @@ export function* createAgentRuntime(
   });
   const respondant = new Respondant(hby, postman);
   if (mailboxer) {
-    exc.addHandler(new ForwardHandler(mailboxDirector, options.relaying ? postman : null));
+    exc.addHandler(new ForwardHandler(mailboxDirector, options.relaying ? { postman, reactor } : null));
   }
   for (const route of exc.routes.keys()) {
     if (route === ForwardHandler.resource) {

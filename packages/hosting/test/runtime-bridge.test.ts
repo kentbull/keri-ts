@@ -243,6 +243,8 @@ Deno.test("edge to agent to third-party mailbox delivers the signed child", asyn
         runHostKernel(agentHby, {
           enableMailboxStore: true,
           enableRelay: true,
+          // The plan's agent runs KRAM; every message the edge hands it is judged as received input.
+          kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
           serviceHab: agent,
           http: { port: agentPort, hostname: "127.0.0.1", onListen: () => listening[1].resolve() },
           protocolPolicy: {},
@@ -292,6 +294,7 @@ Deno.test("edge to agent to third-party mailbox delivers the signed child", asyn
         assertEquals(stored.length, 1);
         // The third-party mailbox holds the sender's own signed child, not anything the agent signed.
         assertEquals(stored[0], yield* call(() => collectPayload(nestedPayload(child, Vrsn_2_0))));
+        assertExists(agentRuntime!.reactor.kvy.kramer, "the agent judged the edge's input under KRAM");
         // The agent relayed the child; it kept no copy for a recipient it does not serve.
         assertEquals(agentRuntime!.mailboxer!.getTopicMsgs(key), []);
       } finally {

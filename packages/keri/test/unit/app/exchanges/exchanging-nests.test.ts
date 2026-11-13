@@ -109,10 +109,15 @@ function forward(
   })[0];
   return { serder, tsgs: signatures(sender, serder), nests: [nest], mailboxAid: provider.pre };
 }
-/** A relaying agent runtime and a remote edge: the agent knows the sender and recipient only from ingested wire. */
+/**
+ * A relaying agent runtime and a remote edge: the agent knows the sender and recipient only from ingested wire.
+ * `colocated` is a second habitat of the agent's own Habery, as an edge's group co-member hosted on the agent.
+ */
 interface RelayFixture {
   readonly runtime: AgentRuntime;
   readonly agent: Hab;
+  readonly colocated: Hab;
+  readonly edge: Habery;
   readonly sender: Hab;
   readonly recipient: Hab;
 }
@@ -130,6 +135,7 @@ async function relayScenario(witnessed: boolean, test: RelayTest): Promise<void>
     const edgeHby = yield* createHabery({ name: `relay-edge-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const agent = agentHby.makeHab("agent", undefined, { transferable: false });
+      const colocated = agentHby.makeHab("colocated");
       const sender = edgeHby.makeHab("sender", undefined, witnessed ? { wits: [agent.pre], toad: 1 } : {});
       const recipient = edgeHby.makeHab("recipient");
       const runtime = yield* createAgentRuntime(agentHby, new FetchHttpClient(), systemClock, {
@@ -139,7 +145,7 @@ async function relayScenario(witnessed: boolean, test: RelayTest): Promise<void>
       try {
         // A witness takes its controller's events as local input (its receipt endpoint), never as misfits.
         yield* settleRuntimeIngress(runtime, [...sender.db.replay(sender.pre)!], { local: witnessed });
-        yield* test({ runtime, agent, sender, recipient });
+        yield* test({ runtime, agent, colocated, edge: edgeHby, sender, recipient });
       } finally {
         yield* runtime.close();
       }
@@ -150,12 +156,18 @@ async function relayScenario(witnessed: boolean, test: RelayTest): Promise<void>
   });
 }
 
-/** Send one nested `/fwd` from the sender to the agent and return what the agent's Poster queued. */
-function* forwardToAgent(fixture: RelayFixture, value: string): Operation<CesrFrame> {
-  const nest = yield* call(() => child(fixture.sender, value, Vrsn_2_0));
-  const decision = yield* fixture.runtime.exc.processEvent(
-    forward(fixture.sender, fixture.recipient, fixture.agent, nest),
-  );
+/**
+ * Have the sender hand the agent one nested `/fwd` for `recipient` and return the forwarded child.
+ *
+ * @param fixture Open relay scenario.
+ * @param value Child payload, distinct per call so each child has its own SAID.
+ * @param recipient Final recipient named by the `/fwd`.
+ * @param origin Habitat that signs the child; the sender signs the `/fwd` itself either way.
+ * @returns The child frame the `/fwd` carried.
+ */
+function* forwardToAgent(fixture: RelayFixture, value: string, recipient: Hab, origin: Hab): Operation<CesrFrame> {
+  const nest = yield* call(() => child(origin, value, Vrsn_2_0));
+  const decision = yield* fixture.runtime.exc.processEvent(forward(fixture.sender, recipient, fixture.agent, nest));
   assertEquals(decision.kind, "accept");
   return nest;
 }
@@ -164,7 +176,7 @@ Deno.test("forward handler relays a served sender's child through Poster", async
   await relayScenario(false, function*(fixture) {
     const { runtime, agent, sender, recipient } = fixture;
     yield* settleRuntimeIngress(runtime, [sender.makeEndRole(agent.pre, Roles.mailbox, true)]);
-    const nest = yield* forwardToAgent(fixture, "relay me");
+    const nest = yield* forwardToAgent(fixture, "relay me", recipient, sender);
     const queued = [...runtime.postman.evts];
     assertEquals(queued.length, 1);
     // The agent sends as itself to the final recipient; the `/fwd` topic passes through unchanged.
@@ -185,7 +197,7 @@ Deno.test("forward handler ignores an unserved sender", async () => {
     const { runtime, agent, sender, recipient } = fixture;
     // Authorizing the agent for a different role does not make the sender a served sender.
     yield* settleRuntimeIngress(runtime, [sender.makeEndRole(agent.pre, Roles.controller, true)]);
-    yield* forwardToAgent(fixture, "not served");
+    yield* forwardToAgent(fixture, "not served", recipient, sender);
     assertEquals([...runtime.postman.evts], []);
     assertEquals(runtime.mailboxer!.getTopicMsgs(`${recipient.pre}/nested`), []);
   });
@@ -195,12 +207,52 @@ Deno.test("witness membership alone does not relay", async () => {
   await relayScenario(true, function*(fixture) {
     const { runtime, agent, sender } = fixture;
     assertEquals(runtime.hby.db.getKever(sender.pre)?.wits, [agent.pre]);
-    yield* forwardToAgent(fixture, "witnessed only");
+    yield* forwardToAgent(fixture, "witnessed only", fixture.recipient, sender);
     assertEquals([...runtime.postman.evts], []);
     // The same sender relays once it authorizes the agent as its mailbox.
     yield* settleRuntimeIngress(runtime, [sender.makeEndRole(agent.pre, Roles.mailbox, true)]);
-    yield* forwardToAgent(fixture, "now served");
+    yield* forwardToAgent(fixture, "now served", fixture.recipient, sender);
     assertEquals([...runtime.postman.evts].map((evt) => evt.src), [agent.pre]);
+  });
+});
+
+Deno.test("forward handler delivers a served sender's child to a recipient local to the agent", async () => {
+  await relayScenario(false, function*(fixture) {
+    const { runtime, agent, colocated, sender } = fixture;
+    yield* settleRuntimeIngress(runtime, [sender.makeEndRole(agent.pre, Roles.mailbox, true)]);
+    // The agent also stores for the colocated habitat; ingest still wins, so the child arrives exactly once.
+    yield* settleRuntimeIngress(runtime, [colocated.makeEndRole(agent.pre, Roles.mailbox, true)]);
+    const nest = yield* forwardToAgent(fixture, "for the co-member", colocated, sender);
+    // The agent's own exchange intake accepted the sender-signed child, addressed to the colocated habitat.
+    assertEquals(runtime.exc.complete(nest.body.said!), true);
+    assertEquals(runtime.hby.db.exchangeMeta.get([nest.body.said!])?.mailboxAid, colocated.pre);
+    assertEquals([...runtime.postman.evts], []);
+    assertEquals(runtime.mailboxer!.getTopicMsgs(`${colocated.pre}/nested`), []);
+  });
+});
+
+Deno.test("a group member's forward is relayed on the group's authorization", async () => {
+  await relayScenario(false, function*(fixture) {
+    const { runtime, agent, edge, sender, recipient } = fixture;
+    // One of two signs, so the sender's signature alone completes the group's messages.
+    const other = edge.makeHab("other");
+    const { hab: group } = edge.makeGroupHab("team", sender, [sender.pre, other.pre], undefined, undefined, {
+      isith: "1",
+      nsith: "1",
+      toad: 0,
+    });
+    yield* settleRuntimeIngress(runtime, [...edge.db.replay(group.pre)!]);
+    // The member never authorized the agent; until the group does, its group's messages are not relayed.
+    yield* forwardToAgent(fixture, "group before authorization", recipient, group);
+    assertEquals([...runtime.postman.evts], []);
+    yield* settleRuntimeIngress(runtime, [group.makeEndRole(agent.pre, Roles.mailbox, true)]);
+    const nest = yield* forwardToAgent(fixture, "group after authorization", recipient, group);
+    const queued = [...runtime.postman.evts];
+    assertEquals(queued.map((evt) => [evt.src, evt.dest]), [[agent.pre, recipient.pre]]);
+    assertEquals(queued[0].msg, yield* call(() => collectPayload(nestedPayload(nest, Vrsn_2_0))));
+    // The member's own personal message is still not relayed: the group's authorization covers the group only.
+    yield* forwardToAgent(fixture, "member personal", recipient, sender);
+    assertEquals([...runtime.postman.evts].length, 1);
   });
 });
 
