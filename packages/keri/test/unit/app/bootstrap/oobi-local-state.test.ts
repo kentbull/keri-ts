@@ -507,14 +507,16 @@ Deno.test("OOBI multi-parent publication validates all URLs and publishes ordina
         }
         assertEquals(cues.length, 0);
       };
+      untouched();
       urls = [children[0], "invalid later URL"];
-      let invalid: unknown;
-      try {
-        yield* oobi.processOnce();
-      } catch (error) {
-        invalid = error;
-      }
-      assertEquals(invalid instanceof TypeError, true);
+      // A malformed later URL fails the parent before the first child is queued.
+      yield* oobi.processOnce();
+      assertEquals(hby.db.oobis.get(parent), null);
+      assertEquals(hby.db.eoobi.get(parent)?.state, "invalid-multi-oobi");
+      assertEquals(cues.pull(), { kin: "oobiFailed", url: parent, reason: "invalid-multi-oobi" });
+      hby.db.eoobi.rem(parent);
+      oobi.resolve(parent, "source");
+      assertEquals(cues.pull()?.kin, "oobiQueued");
       untouched();
       urls = [...children, children[0]];
       yield* oobi.processOnce();
