@@ -95,7 +95,7 @@ export function sendExchangeMessage(
   args: ExchangeMessageArgs & { topic?: string },
 ): Operation<{ serder: SerderKERI; deliveries: string[] }> {
   return call(function*() {
-    const postman = new Poster(hby, null, null, http, clock);
+    const postman = new Poster(hby, null, null, http, clock, null);
     yield* resource<void>(function*(provide) {
       try {
         yield* provide();

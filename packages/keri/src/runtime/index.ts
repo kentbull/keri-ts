@@ -162,6 +162,14 @@ export {
   type PosterStream,
 } from "../app/delivery/forwarding.ts";
 export {
+  type Relay,
+  type RelayEndpoint,
+  relayEndpoint,
+  RelayOnlyError,
+  relayOnlyHttpClient,
+  RelayUnresolvedError,
+} from "../app/delivery/relaying.ts";
+export {
   type EssrDecision,
   type EssrMessage,
   EssrRecipient,

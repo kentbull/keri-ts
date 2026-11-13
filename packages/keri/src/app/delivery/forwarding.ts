@@ -31,6 +31,7 @@ import { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../trans
 import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
 import { introduce } from "./introducing.ts";
+import { type Relay, relayEndpoint, RelayUnresolvedError } from "./relaying.ts";
 
 /** Prepared signed source; Poster copies its bytes before publishing an ordinary admission. */
 export interface PosterMsg {
@@ -186,6 +187,11 @@ function remoteCesrTarget(
  * storage). Only recipients without those roles use one witness. Transport
  * completion and opt-in outcomes do not prove remote protocol acceptance. Finite
  * stream admissions use the first present role through the same execution owner.
+ *
+ * With a relay (an edge runtime) there is no role traversal: every recipient other
+ * than the relay gets one `/fwd` delivery to the relay, which does the forwarding,
+ * and the relay itself gets the message directly. `sent` then means the relay
+ * accepted the wrapper, not that the final recipient received it.
  */
 export class Poster {
   /** Borrowed habitat collection and backing accepted protocol state. */
@@ -214,6 +220,8 @@ export class Poster {
   private joined?: Promise<void>;
   /** Borrowed same-socket protocol receiver; null explicitly selects send-only capability. */
   private readonly protocol: ProtocolProcessor | null;
+  /** The agent every message goes through (an edge); null delivers directly (a forwarder). */
+  readonly relay: Relay | null;
 
   /**
    * Bind actual collaborators; Poster owns queue/I/O lifetimes and borrows their stores.
@@ -223,6 +231,7 @@ export class Poster {
    * @param protocol Borrowed same-database processor for TCP replies; null permits send-only work.
    * @param http Borrowed HTTP implementation selected by composition.
    * @param clock Borrowed clock for transport deadlines; times are milliseconds.
+   * @param relay The agent every message goes through; null selects ordinary direct role traversal.
    * @throws RangeError if protocol state belongs to a different database.
    */
   constructor(
@@ -231,6 +240,7 @@ export class Poster {
     protocol: ProtocolProcessor | null,
     http: HttpClient,
     clock: RuntimeClock,
+    relay: Relay | null,
   ) {
     if (protocol && protocol.kvy.db !== hby.db) throw new RangeError("Poster protocol must use the same database");
     this.hby = hby;
@@ -238,6 +248,7 @@ export class Poster {
     this.http = http;
     this.clock = clock;
     this.protocol = protocol;
+    this.relay = relay;
   }
 
   /**
@@ -450,6 +461,14 @@ export class Poster {
   private *deliverEvent(evt: PosterEvent, deliveries: string[], signal: AbortSignal): Operation<PosterOutcome> {
     const hab = this.hby.habs.get(evt.src);
     if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
+    if (this.relay && !relayEndpoint(this.hby, this.relay)) {
+      return {
+        kin: "failed",
+        evt,
+        deliveries,
+        error: new RelayUnresolvedError(`Relay ${this.relay.aid} has no accepted location; its OOBI has not resolved.`),
+      };
+    }
     const routes = this.findBytesRoutes(hab, evt.dest, evt.topic, evt.kin);
     if (!routes.length) {
       return {
@@ -562,6 +581,7 @@ export class Poster {
    * Controller and agent roles each retain all endpoints. An indirect role picks
    * one random provider, unless an explicitly composed store owns an eligible local
    * AID. Empty location maps retain role selection and become execution failures.
+   * With a relay, the relay alone is the route (see {@link relayRoutes}).
    *
    * @param hab Local signing habitat borrowing accepted role/location state.
    * @param recipient Resolved final recipient AID.
@@ -570,6 +590,7 @@ export class Poster {
    * @returns Ordered role groups; no eligible role returns an empty array.
    */
   private findBytesRoutes(hab: Hab, recipient: string, topic: string, kin: PosterEvent["kin"] = "msg"): RawCesrRoute[] {
+    if (this.relay) return this.relayRoutes(this.relay, recipient, topic);
     const ends = hab.endsFor(recipient);
     const roles: string[] = [Roles.controller, Roles.agent, Roles.mailbox].filter((role) =>
       Object.keys(ends[role] ?? {}).length
@@ -597,9 +618,27 @@ export class Poster {
   }
 
   /**
+   * Route through the relay: one `forward` route to the relay for every other recipient, never a direct fallback,
+   * and one `direct` route when the recipient is the relay. Recipient end roles are not read.
+   *
+   * @param relay The configured relay agent.
+   * @param recipient Resolved final recipient AID.
+   * @param topic Recipient mailbox topic; the forwarded route requires a nonempty topic.
+   * @returns One route to the relay, or none while the relay has no accepted location.
+   */
+  private relayRoutes(relay: Relay, recipient: string, topic: string): RawCesrRoute[] {
+    const endpoint = relayEndpoint(this.hby, relay);
+    if (!endpoint) return [];
+    if (recipient === relay.aid) return [{ kind: "direct", targets: [endpoint] }];
+    if (!topic) throw new ValidationError(`Forwarded delivery requires an explicit topic for ${recipient}.`);
+    return [{ kind: "forward", targets: [endpoint] }];
+  }
+
+  /**
    * Whether `src` has any eligible role (controller, agent, mailbox or witness) from which to reach `dest`, as
    * delivery would find it now. A pure read of accepted endpoint state: it says nothing about whether the
-   * endpoint answers. A proposer uses it to refuse before it creates anything it could not publish.
+   * endpoint answers. A proposer uses it to refuse before it creates anything it could not publish. With a relay,
+   * it is whether the relay's location is accepted.
    */
   canReach(src: string, dest: string, topic = "multisig"): boolean {
     const hab = this.hby.habs.get(src);

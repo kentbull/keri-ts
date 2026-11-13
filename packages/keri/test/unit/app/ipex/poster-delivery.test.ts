@@ -31,6 +31,7 @@ Deno.test("a multi-frame wire is delivered to a mailbox-forwarded destination as
         return new Response(null, { status: 204 });
       }),
       systemClock,
+      null,
     );
     try {
       // Two complete messages in one wire, as the issuer's proof support and Grant are.
