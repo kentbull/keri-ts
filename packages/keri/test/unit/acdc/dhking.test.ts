@@ -270,7 +270,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     const preparedGrant = yield* prepareGroupDerivedIssuance(lead.runtime, credential, {
       recipient: holder.hab.pre,
       message: "Exact group issuance",
-    }, { hab: lead.hab, coordinator: coordinator.said!, custodian: lead.member.pre });
+    }, coordinator.said!);
     const grant = parseBytes(preparedGrant.proposal)[0].nests![0].body as SerderKERI;
     // Observe the completion cues the drainer consumes: only the retaining custodians emit one.
     const replicate = new Map<(typeof actors)[number], unknown[]>();
@@ -298,7 +298,6 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         grant: preparedGrant.grant,
         proposal: preparedGrant.proposal,
         coordinator: coordinator.said!,
-        custodian: lead.member.pre,
       }, { timeoutMs: 90000 })
     );
     yield* sleep(100);
@@ -312,7 +311,6 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       grant: preparedGrant.grant,
       proposal: preparedGrant.proposal,
       coordinator: coordinator.said!,
-      custodian: lead.member.pre,
     }, { timeoutMs: 90000 });
     assertEquals([contributed.contributed, contributed.registryIssued, contributed.admitted], [true, false, false]);
     const peerHost = yield* spawn(() =>
@@ -335,7 +333,6 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         role: "recipient",
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
-        custodian: holder.member.pre,
       }, { timeoutMs: 90000 })
     );
     yield* sleep(100);
@@ -348,7 +345,6 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         role: "recipient",
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
-        custodian: holder.member.pre,
       }, { timeoutMs: 90000 })
     );
 

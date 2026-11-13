@@ -22,20 +22,20 @@ import {
   type AgentRuntime,
   answerUnblind,
   approveGroupIpex,
+  approveGroupIssuance,
   approveGroupIssuanceExchange,
   approveGroupProposal,
-  beginGroupIssuance,
   completeGroupMailbox,
   type CounselInputs,
   type DisclosureSelection,
   dismissGroupProposal,
   findGroupProposal,
-  groupElectedMember,
   type GroupEventRef,
   type GroupEventStatus,
   groupIpexProposals,
   type GroupIpexStatus,
   groupIpexStatus,
+  groupIssuanceElection,
   groupIssuanceProposals,
   type GroupProposal,
   type GroupProposalNeeds,
@@ -45,7 +45,6 @@ import {
   type IssuanceStatus,
   issuanceStatus,
   listGroupProposals,
-  localGroupMember,
   type MailboxStatus,
   mailboxStatus,
   type PendingGrant,
@@ -54,6 +53,7 @@ import {
   proposeGroupAdmit,
   proposeGroupInception,
   proposeGroupInteraction,
+  proposeGroupIssuance,
   proposeGroupMailbox,
   proposeGroupPresentation,
   proposeGroupRotation,
@@ -534,7 +534,7 @@ export class Proposals {
   /**
    * Give this member's one consent to a proposal and wait for the group's work to finish. The call made is
    * chosen from the proposal's kind: `approveGroupProposal` for events and registry events (then the Counselor),
-   * `approveGroupIpex` for a group IPEX message, `beginGroupIssuance` for a group issuance Grant.
+   * `approveGroupIpex` for a group IPEX message, `approveGroupIssuance` for a group issuance Grant.
    *
    * @throws ValidationError when `id` names no stored proposal, or the proposal needs a choice (`groupAlias`,
    * `registryName`) the caller did not make.
@@ -571,11 +571,10 @@ export class Proposals {
       && this.groupHabs().flatMap((hab) => groupIssuanceProposals(issuance, hab)).find((item) => item.grant === id);
     if (issuance && grant) {
       const hab = this.#scope.group(grant.group);
-      const selection = this.selection(hab);
       const parts = this.#scope.parts;
       return await this.#scope.go(function*(): Operation<ProposalOutcome> {
         if (!issuance.live.has(id) && !issuance.deps.exc.complete(id)) {
-          yield* beginGroupIssuance(issuance, { ...selection, grant: id });
+          yield* approveGroupIssuance(issuance, id);
           // The member records the credential when the issuance completes, as the custodian does.
           const origin = issuance.deps.exc.retainedInput(id, { pending: true })?.nests?.[0]?.body;
           if (origin instanceof SerderACDC && origin.regid) trackGroupIssuance(parts, hab, id, origin, origin.regid);
@@ -597,11 +596,6 @@ export class Proposals {
   dismiss(id: string): number {
     const { runtime } = this.#scope.parts;
     return dismissGroupProposal(runtime, id);
-  }
-
-  /** The accepted coordinator and elected custodian a group issuance is bound to. */
-  private selection(hab: Hab) {
-    return electedSelection(this.#scope.parts.hby, hab);
   }
 
   private groupHabs(): Hab[] {
@@ -651,26 +645,6 @@ function issuanceSummary(waited: WaitResult<IssuanceStatus>): ProposalSummary {
   if (status.state === "done") return { outcome: "complete" as const, status };
   if (status.state === "active") return { outcome: "approved" as const, status };
   return { outcome: "ended" as const, reason: status.reason, status };
-}
-
-/** The group, its accepted coordinator event and the custodian that event elects. */
-export interface GroupSelection {
-  hab: Hab;
-  coordinator: string;
-  custodian: string;
-}
-
-/**
- * The accepted coordinator (the group's latest accepted event) and the custodian it elects, which is what a group
- * issuance is bound to. Every member that reads the same latest event picks the same custodian.
- */
-function electedSelection(hby: Habery, hab: Hab): GroupSelection {
-  const kever = hab.kever;
-  if (!kever) throw new ValidationError("The group has no accepted key state.");
-  const coordinator = kever.serder.said!;
-  const custodian = groupElectedMember(hby, hab.pre!, { sn: kever.sn, said: coordinator });
-  if (!custodian) throw new ValidationError("No elected custodian is known for the group's latest event yet.");
-  return { hab, coordinator, custodian };
 }
 
 // --- group forms of the credential calls ---------------------------------------------------------------------------
@@ -771,11 +745,10 @@ export class GroupCredentials {
     const { hby, wallet, runtime } = this.#scope.parts;
     const issuance = runtime.operations?.issuance, ipex = runtime.operations?.groupIpex;
     if (!issuance || !ipex) throw new ValidationError("This wallet's runtime has no group issuance owner.");
-    const selection = electedSelection(hby, hab);
     return await this.#scope.go(function*(): Operation<GroupReceiveOutcome> {
       let status = issuanceStatus(issuance, grant);
       if (status.state === "active" && status.needs === "exchange") {
-        approveGroupIssuanceExchange(issuance, { ...selection, grant });
+        approveGroupIssuanceExchange(issuance, grant);
       }
       const waited = yield* waitForIssuance(issuance, grant, {
         timeoutMs,
@@ -823,8 +796,7 @@ export class GroupCredentials {
     const { hby, runtime, wallet } = this.#scope.parts;
     const ops = runtime.operations?.issuance;
     if (!ops) throw new ValidationError("This wallet's runtime has no issuance owner.");
-    const selection = electedSelection(hby, hab);
-    if (selection.custodian !== localGroupMember(hby, hab.pre!).pre) {
+    if (!groupIssuanceElection(ops, hab.pre!).lead) {
       throw new ValidationError(
         "Only the group's elected custodian begins an issuance; the other issuer members consent through proposals.approve.",
       );
@@ -846,8 +818,7 @@ export class GroupCredentials {
         new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock),
       );
       const credential: SerderACDC = author.create(registry, options.credential);
-      const begun = yield* beginGroupIssuance(ops, {
-        ...selection,
+      const begun = yield* proposeGroupIssuance(ops, {
         credential,
         options: { recipient, message: options.message ?? "", artifacts: [...(options.artifacts ?? [])] },
       });
@@ -908,7 +879,7 @@ export class GroupCredentials {
    */
   async unblind(grant: string, hab: Hab, options: GroupUnblindOptions): Promise<UnblindOutcome> {
     const { states, timeoutMs = WALLET_TIMEOUTS.unblind, proposer } = options;
-    const { hby, runtime } = this.#scope.parts;
+    const { runtime } = this.#scope.parts;
     const ops = runtime.operations?.unblinding;
     if (!ops) throw new ValidationError("This wallet's runtime has no Unblind owner.");
     const input = runtime.exc.retainedInput(grant)?.serder;
@@ -916,7 +887,9 @@ export class GroupCredentials {
     if (!requester && input?.pre !== hab.pre) {
       throw new ValidationError("The group is neither party of that Grant.");
     }
-    const lead = proposer ?? electedSelection(hby, hab).custodian;
+    const issuance = runtime.operations?.issuance;
+    if (!proposer && !issuance) throw new ValidationError("This wallet's runtime has no issuance owner.");
+    const lead = proposer ?? groupIssuanceElection(issuance!, hab.pre!).custodian;
     return await this.#scope.go(function*() {
       const before = unblindingStatus(ops, grant);
       if (before.state !== "active" && before.state !== "done" && before.state !== "expired") {

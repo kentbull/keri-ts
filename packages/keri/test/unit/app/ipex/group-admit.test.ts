@@ -190,12 +190,6 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
     });
 
     // Both holder members consent to DH once the full Grant has arrived.
-    const selection = (side: Side) => ({
-      hab: side.hab,
-      coordinator: coordinator.said!,
-      custodian: h1.member.pre!,
-      grant,
-    });
     for (const side of holders) {
       yield* until(() => !!side.runtime.exc.retainedInput(grant, { pending: true }), `${side.name} to hold the Grant`);
       const waiting = pendingGroupGrants(side.runtime.operations!.issuance);
@@ -204,7 +198,12 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
         side.hab.pre,
         issuer.hab.pre,
       ]]);
-      approveGroupIssuanceExchange(side.runtime.operations!.issuance, selection(side));
+      const begun = approveGroupIssuanceExchange(side.runtime.operations!.issuance, grant, coordinator.said!);
+      assertEquals(
+        side.runtime.operations!.issuance.live.get(grant)!.group!.xid,
+        begun.xid,
+        "the derived transaction id is the one DH approved",
+      );
     }
     assertEquals((yield* waitForIssuance(issuance, grant, { timeoutMs: BUDGET_MS })).status.state, "done");
     for (const side of holders) {

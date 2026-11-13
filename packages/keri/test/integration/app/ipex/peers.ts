@@ -984,7 +984,6 @@ class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
         role: "recipient",
         grant,
         coordinator,
-        custodian,
       }, { timeoutMs: 120000 }));
     return Promise.resolve();
   }
