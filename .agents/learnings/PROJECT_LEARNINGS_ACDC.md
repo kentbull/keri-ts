@@ -373,6 +373,11 @@ V2 local blind validates its schema before deriving any commitment. Keep missing
 resource, invalid content and infrastructure failures distinct. Schema validation
 has no byte/value/depth/reference/resource-count quotas; identity, reference
 resolution and Draft 2020-12 correctness remain required.
+JSON Schema validation generates no code (`core/json-schema.ts`, `@cfworker/json-schema`, one path for every
+environment), so a page under a strict Content-Security-Policy can pin and validate schemas. It matches the Ajv setup
+it replaced: `format` never rejects, the dialect meta-schemas are embedded as data (`json-schema-meta.ts`), invalid
+`pattern`s fail when a schema is prepared, and `$dynamicRef` is refused. cbor-x comes from its no-eval build for the same
+reason; the browser bundle gate rejects any bundled `new Function(` or direct `eval(`.
 The static 71438328 schema profile is separately qualified; preserve frozen927
 commitments and legacy Schemer behavior. Validation consumes borrowed originals,
 compiles private copies and never fetches references. Content-bound shallow JSON
