@@ -6,16 +6,18 @@ Exchanger and an opened WalletBaser. Callers own and close those stores.
 
 ## Entries
 
-- `@keri-ts/wallet` is the Node entry. `createWalletBaser(options)` opens the
-  inventory on LMDB, so the root cannot be bundled for a browser.
-- `@keri-ts/wallet/web` is the browser entry, with a `browser` export condition. It
-  exports everything the root does except `createWalletBaser`, plus
-  `openWalletBaser(opener, identity)`, which opens the same `WalletBaser` through any
-  `StoreOpener`. Pass the composition's own opener (for example `hby.opener`, or
-  `indexedDbOpener()` from `keri-ts/db/indexeddb`) so the wallet shares its single
-  store queue. Flush with `db.store.flushed()` before relying on durability. An
-  `indexedDbOpener()` holds the single-writer store lock for its identity, so a second
-  opener on the wallet's own `name` and `base` is refused while the wallet is open.
+- `@keri-ts/wallet` is browser-safe (it has a `browser` export condition). It exports the
+  inventory `Wallet`, `WalletBaser`, `WalletAuthor`, `RegistryCustody`, `WalletDiscloser` and
+  `openWalletBaser(opener, identity)`, which opens the inventory through any `StoreOpener`.
+  Pass the composition's own opener (for example `hby.opener`, or `indexedDbOpener()` from
+  `keri-ts/db/indexeddb`) so the wallet shares its single store queue. Flush with
+  `db.store.flushed()` before relying on durability. An `indexedDbOpener()` holds the
+  single-writer store lock for its identity, so a second opener on the wallet's own `name` and
+  `base` is refused while the wallet is open.
+- `@keri-ts/wallet/web` exports everything the root does plus `openWebWallet`, the browser
+  composition root, and its wallet-level API.
+- `@keri-ts/wallet/lmdb` is the Node-only entry: `createWalletBaser(options)` opens the inventory
+  on LMDB. It has no `browser` condition and cannot be bundled for a browser.
 
 `recordIssued` verifies accepted local issuance and accepts an explicit blinded
 opening. `recordAdmission(..., {consent: true})` requires current authenticated

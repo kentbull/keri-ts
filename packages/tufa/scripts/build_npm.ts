@@ -89,6 +89,7 @@ function dntPackageMappings(
     "../registrar/mod.ts": { name: "@keri-ts/registrar", version: registrarVersion },
     "../observer/mod.ts": { name: "@keri-ts/observer", version: observerVersion },
     "../wallet/mod.ts": { name: "@keri-ts/wallet", version: walletVersion },
+    "../wallet/lmdb.ts": { name: "@keri-ts/wallet", version: walletVersion, subPath: "lmdb" },
     "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
     "../verifier/mod.ts": { name: "@keri-ts/verifier", version: verifierVersion },
     "../keri/cli.ts": { name: "keri-ts", version: keriVersion, subPath: "cli" },
