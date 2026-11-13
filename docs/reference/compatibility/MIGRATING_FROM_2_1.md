@@ -74,7 +74,7 @@ Changed:
 - A DH query that reaches an Issuee before its consent is persisted (`Baser.heldq`), so it
   survives a restart, and so does an Unblind request the discloser owes a reply to (`Baser.heldu`).
 - New durable tables, ignored by KERIpy: `rrsn.` (root copies sent, keyed group, registry,
-  recipient), `Baser.heldq` (held DH queries), `Baser.heldu` (owed Unblind requests) and, in the registry database, `dvus.`
+  recipient), `Baser.heldq` (held DH queries), `Baser.heldu` (owed Unblind requests), `kpub.` (the KEL each mailbox last accepted) and, in the registry database, `dvus.`
   (blind-derivation coordinates). The first pass on a store from before `rrsn.` sends one root copy per other member
   per held registry once.
 - `OWNER_LOOP_MS` does not exist in any release; the owners run on one fiber with
@@ -100,10 +100,15 @@ Changed:
 
 ## Mailboxes and hosting
 
-- A mailbox poller no longer repeats a refused query in a tight loop (1 s doubling to 30 s) and
-  repairs a mailbox that fell behind a rotation by posting the KEL itself on a 403.
-- Completing a rotation tells the identifier's mailboxes; `completeEvent`'s result gains
-  `mailboxes`.
+- A rotation is announced to the identifier's mailboxes by the runtime's `KelPublisher` (a cue from
+  `completeEvent` and the Counselor, its own fiber, a durable `Baser.kpub` record). `completeEvent`
+  and the Counselor push a `RotatedCue`; they no longer post inline, and `EventCompletion.mailboxes`
+  and `tellMailboxes` do not exist. The wallet exposes `mailboxes.publication` and
+  `mailboxes.waitForPublication`, and `health()` reports `mailbox-unreachable`. See the
+  [wallet guide](../../design-docs/runtime/WALLET_LIBRARY_GUIDE.md#mailboxes-and-rotation).
+- A mailbox poll that fails (unreachable host, refusal, no response) backs off and no longer stops
+  the runtime; the poller no longer posts the KEL itself, a 403 asks the `KelPublisher` to post it
+  again.
 - The CORS preflight allows the `CESR-Genus` and `Authorization` request headers.
 - `FetchHttpClient` requests can be cancelled in WebKit.
 

@@ -76,10 +76,56 @@ exchange derives a registry's root with the recipient and the registry takes it 
 
 `health()` returns `ok`, `latched` (a persistence write failed), `faulted` (the operation owners
 recorded a fault outside any single operation), `stopped` (the runtime task ended without
-`close()`; `cause` says why) or `closed`. A call on a stopped or closed wallet rejects with
-`WalletStoppedError`.
+`close()`; `cause` says why), `mailbox-unreachable` (the runtime gave up telling a mailbox a rotated
+KEL; see below) or `closed`. Precedence: `closed`, `stopped`, `latched`, `faulted`,
+`mailbox-unreachable`, `ok`. A call on a stopped or closed wallet rejects with `WalletStoppedError`.
+`mailboxes.publication(pre)` and `mailboxes.waitForPublication(pre)` report where each mailbox stands
+in being told the identifier's KEL.
 
-Group identifiers are not covered by this surface yet; use the runtime directly (below).
+Group identifiers use the group surface in the next section.
+
+## The group wallet surface
+
+A group acts through its members' separate consents, so the wallet's group API is organised the same way
+(`src/web/group-api.ts`). The proposer starts something; every other member sees the same item in one list and
+consents with one call; the runtime's Counselor and owners finish the work. The app only consents.
+
+| Call                                      | What it does                                                                                                          |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `groups.incept / rotate / interact`       | Propose the event as this member (`proposeGroupInception`, `...Rotation`, `...Interaction`) and wait on the Counselor |
+| `groups.join(id, { alias })`              | Approve an inception (or the rotation of a group not joined yet) under a local alias                                  |
+| `groups.status(event) / wait(event)`      | Read or wait on the Counselor for a group event                                                                       |
+| `groups.inceptRegistry(group, name)`      | Propose the group's ACDC v2 registry (`proposeRegistryEvent`)                                                         |
+| `groups.proposeMailbox / completeMailbox` | Propose the group's mailbox role; once approved, post it to the provider                                              |
+| `proposals.list({ group?, all? })`        | One typed list: key and reply events, registry events, group IPEX messages, group issuance Grants                     |
+| `proposals.approve(id, opts)`             | The one consent; the wallet picks the call from the proposal's kind and waits                                         |
+| `proposals.dismiss(id)`                   | Remove an event proposal's notices (KERI has no reject message; 0 for kinds that raise none)                          |
+
+`proposals.approve` calls `approveGroupProposal` for events and registry events (then waits on the
+Counselor), `approveGroupIpex` for a group IPEX message, and `beginGroupIssuance` for a group issuance Grant (then
+waits on the issuance). It returns `complete`, `approved` (consent recorded, nothing further observable, as for an
+endpoint-role reply), `ended` (with a `reason`) or `timed-out`, each with the status read at return. Group event
+waits return `complete`, `superseded`, `unknown` or `timed-out`.
+
+The credential calls select the group path when the identifier is a local group:
+
+- `credentials.issue({ pre: group, registry, ... })`: only the elected custodian (the member the group's latest
+  accepted event elects) begins the issuance with the credential; the registry must already exist
+  (`groups.inceptRegistry`). Other issuer members consent through `proposals.approve`. The runtime proposes the
+  registry update and the other members approve it as a `bup` proposal.
+- `credentials.receive(grant)`: a holder group member approves the DH exchange, waits for the issuer to finish it,
+  then proposes the Admit, or approves the Admit another member proposed for that Grant, waits until the group's
+  Admit is accepted and records the admission. The elected lead member delivers the Admit (`delivery: by-lead`).
+- `credentials.present({ verb: "grant", pre: group, ... })` proposes the group's Grant (`proposeGroupPresentation`);
+  the other members approve it as a proposal and the lead delivers it.
+- `credentials.unblind(grant)` requests the proofs as the disclosee or answers as the discloser
+  (`requestUnblind` / `answerUnblind`); every member must name the same `proposer`, which defaults to the member
+  the group's latest event elects.
+- `credentials.pending(group)` lists the pending Grants addressed to the group.
+
+What the code does not do: a group issuance is not recorded in the wallet inventory by the wallet, and a group
+inception needs a route to every co-member (their endpoint roles resolved) before it can publish the proposal;
+otherwise the call rejects with the library's message and the proposer keeps the group habitat.
 
 ## The workflow contract
 
@@ -153,23 +199,34 @@ Group work is a set of explicit library calls plus the `Counselor`.
 
 A mailbox is authorized by an accepted `/end/role/add` for the identifier, which `addMailbox`
 (or `mailboxes.add`) posts to the provider as `application/cesr`. The runtime polls each
-authorized mailbox. A mailbox accepts a poll only from an identifier whose current key state it
-holds, so a rotation must reach it.
+authorized mailbox. A mailbox authenticates a poll against the KEL it holds for the identifier, so a
+rotation has to reach it. Telling it is the `KelPublisher`'s job (`app/mailbox/kel-publisher.ts`,
+`runtime.kelPublisher`):
 
-- **Completing a rotation tells the mailboxes.** `completeEvent` posts the KEL (delegation chain,
-  KEL, stored receipts) to every mailbox the identifier has an authorized role with once a `rot`
-  or `drt` is fully witnessed (`tellMailboxes`); its result carries one `told` or `failed` entry
-  per mailbox, and an unreachable mailbox does not fail the rotation. The Counselor does the same
-  when a group rotation completes, in each member runtime that has the group's role.
-- **The poller repairs a lagging mailbox.** On a 403 for a fully witnessed KEL, the endpoint
-  worker posts the KEL replay itself and polls again at once; if that is refused too it falls
-  back to `RefusalBackoff` (1 s doubling to 30 s per consecutive refusal), so a refused query is
-  never repeated in a tight loop.
-- A keri-ts mailbox authorizes a poll for a group identifier signed by one of its members when the
-  member's threshold is met and its key is in the group's current key list.
+- **A cue and its own fiber.** Completing a rotation (`completeEvent`, and the Counselor for a group rotation)
+  pushes a `RotatedCue` onto `kelPublisher.rotated`, which wakes the publisher's fiber, started by
+  `runAgentRuntime`. The cue is only a hint: what is owed is derived from state.
+- **A durable record.** `Baser.kpub.` keeps, per (identifier, mailbox), the establishment event whose KEL the
+  mailbox last answered 2xx for, and a `failed` entry when publishing used up its budget. A post is owed unless the
+  record shows the identifier's latest establishment event, so a lost cue, a bare `Hab.rotate`, a crash or a
+  one-shot host (the CLI runs a pass after a rotation) loses nothing. Groups are included.
+- **When it posts.** An event is published once it is fully witnessed and, for a delegated identifier, its
+  authorizing source seal is stored. A host that cannot take a multi-message stream (KERIpy answers 400 or 406) is
+  recorded as told, because it does not authenticate polls.
+- **Retry and give-up.** A failed post is retried after 1 s, doubling to 60 s, and given up when the next attempt
+  would start more than 5 minutes after the first (`KEL_PUBLISH_BUDGET_MS`). Giving up writes `failed` to the record
+  and publishes a change. The runtime never fails because a mailbox is unreachable.
+- **What re-arms a given-up entry.** A new rotation of the identifier, a successful poll of that mailbox, a
+  request from the poller's unauthorized handling (`repair`), `prompt`, or the next runtime open (memory starts
+  empty, so each owed entry gets a fresh budget).
+- **Observing it.** `kelPublisher.status()` reads every (identifier, mailbox) as `published`, `pending` (being
+  sent or waiting out a retry delay), `waiting` (gated: unwitnessed, unanchored or no URL) or `timed-out`, and
+  `kelPublisher.waitForPublication(pre, { timeoutMs })` observes until every mailbox of `pre` is `published` or
+  `timed-out` (a `WaitResult`). The wallet wraps them as `mailboxes.publication(pre)` and
+  `mailboxes.waitForPublication(pre)`, and `health()` reports `mailbox-unreachable` (with the identifier,
+  mailbox and last reason) while an entry is `timed-out`.
 
-A separate publisher component for KEL delivery was being landed by another worker when this was
-written; it is not in the tree and is **not described here**.
+How the poller schedules, backs off and classifies its polls is being rewritten and is not described here.
 
 ## Known limits in 2.2.0
 
@@ -178,14 +235,16 @@ written; it is not in the tree and is **not described here**.
   recovery action is planned.
 - A DH registry takes one exchange. Against a KERIpy holder, which keeps the old rule and refuses
   a second exchange on a registry it holds a root for, the issuer needs a fresh registry.
-- The Unblind discloser's owed reply is held in memory only. A group Unblind reply lost to a
-  restart is therefore not resent; **unconfirmed in code beyond the memory-only statement**.
-- A group member that rotates before its group is refused by a keri-ts mailbox, because the host
-  checks the member's key against the group's current key list. **Inferred from the host rule
-  above; not exercised.**
-- A KERIpy controller using a keri-ts mailbox after rotating is not told by its own runtime: the
-  mailbox learns of a rotation from `completeEvent` or the poller's repair, which are keri-ts
-  behavior. **Inferred; not exercised.**
+- An Unblind request a discloser has accepted and owes a reply to is persisted (`Baser.heldu`), so a reopened
+  runtime answers it with no resend. A group Unblind keeps its per-operation state (the members' wrappers it has
+  taken in and the contributions) in memory (`GroupUnblind` in `unblinding-workflow.ts`); what a restart does to a
+  partly contributed group reply is **unconfirmed**: no test I read pins it.
+- A group member that rotates before its group: the changeset for group polls says a keri-ts mailbox authorizes a
+  group poll when a member signs it with a key in the group's current key list, so a member whose key the group has
+  not yet adopted would not meet that rule. **Inferred from the changeset; not exercised.**
+- A KERIpy controller using a keri-ts mailbox after rotating is not told by its own runtime: only keri-ts runs the
+  `KelPublisher`, so the mailbox learns of the rotation from a keri-ts runtime or by other means.
+  **Inferred; not exercised.**
 - A v1 identifier cannot take part in v2 issuance: a keri-ts peer refuses a v2 message for an
   identifier whose latest accepted event is v1 (observed in the browser lane). A KERIpy v1
   witness therefore cannot serve v2 IPEX.
@@ -195,7 +254,10 @@ written; it is not in the tree and is **not described here**.
   `WebWallet.storage` is a promise that never rejects and does not hold the open.
 - A failed Admit delivery is reported as `undelivered`; `resendAdmit` repeats it, and an issuer
   that already took the first Admit may drop the repeat as a KRAM replay.
-- Group identifiers have no `openWebWallet` namespace yet.
+- A group issuance is not recorded in the wallet inventory by the wallet, and a group inception needs a route to
+  every co-member before it can publish its proposal (see the group wallet surface).
+- A `KelPublisher` entry that timed out stays timed out until a new rotation, a successful poll of that mailbox, a
+  repair request, `prompt` or the next runtime open re-arms it; `health()` reports `mailbox-unreachable` meanwhile.
 
 ### Coverage gaps
 
