@@ -1,5 +1,12 @@
 # @keri-ts/tufa
 
+## 2.2.1
+
+### Patch Changes
+
+- 9c8977a: A wait on an issuance, presentation or Unblind (`waitForIssuance`, `waitForPresentation`, `waitForUnblinding`) no longer settles while the live operation still holds a message in its delivery outbox: `IssuanceOperations.owes`, `PresentationOperations.owes` and `UnblindingOperations.owes` report it. A group issuer member's `tufa ipex grant --issue --resume` therefore stays until its DH contribution has been handed to the transport, instead of exiting at the `awaitingAnchor` phase with the contribution still queued (the KERIpy custodian then never reached DH quorum and its operation expired). `tufa multisig join --kind <kind>` approves only a pending proposal of that kind (and refuses a `--said` of another kind), so a join never signs an unrelated pending proposal; without `--kind` it still approves the first pending one.
+- 02912da: `tufa ipex` group commands with `--acdc-v2` publish the group proposal before the approval wait, so `--approval-timeout 0` still proposes and the pending result lists the published member wrappers (`messages`); `groupIpexMessages` reads them from a live or ended group IPEX operation. Two stale `tufa` CLI test expectations are updated (`--timeout` on `delegate confirm`; the admit command's refusal of a Grant that intake never accepted).
+
 ## 2.2.0
 
 ### Minor Changes
