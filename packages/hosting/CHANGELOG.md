@@ -1,5 +1,11 @@
 # @keri-ts/hosting
 
+## 2.2.3
+
+### Patch Changes
+
+- b8ec57c: Republish pinned to keri-ts 2.2.3, so a host does not resolve a second copy of keri-ts.
+
 ## 2.2.2
 
 ### Patch Changes

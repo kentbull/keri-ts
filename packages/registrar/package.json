@@ -1,12 +1,12 @@
 {
   "name": "@keri-ts/registrar",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Signed public ACDC registry publication and bulk evidence queries",
   "license": "Apache-2.0",
   "dependencies": {
     "cesr-ts": "2.2.1",
     "keri-ts": "2.2.3",
-    "@keri-ts/hosting": "2.2.2"
+    "@keri-ts/hosting": "2.2.3"
   },
   "repository": {
     "type": "git",
