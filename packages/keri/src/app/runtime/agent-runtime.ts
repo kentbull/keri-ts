@@ -211,11 +211,11 @@ export interface AgentRuntimeOptions {
    */
   registryRoots?: "accept" | "refuse";
   /**
-   * DH and Unblind peer queries. `"retain"` (default) lets the per-identifier owners take a query that arrives
-   * before their consent and hold it in memory for the consent that follows. `"refuse"` is for a runtime that
-   * lives shorter than that wait and never consents (a command that only drains a mailbox): a query it took
-   * would be recorded as seen by KRAM and lost with the process, and the sender's identical resend would then
-   * be dropped as a replay. Refused, it is dropped unrecorded and a later resend reaches the consenting runtime.
+   * Unblind peer queries. `"retain"` (default) lets the per-identifier Unblind owner take an authenticated query for
+   * a live Grant and owe its reply. `"refuse"` is for a runtime that lives shorter than that reply and never
+   * drives it (a command that only drains a mailbox): the query would be recorded as seen by KRAM and the owed
+   * reply lost with the process. Refused, it is dropped unrecorded and a resend reaches the driving runtime.
+   * DH queries need no such option: one received before consent is persisted and survives a restart.
    */
   ipexQueries?: "retain" | "refuse";
   /**

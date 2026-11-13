@@ -41,8 +41,10 @@ import {
 } from "../app/multisig/group-members.ts";
 import {
   type AuxiliaryQueryProcessor,
+  auxiliaryQueryWire,
   copyAuxiliaryQuery,
   envelopeFromFrame,
+  restoreAuxiliaryQuery,
   type MessageDropDecision,
 } from "../app/protocol/parsering.ts";
 import { Deck } from "../core/deck.ts";
@@ -375,6 +377,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
     this.roots(op);
     this.operations.set(op.xid, op);
     this.pendingQueries.delete(op.xid);
+    this.dropHeld(op.xid);
     return op.xid;
   }
 
@@ -698,6 +701,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
   /** Drop local ephemeral key references and permanently refuse this operation. */
   abandon(xid: string): void {
     const retained = this.pendingQueries.delete(xid);
+    this.dropHeld(xid);
     if (retained && !this.operations.has(xid)) return;
     const op = this.operation(xid);
     this.clearPrivate(op);
@@ -765,6 +769,8 @@ export class Dhke implements AuxiliaryQueryProcessor {
     }
     if (!prior || !bytesEqual(prior.envelope.serder.raw, query.raw)) {
       this.pendingQueries.set(data.x, { envelope: copyAuxiliaryQuery(envelope), expires, grant: grant.said! });
+      // KRAM now holds this query as seen, so a resend of it is a replay: the held copy must outlive this process.
+      if (!envelope.nests.length) this.hab.db.heldq.pin([data.x], auxiliaryQueryWire(envelope));
     }
   }
 
@@ -777,12 +783,31 @@ export class Dhke implements AuxiliaryQueryProcessor {
 
   /** Consume the first authenticated request only after explicit approval; never renew either clock. */
   private replayQuery(xid: string): void {
-    const pending = this.pendingQueries.get(xid);
+    const grant = this.operations.get(xid)?.grant;
+    const pending = this.pendingQueries.get(xid) ?? (grant ? this.loadHeld(xid, grant) : undefined);
     this.pendingQueries.delete(xid);
-    if (
-      pending && pending.grant === this.operations.get(xid)?.grant
-      && BigInt(this.now()) * 1000n < pending.expires
-    ) this.processQuery(pending.envelope);
+    this.dropHeld(xid);
+    if (pending && pending.grant === grant && BigInt(this.now()) * 1000n < pending.expires) {
+      this.processQuery(pending.envelope);
+    }
+  }
+
+  /** The persisted query for `xid` after a restart, with its lifetime recomputed from KRAM's durable records. */
+  private loadHeld(xid: string, grant: string) {
+    const wire = this.hab.db.heldq.get([xid]);
+    const input = this.exc.retainedInput(grant, { pending: true });
+    if (!wire || !input) return undefined;
+    try {
+      const envelope = restoreAuxiliaryQuery(wire);
+      return { envelope, expires: this.retainUntil(envelope, input.serder), grant };
+    } catch (error) {
+      if (error instanceof ValidationError) return undefined;
+      throw error;
+    }
+  }
+
+  private dropHeld(xid: string): void {
+    this.hab.db.heldq.rem([xid]);
   }
 
   /** Bound process-local public evidence by the original query and accepted Grant lifetimes. */

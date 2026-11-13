@@ -722,6 +722,36 @@ export function copyAuxiliaryQuery(envelope: KeriDispatchEnvelope): KeriDispatch
   return copied;
 }
 
+/**
+ * Serialize an auxiliary query without nested evidence so a later process can rebuild it: its own frame with
+ * every attachment group, then the normalized proof KRAM may have completed from earlier inputs.
+ */
+export function auxiliaryQueryWire(envelope: KeriDispatchEnvelope): Uint8Array {
+  const version = envelope.gvrsn ?? envelope.serder.gvrsn ?? envelope.serder.pvrsn;
+  const frame = concatBytes(
+    Counter.makeGVC(version),
+    envelope.serder.raw,
+    Counter.enclose({
+      code: "AttachmentGroup",
+      version,
+      qb64: concatBytes(...envelope.attachmentGroups.map(group => group.raw)),
+    }),
+  );
+  const proof = serializeMessage(envelope.serder, { tsgs: envelope.tsgs, gvrsn: version, genusify: true });
+  const size = new Uint8Array(4);
+  new DataView(size.buffer).setUint32(0, frame.length);
+  return concatBytes(size, frame, proof);
+}
+
+/** Rebuild the envelope {@link auxiliaryQueryWire} serialized. */
+export function restoreAuxiliaryQuery(wire: Uint8Array, local = false): KeriDispatchEnvelope {
+  const length = new DataView(wire.buffer, wire.byteOffset, 4).getUint32(0);
+  const restored = envelopeFromFrame(parseBytes(wire.slice(4, 4 + length))[0], local);
+  const normalized = envelopeFromFrame(parseBytes(wire.slice(4 + length))[0]);
+  restored.tsgs.splice(0, restored.tsgs.length, ...normalized.tsgs);
+  return restored;
+}
+
 /** Normalize the actual query endorsements for ingress and per-request authorization. */
 export function queryEnvelopeFromDispatch(
   envelope: KeriDispatchEnvelope,
