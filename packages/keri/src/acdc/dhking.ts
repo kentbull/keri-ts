@@ -44,8 +44,8 @@ import {
   auxiliaryQueryWire,
   copyAuxiliaryQuery,
   envelopeFromFrame,
-  restoreAuxiliaryQuery,
   type MessageDropDecision,
+  restoreAuxiliaryQuery,
 } from "../app/protocol/parsering.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";

@@ -28,7 +28,7 @@ import { ValidationError } from "../../core/errors.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
-import { isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
+import { isLocalGroupHab } from "../multisig/group-members.ts";
 import { MULTISIG_EXN_ROUTE } from "../multisig/grouping.ts";
 import type { GroupSendResult } from "../multisig/multisig-messaging.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
