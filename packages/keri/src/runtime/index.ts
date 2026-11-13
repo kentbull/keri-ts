@@ -163,14 +163,19 @@ export {
   type PosterStream,
 } from "../app/delivery/forwarding.ts";
 export {
+  assertRelay,
   type Relay,
+  type RelayAuthorizationStep,
   relayAuthorized,
   type RelayEndpoint,
   relayEndpoint,
+  relayOnboarding,
   RelayOnlyError,
   relayOnlyHttpClient,
+  type RelayOobiStep,
   type RelayRefusal,
   relayRefusal,
+  type RelayStep,
   RelayUnauthorizedError,
   RelayUnresolvedError,
 } from "../app/delivery/relaying.ts";

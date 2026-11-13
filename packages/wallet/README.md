@@ -25,8 +25,12 @@ Exchanger and an opened WalletBaser. Callers own and close those stores.
 running runtime and returns a promise-based API. An app never calls `run(...)` or builds workflow
 dependencies.
 
+`delivery` is required: a relay `{ aid, oobi }` sends, queries and polls only through that agent, and
+`"direct"` delivers to each party's own endpoints, mailboxes and witnesses, as below. See "Delivering
+through an agent" in the wallet library guide for the relay onboarding order.
+
 ```ts
-const w = await openWebWallet({ name: "alice", bran });
+const w = await openWebWallet({ name: "alice", bran, delivery: "direct" });
 
 await w.oobis.resolve(witnessOobi); // { outcome: "resolved" | "failed" | "timed-out" }
 const icp = await w.identifiers.incept({ alias: "main", witnesses: [witness], toad: 1 });

@@ -109,6 +109,7 @@ function* freshEdge(g: WeightZeroGroup): Operation<Edge> {
     openWebWallet({
       name: `edge-${crypto.randomUUID()}`,
       bran: "edgeRefillPasscode0123456",
+      delivery: "direct",
       heldSigners: [keys.signer],
       host: {
         indexedDb: { factory: new IDBFactory(), keyRange: IDBKeyRange as unknown as typeof globalThis.IDBKeyRange },

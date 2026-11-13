@@ -17,12 +17,12 @@ const bran = "0123456789abcdefghijk";
 /** Incept, close, reopen and read the identifier and an inventory row back. */
 async function inceptAndReload(): Promise<void> {
   const name = unique("wallet-reload");
-  const first = await openWebWallet({ name, bran });
+  const first = await openWebWallet({ name, bran, delivery: "direct" });
   const pre = first.hby.makeHab("main").pre;
   first.inventory.credentials.pin(["k"], "v");
   await first.close();
 
-  const second = await openWebWallet({ name, bran });
+  const second = await openWebWallet({ name, bran, delivery: "direct" });
   try {
     assertEquals(second.hby.habByName("main")?.pre, pre);
     assertEquals(second.inventory.credentials.get(["k"]), "v");
@@ -35,13 +35,13 @@ async function inceptAndReload(): Promise<void> {
 /** The page's own Web Locks refuse a second open of one identity until the first closes. */
 async function secondOpenRefused(): Promise<void> {
   const name = unique("wallet-lock");
-  const first = await openWebWallet({ name, bran });
+  const first = await openWebWallet({ name, bran, delivery: "direct" });
   try {
-    await assertRejects(() => openWebWallet({ name, bran }), StoreLockHeldError);
+    await assertRejects(() => openWebWallet({ name, bran, delivery: "direct" }), StoreLockHeldError);
   } finally {
     await first.close();
   }
-  await (await openWebWallet({ name, bran })).close();
+  await (await openWebWallet({ name, bran, delivery: "direct" })).close();
 }
 
 /**
@@ -70,7 +70,7 @@ async function persistentStorageShape(): Promise<void> {
 async function closeWithIdlePoll(): Promise<void> {
   const name = unique("wallet-idle-poll");
   const id = crypto.randomUUID();
-  const first = await openWebWallet({ name, bran });
+  const first = await openWebWallet({ name, bran, delivery: "direct" });
   const hab = first.hby.makeHab("main");
   const mailbox = first.hby.makeHab("mailbox", undefined, { transferable: false, ncount: 0 }).pre;
   first.hby.db.locs.pin([mailbox, "http"], { url: `${location.origin}/stall?mode=headers&id=${id}` });
@@ -92,7 +92,7 @@ async function closeWithIdlePoll(): Promise<void> {
     assert(waited < 3000, "the idle poll's connection stayed open after close()");
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  await (await openWebWallet({ name, bran })).close();
+  await (await openWebWallet({ name, bran, delivery: "direct" })).close();
 }
 
 /** Register the wallet cases. */

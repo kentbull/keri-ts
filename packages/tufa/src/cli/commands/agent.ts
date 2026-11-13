@@ -25,6 +25,7 @@ interface AgentArgs {
   compat?: boolean;
   schemas?: string[];
   schemaDirs?: string[];
+  relay?: boolean;
 }
 
 function controllerRoleEnabled(hby: Habery, pre: string): boolean {
@@ -138,6 +139,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     configFile: parseStringOption(args.configFile, "configFile"),
     passcode: parseStringOption(args.passcode, "passcode"),
     compat: parseBooleanOption(args.compat, "compat"),
+    relay: parseBooleanOption(args.relay, "relay"),
     ...schemaInputsFromArgs(args),
   };
   const port = agentArgs.port ?? 8000;
@@ -198,6 +200,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       serviceHab: cueHab,
       hostedPrefixes: hostedHabs.map((hab) => hab.pre),
       kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
+      relay: agentArgs.relay ?? false,
       onListen: ({ hostname, port }) => {
         console.log(`Server listening on http://${hostname}:${port}`);
       },

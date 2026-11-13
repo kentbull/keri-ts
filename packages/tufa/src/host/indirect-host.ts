@@ -9,6 +9,11 @@ export interface IndirectHostOptions {
   serviceHab: Hab;
   hostedPrefixes?: readonly string[];
   kram?: KramConfig;
+  /**
+   * Relay mode: re-forward the `/fwd` children of senders that authorized this host as their mailbox, so an edge
+   * runtime can deliver through it (`HostKernelSpec.enableRelay`). Off unless the operator asks for it.
+   */
+  relay: boolean;
   onListen?: (address: { port: number; hostname: string }) => void;
 }
 
@@ -25,7 +30,7 @@ export function* runIndirectHost(
 ): Operation<void> {
   yield* runHostKernel(hby, {
     enableMailboxStore: true,
-    enableRelay: false,
+    enableRelay: options.relay,
     serviceHab: options.serviceHab,
     hostedPrefixes: options.hostedPrefixes,
     kram: options.kram,

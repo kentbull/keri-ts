@@ -440,7 +440,8 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
         "-p, --port <port>",
         "Port number for the server (default: 8000)",
         "8000",
-      ),
+      )
+      .option("--relay", "Relay for edges: forward the messages of senders that authorized this host as their mailbox"),
     dispatch,
     {
       name: "agent",
@@ -457,6 +458,7 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
         schema: options.schema || [],
         schemaDir: options.schemaDir || [],
         port: options.port,
+        relay: options.relay || false,
       }),
     },
   );

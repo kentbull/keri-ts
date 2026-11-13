@@ -55,6 +55,7 @@ interface MailboxStartArgs extends MailboxBaseArgs {
   port?: number;
   listenHost?: string;
   version?: Versionage;
+  relay?: boolean;
 }
 
 /** Shared mailbox add/remove CLI inputs. */
@@ -135,6 +136,7 @@ export function* mailboxStartCommand(
       listenHost: startup.listenHost,
       serviceHab: startup.hab,
       hostedPrefixes: [startup.hab.pre],
+      relay: commandArgs.relay ?? false,
     });
   } finally {
     yield* hby.close();
@@ -400,6 +402,7 @@ function parseMailboxStartArgs(
     port: parseIntegerOption(args.port, "port"),
     listenHost: parseStringOption(args.listenHost, "listenHost"),
     version: parseKeriVersionOption(args.version),
+    relay: parseBooleanOption(args.relay, "relay"),
   };
   if (!parsed.name) {
     throw new ValidationError("Name is required and cannot be empty");

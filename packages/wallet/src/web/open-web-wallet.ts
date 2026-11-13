@@ -19,6 +19,7 @@ import {
   type AgentRuntime,
   type AgentRuntimeOptions,
   AppError,
+  assertRelay,
   type ChangeSink,
   createAgentRuntime,
   type CredentialViews,
@@ -29,6 +30,10 @@ import {
   type KramConfig,
   openHabery,
   type OwnerFault,
+  type Relay,
+  type RelayAuthorizationStep,
+  relayOnboarding,
+  type RelayStep,
   runAgentRuntime,
   type RuntimeClock,
   signalerChangeSink,
@@ -111,11 +116,24 @@ export type WebWalletSecret = { bran: string; seed?: undefined; aeid?: undefined
   aeid: string;
 };
 
+/**
+ * How a web wallet reaches everyone else. A {@link Relay} (the agent's `{ aid, oobi }`) makes the wallet an edge:
+ * it signs locally and sends, queries, polls and resolves OOBIs only through that agent, whose mailbox role each
+ * local identifier authorizes (see `WebWallet.relayStatus`). `"direct"` is the explicit opt-in to delivering
+ * straight to each recipient's endpoints, mailboxes and witnesses.
+ */
+export type WebWalletDelivery = Relay | "direct";
+
 /** Everything `openWebWallet` takes. */
 export type OpenWebWalletOptions = WebWalletSecret & {
   /** Store identity: one wallet per `name` and `base`, in one tab at a time. */
   name: string;
   base?: string;
+  /**
+   * Delivery through an agent, or `"direct"`; required, with no default. A relay with an empty AID or an OOBI that
+   * is not an absolute HTTP(S) URL rejects the open with `ValidationError` before any store opens.
+   */
+  delivery: WebWalletDelivery;
   /**
    * Passed to `createAgentRuntime`. Every runtime composes the per-identifier DH and Unblind owners;
    * the wallet enables KRAM by default because their `approve` needs it, with wallet-sized windows.
@@ -150,18 +168,29 @@ export type OpenWebWalletOptions = WebWalletSecret & {
  * - `stopped`: the runtime task ended without `close()`, so the stores are closed and the lock released;
  *   `cause` is the failure that ended it;
  * - `closed`: `close()` was called.
+ * - `relay-unresolved`: the wallet delivers through `relay`, whose location is not accepted yet (its OOBI has not
+ *   resolved), so nothing is sent, queried or polled; the runtime queued the OOBI at open.
+ * - `relay-unauthorized`: the relay's location is accepted, but `identifiers` (accepted local identifiers) have not
+ *   authorized it as their mailbox, so it neither forwards for them nor stores what is sent to them.
  * - `mailbox-unreachable`: the runtime gave up telling a mailbox an identifier's rotated KEL (five minutes of
  *   backed-off attempts), so the wallet cannot receive from it until it is told; a new rotation, a successful poll
  *   of that mailbox or reopening the wallet tries again.
  * - `signer-unavailable`: a local identifier cannot sign because the host has not held its signer (the wallet was
  *   opened without it); `identifiers` names each with the public keys it lacks (`Habery.unsignable`, read now).
  *   Background loops skip such an identifier and act for it on the next tock after `Manager.hold`.
- * Precedence: `closed`, `stopped`, `latched`, `faulted`, `mailbox-unreachable`, `signer-unavailable`, `ok`.
+ * Precedence: `closed`, `stopped`, `latched`, `faulted`, `relay-unresolved`, `relay-unauthorized`,
+ * `mailbox-unreachable`, `signer-unavailable`, `ok`. The relay states follow the wallet's own failures, which matter
+ * whatever it delivers through, and precede the mailbox and signer states, because until the relay is resolved and
+ * authorized no mailbox is reached for those identifiers at all. Every status is derived when `health()` is read.
+ * An agent that resolved but stops answering polls is not reported unless it also refuses or ignores a rotated KEL
+ * long enough for `mailbox-unreachable`: a failed poll is retried with backoff, and nothing records it.
  */
 export type WebWalletHealth =
   | { status: "ok" }
   | { status: "latched"; cause: unknown }
   | { status: "faulted"; faults: number; last: OwnerFault | null }
+  | { status: "relay-unresolved"; relay: Relay }
+  | { status: "relay-unauthorized"; identifiers: readonly RelayAuthorizationStep[] }
   | { status: "mailbox-unreachable"; mailboxes: readonly { pre: string; mailbox: string; reason: string | null }[] }
   | { status: "signer-unavailable"; identifiers: readonly UnsignableHab[] }
   | { status: "stopped"; cause: unknown }
@@ -190,6 +219,14 @@ export interface WebWallet extends WalletApi {
    */
   health(): WebWalletHealth;
   /**
+   * The onboarding steps still missing for delivery through the relay, in the order to take them
+   * (`relayOnboarding`, derived from accepted state on every call): `resolve-oobi` (`oobis.resolve(oobi)`; the
+   * runtime already queued it), then `authorize-member` per single-signature identifier (`mailboxes.add(pre,
+   * relay.aid)`), then `authorize-group` per group (`groups.proposeMailbox` and, once approved,
+   * `groups.completeMailbox`). Empty when nothing is missing, and always empty for `"direct"` delivery.
+   */
+  relayStatus(): readonly RelayStep[];
+  /**
    * The composition's persistence queue now: `healthy`, `retrying` while a failed write is retried in
    * place (later commits wait behind it), or `latched` once it gave up, which `health()` reports with
    * the cause.
@@ -211,11 +248,15 @@ export interface WebWallet extends WalletApi {
 }
 
 /** What the composition hands back once it is running. */
-type Composed = Omit<WebWallet, "health" | "persistenceStatus" | "readPersisted" | "close" | keyof WalletApi> & {
-  readonly flush: () => Operation<void>;
-  readonly changes: ChangeSink;
-  readonly tracked: TrackedIssuances;
-};
+type Composed =
+  & Omit<WebWallet, "health" | "relayStatus" | "persistenceStatus" | "readPersisted" | "close" | keyof WalletApi>
+  & {
+    readonly flush: () => Operation<void>;
+    readonly changes: ChangeSink;
+    readonly tracked: TrackedIssuances;
+    /** The relay the runtime delivers through; null for direct delivery. */
+    readonly relay: Relay | null;
+  };
 
 /** Refuse arguments that cannot encrypt the keeper, before any store is touched. */
 function assertSecret({ bran, seed, aeid }: WebWalletSecret): void {
@@ -236,6 +277,21 @@ function parseSalt(salt: string): string {
   } catch (cause) {
     throw new ValidationError("The keeper salt is not the qb64 of a 128-bit salt", { cause });
   }
+}
+
+/**
+ * Parse the caller's delivery choice, before any store opens: the relay to compose the runtime over, copied so a
+ * later change to the caller's object cannot redirect the wallet, or null for `"direct"`.
+ *
+ * @throws ValidationError when `delivery` is neither `"direct"` nor a usable relay (`assertRelay`).
+ */
+function parseDelivery(delivery: WebWalletDelivery): Relay | null {
+  if (delivery === "direct") return null;
+  if (typeof delivery !== "object" || delivery === null) {
+    throw new ValidationError(`Web wallet delivery must be a relay { aid, oobi } or "direct"; got ${String(delivery)}`);
+  }
+  assertRelay(delivery);
+  return { aid: delivery.aid, oobi: delivery.oobi };
 }
 
 /** Run `step`, recording a failure instead of throwing, so later steps still run. */
@@ -262,6 +318,7 @@ function* compose(
   let opening: { error: unknown } | undefined;
   try {
     assertSecret(options);
+    const relay = parseDelivery(options.delivery);
     const salt = options.salt === undefined ? undefined : parseSalt(options.salt);
     // The opener takes the single-writer lock in the first store's reopen, before any store loads,
     // and releases it when the last store closes.
@@ -322,6 +379,7 @@ function* compose(
               changes,
             },
             kram: options.runtime?.kram ?? { enabled: true, caches: WALLET_KRAM_CACHES },
+            ...(relay ? { relay } : {}),
           });
           signaler = runtime.signaler;
           try {
@@ -342,6 +400,7 @@ function* compose(
                 storage,
                 changes,
                 tracked,
+                relay,
                 flush: function*() {
                   yield* hby.db.flushed();
                   yield* hby.ks.flushed();
@@ -383,10 +442,11 @@ function* scoped(body: () => Operation<void>): Operation<void> {
 /**
  * Open (or create) a browser wallet. See {@link OpenWebWalletOptions}.
  *
- * Order: create one IndexedDB opener; open the Habery, whose first store takes the opener's
+ * Order: refuse an unusable secret, delivery choice or salt; create one IndexedDB opener; open the Habery, whose first store takes the opener's
  * store lock before it loads anything; request persistent storage; refuse an unencrypted keeper, or a supplied
  * salt other than the stored one; open the inventory on the same queue; create the
- * runtime over the output-barrier HTTP client; run it with mailbox polling. A failure at any
+ * runtime over the output-barrier HTTP client (under the relay's egress guard when `delivery` is a relay); run it
+ * with mailbox polling. A failure at any
  * step closes what was opened, releases the lock and rejects.
  *
  * Page `pagehide` and hidden `visibilitychange` request a flush of the stores. That is best
@@ -396,7 +456,8 @@ function* scoped(body: () => Operation<void>): Operation<void> {
  * @throws StoreLockHeldError when another tab holds this wallet.
  * @throws StoreLockUnsupportedError when Web Locks are unavailable.
  * @throws UnencryptedKeeperError when the keeper would not be encrypted.
- * @throws ValidationError when `salt` is not a 128-bit qb64 salt, before any store opens.
+ * @throws ValidationError when `salt` is not a 128-bit qb64 salt, or `delivery` is not `"direct"` or a usable
+ *   relay, before any store opens.
  * @throws KeeperSaltMismatchError when `salt` differs from the root salt the keeper already stores.
  */
 export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebWallet> {
@@ -419,7 +480,7 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
     })
   );
   const composed = await ready;
-  const { flush, changes, tracked, ...parts } = composed;
+  const { flush, changes, tracked, relay, ...parts } = composed;
   // The composition ends on its own only when the runtime crashed; `close()` ends it deliberately.
   let stopped: { cause: unknown } | undefined;
   let closing: Promise<void> | undefined;
@@ -460,6 +521,12 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
       }
       const owners = parts.runtime.operations?.health;
       if (owners?.faults) return { status: "faulted", faults: owners.faults, last: owners.last };
+      if (relay) {
+        const steps = relayOnboarding(parts.hby, relay);
+        if (steps.some(({ step }) => step === "resolve-oobi")) return { status: "relay-unresolved", relay };
+        const identifiers = steps.filter((step): step is RelayAuthorizationStep => step.step !== "resolve-oobi");
+        if (identifiers.length) return { status: "relay-unauthorized", identifiers };
+      }
       const unreachable = parts.runtime.kelPublisher.status().entries.filter((entry) => entry.state === "timed-out");
       if (unreachable.length) {
         return {
@@ -475,6 +542,7 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
       if (unsignable.length) return { status: "signer-unavailable", identifiers: unsignable };
       return { status: "ok" };
     },
+    relayStatus: () => relay ? relayOnboarding(parts.hby, relay) : [],
     persistenceStatus: () => parts.opener.queue.status(),
     readPersisted: async (task) => {
       // A closed or stopped wallet has released its stores; reading would see whatever the connections left.
