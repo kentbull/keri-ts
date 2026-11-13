@@ -96,6 +96,41 @@ await w.close();
 
 Every `run(...)` is an Effection root; the library workflows are generators, and the page bridges them to promises by hand. The calls an app should not have to write: the completion-deps record (`hby`, `protocol`, `http`, `clock`, `withDelegation`) built from the runtime three times; the three-way hand-off of an Admit (admit, record admission, deliver); the Grant poll; the `RegistryCustody`/`WalletAuthor` construction; the OOBI begin-and-wait pair with its status check; and `recordIssued` with `derivedOpening(head)` after an issuance. A wallet-level `w.identifiers.incept`, `w.oobis.resolve`, `w.mailboxes.add`, `w.credentials.{receive,issue}` over these, with typed results instead of `status.state` checks, is the shape these calls point to.
 
+## Group lanes: written, not yet run
+
+Nothing in this section has been executed. The lanes were written while browser runs were barred, and checked only by `deno check`, `deno task check` and the wallet unit tests. Treat every step below as a hypothesis until the qualification run; the first run will find defects in the lanes themselves.
+
+Run with `deno task test:browser:wallet:group [engine ...]` and `deno task test:browser:wallet:keripy-member [engine ...]` (Chromium by default, same servers and Firefox note as above, local only). Page side: `test/browser-wallet/group-steps.ts`; Deno side: `group-scenario.ts`, `keripy-member-scenario.ts`, `group-flows.ts`; shared runner: `scripts/browser_wallet_lane.ts`.
+
+**Lane 15c, group wallet.** Group signing order is [Tufa A, browser, Tufa B], threshold 2, one witness (toad 1), so A is the elected DH custodian.
+
+1. open wallet, incept the browser member with the witness
+   2a. Tufa A, B and the holder provisioned (witnessed v2 identifiers, live KRAM, mailbox authorized)
+   2b. OOBIs resolved and mailboxes added all round
+2. group inception proposed by A, `proposals.list()` shows it, `proposals.approve(id, { groupAlias })`, Counselor complete on all three (key state compared)
+3. group mailbox role: A proposes, the browser approves, B joins, A and the browser complete (`groups.completeMailbox`)
+4. group registry: A proposes, the browser approves the `rip`
+   6a. A begins the issuance as custodian; the browser consents to the Grant proposal (short wait, expects it still active)
+   6b. reload the tab (no close first) and reopen the same store
+   6c. consent again if needed, approve the `bup` registry update, custodian and holder finish
+   6d. holder admits; the browser holds the registry root and `credentials.list().issued` records the credential
+5. members rotate their own keys and learn each other
+6. group rotation proposed by the browser (`groups.rotate`), A and B approve, key state compared, KEL publication to the mailboxes waited
+7. a Grant from the holder to the rotated group appears in `credentials.pending(group)`
+8. close, store lock released
+
+**Lane 15d, KERIpy member added by rotation.** Real: steps 1 to 6d for a browser plus A group (no B, no reload). Scaffold: steps 7 to 9 fail on purpose with the missing list. Missing: a `kli` control server in the KERIpy image started by `browser-wallet-servers.sh`; a KERIpy profile that can join a v2 group (the lane witness is the `main` profile, whose Poster forwards a v2 proposal in a v1 `/fwd` its v2 witness cannot store); a verified path for a KERIpy member onto a keri-ts mailbox host (its poller does not submit its KEL, and `kli` mailbox add against a keri-ts provider is not exercised anywhere); a page step passing a new `smids` list to `groups.rotate`; the newcomer-side evidence read (`kli vc registry root receive --listen` or a state dump).
+
+**Where the wallet surface was not enough.**
+
+- _Reload loses the member's issuance recorder._ A member that consented through `proposals.approve` is tracked for inventory recording in memory only. After a reload, or when the issuance finished while the page was closed, nothing recorded it, and the second `approve` on a finished issuance skipped tracking. Fixed in this PR in `Proposals.approve` (`packages/wallet/src/web/group-api.ts`): tracking is set up on every call for an issuance not yet recorded, and the recorder gets one try after the wait. Not exercised by any run.
+- _No read for "this wallet holds the registry root"._ Lane step 6d reads `wallet.hby.mgr.getRegistryRoot` as evidence only. A wallet-level read (or a `rooted` flag on the inventory row) would remove it; not added, since the shape is a design choice.
+- _Reads of key state._ Group key state is compared through `proposals.list({ all: true })` event refs and outcomes, not through `hby`. No surface call returns a group's latest event for a group the app did not just act on.
+- _Observing group mail._ There is no call that says "mail arrived for the group"; the lane uses `credentials.pending(group)` after a Grant to the rotated group. Mailbox cursor reads, which the single-signature lane uses, need `hby` and were not repeated.
+- _Group exchange is not resumed after a restart_ (documented): the lane expects the browser to consent again after the reload, and asserts only that the issuance completes and is recorded.
+
+Assumptions the first run may refute: the Tufa custodian's proposal reaches the browser by mailbox (`--proposal-output` is passed but never handed over); a reload without `close()` releases the Web Lock before the new page asks for it (the reopen retries for 15 s); member rotations are needed before the group rotation, as in the interop tests; `tufa query` and witness OOBIs teach members each other's rotations.
+
 ## Reproducing
 
 ```sh

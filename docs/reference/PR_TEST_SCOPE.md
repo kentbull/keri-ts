@@ -162,6 +162,19 @@ mounted and no LMDB store is opened on the host. Firefox runs in a Linux contain
 namespace: `bash scripts/ci/browser-wallet-firefox.sh`. Selecting `"browser":true` still runs only
 the store-contract lane.
 
+### Group wallet lanes (local only, written, not yet run)
+
+`deno task test:browser:wallet:group [engine ...]` (lane 15c) makes the browser wallet one member of a 2-of-3 group with
+two Tufa CLI members on the shared mailbox and witness: group inception proposed by Tufa and approved through
+`proposals`, the group's mailbox role, a group registry, a v2 DH issuance to a Tufa holder with a Tufa custodian and the
+browser consenting, a tab reload between the browser's consent and the issuance's completion, and a group rotation the
+browser proposes. `deno task test:browser:wallet:keripy-member [engine ...]` (lane 15d) starts from a browser plus Tufa
+group with one issued credential; its KERIpy half is a scaffold whose steps fail with the list of missing harness. Both
+default to Chromium, use the servers of the wallet scenario above, and are in no CI job. Neither has been executed: they
+were written under a no-browser rule, type-checked only, and first run in the qualification phase. Steps are in
+`packages/keri/test/browser-wallet/` (`group-steps.ts` page side, `group-scenario.ts`, `keripy-member-scenario.ts`);
+see the report's "Group lanes: written, not yet run".
+
 ## Browser bundle gate (package smoke)
 
 Selecting `"package": true` also runs `scripts/npm/check_browser_bundle.mjs` inside the

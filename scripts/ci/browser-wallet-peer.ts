@@ -4,7 +4,7 @@
  * working tree and answers `{ code, stdout, stderr }`; `GET /ready` answers 200. The scenario runner
  * decides what the peer does and when; the commands are the ordinary Tufa CLI over the peer's own
  * LMDB store under /work/peer. `POST /config` with `{ "name": store, "config": {...} }` replaces that
- * store's configuration file (the CLI has no flag for the KRAM setting an IPEX peer needs). Listens on 0.0.0.0:$PEER_PORT inside the lane's network namespace;
+ * store's configuration file (the CLI has no flag for the KRAM setting an IPEX peer needs). `POST /file` with `{ "name", "content" }` writes a file under /work/peer/files and answers its path. Listens on 0.0.0.0:$PEER_PORT inside the lane's network namespace;
  * the anchor container publishes it on the host's loopback only.
  */
 
@@ -50,6 +50,13 @@ Deno.serve({ hostname: "0.0.0.0", port }, async (request) => {
     await Deno.mkdir("/work/peer/keri/cf", { recursive: true });
     await Deno.writeTextFile(`/work/peer/keri/cf/${name}.json`, JSON.stringify(config));
     return new Response("ok");
+  }
+  if (request.method === "POST" && pathname === "/file") {
+    const { name, content } = await request.json() as { name: string; content: string };
+    if (!/^[\w.-]+$/.test(name)) return new Response("bad file name", { status: 400 });
+    await Deno.mkdir("/work/peer/files", { recursive: true });
+    await Deno.writeTextFile(`/work/peer/files/${name}`, content);
+    return Response.json({ path: `/work/peer/files/${name}` });
   }
   return new Response("not found", { status: 404 });
 });
