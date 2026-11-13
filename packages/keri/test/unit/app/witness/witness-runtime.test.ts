@@ -704,7 +704,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         assertEquals(
           replayed,
           7,
-          "the default runtime escrow driver wakes deferred replay while this socket RX is idle",
+          "the escrow driver answers the deferred query and the TCP host sends it on its next tock while RX is idle",
         );
         assertEquals(providerHby.db.qnfs.cnt(), 0);
         assertEquals(drains.length, priorDrains, "activity cannot start or refresh the receive-EOF deadline");

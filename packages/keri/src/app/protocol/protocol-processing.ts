@@ -195,12 +195,8 @@ export class ProtocolProcessor {
 
   /** Capture direct replies before handing ordinary protocol records to the application consumer. */
   private publishCues(): void {
-    // Readiness observers may synchronously reenter dispatch. Own this committed
-    // batch before notifying them so nested publication cannot take its records.
-    const committed = new Deck<AgentCue>();
-    while (!this.protocolCues.empty) committed.push(this.protocolCues.pull()!);
-    this.replies.capture(committed);
-    while (!committed.empty) this.cues.push(committed.pull()!);
+    this.replies.capture(this.protocolCues);
+    while (!this.protocolCues.empty) this.cues.push(this.protocolCues.pull()!);
   }
 
   /** Advance configured escrow owners; each scan joins its own I/O and handler cleanup. */

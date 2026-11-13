@@ -211,6 +211,20 @@ export interface KeyStateSavedCue extends CueBase {
   ksn: KeyStateRecord;
 }
 
+/**
+ * Cue emitted after `Revery` commits an accepted `/end/role` reply: `cid` now grants (`allowed`) or no longer grants
+ * `eid` the `role`. The runtime cue pass hands a mailbox role to the KEL publisher and the mailbox poller, so both
+ * look at `cid` on their next tock instead of at their next sweep. A lost cue costs only that delay: both sweeps
+ * derive roles from `ends.`.
+ */
+export interface EndRoleSavedCue extends CueBase {
+  kin: "endRoleSaved";
+  cid: string;
+  role: string;
+  eid: string;
+  allowed: boolean;
+}
+
 /** Cue emitted after a registry or credential transaction-state notice is saved. */
 export interface TransactionStateSavedCue extends CueBase {
   kin: "txnStateSaved";
@@ -346,6 +360,21 @@ export interface RotatedCue {
 }
 
 /**
+ * What one mailbox poll said about the mailbox's standing toward the polling identifier. Not in {@link AgentCue}: the
+ * mailbox poller pushes it onto the KEL publisher's `polls` deck, which the publisher drains on its tock.
+ * - `polled`: the mailbox served the poll; it is evidently reachable, so a timed-out KEL publication to it is re-armed.
+ * - `unauthorized`: the mailbox answered 403, so it cannot authenticate the identifier against the KEL it holds; the
+ *   publisher forgets what it was given and posts the KEL again.
+ */
+export interface MailboxPollCue {
+  kin: "polled" | "unauthorized";
+  /** The polled identifier (the group, for a group's mailbox). */
+  pre: string;
+  /** The mailbox's AID. */
+  mailbox: string;
+}
+
+/**
  * Gate E runtime cue union.
  *
  * Maintainer rule:
@@ -362,6 +391,7 @@ export type AgentCue =
   | StreamCue
   | KeyStateSavedCue
   | TransactionStateSavedCue
+  | EndRoleSavedCue
   | TelQueryCue
   | CredentialRevokedCue
   | ProofCue

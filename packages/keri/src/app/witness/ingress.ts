@@ -6,6 +6,7 @@ import { type Deck } from "../../core/deck.ts";
 import { type Hab } from "../identity/habbing.ts";
 import { rethrowCleanupFailure } from "../runtime/abortable.ts";
 import type { AgentRuntime } from "../runtime/agent-runtime.ts";
+import { promptForEndRole } from "../runtime/cue-runtime.ts";
 import { chunkBytes } from "../transport/byte-source.ts";
 
 /** Return the active wire-message habitat or `null` when selection is ambiguous. */
@@ -21,6 +22,7 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
 /**
  * Route one initial witness cue batch, leaving saved key-state facts for the
  * application cue worker and its optional command-owned noticer destination.
+ * An accepted mailbox end role prompts the KEL publisher and poller as the cue worker does.
  * Respondant publishes Poster work; this ingress helper never drains Poster
  * network delivery. Query network I/O stays with the independent sender.
  *
@@ -45,6 +47,11 @@ export function* drainWitnessCues(
     if (cue.kin === "keyStateSaved") {
       cues.pull();
       cues.append(cue);
+      continue;
+    }
+    if (cue.kin === "endRoleSaved") {
+      cues.pull();
+      promptForEndRole(runtime, cue);
       continue;
     }
     if (deliver) {

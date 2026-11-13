@@ -283,8 +283,8 @@ counseling. A delivery worker looks only at its in-memory queue. So an idle runt
 row written by this process is seen on the next tock. A queued message waits at most one tock before delivery starts.
 The mailbox poller no longer walks every identifier each turn: it re-selects workers on tock 0 and every sweep, when the
 topics or the number of identifiers change, and for identifiers given to `MailboxPoller.prompt`; an accepted
-`/end/role` reply tells the runtime (`Revery.onEndRole`), so a new mailbox role prompts the KEL publisher and the poller
-at once.
+`/end/role` reply puts an `endRoleSaved` cue on the runtime's cue deck, and the cue pass prompts the KEL publisher and the
+poller for a new mailbox role, so both act on it at their next tock.
 
 ### Failures, retries and what is durable
 
@@ -503,9 +503,10 @@ read authorization of `mbx` queries at all, so a poll it accepts can be refused 
 The poller is a state machine (`mailbox-poller.ts`). Each poll ends in a `PollOutcome` (`served`, `no-response`,
 `unreachable`, `unauthorized`, `refused`) and `nextPoll` turns it and the back-off state into the next action; only a
 served poll resets the back-off, and an unreachable mailbox no longer stops the runtime. The poller does not post the KEL
-itself: a 403 calls its `onUnauthorized` hook, which the runtime wires to `KelPublisher.repair` (forget what the mailbox
-was given so the publisher posts it again), and the worker backs off. A successful poll calls `onPolled`, which re-arms a
-given-up publication. `MailboxPoller.prompt(pre)` makes it re-select the workers of an identifier at once.
+itself: it pushes an `unauthorized` record for a 403 onto the KEL publisher's `polls` deck (the publisher, on its tock,
+forgets what the mailbox was given and posts it again), and the worker backs off. A successful poll pushes a `polled`
+record, which re-arms a given-up publication. `MailboxPoller.prompt(pre)` makes it re-select the workers of an identifier
+at once.
 
 ## Known limits in 2.2.0
 

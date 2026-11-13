@@ -304,14 +304,15 @@ function* processWitnessSocket(
                 wake?.();
               });
             }
-            // One cancellable observer and one joined parser pull; no result queue or Promise waiter growth.
+            // One cancellable wait on the joined parser pull. A retained query's reply is not observed: the loop
+            // looks again at `pending.ready` after one runtime tock.
             yield* action<void>((resolve) => {
               wake = resolve;
-              const unobserve = pending?.observeReady(resolve);
+              const tock = pending ? runtime.clock.setTimeout(resolve, runtime.protocolPacing.tockMs) : undefined;
               if (next || readFailure) resolve();
               return () => {
                 wake = undefined;
-                unobserve?.();
+                if (tock !== undefined) runtime.clock.clearTimeout(tock);
               };
             });
           }

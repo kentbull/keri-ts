@@ -1,4 +1,4 @@
-import { assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertStrictEquals } from "jsr:@std/assert";
 import { QueryReplies } from "../../../../src/app/queries/query-replies.ts";
 import type { AgentCue, ReplayCue, ReplyCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
@@ -36,15 +36,11 @@ Deno.test("query reply reservations isolate interleaved results from the backgro
   const other: ReplayCue = { kin: "replay", querySaid: "query-b", msgs: [new Uint8Array([2])] };
   const background: ReplayCue = { kin: "replay", msgs: [new Uint8Array([3])] };
   const cues = new Deck<AgentCue>([other, background, replay, replay]);
-  let wakes = 0;
-  const unobserve = first.observeReady(() => wakes++);
   assertEquals(first.ready, false);
-  assertThrows(() => first.observeReady(() => {}), Error, "observer");
   // A background turn can drain its own cue after reservation capture without stealing either response.
   replies.capture(cues);
   assertEquals([...cues], [background]);
-  assertEquals([first.ready, wakes], [true, 1]);
-  unobserve();
+  assertEquals(first.ready, true);
   assertStrictEquals(first.takeAll()?.cues[0], replay);
   assertStrictEquals(duplicate.takeAll()?.cues[0], replay);
   assertStrictEquals(second.takeAll()?.cues[0], other);
