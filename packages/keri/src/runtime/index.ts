@@ -872,6 +872,8 @@ export {
   type IssuanceStatus,
   issuanceStatus,
   type IssuanceWaitOptions,
+  type PendingGrant,
+  pendingIssuanceGrants,
   posterDelivery,
   prepareIssuanceGrant,
   waitForIssuance,

@@ -17,6 +17,7 @@ import {
   deliverIssuanceAdmit,
   type IssuanceOperations,
   issuanceStatus,
+  pendingIssuanceGrants,
   prepareIssuanceGrant,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
@@ -98,6 +99,24 @@ Deno.test("holder: consent, exchange, wait for the registry update, finish, then
     assertEquals(yield* deliverIssuanceAdmit(holderOps.deps, holderHab, admitted), [s.issuer.habs[0].pre]);
     assertEquals(s.issuer.hby.db.erpy.get([grant])!.qb64, admitted.admit.said);
     assert(s.holderChanges.some((c) => c.id === grant));
+  });
+});
+
+Deno.test("pending Grants are listed for the holder before consent, with no status call that throws", async () => {
+  await run(function*() {
+    const s = yield* scenario(), { issuerOps, holderOps, reg, grant, issuerHab, holderHab } = yield* started(s);
+    assertEquals(pendingIssuanceGrants(holderOps), [{
+      grant,
+      holder: holderHab.pre!,
+      issuer: issuerHab.pre!,
+      credential: reg.credential().said!,
+      registry: reg.regid,
+      deadline: deadlineOf(s.holder, grant),
+    }]);
+    assertEquals(pendingIssuanceGrants(holderOps, { hab: issuerHab }), [], "only grants addressed to that identifier");
+    assertEquals(pendingIssuanceGrants(issuerOps), [], "the issuer's own Grant is not pending consent for it");
+    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    assertEquals(pendingIssuanceGrants(holderOps), [], "consent removes it from the list");
   });
 });
 
@@ -422,7 +441,7 @@ Deno.test("a staged or accepted update keeps the refusal of a second exchange on
     const root = issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64;
     yield* refuses(
       () => beginIssuance(issuerOps, { hab: issuerHab, grant: pending.grant }),
-      "Registry root conflicts with this live DH operation",
+      "a DH-issued registry must not have a custody root",
     );
     assertEquals(issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64, root);
   });
