@@ -64,15 +64,15 @@ function assertRefused(runtime: AgentRuntime, pre: string, reason: string) {
   assert(runtime.hby.db.getHab(pre), "and keeps its record");
 }
 
-Deno.test("retireIdentifier releases held signers", async () => {
+Deno.test("retireIdentifier drops the retired identifier's held signers", async () => {
   await run(function*() {
     const o = yield* opened();
     try {
       const { hab, signer } = heldHab(o.hby, "custodial"), other = heldHab(o.hby, "other");
       const retired = retireIdentifier(o.runtime, hab.pre);
       assertEquals(retired, { pre: hab.pre, name: "custodial", released: [signer.verfer.qb64], mailboxes: [] });
-      assertEquals(o.hby.mgr.release([signer.verfer.qb64]), [], "the retired signer is no longer held");
-      assertEquals(o.hby.mgr.release([other.signer.verfer.qb64]), [other.signer.verfer.qb64], "others stay held");
+      assertEquals(o.hby.mgr.hasSigner(signer.verfer.qb64), false, "the retired signer is no longer held");
+      assert(o.hby.mgr.hasSigner(other.signer.verfer.qb64), "others stay held");
       assertEquals(o.hby.habs.has(hab.pre), false);
       assert(o.hby.db.getKever(hab.pre), "the KEL stays");
       // A salty habitat's keys are stored, not held: nothing to release.
@@ -125,15 +125,13 @@ Deno.test("retireIdentifier stops its mailbox workers and clears cursors", async
         assert(hby.db.tops.get([other.pre, eid]), "another identifier's cursor stays");
         assert(hby.db.kpub.get([other.pre, eid]), "and its publisher row");
         assert(hby.db.ends.get([hab.pre, Roles.mailbox, eid]), "the accepted end role stays");
-        // The worker halts on the next tock and leaves no signer condition for the keys retirement deleted.
-        yield* tockUntil(clock, () => runtime.signerConditions.list().length === 0, "no condition is left");
+        // The worker halts on the next tock.
         const stale = polls();
         for (let tock = 0; tock < 5; tock++) {
           clock.advance(MAILBOX_POLLER_PACING.tockMs);
           for (let turn = 0; turn < 20; turn++) yield* runtimeTurn();
         }
         assertEquals(polls(), stale, "the retired identifier is not polled again");
-        assertEquals(runtime.signerConditions.list(), []);
         assertEquals(hby.db.tops.get([hab.pre, eid]), null, "and no cursor comes back");
         assertEquals(runtime.kelPublisher.statusOf(hab.pre), [], "the publisher owes it nothing");
       } finally {

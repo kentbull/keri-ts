@@ -369,12 +369,13 @@ export class WitnessInquisitor {
    * Resolve/sign one selected query and introduction immediately before its attempt.
    *
    * @param request Deferred unsigned request; nested query values must remain immutable.
-   * @returns Prepared packet, or null when signer/attester evidence is unresolved.
+   * @returns Prepared packet, or null when signer/attester evidence is unresolved or the signer cannot sign yet.
    * @throws A selected attester with no endpoint URL throws; source removal remains with the caller.
    */
   private prepareRequest(request: QueryRequest): QueryDelivery | null {
     const hab = this.configuredHab(request.signer);
-    if (!hab) return null;
+    // A signer that cannot sign yet leaves the request unresolved: it goes to the tail, and the next pass tries again.
+    if (!hab || !hab.canSign()) return null;
     const attesters = request.src ? [] : this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits });
     const destination = request.src ?? attesters[Math.floor(Math.random() * attesters.length)];
     if (!destination) return null;

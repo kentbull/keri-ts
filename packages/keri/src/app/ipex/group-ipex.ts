@@ -178,7 +178,8 @@ export class GroupIpexOperations {
   /** Advance every live operation by one pass. */
   *processOnce(): Operation<void> {
     for (const op of [...this.live.values()]) {
-      if (op.busy || !this.live.has(op.said)) continue;
+      // A group whose local member cannot sign yet waits for its signer.
+      if (op.busy || !this.live.has(op.said) || !op.group.canSign()) continue;
       op.busy = true;
       try {
         yield* this.step(op);

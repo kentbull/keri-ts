@@ -361,7 +361,8 @@ export class Counselor {
     if (!this.forwarding) return;
     for (const [key, owed] of [...this.forwards]) {
       const now = this.clock.now();
-      if (now < owed.nextAt) continue;
+      // The local member signs the forward; a group whose member cannot sign yet keeps it without spending an attempt.
+      if (now < owed.nextAt || !this.hby.habs.get(owed.event.pre)?.canSign()) continue;
       let outcomes: GroupDelivery[];
       try {
         outcomes = yield* this.forwarding.forward(owed.event, owed.members);

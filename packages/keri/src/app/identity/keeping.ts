@@ -440,10 +440,18 @@ function emptyLot(
   return new PubLot({ pubs: [], ridx: 0, kidx: 0, dt });
 }
 
+/** What `Manager.forget` removed for one retired prefix. */
+export interface ForgottenKeys {
+  /** Private keys deleted from the Keeper's `pris.`; 0 for a keyless habitat. */
+  deleted: number;
+  /** Current public keys whose held signers were dropped; empty for keys the Keeper stored. */
+  released: string[];
+}
+
 /**
- * No private key for `pub`: neither held (`Manager.hold`) nor stored in the Keeper. A custodial host releases
- * its signers on purpose, so a background loop that needs one treats this as a condition to wait out, not as a
- * failure of the runtime. The message is the one the Keeper has always used.
+ * No private key for `pub`: neither held (`Manager.hold`) nor stored in the Keeper. A background loop reads
+ * `Hab.canSign()` before it signs and skips a habitat that cannot, so this error escaping a loop is a real fault.
+ * The message is the one the Keeper has always used.
  */
 export class SignerNotHeldError extends Error {
   /** The qualified public key whose private key is missing. */
@@ -487,8 +495,6 @@ export class Manager {
    * Never written to the Keeper and never consulted by `Keeper` rows.
    */
   private readonly held = new Map<string, Signer>();
-  /** Told after `hold()` borrows signers; a loop that waited for a missing signer resumes on it. */
-  private readonly holdListeners = new Set<() => void>();
 
   constructor(args: ManagerArgs) {
     const {
@@ -756,7 +762,8 @@ export class Manager {
    *   and hold that encoding. A request for the other encoding does not match.
    * - The host owns each `Signer` and its seed bytes, including zeroing them.
    *   This keeps the reference only; it never copies seed bytes and never
-   *   erases them. Dropping a reference with `release()` does not zero memory.
+   *   erases them. Retiring the habitat (`forget()`) drops the reference but
+   *   does not zero memory.
    * - Holding a pub that is already held replaces the earlier signer. A held
    *   signer shadows a stored key with the same public key.
    * - The `pre/path` branch of `sign()` re-derives salty keys from the stored
@@ -773,35 +780,18 @@ export class Manager {
       batch.set(signer.verfer.qb64, signer);
     }
     for (const [pub, signer] of batch) this.held.set(pub, signer);
-    for (const listener of [...this.holdListeners]) listener();
   }
 
   /**
-   * Be told after each `hold()`, so a background loop whose signer was released can resume at once.
+   * Whether this Manager can sign with `pub` now: a signer is held for it, or the Keeper stores its private key.
+   * A pure read; it neither decrypts nor signs.
    *
-   * @returns A function that stops the notifications.
+   * A store may be opened without a habitat's signer (a keyless habitat before its host calls `hold()`), so this
+   * is ordinary state: background loops read it before they sign and skip what cannot be signed yet.
    */
-  onHold(listener: () => void): () => void {
-    this.holdListeners.add(listener);
-    return () => this.holdListeners.delete(listener);
-  }
-
-  /**
-   * Drop held signer references: all of them, or only those for `pubs`.
-   *
-   * Unheld pubs are ignored. Afterwards a request for a released key resolves
-   * from stored keys only and fails as any missing key does. This drops
-   * references; zeroing a signer's seed stays the host's job.
-   *
-   * @returns The public keys whose held signers were dropped, in the order asked (all held ones without `pubs`).
-   */
-  release(pubs?: readonly string[]): string[] {
-    if (pubs === undefined) {
-      const released = [...this.held.keys()];
-      this.held.clear();
-      return released;
-    }
-    return pubs.filter((pub) => this.held.delete(pub));
+  hasSigner(pub: string): boolean {
+    if (this.held.has(pub)) return true;
+    return this.ks.pris.has(pub);
   }
 
   /** Resolve one signer by qualified public key: held first, then the Keeper's `pris.`. */
@@ -1381,15 +1371,20 @@ export class Manager {
    * and the habitat's derivation stem (its namespace and name).
    *
    * A prefix with no key rows, such as a keyless habitat whose signers are held
-   * externally (`hold()`) or one already forgotten, has nothing to delete and
-   * returns 0. Held signers are not touched; the host owns those references.
+   * externally (`hold()`) or one already forgotten, has no stored keys to delete.
+   * Held signers for `current` (the prefix's current public keys, which a keyless
+   * habitat has no Keeper row for) are dropped as well; zeroing their seeds stays
+   * the host's job. There is no other way to drop a held signer: a store's signers
+   * only ever grow until it closes.
    *
    * No KERIpy counterpart: `Habery.deleteHab` keeps all of the Keeper's state.
    *
-   * @returns The number of private keys deleted from `pris.`.
+   * @param pre Prefix to forget.
+   * @param current The prefix's current public keys, whose held signers are dropped.
+   * @returns What was deleted and dropped.
    */
-  forget(pre: string): number {
-    return this.ks.transaction(() => {
+  forget(pre: string, current: readonly string[]): ForgottenKeys {
+    const deleted = this.ks.transaction(() => {
       const aliases = new Set([pre]);
       for (const [keys, prefixer] of this.ks.pres.getTopItemIter()) {
         if (prefixer.qb64 === pre) aliases.add(keys.join("."));
@@ -1413,6 +1408,7 @@ export class Manager {
       }
       return deleted;
     });
+    return { deleted, released: current.filter((pub) => this.held.delete(pub)) };
   }
 
   /**

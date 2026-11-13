@@ -115,7 +115,8 @@ export class RootReplicator {
     const results: RootCopyResult[] = [];
     for (const entry of [...this.#pending.values()]) {
       if (results.length >= RootSendsPerPass) break;
-      if (entry.retryAt > clock.now()) continue;
+      // The group's local member signs the copy; one that cannot sign yet keeps it without spending an attempt.
+      if (entry.retryAt > clock.now() || !this.#deps.root.hby.habs.get(entry.group)?.canSign()) continue;
       const result = yield* this.#attempt(entry.group, entry.registry, entry.recipient, deadline);
       if (!result) continue;
       results.push(result);

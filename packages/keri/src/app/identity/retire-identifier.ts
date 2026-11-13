@@ -10,11 +10,11 @@
  * Unblind operation, the source of a queued Poster event, the explicit signer of a queued query, and the
  * querier's configured default signer.
  *
- * After `retireHab` commits, it releases the held signers of the identifier's current keys (`Manager.release`),
- * deletes the identifier's mailbox poll cursors (`Baser.tops`, keyed by subject and endpoint) and its KEL
+ * `retireHab` drops the held signers of the identifier's current keys with its stored keys. After it commits,
+ * this deletes the identifier's mailbox poll cursors (`Baser.tops`, keyed by subject and endpoint) and its KEL
  * publisher bookkeeping (`Baser.kpub`), and prompts the mailbox poller and the KEL publisher. The poller halts
- * the identifier's workers on its next tock, and a halted worker clears its signer condition; the publisher
- * drops the identifier's budgets and derives nothing for it, since it is no longer local.
+ * the identifier's workers on its next tock; the publisher drops the identifier's budgets and derives nothing
+ * for it, since it is no longer local.
  *
  * Deleted, and why none of it is acceptance state: `tops.` is this consumer's own poll progress against a
  * remote mailbox, not a record of anything accepted; `kpub.` records which mailboxes were told the
@@ -39,7 +39,7 @@ export interface RetiredIdentifier {
   pre: string;
   /** The local name the identifier had. */
   name: string;
-  /** Public keys whose held signers were released; empty for keys the Keeper stored. */
+  /** Current public keys whose held signers retirement dropped; empty for keys the Keeper stored. */
   released: string[];
   /** Mailbox (and witness) endpoints whose poll workers stop. */
   mailboxes: string[];
@@ -77,8 +77,8 @@ export function retireIdentifierRefusal(runtime: AgentRuntime, pre: string): str
 }
 
 /**
- * Retire `pre`: `Habery.retireHab`, then release its held signers, delete its mailbox cursors and KEL publisher
- * rows, and prompt the mailbox poller and KEL publisher. Makes no event and signs nothing.
+ * Retire `pre`: `Habery.retireHab` (which drops its held signers), then delete its mailbox cursors and KEL
+ * publisher rows, and prompt the mailbox poller and KEL publisher. Makes no event and signs nothing.
  *
  * @throws ValidationError with {@link retireIdentifierRefusal}'s reason, before any write.
  */
@@ -88,10 +88,7 @@ export function retireIdentifier(runtime: AgentRuntime, pre: string): RetiredIde
   const { hby } = runtime;
   const hab = hby.habs.get(pre);
   const mailboxes = hab ? [...new Set(mailboxPollEndpoints(hab).map((endpoint) => endpoint.eid))] : [];
-  const current = hby.db.getKever(pre)?.verfers.map((verfer) => verfer.qb64) ?? [];
-
-  const { name } = hby.retireHab(pre);
-  const released = hby.mgr.release(current);
+  const { name, released } = hby.retireHab(pre);
   hby.db.transaction(() => {
     hby.db.tops.trim([pre], { topive: true });
     hby.db.kpub.trim([pre], { topive: true });

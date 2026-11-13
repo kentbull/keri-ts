@@ -1,12 +1,10 @@
 /** Recipient mailbox polling: signed queries, awaited SSE intake and persisted cursor progression. */
 import { call, type Operation, scoped, spawn, type Task } from "npm:effection@^3.6.0";
 import type { Hab, Habery } from "../identity/habbing.ts";
-import { SignerNotHeldError } from "../identity/keeping.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { type DoerPacing, doEvery, PROTOCOL_TOCK_MS } from "../runtime/doing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { runtimeTurn } from "../runtime/runtime-turn.ts";
-import type { SignerConditions } from "../runtime/signer-conditions.ts";
 import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { isLegacyCesrMediaRejection, readResponseDetail } from "../transport/cesr-egress.ts";
 import {
@@ -36,11 +34,6 @@ interface MailboxPollerOptions {
    * has its KEL publisher post the KEL again. The worker then backs off.
    */
   onUnauthorized?: (pre: string, mailbox: string) => void;
-  /**
-   * Where a poll that cannot be signed (its signer released) is reported while its worker waits; the worker
-   * resumes as soon as a signer is held again.
-   */
-  signerConditions?: SignerConditions;
 }
 
 /** Tocks between the poller's full re-selection of workers: 160 tocks of 31.25 ms is five seconds. */
@@ -102,8 +95,6 @@ export class MailboxPoller {
   readonly clock: RuntimeClock;
   /** Told after each poll a mailbox served. */
   readonly onPolled: ((pre: string, mailbox: string) => void) | undefined;
-  /** Where unsignable polls are reported, when the host keeps such a record. */
-  readonly signerConditions: SignerConditions | undefined;
   /** Told when a mailbox answers 403. */
   readonly onUnauthorized: ((pre: string, mailbox: string) => void) | undefined;
 
@@ -123,8 +114,7 @@ export class MailboxPoller {
     clock: RuntimeClock,
     options: MailboxPollerOptions = {},
   ) {
-    const { timeouts, onPolled, onUnauthorized, signerConditions } = options;
-    this.signerConditions = signerConditions;
+    const { timeouts, onPolled, onUnauthorized } = options;
     this.onPolled = onPolled;
     this.onUnauthorized = onUnauthorized;
     this.hby = hby;
@@ -170,11 +160,11 @@ export class MailboxPoller {
           shape = topics.join("|");
           habs = self.hby.habs.size;
           self.#dirty.clear();
-          yield* self.syncRemoteWorkers(remoteWorkers, onBatch, topics);
+          yield* self.syncRemoteWorkers(remoteWorkers, onBatch, topics, pacing.tockMs);
         } else if (self.#dirty.size) {
           const only = new Set(self.#dirty);
           self.#dirty.clear();
-          yield* self.syncRemoteWorkers(remoteWorkers, onBatch, topics, only);
+          yield* self.syncRemoteWorkers(remoteWorkers, onBatch, topics, pacing.tockMs, only);
         }
       });
     } finally {
@@ -201,42 +191,35 @@ export class MailboxPoller {
    * @param target Mailbox subject habitat plus the actual local signer (a member for groups).
    * @param endpoint Selected remote endpoint AID and HTTP(S) URL.
    * @param onBatch Awaited consumer; successful completion precedes durable cursor advancement.
-   * @returns How the poll ended; see {@link PollOutcome}. An `unsignable` poll carries the missing public key.
+   * @returns How the poll ended; see {@link PollOutcome}.
    */
   private *pollRemoteEndpointOnce(
     target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
-  ): Operation<{ outcome: PollOutcome; missing?: string }> {
+  ): Operation<PollOutcome> {
     const cursor = this.mailboxDirector.remoteQueryCursor(target.targetPre, endpoint.eid);
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
-    // The concrete HTTP/SSE operation owns and joins this whole poll attempt. A signer the host released
-    // (while signing the query, or in the consumer's protocol work) ends the poll as `unsignable`.
-    try {
-      const outcome = yield* call(() =>
-        fetchMailboxMessages(
-          target.signerHab,
-          target.targetPre,
-          endpoint.eid,
-          endpoint.url,
-          cursor,
-          mailboxFetchTimeoutPolicy(this.timeoutPolicy),
-          this.http,
-          this.clock,
-          function* deliverThenAdvanceCursor(message) {
-            yield* call(() => onBatch({ pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] }));
-            // A subject retired during this poll keeps no cursor: its worker halts on the next tock.
-            if (!self.hby.habs.has(target.targetPre)) return;
-            self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
-          },
-        )
-      );
-      return { outcome };
-    } catch (error) {
-      if (error instanceof SignerNotHeldError) return { outcome: "unsignable", missing: error.pub };
-      throw error;
-    }
+    // The concrete HTTP/SSE operation owns and joins this whole poll attempt.
+    return yield* call(() =>
+      fetchMailboxMessages(
+        target.signerHab,
+        target.targetPre,
+        endpoint.eid,
+        endpoint.url,
+        cursor,
+        mailboxFetchTimeoutPolicy(this.timeoutPolicy),
+        this.http,
+        this.clock,
+        function* deliverThenAdvanceCursor(message) {
+          yield* call(() => onBatch({ pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] }));
+          // A subject retired during this poll keeps no cursor: its worker halts on the next tock.
+          if (!self.hby.habs.has(target.targetPre)) return;
+          self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
+        },
+      )
+    );
   }
 
   /**
@@ -245,11 +228,13 @@ export class MailboxPoller {
    * @param remoteWorkers Owned worker map, mutated to match current endpoint selection.
    * @param onBatch Shared awaited consumer used independently by each endpoint worker.
    * @param topics Current registered topics; no topics means no remote workers.
+   * @param tockMs How long a worker whose signer cannot sign yet waits before it looks again.
    */
   private *syncRemoteWorkers(
     remoteWorkers: Map<string, Task<void>>,
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
     topics: readonly string[],
+    tockMs: number,
     only?: ReadonlySet<string>,
   ): Operation<void> {
     const wanted = new Map<string, { target: MailboxPollTarget; endpoint: { eid: string; url: string } }>();
@@ -262,7 +247,6 @@ export class MailboxPoller {
       }
     }
 
-    // Halt before spawning: a halted worker clears the signer condition it shares with its replacement.
     for (const [workerKey, task] of [...remoteWorkers.entries()]) {
       if (wanted.has(workerKey) || (only && !only.has(workerKey.slice(0, workerKey.indexOf(":"))))) {
         continue;
@@ -273,7 +257,7 @@ export class MailboxPoller {
 
     for (const [workerKey, { target, endpoint }] of wanted) {
       if (remoteWorkers.has(workerKey)) continue;
-      remoteWorkers.set(workerKey, yield* spawn(() => this.remoteEndpointWorker(target, endpoint, onBatch)));
+      remoteWorkers.set(workerKey, yield* spawn(() => this.remoteEndpointWorker(target, endpoint, onBatch, tockMs)));
     }
   }
 
@@ -286,46 +270,46 @@ export class MailboxPoller {
    * unreachable or refuses is retried on {@link MailboxPoller.RefusalBackoff}, never in a tight loop and never
    * by failing the runtime. A 403 also prompts the KEL publisher, which owns posting the KEL.
    *
+   * A signer that cannot sign yet (a store opened without it) is not a remote failure: the worker neither polls
+   * nor backs off, and looks again each tock, so it polls within one tock of `Manager.hold`. Because it never polls
+   * for such a subject, the consumer's protocol work never runs for it either.
+   *
    * @param target Mailbox subject habitat plus the actual local signer (a member for groups).
    * @param endpoint Selected remote endpoint AID and HTTP(S) URL.
    * @param onBatch Awaited consumer; successful completion precedes durable cursor advancement.
+   * @param tockMs How long the worker waits before it looks again at a signer that cannot sign.
    */
   private *remoteEndpointWorker(
     target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
+    tockMs: number,
   ): Operation<never> {
     let state: PollState = { backoffMs: 0 };
-    const source = `mailbox-poller:${target.targetPre}/${endpoint.eid}`;
-    try {
-      while (true) {
-        const { outcome, missing } = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
-        if (missing) this.signerConditions?.report(source, missing, this.clock.now());
-        else this.signerConditions?.clear(source);
-        const step = nextPoll(state, outcome, {
-          initialMs: this.timeoutPolicy.refusalInitialMs,
-          maxMs: this.timeoutPolicy.refusalMaxMs,
-        });
-        state = step.state;
-        switch (step.action.kind) {
-          case "poll":
-            this.onPolled?.(target.targetPre, endpoint.eid);
-            yield* runtimeTurn();
-            break;
-          case "prompt-publisher":
-            this.onUnauthorized?.(target.targetPre, endpoint.eid);
-            yield* waitOnClock(this.clock, step.action.ms);
-            break;
-          case "wait":
-            // A released signer is waited out until one is held again, not for the full backoff.
-            if (missing && this.signerConditions) yield* this.signerConditions.waitForHold(this.clock, step.action.ms);
-            else yield* waitOnClock(this.clock, step.action.ms);
-            break;
-        }
+    while (true) {
+      if (!target.signerHab.canSign()) {
+        yield* waitOnClock(this.clock, tockMs);
+        continue;
       }
-    } finally {
-      // A halted worker (its endpoint or signer was replaced) leaves no signer condition behind.
-      this.signerConditions?.clear(source);
+      const outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
+      const step = nextPoll(state, outcome, {
+        initialMs: this.timeoutPolicy.refusalInitialMs,
+        maxMs: this.timeoutPolicy.refusalMaxMs,
+      });
+      state = step.state;
+      switch (step.action.kind) {
+        case "poll":
+          this.onPolled?.(target.targetPre, endpoint.eid);
+          yield* runtimeTurn();
+          break;
+        case "prompt-publisher":
+          this.onUnauthorized?.(target.targetPre, endpoint.eid);
+          yield* waitOnClock(this.clock, step.action.ms);
+          break;
+        case "wait":
+          yield* waitOnClock(this.clock, step.action.ms);
+          break;
+      }
     }
   }
 
@@ -444,10 +428,9 @@ export interface MailboxFetchTimeoutPolicy {
  * - `no-response`: no response headers within the open window.
  * - `unreachable`: the connection failed before or while the response was read (refused, DNS, reset).
  * - `unauthorized`: 403, the mailbox cannot authenticate the requester against the KEL it holds.
- * - `unsignable`: the poll could not be signed because the host released the signer (`Manager.release`).
  * - `refused`: any other non-success status.
  */
-export type PollOutcome = "served" | "no-response" | "unreachable" | "unauthorized" | "unsignable" | "refused";
+export type PollOutcome = "served" | "no-response" | "unreachable" | "unauthorized" | "refused";
 
 /** One request: its outcome, or the exact pre-intake KERIpy media refusal that asks for a second request. */
 type PollAttempt = { kind: "outcome"; outcome: PollOutcome } | { kind: "legacy-media-required" };
@@ -500,7 +483,6 @@ export function nextPoll(
     }
     case "no-response":
     case "unreachable":
-    case "unsignable":
     case "refused":
       return backOff(state, backoff);
   }
