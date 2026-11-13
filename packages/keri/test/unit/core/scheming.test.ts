@@ -2,6 +2,7 @@ import { Diger, dumps, type MapperMap, ParserError } from "cesr-ts";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import {
+  schemaCompilationCount,
   validateSchema,
 } from "../../../src/acdc/scheming.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
@@ -247,4 +248,56 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
     make({}, { title: `Resource ${i}` }).sed,
   ]));
   expect(make({}, { $defs: definitions }), "valid");
+});
+
+/** A store holding the given schemas, and a credential naming one by SAID. */
+function schemaStore(schemas: Schemer[]) {
+  const held = new Map<string, Schemer>(schemas.map(schema => [schema.said, schema]));
+  const db = { schema: { get: (said: string) => held.get(said) ?? null } } as Baser;
+  return { db, held };
+}
+
+function resolvedSchema(): Schemer {
+  return new Schemer({
+    sed: {
+      $id: "",
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      version: "1.0.0",
+      type: "object",
+      properties: { a: { type: "object", required: ["name"], properties: { name: { type: "string" } } } },
+    },
+    verify: false,
+  });
+}
+
+const holder = "EJt3vzyzwZsSlL-LRyjG3lsJta_gxHjTmdbSYp6foOcx";
+
+Deno.test("validateSchema compiles a resolved schema closure once, including an embedded schema object", () => {
+  const schema = resolvedSchema(), { db } = schemaStore([schema]);
+  const credential = (name: string | number) => acdcmap(holder, { schema: schema.said, attribute: { d: "", name } });
+  const before = schemaCompilationCount();
+  assertEquals(validateSchema(credential("Ada"), db), { kind: "valid" });
+  assertEquals(validateSchema(credential("Bob"), db), { kind: "valid" });
+  const bad = validateSchema(credential(7), db);
+  assert(bad.kind === "invalid" && bad.subject === "credential", "a cached closure still rejects a bad credential");
+  assertEquals(schemaCompilationCount() - before, 1);
+  const embedded = acdcmap(holder, { schema: schema.sed as MapperMap, attribute: { d: "", name: "Ada" } });
+  assertEquals(validateSchema(embedded, db), { kind: "valid" });
+  assertEquals(schemaCompilationCount() - before, 1, "an embedded schema object reuses the closure");
+  // Another store compiles for itself: a closure is never shared across stores.
+  assertEquals(validateSchema(credential("Ada"), schemaStore([schema]).db), { kind: "valid" });
+  assertEquals(schemaCompilationCount() - before, 2);
+});
+
+Deno.test("a missing schema is not cached and validates after it arrives", () => {
+  const schema = resolvedSchema(), { db, held } = schemaStore([]);
+  const credential = acdcmap(holder, { schema: schema.said, attribute: { d: "", name: "Ada" } });
+  const before = schemaCompilationCount();
+  assertEquals(validateSchema(credential, db), { kind: "missing", said: schema.said });
+  assertEquals(validateSchema(credential, db), { kind: "missing", said: schema.said });
+  assertEquals(schemaCompilationCount() - before, 0, "nothing was compiled for a missing schema");
+  held.set(schema.said, schema);
+  assertEquals(validateSchema(credential, db), { kind: "valid" });
+  // A store that never received it still reports it missing, whatever another store compiled.
+  assertEquals(validateSchema(credential, schemaStore([]).db), { kind: "missing", said: schema.said });
 });
