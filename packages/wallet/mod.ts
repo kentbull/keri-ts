@@ -1,4 +1,4 @@
-/** Wallet application entrypoint; public protocol owners remain borrowed from keri-ts. */
+/** Browser-safe wallet entrypoint: inventory, consent, authoring and disclosure over borrowed protocol owners. */
 export { type AcdcV2UpdateOptions, WalletAuthor } from "./src/authoring.ts";
 export { RegistryCustody } from "./src/custody.ts";
 export {
@@ -11,6 +11,5 @@ export {
   type PreparedGrantBody,
   WalletDiscloser,
 } from "./src/disclosing.ts";
-export { createWalletBaser } from "./src/lmdb-storing.ts";
-export { type AdmittedCredential, type IssuedCredential, WalletBaser } from "./src/storing.ts";
+export { type AdmittedCredential, type IssuedCredential, openWalletBaser, WalletBaser } from "./src/storing.ts";
 export { type HeldCredential, type PreparedAdmit, Wallet, type WalletOptions } from "./src/wallet.ts";

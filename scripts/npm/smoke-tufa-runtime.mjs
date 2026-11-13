@@ -4,6 +4,7 @@ import { createObservationBaser, Observer } from "@keri-ts/observer";
 import { Registrar } from "@keri-ts/registrar";
 import * as verifier from "@keri-ts/verifier";
 import * as wallet from "@keri-ts/wallet";
+import * as walletLmdb from "@keri-ts/wallet/lmdb";
 import * as walletWeb from "@keri-ts/wallet/web";
 import { createHabery } from "keri-ts/db/lmdb";
 import { createAgentRuntime, FetchHttpClient, systemClock } from "keri-ts/runtime";
@@ -23,10 +24,11 @@ for (const name of ["runHostKernel", "startServer", "createProtocolHandler", "cr
 const require = createRequire(join(packageRoot, "package.json"));
 if (typeof verifier.VerifierAgent !== "function") throw new Error("Verifier package missing application");
 if (typeof wallet.Wallet !== "function") throw new Error("Wallet package missing inventory owner");
-if (typeof wallet.createWalletBaser !== "function") throw new Error("Wallet root lost its LMDB factory");
-if (typeof walletWeb.openWalletBaser !== "function" || "createWalletBaser" in walletWeb) {
-  throw new Error("Wallet web entry must expose openWalletBaser and no LMDB factory");
+if (typeof walletLmdb.createWalletBaser !== "function") throw new Error("Wallet lmdb entry lost its LMDB factory");
+if (typeof wallet.openWalletBaser !== "function" || "createWalletBaser" in wallet || "createWalletBaser" in walletWeb) {
+  throw new Error("Wallet root and web entries must expose openWalletBaser and no LMDB factory");
 }
+if (typeof walletWeb.openWebWallet !== "function") throw new Error("Wallet web entry lost openWebWallet");
 if (walletWeb.Wallet !== wallet.Wallet || walletWeb.WalletBaser !== wallet.WalletBaser) {
   throw new Error("Wallet web entry must share the root's owner classes");
 }
@@ -73,7 +75,7 @@ try {
       yield* runtime.close();
       yield* hby.close(true);
     }
-    const inventory = yield* wallet.createWalletBaser({ name: "installed-wallet", headDirPath: root });
+    const inventory = yield* walletLmdb.createWalletBaser({ name: "installed-wallet", headDirPath: root });
     try {
       if (inventory.issued.cntAll() !== 0 || inventory.admitted.cntAll() !== 0) {
         throw new Error("Fresh wallet is not empty");

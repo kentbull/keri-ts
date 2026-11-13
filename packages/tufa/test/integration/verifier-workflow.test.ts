@@ -1,7 +1,8 @@
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { Registrar } from "@keri-ts/registrar";
 import { AcdcV2Verifier, createVerifierCueBaser, VerifierAgent } from "@keri-ts/verifier";
-import { createWalletBaser, Wallet, WalletAuthor } from "@keri-ts/wallet";
+import { Wallet, WalletAuthor } from "@keri-ts/wallet";
+import { createWalletBaser } from "@keri-ts/wallet/lmdb";
 import {
   collectPayload,
   Compactor,

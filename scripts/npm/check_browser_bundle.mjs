@@ -27,9 +27,10 @@ import { createAgentRuntime, FetchHttpClient, openHabery } from "keri-ts/runtime
 import { openOwner, WebStoreOpener } from "keri-ts/db";
 import { indexedDbOpener } from "keri-ts/db/indexeddb";
 import { openWalletBaser, openWebWallet, Wallet, WalletBaser, WalletDiscloser } from "@keri-ts/wallet/web";
+import * as walletRoot from "@keri-ts/wallet";
 import { acquireStoreLock, barrierHttpClient, requestPersistentStorage } from "keri-ts/runtime/web";
 export const surface = {
-  openWalletBaser, openWebWallet, Wallet, WalletBaser, WalletDiscloser,
+  openWalletBaser, openWebWallet, Wallet, WalletBaser, WalletDiscloser, walletRoot,
   Diger, PACKAGE_VERSION, createAgentRuntime, openHabery, openOwner, WebStoreOpener,
   http: new FetchHttpClient(), opener: indexedDbOpener(),
   acquireStoreLock, barrierHttpClient, requestPersistentStorage,
@@ -40,14 +41,8 @@ export const surface = {
 const REGRESSIONS = [
   { name: "keri-ts/db/lmdb", source: `export * from "keri-ts/db/lmdb";` },
   { name: "keri-ts/runtime/node", source: `export * from "keri-ts/runtime/node";` },
+  { name: "@keri-ts/wallet/lmdb", source: `export * from "@keri-ts/wallet/lmdb";` },
 ];
-
-/**
- * The root `@keri-ts/wallet` is Node-only on purpose: it exports `createWalletBaser`, which
- * value-imports `keri-ts/db/lmdb`. `@keri-ts/wallet/web` is the browser entry and is in the
- * passing consumer above. The root must keep failing so nobody mistakes it for browser-safe.
- */
-const KNOWN_FAILING = [{ name: "@keri-ts/wallet", source: `export * from "@keri-ts/wallet";` }];
 
 /**
  * The one tolerated Node import. effection's `main()` runner lazily `import()`s
@@ -161,12 +156,6 @@ for (const { name, source } of REGRESSIONS) {
   const seeded = await bundle(source);
   if (seeded.problems.length === 0) failures.push([`self-test: gate did not reject ${name}`, []]);
   else console.log(`self-test ok: gate rejects ${name}:\n${seeded.problems.map((p) => `    ${p}`).join("\n")}`);
-}
-
-for (const { name, source } of KNOWN_FAILING) {
-  const known = await bundle(source);
-  if (known.problems.length === 0) failures.push([`${name} now bundles for the browser: the root is meant to be Node-only (use its ./web entry)`, []]);
-  else console.log(`Node-only by design ${name}:\n${known.problems.map((p) => `    ${p}`).join("\n")}`);
 }
 
 // Informational: why the `browser` condition is needed. esbuild adds `browser` on its browser

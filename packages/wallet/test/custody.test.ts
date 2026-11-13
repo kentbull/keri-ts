@@ -17,7 +17,8 @@ import {
   vetBlind,
 } from "keri-ts/runtime";
 import { dispatchEnvelope, envelopeFromFrame } from "../../keri/src/app/protocol/parsering.ts";
-import { createWalletBaser, Wallet } from "../mod.ts";
+import { createWalletBaser } from "../lmdb.ts";
+import { Wallet } from "../mod.ts";
 import { RegistryCustody } from "../src/custody.ts";
 
 /** Feed real KEL replay to the ordinary receiver; never copy accepted v2 markers. */

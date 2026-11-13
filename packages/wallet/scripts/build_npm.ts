@@ -13,15 +13,16 @@ import {
 } from "../../../scripts/npm/dnt-helpers.ts";
 
 const OUT_DIR = "./npm";
-const ROOT_MARKER = "Wallet application entrypoint; public protocol owners remain borrowed from keri-ts.";
-const WEB_MARKER = "Browser-safe wallet entrypoint: the root surface without LMDB";
+const ROOT_MARKER = "Browser-safe wallet entrypoint: inventory, consent, authoring and disclosure";
+const WEB_MARKER = "Browser wallet application entrypoint: the root surface plus";
+const LMDB_MARKER = "Node wallet entrypoint: the LMDB-backed inventory factory";
 const keriVersion = readPackageVersionSync("../keri/package.json");
 const cesrVersion = readPackageVersionSync("../cesr/package.json");
 
 setIgnoreScriptsDefault();
 await emptyDir(OUT_DIR);
 await build({
-  entryPoints: ["./mod.ts", { name: "./web", path: "./web.ts" }],
+  entryPoints: ["./mod.ts", { name: "./web", path: "./web.ts" }, { name: "./lmdb", path: "./lmdb.ts" }],
   outDir: OUT_DIR,
   shims: { deno: true },
   configFile: new URL("../deno.json", import.meta.url).href,
@@ -56,6 +57,7 @@ await build({
     exports: {
       ".": { types: "./types/mod.d.ts", import: "./esm/mod.js" },
       "./web": { types: "./types/web.d.ts", import: "./esm/web.js" },
+      "./lmdb": { types: "./types/lmdb.d.ts", import: "./esm/lmdb.js" },
     },
     files: ["esm", "types", "README.md", "LICENSE"],
     dependencies: {
@@ -92,17 +94,33 @@ await build({
       fileName: "web.d.ts",
       marker: WEB_MARKER,
     });
-    for (const path of [rootImport, rootTypes, webImport, webTypes]) assertPackagePathExists(OUT_DIR, path);
-    // Only `./web` is browser-safe: the root reaches LMDB through `createWalletBaser` and has no browser condition.
+    const lmdbImport = findGeneratedEntrypoint({
+      root: `${OUT_DIR}/esm`,
+      outDir: OUT_DIR,
+      fileName: "lmdb.js",
+      marker: LMDB_MARKER,
+    });
+    const lmdbTypes = findGeneratedEntrypoint({
+      root: `${OUT_DIR}/types`,
+      outDir: OUT_DIR,
+      fileName: "lmdb.d.ts",
+      marker: LMDB_MARKER,
+    });
+    for (const path of [rootImport, rootTypes, webImport, webTypes, lmdbImport, lmdbTypes]) {
+      assertPackagePathExists(OUT_DIR, path);
+    }
+    // The root and `./web` are browser-safe; only `./lmdb` reaches the native backend and has no browser condition.
+    const rootBrowser = emitBrowserEntrypoint(OUT_DIR, rootImport);
     const webBrowser = emitBrowserEntrypoint(OUT_DIR, webImport);
-    assertBrowserGraphClean(OUT_DIR, [webBrowser]);
+    assertBrowserGraphClean(OUT_DIR, [rootBrowser, webBrowser]);
     const path = `${OUT_DIR}/package.json`;
     const manifest = JSON.parse(Deno.readTextFileSync(path));
     manifest.main = manifest.module = rootImport;
     manifest.types = rootTypes;
     manifest.exports = {
-      ".": { types: rootTypes, import: rootImport },
+      ".": { types: rootTypes, browser: rootBrowser, import: rootImport },
       "./web": { types: webTypes, browser: webBrowser, import: webImport },
+      "./lmdb": { types: lmdbTypes, import: lmdbImport },
     };
     writeJsonFileSync(path, manifest);
     // DNT can leave unreferenced entrypoint copies for mapped dependencies.

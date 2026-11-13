@@ -17,7 +17,8 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { createWalletBaser, type PreparedGrantBody, Wallet, WalletDiscloser } from "../../../../wallet/mod.ts";
+import { createWalletBaser } from "../../../../wallet/lmdb.ts";
+import { type PreparedGrantBody, Wallet, WalletDiscloser } from "../../../../wallet/mod.ts";
 import { acdcmap, blindate as acdcBlindate } from "../../../src/acdc/messaging.ts";
 import type { RegistryDisclosure } from "../../../src/acdc/regeventing.ts";
 import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credentials/credential-revoking.ts";
