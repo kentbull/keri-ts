@@ -26,6 +26,7 @@ import type { RegBaser } from "../../../../src/acdc/regbasing.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
+import { groupIpexProposals } from "../../../../src/app/ipex/group-ipex.ts";
 import {
   approveGroupIssuance,
   approveGroupIssuanceExchange,
@@ -281,6 +282,8 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       assertEquals(listed.map((p) => [p.grant, p.proposer, p.recipient, p.complete]), [
         [grant, lead.member.pre, holder.hab.pre, false],
       ]);
+      // A fresh issuance Grant is one proposal in one family: the group IPEX list does not offer it too.
+      assertEquals(groupIpexProposals(peer.runtime.operations!.groupIpex, peer.hab), []);
       // A proposal the elected custodian did not sign is refused at consent, not left to stall DH.
       const stored = groupIssuanceProposals(ops(peer))[0];
       const original = loadNests(peer.hby.db, stored.wrapper)[0];

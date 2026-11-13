@@ -35,7 +35,7 @@
  * restart never leaves a delegated event waiting for one. Collaborators are
  * narrow (ADR-0013); nothing here reaches a runtime.
  */
-import { Diger, Ilks, NumberPrimitive, NumDex, type SerderKERI, Verfer } from "cesr-ts";
+import { Diger, Ilks, NumberPrimitive, NumDex, ParserError, type SerderKERI, Verfer } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import type { RotatedCue } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -449,6 +449,12 @@ export class Counselor {
       // A witness refusing or being unreachable is a remote outcome: report it in status and retry later.
       run.failure = error instanceof Error ? error.message : String(error);
       run.delay = Math.min(run.delay * 2, this.receiptRetry.maxMs);
+      // A witness that answered with a reply this member cannot read (a receipt the elected member already
+      // obtained) will not answer better later: submit on the next attempt instead of waiting out the grace.
+      if (!submit && error instanceof ParserError) {
+        run.fallbackAfterMs = 0;
+        run.delay = this.receiptRetry.baseMs;
+      }
     }
     run.nextAt = now + run.delay;
     if (!this.hby.db.fullyWitnessed(serder)) this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });

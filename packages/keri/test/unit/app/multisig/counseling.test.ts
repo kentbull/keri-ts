@@ -7,7 +7,7 @@
  * nothing about HTTP/TCP delivery, witness-side authorization, receipt intake
  * through Kevery, or fan-out to other witnesses (`Receiptor` owns those).
  */
-import { Diger, NumberPrimitive, NumDex, type SerderKERI, Siger } from "cesr-ts";
+import { Diger, GroupSizeError, NumberPrimitive, NumDex, type SerderKERI, Siger } from "cesr-ts";
 import { ensure, type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { Anchorer } from "../../../../src/app/identity/delegating.ts";
@@ -121,6 +121,8 @@ class FakeReceipting implements GroupReceipting {
   silent = false;
   /** `get` finds and stores receipts. */
   fetchable = false;
+  /** `get` throws this, as for a witness reply that cannot be read. */
+  unreadable: Error | null = null;
   constructor(private readonly hby: Habery, private readonly signers: Hab[]) {}
 
   *receipt(pre: string, { sn, auths }: { sn: number; auths: Record<string, string> }) {
@@ -132,6 +134,7 @@ class FakeReceipting implements GroupReceipting {
   }
   *get(pre: string, { sn }: { sn: number; said: string }) {
     this.calls.push(`get:${sn}`);
+    if (this.unreadable) throw this.unreadable;
     if (this.fetchable) this.store(pre, sn);
     return this.fetchable;
   }
@@ -495,6 +498,27 @@ Deno.test("a non-elected member falls back to submitting after the grace, on an 
     // 500 and 3_500 fall inside a retry backoff; the grace elapses by 3_000.
     assertEquals(receipting.calls, ["get:0", "get:0", "get:0", "receipt:0"]);
     assert(DEFAULT_FALLBACK_AFTER_MS > 0);
+  });
+});
+
+Deno.test("a non-elected member whose fetched receipt reply cannot be read submits at its next attempt, not after the grace", async () => {
+  await run(function*() {
+    const sides = yield* members(2);
+    const [w] = yield* witnesses(1);
+    const gid = pair(sides, { wits: [w.pre], toad: 1 });
+    const event = ref(sides[0].hby.db.getEvtSerder(gid, gid)!);
+    const { c, clock, receipting } = counselor(sides[1], [w]);
+    receipting.unreadable = new GroupSizeError("Incomplete item inside -L payload");
+    c.start(event);
+    for (const t of [0, 500, 1_000]) {
+      clock.t = t;
+      yield* c.processOnce();
+    }
+    assertEquals(
+      receipting.calls,
+      ["get:0", "receipt:0"],
+      "the unreadable reply is not retried until the grace passes",
+    );
   });
 });
 

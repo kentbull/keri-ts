@@ -351,7 +351,7 @@ Deno.test("Issued-state policy differs from protocol authentication without chan
     );
   }
   assertEquals(issuedNodeVerdict({ kind: "authenticated", registration: null }), { kind: "valid" });
-  assertEquals(issuedNodeVerdict({ kind: "reject" }), { kind: "invalid" });
+  assertEquals(issuedNodeVerdict({ kind: "reject", reason: "test" }), { kind: "invalid" });
   assertEquals(issuedNodeVerdict({ kind: "missing", reason: "issuer" }), {
     kind: "unknown",
     retryable: true,

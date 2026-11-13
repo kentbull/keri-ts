@@ -82,7 +82,7 @@ import {
 import { proposeRegistryEvent, type RegistryProposeDeps } from "../multisig/proposing.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import { exchangeWire, type IssuanceGrantOptions } from "./ipex-discloser.ts";
-import { acceptedRegistryEvidence } from "./ipex-node-authentication.ts";
+import { acceptedRegistryEvidence, isIssuanceOrigin } from "./ipex-node-authentication.ts";
 import {
   type GrantDraft,
   ISSUANCE_QUERY_RESEND_MS,
@@ -371,6 +371,7 @@ export function groupIssuanceProposals(ops: IssuanceOperations, group?: Hab): Gr
         ? child.pre !== group.pre
         : !hby.habs.get(child.pre!) || !isLocalGroupHab(hby, hby.habs.get(child.pre!)!))
     ) continue;
+    if (!isIssuanceOrigin(child.pre!, loadNests(hby.db, parent.said!)[0]?.nests?.[0])) continue;
     const self = localGroupMember(hby, child.pre!).pre, known = found.get(child.said!);
     if (known && (parent.pre === self || known.proposer !== self)) continue;
     found.set(child.said!, {

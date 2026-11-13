@@ -88,13 +88,20 @@ function acdcV2GraphUse(
 ): boolean | null {
   const graph = walkIpexGraph(origin, nests, walk);
   if (!graph) throw new ValidationError("ACDC v2 group graph is malformed or incomplete.");
-  const verdicts = new Map<string, ChainVerdict>();
+  const verdicts = new Map<string, ChainVerdict>(), why: string[] = [];
   for (const [said, node] of graph.nodes) {
-    verdicts.set(said, issuedNodeVerdict(authenticateIpexNode(node.body, envelopeFromFrame(node), hby.db, registry)));
+    const authentication = authenticateIpexNode(node.body, envelopeFromFrame(node), hby.db, registry);
+    verdicts.set(said, issuedNodeVerdict(authentication));
+    if (authentication.kind !== "authenticated") why.push(`${said} ${authentication.kind}: ${authentication.reason}`);
   }
   const verdict = evaluateChain(graph, verdicts, hby.db);
   if (verdict?.kind === "unknown" && verdict.retryable) return null;
-  if (verdict?.kind !== "valid") throw new ValidationError("ACDC v2 group graph is false or unresolved.");
+  if (verdict?.kind !== "valid") {
+    const found = !verdict ? "no verdict" : verdict.kind === "unknown" ? `unknown: ${verdict.reason}` : verdict.kind;
+    throw new ValidationError(
+      `ACDC v2 group graph is false or unresolved (${found}${why.length ? `; ${why.join("; ")}` : ""}).`,
+    );
+  }
   return true;
 }
 /** Current retained Grant authentication and graph truth are separate from protocol completion/history. */

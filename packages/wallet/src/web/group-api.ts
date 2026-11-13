@@ -390,7 +390,7 @@ function trackGroupIssuance(
     if (inventory.issued.get([credential.said!])) return;
     const head = store.headEvent(registry)!;
     const custody = new RegistryCustody({ hby, hab, registry: store, db: inventory });
-    wallet.recordIssued(credential, head.said!, { blinder: custody.derivedOpening(head) });
+    wallet.recordIssued(credential, head.said!, { blinder: custody.issuedOpening(head, credential.said!) });
   };
   tracked.set(grant, () => {
     const status = issuanceStatus(ops, grant);
@@ -447,7 +447,9 @@ export type ProposalProgress =
   /** The work stopped (`reason`). */
   | { outcome: "ended"; reason: string }
   /** The other members have not finished within `timeoutMs`; the runtime keeps going. */
-  | { outcome: "timed-out"; timeoutMs: number };
+  | { outcome: "timed-out"; timeoutMs: number }
+  /** No consent was recorded: the proposal cannot be approved yet or here (`reason`), and may be approved again. */
+  | { outcome: "refused"; reason: string };
 
 /** A progress with the status (and group event) it was read from, before the proposal's id is added. */
 export type ProposalSummary = ProposalProgress & { status: ProposalStatus; event?: GroupEventRef };
@@ -542,6 +544,9 @@ export class Proposals {
    * chosen from the proposal's kind: `approveGroupProposal` for events and registry events (then the Counselor),
    * `approveGroupIpex` for a group IPEX message, `approveGroupIssuance` for a group issuance Grant.
    *
+   * A group IPEX message or issuance Grant the library will not approve now (evidence not arrived, authentication
+   * pending, an operation already begun) comes back as `{ outcome: "refused", reason }` with nothing signed.
+   *
    * @throws ValidationError when `id` names no stored proposal, or the proposal needs a choice (`groupAlias`,
    * `registryName`) the caller did not make.
    */
@@ -568,7 +573,14 @@ export class Proposals {
     const ipex = runtime.operations?.groupIpex;
     if (ipex && groupIpexProposals(ipex).some((item) => item.said === id)) {
       return await this.#scope.go(function*(): Operation<ProposalOutcome> {
-        yield* approveGroupIpex(ipex, id);
+        try {
+          yield* approveGroupIpex(ipex, id);
+        } catch (error) {
+          if (error instanceof ValidationError) {
+            return { id, family: "ipex", outcome: "refused", reason: error.message, status: groupIpexStatus(ipex, id) };
+          }
+          throw error;
+        }
         return { id, family: "ipex", ...ipexSummary(yield* waitForGroupIpex(ipex, id, { timeoutMs })) };
       });
     }
@@ -579,7 +591,22 @@ export class Proposals {
       const hab = this.#scope.group(grant.group);
       const parts = this.#scope.parts;
       return await this.#scope.go(function*(): Operation<ProposalOutcome> {
-        if (!issuance.live.has(id) && !issuance.deps.exc.complete(id)) yield* approveGroupIssuance(issuance, id);
+        if (!issuance.live.has(id) && !issuance.deps.exc.complete(id)) {
+          try {
+            yield* approveGroupIssuance(issuance, id);
+          } catch (error) {
+            if (error instanceof ValidationError) {
+              return {
+                id,
+                family: "issuance",
+                outcome: "refused",
+                reason: error.message,
+                status: issuanceStatus(issuance, id),
+              };
+            }
+            throw error;
+          }
+        }
         // The member records the credential when the issuance completes, as the custodian does. Tracking lives in
         // memory, so a page that reloaded after its consent (or finished the issuance while closed) tracks it here
         // on the next call instead of never recording it.
