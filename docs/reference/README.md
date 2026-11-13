@@ -6,6 +6,8 @@ do not schedule work or prove current qualification by their presence.
 - CESR: [frozen table audit](cesr/CESR_CURRENT_REFERENCE_TABLES.md).
 - Compatibility: [KERI v1/v2 matrix and feature catalogue](compatibility/KERI_V1_V2_COMPATIBILITY.md),
   with a linked KERIpy 1.x/2.x porting backlog.
+- Upgrading: [from 2.0.x](compatibility/MIGRATING_FROM_2_0.md) and
+  [from 2.1.x](compatibility/MIGRATING_FROM_2_1.md).
 - Disclosure: [fixed-field/selective examples](credentials/DISCLOSURE_EXAMPLES.md)
   and [JSON walkthrough](credentials/JSON_DISCLOSURE_WALKTHROUGH.md).
 - Registries: [verified-import preservation record](credentials/VERIFIED_IMPORT_SNAPSHOT.md).

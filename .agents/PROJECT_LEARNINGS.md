@@ -26,6 +26,10 @@ owns the v1/v2 matrix and implemented bridges. The
 [dependency qualification report](../docs/reports/runtime/EXPLICIT_RUNTIME_DEPENDENCIES_2026-10-19.md)
 retains exact source identity, validation and limits at its recorded revision.
 
+The [wallet developer guide](../docs/design-docs/runtime/WALLET_LIBRARY_GUIDE.md) owns the
+`openWebWallet` surface, entry points, known 2.2.0 limits and the Worker-hosting note; the
+[2.1 migration](../docs/reference/compatibility/MIGRATING_FROM_2_1.md) lists removed and changed APIs.
+
 ## Read by subject
 
 - [CESR](learnings/PROJECT_LEARNINGS_CESR.md): parsing, framing and primitives.

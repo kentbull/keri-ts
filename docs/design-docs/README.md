@@ -25,6 +25,8 @@ acceptance live in [plans](../plans/README.md); dated evidence lives in [reports
 - [Accounting prohibition](../adr/adr-0013-simple-component-flows.md),
   [ingress/egress](runtime/INGRESS_AND_EGRESS.md), [cues](runtime/CUES.md),
   [query/reply](runtime/QUERY_REPLY.md), [witness HTTP](runtime/WITNESS_HTTP.md).
+- [Wallet developer guide](runtime/WALLET_LIBRARY_GUIDE.md): the `openWebWallet` surface, workflow
+  contract, operation owners, groups, mailbox behavior after rotation, Worker hosting and known limits.
 - [Mailbox](mailbox/MAILBOX.md) and [read authorization](mailbox/READ_AUTHORIZATION.md).
 - [DB invariants](db/db-architecture.md), [payload storage](db/PAYLOAD_STORAGE.md),
   [store contract](../adr/adr-0015-pluggable-store-contract.md).
