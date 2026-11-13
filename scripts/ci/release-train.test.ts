@@ -1,7 +1,9 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { unitShards } from "./pr-test-scope.ts";
 import {
   compareVersions,
   declaredDependencies,
+  gateSupportsEvidence,
   latestTag,
   type Package,
   packages,
@@ -102,4 +104,28 @@ Deno.test("a dry run keeps an explicitly named tag that npm already has", async 
   const plan = await planTrain({ tufa: "tufa-v1.0.0" }, sources({ published: named }), true);
   assertEquals(plan.resolved.map((item) => item.package), ["tufa"]);
   assertEquals((await planTrain({ tufa: "tufa-v1.0.0" }, sources({ published: named }), false)).resolved, []);
+});
+
+Deno.test("a tag's stage gate counts as evidence only when it is dispatchable and uses the current shards", async () => {
+  const scope = Object.keys(unitShards).join(" ");
+  const files: Record<string, string> = {
+    ".github/workflows/pr-stage-gate.yml": "on: workflow_dispatch\nunit_shards",
+    "scripts/ci/pr-test-scope.ts": scope,
+  };
+  const withFiles = (overrides: Record<string, string>): Sources => ({
+    ...sources(),
+    file: (_tag, path) => {
+      const all = { ...files, ...overrides };
+      return path in all ? Promise.resolve(all[path]) : Promise.reject(new Error("missing"));
+    },
+  });
+  assertEquals(await gateSupportsEvidence(withFiles({}), "t"), true);
+  assertEquals(await gateSupportsEvidence(withFiles({ "scripts/ci/pr-test-scope.ts": "keri-app" }), "t"), false);
+  assertEquals(
+    await gateSupportsEvidence(withFiles({ ".github/workflows/pr-stage-gate.yml": "on: pull_request" }), "t"),
+    false,
+  );
+  const missing = withFiles({});
+  missing.file = () => Promise.reject(new Error("missing"));
+  assertEquals(await gateSupportsEvidence(missing, "t"), false);
 });

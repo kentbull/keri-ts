@@ -41,6 +41,14 @@ jobs:
         with:
           ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
 
+      # The release tooling runs from the workflow's own commit while the package under release is the
+      # tag's content in the workspace, so a tag older than the tooling can still be released.
+      - name: check out the release tooling at the workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .release-tooling
+
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: ${{ env.DENO_VERSION }}
@@ -50,7 +58,7 @@ jobs:
         env:
           PACKAGE: ${{ inputs.package }}
           GH_TOKEN: ${{ github.token }}
-        run: deno run --no-config --no-lock --allow-read --allow-write --allow-env --allow-net=api.github.com --allow-run=git scripts/ci/release-plan.ts
+        run: deno run --no-config --no-lock --allow-read --allow-write --allow-env --allow-net=api.github.com --allow-run=git .release-tooling/scripts/ci/release-plan.ts
 
   # Whole job skipped when the plan found a green run; one runner per unit shard otherwise.
   check:
@@ -74,6 +82,14 @@ jobs:
           do-fmt-check: "false"
           cache-key-extra: lmdb-v1
 
+      # The release tooling runs from the workflow's own commit while the package under release is the
+      # tag's content in the workspace, so a tag older than the tooling can still be released.
+      - name: check out the release tooling at the workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .release-tooling
+
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -87,8 +103,10 @@ jobs:
 
       - name: run this shard of the package-owned release check
         env:
+          PACKAGE: ${{ inputs.package }}
+          SHARD_NAME: ${{ matrix.shard.name }}
           UNIT_TARGETS: ${{ matrix.shard.targets }}
-        run: deno run -A scripts/ci/pr-test-scope.ts run-unit
+        run: deno run -A --no-config --no-lock .release-tooling/scripts/ci/release-plan.ts run-check
 
   artifact:
     needs: [plan, check]
@@ -179,6 +197,14 @@ jobs:
           package-json-path: ${{ steps.meta.outputs.path }}
           cache-key-extra: ${{ inputs.package }}
 
+      # The release tooling runs from the workflow's own commit while the package under release is the
+      # tag's content in the workspace, so a tag older than the tooling can still be released.
+      - name: check out the release tooling at the workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .release-tooling
+
       - name: require a release commit from master
         if: github.event_name == 'push' || inputs.tag != ''
         run: git merge-base --is-ancestor HEAD origin/master
@@ -187,7 +213,7 @@ jobs:
         if: inputs.wait_for != '[]'
         env:
           WAIT_FOR: ${{ inputs.wait_for }}
-        run: deno run --no-config --no-lock --allow-env --allow-net=registry.npmjs.org scripts/ci/release-train.ts visible
+        run: deno run --no-config --no-lock --allow-env --allow-net=registry.npmjs.org .release-tooling/scripts/ci/release-train.ts visible
 
       - name: rebuild LMDB-js for KERI compatibility
         if: inputs.package != 'cesr'
@@ -224,7 +250,7 @@ jobs:
 
       - name: verify the built dependencies match the planned graph
         if: inputs.package != 'multisync'
-        run: deno run --no-config --no-lock --allow-read scripts/ci/release-train.ts verify "${{ inputs.package }}"
+        run: deno run --no-config --no-lock --allow-read .release-tooling/scripts/ci/release-train.ts verify "${{ inputs.package }}"
 
       - name: verify Tufa's released dependencies
         if: inputs.package == 'tufa'

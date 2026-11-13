@@ -12,6 +12,7 @@
  * becomes the published package.json, and every release re-checks the built package against it (`verify`),
  * so the graph cannot drift from what is published. Evidence rules for `qualify` are release-plan.ts's.
  */
+import { unitShards } from "./pr-test-scope.ts";
 import { decide, githubApi, matchingRuns } from "./release-plan.ts";
 import type { Api } from "./release-plan.ts";
 
@@ -103,6 +104,24 @@ export interface Resolved {
   dependencies: Package[];
   /** `name@version` of each internal dependency at this tag, which must be visible before this release builds. */
   waitFor: string[];
+  /**
+   * Whether the stage gate at this tag can produce evidence the release check recognizes: it must be
+   * dispatchable and name the same unit shards as the current definitions. Otherwise running it would only
+   * produce a green run nobody can match, so each package's own check runs instead.
+   */
+  qualifiable: boolean;
+}
+
+/** Whether the stage gate defined at `tag` is dispatchable and uses the current unit shard names. */
+export async function gateSupportsEvidence(sources: Sources, tag: string): Promise<boolean> {
+  try {
+    const gate = await sources.file(tag, ".github/workflows/pr-stage-gate.yml");
+    const scope = await sources.file(tag, "scripts/ci/pr-test-scope.ts");
+    return gate.includes("workflow_dispatch") && gate.includes("unit_shards")
+      && Object.keys(unitShards).every((name) => scope.includes(name));
+  } catch {
+    return false;
+  }
 }
 
 /** The git and registry facts the plan reads; replaced in tests. */
@@ -159,7 +178,15 @@ export async function planTrain(
         `${packages[id]}@${version} is below npm latest ${published.latest}; refusing to move latest backwards.`,
       );
     }
-    candidates.push({ package: id, tag, commit, version, dependencies, waitFor });
+    candidates.push({
+      package: id,
+      tag,
+      commit,
+      version,
+      dependencies,
+      waitFor,
+      qualifiable: await gateSupportsEvidence(sources, tag),
+    });
   }
   const layered = stages(candidates.map((c) => c.package), graph);
   if (layered.length > maxStages) {
@@ -177,7 +204,7 @@ export async function commitsToQualify(
 ): Promise<{ commit: string; tag: string }[]> {
   const needs = new Map<string, string>();
   for (const item of plan.resolved) {
-    if (needs.has(item.commit)) continue;
+    if (needs.has(item.commit) || !item.qualifiable) continue;
     try {
       const tree = ((await api.get(`repos/${repo}/git/commits/${item.commit}`)) as { tree: { sha: string } }).tree.sha;
       const runs = await matchingRuns(api, repo, item.commit, tree);
@@ -245,6 +272,7 @@ async function runPlan(): Promise<void> {
   const repo = Deno.env.get("GITHUB_REPOSITORY");
   const token = Deno.env.get("GH_TOKEN");
   const qualify = repo && token ? await commitsToQualify(plan, githubApi(token), repo) : plan.resolved
+    .filter((item) => item.qualifiable)
     .map((item) => ({ commit: item.commit, tag: item.tag }))
     .filter((item, index, all) => all.findIndex((other) => other.commit === item.commit) === index);
   const lines: Record<string, string> = {

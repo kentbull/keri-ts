@@ -114,6 +114,23 @@ workflows, which are unchanged and still release one package when its tag is pus
   provenance, the publish environment and the artifact smoke tests are the same, and
   the GitHub release is created for the package tag also when the run is not a tag push.
 
+Old tags. The release tooling (`release-plan.ts`, `release-train.ts`, and the shard
+definitions in `pr-test-scope.ts`) runs from the workflow's own commit, which the
+shared workflow checks out into `.release-tooling` beside the tag; the package that
+is checked, built and published is always the tag's content. A tag older than the
+tooling therefore releases through the train or a package workflow like any other,
+with these rules:
+
+- Evidence is about the tag's tree only (the exact commit or an identical tree).
+  The train dispatches the stage gate at a tag only when that tag's own gate is
+  dispatchable and uses the current shard names, since only then can the run be
+  matched; otherwise it does not qualify that commit and each package's own release
+  check runs.
+- If the tag's tree lacks a suite, runner or deno task the current shards call, the
+  check runs that package's serial historical command list (the same tasks the
+  workflow ran before sharding) with what the tag has; if the tag lacks even those
+  tasks the plan fails. The check is never skipped without evidence.
+
 Use the train to release several packages at once or a whole version bump; use a
 single package workflow (push its tag) for one package. The train never creates or
 moves tags.
