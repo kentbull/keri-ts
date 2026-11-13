@@ -919,6 +919,7 @@ export {
   issuanceStatus,
   type IssuanceWaitOptions,
   type PendingGrant,
+  pendingGroupGrants,
   pendingIssuanceGrants,
   posterDelivery,
   prepareIssuanceGrant,

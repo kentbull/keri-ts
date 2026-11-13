@@ -25,7 +25,13 @@ import {
   waitForGroupIpex,
 } from "../../../../src/app/ipex/group-ipex.ts";
 import { approveGroupIssuanceExchange } from "../../../../src/app/ipex/group-issuance.ts";
-import { beginIssuance, issuanceStatus, posterDelivery, waitForIssuance } from "../../../../src/app/ipex/issuance.ts";
+import {
+  beginIssuance,
+  issuanceStatus,
+  pendingGroupGrants,
+  posterDelivery,
+  waitForIssuance,
+} from "../../../../src/app/ipex/issuance.ts";
 import { type PresentationDeps, proposeGroupPresentation } from "../../../../src/app/ipex/presenting.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
@@ -178,6 +184,12 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
     });
     for (const side of holders) {
       yield* until(() => !!side.runtime.exc.retainedInput(grant, { pending: true }), `${side.name} to hold the Grant`);
+      const waiting = pendingGroupGrants(side.runtime.operations!.issuance);
+      assertEquals(waiting.map((item) => [item.grant, item.holder, item.issuer]), [[
+        grant,
+        side.hab.pre,
+        issuer.hab.pre,
+      ]]);
       approveGroupIssuanceExchange(side.runtime.operations!.issuance, selection(side));
     }
     assertEquals((yield* waitForIssuance(issuance, grant, { timeoutMs: BUDGET_MS })).status.state, "done");
@@ -202,8 +214,8 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
     );
     const listed = groupIpexProposals(ops2, h2.hab);
     assertEquals(
-      listed.map((p) => [p.said, p.route, p.group, p.proposer, p.approved, p.complete]),
-      [[admit, "/ipex/admit", h2.hab.pre, h1.member.pre, false, false]],
+      listed.map((p) => [p.said, p.route, p.group, p.proposer, p.approved, p.complete, p.prior]),
+      [[admit, "/ipex/admit", h2.hab.pre, h1.member.pre, false, false, grant]],
     );
     assertEquals(groupIpexStatus(ops2, admit), { state: "active", phase: "awaitingConsent", needs: "approve" });
     assert(!h2.runtime.exc.complete(admit), "the Admit needs the second member's consent");

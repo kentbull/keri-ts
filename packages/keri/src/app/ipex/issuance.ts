@@ -910,6 +910,37 @@ export function pendingIssuanceGrants(ops: IssuanceOperations, { hab }: { hab?: 
   return found;
 }
 
+/**
+ * Pure read of the pending Grants addressed to a local group (to `group` when given) that its members have not
+ * consented to: authenticated pending v2 Grants whose issuance status reads `awaitingExchangeConsent`.
+ * {@link pendingIssuanceGrants} lists the individual identifiers' Grants and skips groups; this is its group form.
+ */
+export function pendingGroupGrants(ops: IssuanceOperations, { group }: { group?: Hab } = {}): PendingGrant[] {
+  const { deps } = ops, found: PendingGrant[] = [];
+  for (const [[grant]] of [...deps.hby.db.epse.getTopItemIter()]) {
+    const parties = grantParties(deps, grant), holder = parties?.holder;
+    if (!parties || !holder || !isLocalGroupHab(deps.hby, holder) || (group && holder.pre !== group.pre)) continue;
+    try {
+      const status = issuanceStatus(ops, grant);
+      if (status.state !== "active" || status.needs !== "exchange") continue;
+      const credential = deps.exc.retainedInput(grant, { pending: true })?.nests?.[0]?.body;
+      const deadline = deps.exc.exchangeDeadline(parties.serder);
+      if (!(credential instanceof SerderACDC) || !credential.regid || !deadline) continue;
+      found.push({
+        grant,
+        holder: holder.pre!,
+        issuer: parties.serder.pre!,
+        credential: credential.said!,
+        registry: credential.regid,
+        deadline,
+      });
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+    }
+  }
+  return found;
+}
+
 /** Whether `hab` holds a registry root for the credential registry this Grant discloses. */
 function heldRoot(deps: IssuanceDeps, hab: Hab, grant: string): boolean {
   const credential = deps.exc.retainedInput(grant)?.nests?.[0]?.body;

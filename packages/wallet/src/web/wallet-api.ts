@@ -66,43 +66,28 @@ import {
   waitForUnblinding,
   type WorkflowChange,
 } from "keri-ts/runtime";
+export { type AdmitDelivery, type TrackedIssuances, WALLET_TIMEOUTS, WalletStoppedError } from "./surface.ts";
 import { WalletAuthor } from "../authoring.ts";
 import { RegistryCustody } from "../custody.ts";
 import type { AdmittedCredential, IssuedCredential, WalletBaser } from "../storing.ts";
 import type { Wallet } from "../wallet.ts";
-
-/** Thrown by a call made on a wallet that was closed, or whose runtime stopped. */
-export class WalletStoppedError extends AppError {}
-
-/** Default wall-clock budgets, in milliseconds, of the calls that wait. */
-export const WALLET_TIMEOUTS = Object.freeze({
-  oobi: 30_000,
-  mailbox: 15_000,
-  delegation: 120_000,
-  registry: 60_000,
-  receive: 90_000,
-  issue: 120_000,
-  delivery: 30_000,
-  present: 30_000,
-  unblind: 60_000,
-});
-
-/** What the surface reads and drives; built by `openWebWallet`. */
-export interface WalletApiParts {
-  readonly hby: Habery;
-  readonly runtime: AgentRuntime;
-  readonly wallet: Wallet;
-  readonly inventory: WalletBaser;
-  /** The sink the runtime's owners publish to; the surface publishes event and OOBI changes to it too. */
-  readonly changes: ChangeSink;
-  /** Issuances this wallet will record when they finish, by Grant SAID; see {@link walletChangeSink}. */
-  readonly tracked: TrackedIssuances;
-  /** Throws {@link WalletStoppedError} unless the wallet is open and its runtime is running. */
-  assertRunning(): void;
-}
-
-/** Recorders of issuances in flight: a recorder returns true once the issuance is over and recorded. */
-export type TrackedIssuances = Map<string, () => boolean>;
+import {
+  GroupCredentials,
+  type GroupIssueOutcome,
+  type GroupPresentOutcome,
+  type GroupReceiveOutcome,
+  Groups,
+  Proposals,
+} from "./group-api.ts";
+import {
+  type AdmitDelivery,
+  delivered,
+  Surface,
+  type TrackedIssuances,
+  WALLET_TIMEOUTS,
+  type WalletApiParts,
+  within,
+} from "./surface.ts";
 
 /**
  * The sink the runtime's owners publish to. It forwards every change to `forward` (the host's sink, or the
@@ -123,62 +108,6 @@ export function walletChangeSink(tracked: TrackedIssuances, forward: () => Chang
       }
     },
   };
-}
-
-/** The result of racing `op` against `ms` on the host clock; the loser is cancelled. */
-function* within<T>(clock: RuntimeClock, ms: number, op: () => Operation<T>): Operation<
-  { done: true; value: T } | { done: false }
-> {
-  const timer = function*() {
-    yield* action<void>((resolve) => {
-      const handle = clock.setTimeout(resolve, ms);
-      return () => clock.clearTimeout(handle);
-    });
-    return { done: false as const };
-  };
-  const work = function*() {
-    return { done: true as const, value: yield* op() };
-  };
-  return yield* race([work(), timer()]);
-}
-
-/** Run a delivery within `ms`; a failure or an expired budget reads `undelivered` with its reason. */
-function* delivered(clock: RuntimeClock, ms: number, send: () => Operation<string[]>): Operation<AdmitDelivery> {
-  try {
-    const sent = yield* within(clock, ms, send);
-    return sent.done
-      ? { state: "delivered", to: sent.value }
-      : { state: "undelivered", reason: `Delivery did not finish within ${ms} ms.` };
-  } catch (error) {
-    if (!(error instanceof Error)) throw error;
-    return { state: "undelivered", reason: error.message };
-  }
-}
-
-/** Shared by the four namespaces: the parts, and the one place an app's promise meets the runtime's scope. */
-abstract class Surface {
-  constructor(protected readonly parts: WalletApiParts) {}
-
-  /** Run one workflow to its result in its own Effection root. */
-  protected go<T>(op: () => Operation<T>): Promise<T> {
-    this.parts.assertRunning();
-    return run(op);
-  }
-
-  /** The local single-signature identifier `pre`, or a caller-contract failure. */
-  protected hab(pre: string): Hab {
-    const hab = this.parts.hby.habs.get(pre);
-    if (!hab) throw new ValidationError(`${pre} is not a local identifier of this wallet.`);
-    return hab;
-  }
-
-  protected individual(pre: string): Hab {
-    const hab = this.hab(pre);
-    if (isLocalGroupHab(this.parts.hby, hab)) {
-      throw new ValidationError("Group identifiers are not covered by this call.");
-    }
-    return hab;
-  }
 }
 
 // --- identifiers -----------------------------------------------------------------------------------------
@@ -502,9 +431,6 @@ export class Mailboxes extends Surface {
 /** A terminal state of an issuance other than completion. */
 export type EndedStatus = Extract<IssuanceStatus, { state: IssuanceEndState }>;
 
-/** Whether the Admit reached the issuer. The Admit is accepted and recorded locally either way. */
-export type AdmitDelivery = { state: "delivered"; to: string[] } | { state: "undelivered"; reason: string };
-
 /** A terminal state of a presentation other than delivery. */
 export type EndedPresentation = Extract<PresentationStatus, { state: UnblindingEndState }>;
 
@@ -598,7 +524,11 @@ export class Credentials extends Surface {
   /** The Grants waiting for consent, newest state of the stores; a pure read. */
   pending(pre?: string): PendingGrant[] {
     const ops = this.owner();
-    return pendingIssuanceGrants(ops, pre ? { hab: this.hab(pre) } : {});
+    if (pre && isLocalGroupHab(this.parts.hby, this.hab(pre))) return new GroupCredentials(this.parts).pending(pre);
+    return [
+      ...pendingIssuanceGrants(ops, pre ? { hab: this.hab(pre) } : {}),
+      ...(pre ? [] : new GroupCredentials(this.parts).pending()),
+    ];
   }
 
   /** The credentials held and issued, as the inventory records them. */
@@ -620,10 +550,13 @@ export class Credentials extends Surface {
       message?: string;
       deliveryTimeoutMs?: number;
     } = {},
-  ): Promise<ReceiveOutcome> {
+  ): Promise<ReceiveOutcome | GroupReceiveOutcome> {
     const { hby, wallet, runtime } = this.parts;
     const ops = this.owner();
     const hab = this.holder(grant);
+    if (isLocalGroupHab(hby, hab)) {
+      return await new GroupCredentials(this.parts).receive(grant, hab, { timeoutMs, message });
+    }
     return await this.go(function*(): Operation<ReceiveOutcome> {
       let status = issuanceStatus(ops, grant);
       if (status.role === "issuer") throw new ValidationError("This Grant was issued by this wallet.");
@@ -669,9 +602,15 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError for an unknown or group identifier, or a credential the registry refuses.
    */
-  async issue(options: IssueOptions): Promise<IssueOutcome> {
+  async issue(options: IssueOptions): Promise<IssueOutcome | GroupIssueOutcome> {
     const { hby, runtime, wallet, inventory } = this.parts;
     const { pre, registry: name = `credential-${crypto.randomUUID()}`, timeoutMs = WALLET_TIMEOUTS.issue } = options;
+    if (isLocalGroupHab(hby, this.hab(pre))) {
+      if (!options.registry) {
+        throw new ValidationError("A group issues into a named registry; incept it with groups.inceptRegistry.");
+      }
+      return await new GroupCredentials(this.parts).issue(this.hab(pre), { ...options, registry: options.registry });
+    }
     const hab = this.individual(pre), ops = this.owner();
     const recipient = options.recipient ?? options.credential.issuee;
     if (!recipient) throw new ValidationError("A recipient or an issuee is required.");
@@ -766,8 +705,14 @@ export class Credentials extends Surface {
   async present(
     input: PresentInput,
     { timeoutMs = WALLET_TIMEOUTS.present, maxAttempts }: { timeoutMs?: number; maxAttempts?: number } = {},
-  ): Promise<PresentOutcome> {
+  ): Promise<PresentOutcome | GroupPresentOutcome> {
     const { pre, ...rest } = input;
+    if (isLocalGroupHab(this.parts.hby, this.hab(pre))) {
+      if (rest.verb !== "grant" && rest.verb !== "offer") {
+        throw new ValidationError("A group presents a Grant (verb \"grant\") through the group IPEX path.");
+      }
+      return await new GroupCredentials(this.parts).present(this.hab(pre), rest, { timeoutMs });
+    }
     const hab = this.individual(pre), ops = this.presenter();
     return await this.go(function*(): Operation<PresentOutcome> {
       const begun = yield* present(ops, { ...rest, hab } as PresentationInput, { maxAttempts });
@@ -789,7 +734,7 @@ export class Credentials extends Surface {
     options: Extract<PresentInput, { verb: "apply" }>["options"],
     wait?: { timeoutMs?: number; maxAttempts?: number },
   ): Promise<PresentOutcome> {
-    return this.present({ verb: "apply", pre, options }, wait);
+    return this.present({ verb: "apply", pre, options }, wait) as Promise<PresentOutcome>;
   }
 
   /** Pure read of a presentation this wallet sent. */
@@ -818,15 +763,23 @@ export class Credentials extends Surface {
    */
   async unblind(
     grant: string,
-    { states = DEFAULT_UNBLIND_STATES, timeoutMs = WALLET_TIMEOUTS.unblind }: {
+    { states = DEFAULT_UNBLIND_STATES, timeoutMs = WALLET_TIMEOUTS.unblind, proposer }: {
       states?: readonly string[];
       timeoutMs?: number;
+      /** Group parties only: the signing member that authors the query or reply; default is the elected one. */
+      proposer?: string;
     } = {},
   ): Promise<UnblindOutcome> {
     const { runtime } = this.parts;
     const ops = this.unblinder();
-    const holder = runtime.exc.retainedInput(grant)?.serder.sad?.ri;
+    const serder = runtime.exc.retainedInput(grant)?.serder;
+    const holder = serder?.sad?.ri;
     const hab = typeof holder === "string" ? this.parts.hby.habs.get(holder) : undefined;
+    const sender = typeof serder?.pre === "string" ? this.parts.hby.habs.get(serder.pre) : undefined;
+    const groupHab = [hab, sender].find((candidate) => candidate && isLocalGroupHab(this.parts.hby, candidate));
+    if (groupHab) {
+      return await new GroupCredentials(this.parts).unblind(grant, groupHab, { states, timeoutMs, proposer });
+    }
     if (!hab) throw new ValidationError("The Grant is not addressed to a local identifier of this wallet.");
     return await this.go(function*(): Operation<UnblindOutcome> {
       const before = unblindingStatus(ops, grant);
@@ -877,6 +830,8 @@ export interface WalletApi {
   readonly oobis: Oobis;
   readonly mailboxes: Mailboxes;
   readonly credentials: Credentials;
+  readonly groups: Groups;
+  readonly proposals: Proposals;
 }
 
 /** Build the four namespaces over one wallet's parts. */
@@ -886,5 +841,7 @@ export function createWalletApi(parts: WalletApiParts): WalletApi {
     oobis: new Oobis(parts),
     mailboxes: new Mailboxes(parts),
     credentials: new Credentials(parts),
+    groups: new Groups(parts),
+    proposals: new Proposals(parts),
   };
 }
