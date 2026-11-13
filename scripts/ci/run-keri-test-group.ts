@@ -212,6 +212,29 @@ async function compileTufa(selected: readonly string[]): Promise<string | null> 
   return directory;
 }
 
+/**
+ * Provision the shared KERIpy caches once, ahead of concurrent test files.
+ *
+ * Owners given an explicit KERIPY_INTEROP_ROOT (CI peers, profile rows) bring their own venv and
+ * need nothing; the rest use the pinned venv under ~/.cache/tufa-interop, built here.
+ */
+async function provisionKeripy(selected: readonly string[]): Promise<void> {
+  const targets: string[] = [];
+  if (selected.some((name) => name.startsWith("interop-")) && !Deno.env.get("KERIPY_INTEROP_ROOT")) {
+    targets.push("keripy");
+  }
+  if (selected.includes("interop-did-webs")) targets.push("did-webs");
+  if (targets.length === 0) return;
+  const result = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", "--unstable-ffi", fromFileUrl(new URL("./provision-keripy.ts", import.meta.url)), ...targets],
+    cwd: repoDir,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  }).output();
+  if (!result.success) throw new Error(`KERIpy provisioning failed (${targets.join(", ")}).`);
+}
+
 /** Resolve the artifact path for local and hosted runs, on success as well as failure. */
 function timingPath(target: string): string {
   const explicit = Deno.env.get("KERI_TEST_TIMINGS_JSON");
@@ -279,6 +302,7 @@ async function main(): Promise<void> {
   const lmdb = await lmdbRuntime();
   const timings: CommandTiming[] = [];
   const started = performance.now();
+  await provisionKeripy(selected);
   const tufaBinary = await compileTufa(selected);
   try {
     for (const name of selected) await runSuite(name, timings);

@@ -29,6 +29,7 @@ import {
   admitAndDeliver,
   type AgentRuntime,
   type GroupIpexBegun,
+  groupIpexMessages,
   type GroupIpexOperations,
   type Hab,
   isLocalGroupHab,
@@ -52,6 +53,9 @@ import { withAgentRuntime, withHabAndAgentRuntime } from "../support/context.ts"
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
 import { authoringWitnessAuths } from "../support/witness-auth.ts";
+
+/** Milliseconds a group proposal command waits for its own wrappers to be published, before the approval wait. */
+const PROPOSAL_PUBLISH_BUDGET_MS = 30_000;
 
 /** Completed transport destinations do not establish peer protocol acceptance. */
 function printSend({ exn, deliveries, group }: IpexSendResult): void {
@@ -82,14 +86,24 @@ function* acdcV2GroupDisclosure(
   if (!ops) throw new ValidationError("ACDC v2 group IPEX requires the runtime's operation owners.");
   const out = parseStringOption(args.out, "out");
   const { said } = yield* begin(ops, !out);
-  yield* withRuntimeWorkers(
-    runtime,
-    { hab, pollMailbox: true },
-    () => waitForGroupIpex(ops, said, { timeoutMs: timeout * 1000 }),
-  );
+  yield* withRuntimeWorkers(runtime, { hab, pollMailbox: true }, function*() {
+    // The proposal is published whatever the approval wait: a command that exits with nothing sent has proposed nothing.
+    yield* waitForGroupIpex(ops, said, {
+      timeoutMs: PROPOSAL_PUBLISH_BUDGET_MS,
+      until: (status) =>
+        status.state !== "active" || (status.phase !== "publishing" && status.phase !== "awaitingRegistryUpdate"),
+    });
+    return yield* waitForGroupIpex(ops, said, { timeoutMs: timeout * 1000 });
+  });
   const outcome = ops.outcomes.get(said);
   if (!runtime.exc.complete(said)) {
-    return { said, accepted: false, status: "multisig-pending", ...(outcome ?? { messages: [], deliveries: [] }) };
+    return {
+      said,
+      accepted: false,
+      status: "multisig-pending",
+      messages: groupIpexMessages(ops, said),
+      deliveries: outcome?.deliveries ?? [],
+    };
   }
   if (out) {
     const chunks: Uint8Array[] = [];

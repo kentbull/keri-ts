@@ -549,6 +549,11 @@ export class IssuanceOperations {
     return { grant: group.said, xid };
   }
 
+  /** Whether the live operation for `grant` still holds a message the transport has not taken. */
+  owes(grant: string): boolean {
+    return (this.live.get(grant)?.outbox.length ?? 0) > 0;
+  }
+
   /** One pass of the issuer loop, in the order of the CLI loop it replaces. */
   private *step(op: LiveIssuance): Operation<"stepped"> {
     if (op.group) {
@@ -965,7 +970,11 @@ export function* waitForIssuance(
   grant: string,
   { timeoutMs, clock = ops.deps.clock, until = (status) => status.state !== "active" }: IssuanceWaitOptions,
 ): Operation<WaitResult<IssuanceStatus>> {
-  const settled = yield* observeUntil(() => until(issuanceStatus(ops, grant)), { timeoutMs, clock });
+  // A phase is not reached while the step that produced it still owes a delivery: the host would stop its workers first.
+  const settled = yield* observeUntil(() => until(issuanceStatus(ops, grant)) && !ops.owes(grant), {
+    timeoutMs,
+    clock,
+  });
   const status = issuanceStatus(ops, grant);
   return settled ? { outcome: "settled", status } : { outcome: "timed-out", status, timeoutMs };
 }

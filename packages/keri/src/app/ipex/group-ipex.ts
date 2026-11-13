@@ -487,6 +487,14 @@ export function groupIpexStatus(
   return { state: "active", phase: "awaitingConsent", needs: "approve" };
 }
 
+/**
+ * The member wrappers this process has published for one message: from the live operation once it published, from
+ * the outcome after it ended. Empty before publication. A pure read.
+ */
+export function groupIpexMessages(ops: GroupIpexOperations, said: string): GroupSendResult["messages"] {
+  return ops.live.get(said)?.publication?.messages ?? ops.outcomes.get(said)?.messages ?? [];
+}
+
 /** Options for {@link waitForGroupIpex}. */
 export interface GroupIpexWaitOptions {
   /** Wall-clock budget. */

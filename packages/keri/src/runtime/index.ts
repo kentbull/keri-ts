@@ -874,6 +874,7 @@ export {
   type GroupIpexBegun,
   type GroupIpexDeps,
   type GroupIpexEndState,
+  groupIpexMessages,
   GroupIpexOperations,
   type GroupIpexOutcome,
   type GroupIpexPhase,

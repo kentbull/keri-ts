@@ -166,6 +166,7 @@ interface MultisigRpyArgs extends MultisigBaseArgs {
 interface MultisigJoinArgs extends MultisigBaseArgs {
   auto?: boolean;
   said?: string;
+  kind?: string;
   registryName?: string;
   approvalTimeoutSeconds: number;
   proxy?: string;
@@ -283,6 +284,7 @@ export function* multisigJoinCommand(
     auto: parseBooleanOption(args.auto, "auto"),
     registryName: parseStringOption(args.registryName, "registryName"),
     said: parseStringOption(args.said, "said"),
+    kind: parseStringOption(args.kind, "kind"),
     approvalTimeoutSeconds: nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds"),
     proxy: parseStringOption(args.proxy, "proxy"),
   };
@@ -293,6 +295,7 @@ export function* multisigJoinCommand(
     const joined = yield* joinProposal(approvalDeps(hby, runtime), {
       group: commandArgs.group,
       said: commandArgs.said,
+      kind: commandArgs.kind,
       deadline,
       confirm: proposal => approvePrompt(commandArgs, proposal),
       groupAlias: proposal => chooseGroupAlias(hby, commandArgs, proposal.group),
