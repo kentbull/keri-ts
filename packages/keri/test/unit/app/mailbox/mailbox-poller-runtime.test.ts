@@ -387,10 +387,10 @@ Deno.test("a mailbox that refuses the query is retried on a doubling backoff, an
     const hab = makeTransferableHab(hby, "recipient"), endpoint = seedMailboxEndpoint(hby, hab.pre, "refusing");
     const http = new FakeRuntimeHttpClient();
     const clock = new ManualRuntimeClock();
-    let status = 403;
+    let status = 500;
     http.registerOrigin(endpoint.url, () =>
-      status === 403
-        ? new Response("Query requester is not authorized", { status })
+      status === 500
+        ? new Response("Mailbox unavailable", { status })
         : mailboxResponse(new TextEncoder().encode("late reply"), "/reply"));
     const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
     poller.registerTopic("/reply");
@@ -421,7 +421,7 @@ Deno.test("a mailbox that refuses the query is retried on a doubling backoff, an
       clock.advance(4 * initialMs);
       yield* waitForCondition(() => batches.length === 1, "Expected the accepted poll to deliver its event.");
       assertEquals(hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"], 0);
-      status = 403;
+      status = 500;
       yield* settle();
       const refused = http.requests.length;
       clock.advance(initialMs - 1);
@@ -437,55 +437,37 @@ Deno.test("a mailbox that refuses the query is retried on a doubling backoff, an
   });
 });
 
-Deno.test("a mailbox that refuses the query is retried on a doubling backoff, and success resets it", async () => {
+Deno.test("a 403 posts the KEL once and polls again at once; a second refusal waits out the backoff", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const hab = makeTransferableHab(hby, "recipient"), endpoint = seedMailboxEndpoint(hby, hab.pre, "refusing");
+    const hab = makeTransferableHab(hby, "recipient"), endpoint = seedMailboxEndpoint(hby, hab.pre, "stale");
     const http = new FakeRuntimeHttpClient();
     const clock = new ManualRuntimeClock();
-    let status = 403;
-    http.registerOrigin(endpoint.url, () =>
-      status === 403
-        ? new Response("Query requester is not authorized", { status })
-        : mailboxResponse(new TextEncoder().encode("late reply"), "/reply"));
+    const bodies: string[] = [];
+    http.registerOrigin(endpoint.url, async (request) => {
+      bodies.push(new TextDecoder().decode(await request.arrayBuffer()));
+      return request.headers.get("CESR-DESTINATION") === endpoint.eid && bodies.at(-1)!.includes("\"qry\"")
+        ? new Response("Query requester is not authorized", { status: 403 })
+        : new Response(null, { status: 204 });
+    });
     const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
     poller.registerTopic("/reply");
-    const batches: MailboxPollBatch[] = [];
-    const worker = yield* spawn(() => poller.pollDo((batch) => void batches.push(batch)));
-    /** Let every runnable turn finish, so a polling loop that is not waiting on the clock shows itself. */
+    const worker = yield* spawn(() => poller.pollDo(() => {}));
+    const kinds = () => bodies.map((body) => body.includes("\"qry\"") ? "poll" : "kel");
     function* settle(): Operation<void> {
       for (let turn = 0; turn < 50; turn++) yield* runtimeTurn();
     }
     try {
       yield* settle();
-      assertEquals(http.requests.length, 1, "the refusal must put the worker to sleep on the clock");
+      assertEquals(kinds(), ["poll", "kel", "poll"], "one KEL post, then the next poll with no clock wait");
+      assert(bodies[1].includes(hab.pre) && bodies[1].includes("\"icp\""), "the post carries the KEL");
       const { initialMs } = MailboxPoller.RefusalBackoff;
       clock.advance(initialMs - 1);
       yield* settle();
-      assertEquals(http.requests.length, 1);
+      assertEquals(kinds().length, 3, "the second refusal waits");
       clock.advance(1);
       yield* settle();
-      assertEquals(http.requests.length, 2);
-      clock.advance(2 * initialMs - 1);
-      yield* settle();
-      assertEquals(http.requests.length, 2, "each consecutive refusal doubles the wait");
-      clock.advance(1);
-      yield* settle();
-      assertEquals(http.requests.length, 3);
-      // The mailbox accepts the requester: the next attempt delivers, and the following refusal starts over.
-      status = 200;
-      clock.advance(4 * initialMs);
-      yield* waitForCondition(() => batches.length === 1, "Expected the accepted poll to deliver its event.");
-      assertEquals(hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"], 0);
-      status = 403;
-      yield* settle();
-      const refused = http.requests.length;
-      clock.advance(initialMs - 1);
-      yield* settle();
-      assertEquals(http.requests.length, refused, "the backoff starts over after an accepted poll");
-      clock.advance(1);
-      yield* settle();
-      assertEquals(http.requests.length, refused + 1);
+      assertEquals(kinds(), ["poll", "kel", "poll", "poll"], "the KEL state was posted already");
     } finally {
       yield* waitForTaskHalt(worker);
       yield* hby.close(true);
