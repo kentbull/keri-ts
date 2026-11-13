@@ -3076,17 +3076,43 @@ function authenticatesMailboxQuery(envelope: QueryEnvelope, recipient: Kever, db
   if (!requester) return false;
   if (requester === recipient.pre) return satisfiesThreshold(envelope, recipient);
   // A group's poll is signed by one of its local members (the poller cannot sign for the group alone). Accept a
-  // member whose own key state this host holds when its signatures meet its own current threshold and at least
-  // one of them proves possession of a group key: it verifies against a key that sits at that index in the
-  // member's current key list and is also in the group's current key list. Listing a group key in a KEL proves
-  // nothing; only a signature by that key does.
+  // member whose own key state this host holds when its signatures meet its own current threshold and it provably
+  // controlled one of the group's current keys.
   const member = db.getKever(requester, { refresh: true });
   if (!member?.transferable || !satisfiesThreshold(envelope, member)) return false;
-  const groupKeys = new Set(recipient.verfers.map((verfer) => verfer.qb64));
-  return (envelope.sigers ?? []).some((siger) => {
+  return provesGroupKeyControl(envelope, member, recipient, db);
+}
+
+/**
+ * Whether `member` provably controlled a key in `group`'s current key list, by either of two proofs.
+ *
+ * Listing a group key is not control of it: anyone can incept an identifier whose key list names a victim's
+ * public key beside their own, so a key list or an event's `k` field proves nothing. Only a signature by that
+ * key does. The proofs are:
+ * - the poll itself carries a signature that verifies against a key at that index in `member`'s current key list
+ *   that is also in the group's current key list; or
+ * - some establishment event in `member`'s KEL, as this host holds it, lists a group-current key at index i and
+ *   the host holds a signature by that index-i key on that same event that verifies. That is proof of possession
+ *   at the time the member used the key, and the KEL chain ties that event to the member's current keys, so a
+ *   member that rotated its own identifier ahead of the group is still recognised.
+ */
+function provesGroupKeyControl(envelope: QueryEnvelope, member: Kever, group: Kever, db: Baser): boolean {
+  const groupKeys = new Set(group.verfers.map((verfer) => verfer.qb64));
+  const signedPoll = (envelope.sigers ?? []).some((siger) => {
     const verfer = member.verfers[siger.index];
     return !!verfer && groupKeys.has(verfer.qb64) && verfer.verify(siger.raw, envelope.serder.raw);
   });
+  if (signedPoll) return true;
+  for (const [, said] of db.getKelItemIter(member.pre)) {
+    const event = db.getEvtSerder(member.pre, said);
+    if (!event?.estive) continue;
+    const verfers = event.verfers;
+    for (const siger of db.sigs.get(dgKey(member.pre, said))) {
+      const verfer = verfers[siger.index];
+      if (verfer && groupKeys.has(verfer.qb64) && verfer.verify(siger.raw, event.raw)) return true;
+    }
+  }
+  return false;
 }
 
 /** The indexed signatures on `envelope` that verify against `kever`'s current keys meet its signing threshold. */
