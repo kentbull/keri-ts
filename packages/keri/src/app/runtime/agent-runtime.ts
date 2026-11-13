@@ -532,6 +532,8 @@ export function* createAgentRuntime(
     },
     options.counselorReceiptRetry,
     groupEventForwarding(hby, postman),
+    // New members are owed the group's registry root copies on the replicator's next tock.
+    { membersAligned: (group) => owned?.rootReplicator?.prompt(group) },
   );
   const owned = acdc && ipex
     ? composeOwners({

@@ -37,7 +37,6 @@ import {
   proposeGroupInception,
   proposeGroupInteraction,
   proposeGroupRotation,
-  settleProposedRotation,
 } from "../../app/multisig/proposing.ts";
 import { type AgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { observeUntil } from "../../app/runtime/workflow-contract.ts";
@@ -460,8 +459,9 @@ export function* multisigRotateCommand(
     let delegationPhase: string | null = null;
     let rootCopies: RootCopyOutcome[] = [];
     if (accepted) {
-      // The proposer's own acceptance must commit the rotated membership as a joiner's does.
-      settleProposedRotation({ hby }, sent);
+      // Acceptance was read straight from the KEL, possibly before the Counselor's pass: follow it now, since the
+      // root copies below go to the rotated members.
+      hby.alignGroupMembers(sent.group);
       delegationPhase = yield* finishAcceptedEvent(hby, runtime, sent.event, commandArgs);
       rootCopies = yield* resealAfterRotation(hby, runtime, sent.group, sent.event.said, since);
     }

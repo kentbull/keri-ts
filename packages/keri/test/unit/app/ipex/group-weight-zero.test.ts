@@ -42,7 +42,7 @@ import {
 import { approveGroupIssuanceExchange, followGroupIssuanceProof } from "../../../../src/app/ipex/group-issuance.ts";
 import { proposeIssuance, waitForIssuance } from "../../../../src/app/ipex/issuance.ts";
 import { groupSigningMembers } from "../../../../src/app/multisig/group-members.ts";
-import { proposeGroupRotation, settleProposedRotation } from "../../../../src/app/multisig/proposing.ts";
+import { proposeGroupRotation } from "../../../../src/app/multisig/proposing.ts";
 import { replaceGroupMember } from "../../../../src/app/multisig/replace-member.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
@@ -466,12 +466,18 @@ Deno.test("a weight-0 custodian holds the group's credential when the edge membe
       yield* dispatchEnvelope(envelopeFromFrame(rot, true), side.hby.rvy, side.hby.kevery);
       assertEquals(side.hby.db.getKever(group)?.said, proposed.event.said, `${side.name} accepts the rotation`);
     }
-    // The proposer commits the members its proposal named once the rotation is accepted.
-    assert(settleProposedRotation(custodian.runtime, proposed));
     assertEquals(
       custodian.hby.db.getKever(group)!.verfers.map((verfer) => verfer.qb64),
       [next.signer.verfer.qb64, custodian.member.kever!.verfers[0].qb64],
     );
+    // Accepted from the network, with nothing settled: each runtime's stored members follow accepted state, so the
+    // custodian's group messages now go to the new edge member, not the old one. Weight plays no part.
+    const follows = (side: Side) => groupSigningMembers(side.hby, group).join() === smids.join();
+    yield* until(() => follows(custodian), "the custodian's stored members to name the new edge member");
+    assertEquals(custodian.hby.db.getHab(group)?.rmids, rmids);
+    // The edge device's lists follow too, while its recorded local member stays the old edge member until replaced.
+    yield* until(() => follows(edge), "the edge device's stored members to follow the rotation");
+    assertEquals(edge.hby.db.getHab(group)?.mid, edge.member.pre);
 
     // The edge device's store records the new edge member as the group's local member; it signs as the group.
     const replaced = replaceGroupMember(edge.runtime, { group, member: nextEdge, smids, rmids });

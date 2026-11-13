@@ -23,10 +23,17 @@ import {
   DEFAULT_FALLBACK_AFTER_MS,
   type GroupEventRef,
   type GroupForwarding,
+  type GroupMemberDependents,
   type GroupReceipting,
   waitForGroupEvent,
 } from "../../../../src/app/multisig/counseling.ts";
-import { groupElectedMember, groupWitnesser } from "../../../../src/app/multisig/group-members.ts";
+import {
+  groupElectedMember,
+  groupSigningMembers,
+  groupWitnesser,
+  localGroupMember,
+} from "../../../../src/app/multisig/group-members.ts";
+import { remoteGroupMembers } from "../../../../src/app/multisig/multisig-messaging.ts";
 import { replaceGroupMember } from "../../../../src/app/multisig/replace-member.ts";
 import type { AgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
@@ -178,6 +185,7 @@ function counselor(
   delegated = false,
   mailboxes?: ConstructorParameters<typeof Counselor>[5],
   forwarding?: GroupForwarding,
+  dependents?: GroupMemberDependents,
 ) {
   const receipting = new FakeReceipting(side.hby, wits);
   const changes = new MemoryChangeSink();
@@ -193,6 +201,7 @@ function counselor(
     mailboxes,
     undefined,
     forwarding,
+    dependents,
   );
   return { clock, receipting, changes, anchorer, queries, c };
 }
@@ -913,7 +922,7 @@ Deno.test("joinGroupHab replaces a local member that left the accepted key state
     assertEquals(contributed.sigers.map(sig => sig.index), [2]);
 
     // A reopen's member-list repair keeps the replacement.
-    assertEquals(a.hby.recoverAcceptedGroupMembers(gid), false);
+    assertEquals(a.hby.alignGroupMembers(gid), "unchanged");
     (a.hby as unknown as { loadHabs(): void }).loadHabs();
     assertEquals(a.hby.db.getHab(gid)!.mid, fresh.pre);
     assertEquals(a.hby.habs.get(gid)!.sign(body, true).map(sig => sig.index), [2]);
@@ -1252,6 +1261,122 @@ Deno.test("the elected member forwards a completed event to the other members, r
     elected.clock.t = 60_000;
     yield* elected.c.processOnce();
     assertEquals(sent.length, 2);
+  });
+});
+
+/**
+ * A group `[p, e]` whose member `p` has signing weight 0 (threshold `["0", "1"]`) and commits, with `n`, the group's
+ * next keys. `p` proposes the rotation to `[p, n]`; its own signature cannot complete it, `n`'s (`late`) can. `n`
+ * completes it at its own Habery at once; nobody else has it accepted yet. `e` learned `p`'s rotation but not `n`'s.
+ */
+function* lateRotation() {
+  const sides = yield* members(3);
+  const [p, e, n] = sides;
+  const before = pres([p, e]), rmids = pres([p, n]), next = pres([p, n]);
+  const args = { isith: ["0", "1"], nsith: "1", toad: 0 };
+  const created = [p, e].map(s => s.hby.makeGroupHab("g", s.hab, before, rmids, undefined, args));
+  const gid = created[0].serder.pre!;
+  deliver(p.hby, created[1]); // e's signature alone incepts the group
+  n.hby.joinGroupHab(gid, "g", n.hab, before, rmids);
+  share(p.hby, gid, [n.hby], true);
+  p.hab.rotate();
+  share(p.hby, p.hab.pre!, [e.hby, n.hby]);
+  n.hab.rotate();
+  share(n.hby, n.hab.pre!, [p.hby]);
+  const own = rotate(p, next, next, args);
+  assertEquals(p.hby.db.getKever(gid)!.sn, 0, "the weight-0 proposer's signature does not rotate the group");
+  const late = rotate(n, next, next, args);
+  assertEquals(late.serder.said, own.serder.said);
+  assertEquals(n.hby.db.getKever(gid)!.said, own.serder.said);
+  return { p, e, n, gid, own, late, before, next };
+}
+
+Deno.test("a group's stored members follow a rotation accepted after the proposer's wait ended", async () => {
+  await run(function*() {
+    const { p, gid, own, late, before, next } = yield* lateRotation();
+    const { c, clock } = counselor(p);
+    const event = ref(own.serder);
+    c.start(event);
+    const waited = yield* waitForGroupEvent(c, event, { timeoutMs: 0, clock: { now: () => clock.t } });
+    assertEquals(waited.outcome, "timed-out", "the proposer stops waiting");
+    yield* c.processOnce();
+    assertEquals(groupSigningMembers(p.hby, gid), before, "a rotation not yet accepted changes no member");
+
+    // The co-member signs later; with no settle call and no reopen, the next pass follows the accepted rotation.
+    deliver(p.hby, late);
+    assertEquals(p.hby.db.getKever(gid)!.said, event.said);
+    yield* c.processOnce();
+    assertEquals(groupSigningMembers(p.hby, gid), next);
+    assertEquals(p.hby.db.getHab(gid)!.rmids, next);
+    assertEquals(p.hby.ks.getRmids(gid).map(tuple => tuple[0].qb64), next);
+    assertEquals(p.hby.alignGroupMembers(gid), "unchanged");
+  });
+});
+
+Deno.test("group messages go to the new member after a late-completing rotation", async () => {
+  await run(function*() {
+    const { p, e, n, gid, own, late } = yield* lateRotation();
+    const sent: string[][] = [], aligned: string[] = [];
+    const forwarding: GroupForwarding = {
+      *forward(forwarded, to) {
+        sent.push([...to]);
+        return to.map(recipient => ({
+          recipient,
+          exnSaid: forwarded.said,
+          payloadSaid: forwarded.said,
+          outcome: "delivered" as const,
+          deliveries: [],
+        }));
+      },
+    };
+    const { c } = counselor(p, [], { t: 0 }, false, undefined, forwarding, {
+      membersAligned: group => void aligned.push(group),
+    });
+    c.start(ref(own.serder));
+    yield* c.processOnce();
+    deliver(p.hby, late);
+    yield* c.processOnce();
+    // The weight-0 proposer holds signing index 0, so it is the rotation's witnesser and forwards it.
+    assertEquals(sent, [[n.hab.pre!]], "the completed rotation goes to the new member and not to the old one");
+    assertEquals(
+      remoteGroupMembers(p.hby, p.hab, groupSigningMembers(p.hby, gid)),
+      [n.hab.pre!],
+      "every group recipient list is built from the stored members, which now name the new member",
+    );
+    assert(!groupSigningMembers(p.hby, gid).includes(e.hab.pre!));
+    assertEquals(aligned, [gid], "what derives work from the member list is prompted once");
+  });
+});
+
+Deno.test("stored members are not rewritten while a member's KEL is missing, and align once it arrives", async () => {
+  await run(function*() {
+    const { e, n, gid, own, late, before, next } = yield* lateRotation();
+    const { c } = counselor(e);
+    deliver(e.hby, { serder: own.serder, sigers: [...own.sigers, ...late.sigers] });
+    assertEquals(e.hby.db.getKever(gid)!.said, own.serder.said, "the rotation is accepted without n's KEL");
+    yield* c.processOnce();
+    assertEquals(e.hby.db.getHab(gid)!.smids, before, "no partial list is written");
+    assertEquals(e.hby.alignGroupMembers(gid), "unattributed");
+    // n's rotation arrives; the next pass attributes every key and aligns.
+    share(n.hby, n.hab.pre!, [e.hby]);
+    yield* c.processOnce();
+    assertEquals(groupSigningMembers(e.hby, gid), next);
+    assertEquals(e.hby.db.getHab(gid)!.rmids, next);
+  });
+});
+
+Deno.test("the recorded local member is unchanged when accepted state drops it", async () => {
+  await run(function*() {
+    const { e, n, gid, own, late, next } = yield* lateRotation();
+    share(n.hby, n.hab.pre!, [e.hby]);
+    const { c } = counselor(e);
+    deliver(e.hby, { serder: own.serder, sigers: [...own.sigers, ...late.sigers] });
+    yield* c.processOnce();
+    const record = e.hby.db.getHab(gid)!;
+    assertEquals([record.smids, record.rmids], [next, next], "the member lists follow accepted state");
+    assertEquals(record.mid, e.hab.pre, "the recorded local member stays until replaceGroupMember changes it");
+    assertEquals(localGroupMember(e.hby, gid).pre, e.hab.pre);
+    assertEquals(e.hby.alignGroupMembers(gid), "unchanged");
   });
 });
 

@@ -134,6 +134,14 @@ export interface GroupForwarding {
   forward(event: GroupEventRef, members: readonly string[]): Operation<GroupDelivery[]>;
 }
 
+/**
+ * Told when a local group's stored members changed to follow accepted state, so what derives work from the member
+ * list re-derives on its next tock; the runtime prompts its root replicator.
+ */
+export interface GroupMemberDependents {
+  membersAligned(group: string): void;
+}
+
 /** Forwarding attempts of one completed event before the Counselor stops retrying its failed members. */
 export const FORWARD_ATTEMPTS = 8;
 
@@ -197,6 +205,8 @@ export class Counselor {
   /** Completed events this member, as the elected one, still owes to other members; memory only. */
   private readonly forwards = new Map<string, Forward>();
   private readonly forwarded = new Map<string, GroupDelivery[]>();
+  /** Per local group, the latest establishment SAID its stored members were found to follow; memory only. */
+  private readonly aligned = new Map<string, string>();
 
   /**
    * @param hby Borrowed identities and stores; the Counselor opens nothing.
@@ -206,6 +216,7 @@ export class Counselor {
    * @param delegation Anchorer and query port for delegated events; omit for non-delegated hosts.
    * @param mailboxes Told when one of the group's rotations completes; the member runtime's publisher then tells
    *   the group's mailboxes the new key state, and several members doing so is harmless.
+   * @param members Told when a group's stored members changed to follow an accepted establishment event.
    */
   constructor(
     private readonly hby: Habery,
@@ -216,6 +227,7 @@ export class Counselor {
     private readonly mailboxes?: GroupMailboxes,
     private readonly receiptRetry: Readonly<RetryPolicy> = DEFAULT_RECEIPT_RETRY,
     private readonly forwarding?: GroupForwarding,
+    private readonly members?: GroupMemberDependents,
   ) {
     this.anchorQuery = delegation && { hby, querying: delegation.querying, retryPasses: new Map() };
   }
@@ -340,8 +352,12 @@ export class Counselor {
     return this.forwards.size > 0;
   }
 
-  /** One pass over all stages, as KERIpy `processEscrows`. */
+  /**
+   * One pass over all stages, as KERIpy `processEscrows`, after aligning stored group members with accepted state
+   * so that a completion in this pass forwards to the members of the event that completed.
+   */
   *processOnce(): Operation<void> {
+    this.alignMembers();
     // A runtime calls this every turn; with nothing counseled, three row counts are the whole cost.
     const db = this.hby.db;
     if (db.gpse.cnt() === 0 && db.gdee.cnt() === 0 && db.gpwe.cnt() === 0 && this.forwards.size === 0) return;
@@ -471,6 +487,31 @@ export class Counselor {
       db.gpwe.add([event.pre], row);
     });
     this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
+  }
+
+  /**
+   * Bring each local group's stored members in line with its latest accepted establishment event, whoever proposed
+   * it and however late its last signature arrived (`Habery.alignGroupMembers`). A group is re-read only when that
+   * event differs from the one its members were last found to follow; one that cannot be attributed yet (a member's
+   * KEL is missing) is left as it is and read again on a later pass, which the arriving KEL's write brings about.
+   *
+   * After a change, what derives work from the member list is prompted, and an elected member whose latest
+   * establishment event already completed owes it again to the members it now has.
+   */
+  private alignMembers(): void {
+    const db = this.hby.db;
+    for (const pre of [...db.groups]) {
+      const est = db.getKever(pre)?.lastEst;
+      if (!est || this.aligned.get(pre) === est.d) continue;
+      const alignment = this.hby.alignGroupMembers(pre);
+      if (alignment === "unattributed") continue;
+      this.aligned.set(pre, est.d);
+      if (alignment === "unchanged") continue;
+      this.changes?.push({ kind: "group", id: `${pre}:${est.s}` });
+      this.members?.membersAligned(pre);
+      const event = { pre, sn: est.s, said: est.d };
+      if (this.completed(pre, est.s) === est.d) this.owe(event);
+    }
   }
 
   /** The elected member owes the completed event to the members that did not sign it into existence. */

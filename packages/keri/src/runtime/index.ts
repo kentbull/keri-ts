@@ -223,6 +223,7 @@ export {
   type GroupHabCreation,
   type GroupHabInteraction,
   type GroupHabRotation,
+  type GroupMemberAlignment,
   Hab,
   Habery,
   type HaberyArgs,
@@ -439,14 +440,12 @@ export {
   proposeCredentialIssue,
   proposeCredentialRegistry,
   proposeCredentialRevocation,
-  type ProposedRotation,
   proposeGroupInception,
   proposeGroupInteraction,
   proposeGroupRotation,
   proposeRegistryEvent,
   type RegistryEventResult,
   type RegistryProposeDeps,
-  settleProposedRotation,
 } from "../app/multisig/proposing.ts";
 export {
   type RejoinDeps,

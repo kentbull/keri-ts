@@ -4,10 +4,10 @@
  * Counselor, publishes the proposal to the other members and returns without
  * waiting for them; observe progress with `counselor.status(result.event)`.
  *
- * Member add or remove is a rotation with new `smids` / `rmids`. A rotation that
- * changes members commits them only once the rotation is accepted: call
- * {@link settleProposedRotation} when the event reads `complete`; it is
- * idempotent. Joiners commit at approval time (`approveGroupProposal`).
+ * Member add or remove is a rotation with new `smids` / `rmids`. The group's
+ * stored members change only once the rotation is accepted, and then follow
+ * accepted state with no further call (`Habery.alignGroupMembers`, run by the
+ * Counselor's pass), however late the last signature arrives.
  *
  * Dependencies are declared collaborators, not an AgentRuntime (ADR-0013).
  */
@@ -41,7 +41,6 @@ import { type GroupSendResult, remoteGroupMembers } from "./multisig-messaging.t
 import {
   type ApprovalResult,
   approveAcdcV2Registry,
-  commitAcceptedGroupMembers,
   publishAcdcV2Registry,
   publishProposal,
 } from "./multisig-workflows.ts";
@@ -173,28 +172,6 @@ export function* proposeGroupInteraction(
     created.message,
   );
   return { ...sent, route: MULTISIG_IXN_ROUTE, group: created.hab.pre, event, smids, rmids: [] };
-}
-
-/** What settling a proposed rotation reads of the proposal: its route, the counseled event and the named members. */
-export interface ProposedRotation {
-  readonly route: GroupEventResult["route"];
-  readonly event: GroupEventRef;
-  readonly smids: readonly string[];
-  readonly rmids: readonly string[];
-}
-
-/**
- * Commit the members a proposed rotation named, once the rotation is accepted and
- * is the group's latest establishment event. Idempotent; false until then, so a
- * proposed newcomer is never adopted early. Other event kinds commit nothing.
- *
- * @throws ValidationError when the event is not an accepted event body held locally.
- */
-export function settleProposedRotation(deps: Pick<GroupProposeDeps, "hby">, result: ProposedRotation): boolean {
-  if (result.route !== MULTISIG_ROT_ROUTE) return false;
-  const serder = deps.hby.db.getEvtSerder(result.event.pre, result.event.said);
-  if (!serder) throw new ValidationError(`No rotation ${result.event.said} is held for ${result.event.pre}.`);
-  return commitAcceptedGroupMembers(deps.hby, serder, result.smids, result.rmids);
 }
 
 /** Collaborators for {@link proposeRegistryEvent}. */
