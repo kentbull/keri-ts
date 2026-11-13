@@ -8,6 +8,7 @@
 
 interface PackageManifest {
   version?: string;
+  dependencies?: Record<string, string>;
 }
 
 interface DenoManifest {
@@ -87,7 +88,7 @@ function parseArgs(args: string[]): { check: boolean } {
   throw new Error(`Unknown argument(s): ${args.join(" ")}`);
 }
 
-async function readPackageVersion(path: URL): Promise<string> {
+async function readPackage(path: URL): Promise<{ version: string; dependencies?: Record<string, string> }> {
   const raw = await Deno.readTextFile(path);
   const manifest = JSON.parse(raw) as PackageManifest;
   const version = manifest.version?.trim();
@@ -97,7 +98,7 @@ async function readPackageVersion(path: URL): Promise<string> {
   if (!SEMVER_REGEX.test(version)) {
     throw new Error(`Invalid semver in ${path.pathname}: ${version}`);
   }
-  return version;
+  return { version, dependencies: manifest.dependencies };
 }
 
 async function syncTarget(target: SyncTarget, packageVersion: string, check: boolean): Promise<void> {
@@ -123,7 +124,11 @@ async function syncTarget(target: SyncTarget, packageVersion: string, check: boo
 }
 
 /** Keep the checked-in npm workspace metadata aligned without resolving dependencies. */
-async function syncWorkspaceLock(versions: ReadonlyMap<SyncTarget["name"], string>, check: boolean): Promise<void> {
+async function syncWorkspaceLock(
+  versions: ReadonlyMap<SyncTarget["name"], string>,
+  dependencies: ReadonlyMap<SyncTarget["name"], Record<string, string> | undefined>,
+  check: boolean,
+): Promise<void> {
   const path = new URL("../package-lock.json", import.meta.url);
   const lock = JSON.parse(await Deno.readTextFile(path)) as WorkspaceLock;
   let changed = false;
@@ -131,6 +136,14 @@ async function syncWorkspaceLock(versions: ReadonlyMap<SyncTarget["name"], strin
     const key = `packages/${name}`;
     const entry = lock.packages[key];
     if (!entry) throw new Error(`Missing ${key} in package-lock.json`);
+    // The lock mirrors a workspace package's declared dependencies, which carry its internal pins.
+    const declared = dependencies.get(name);
+    if (JSON.stringify(entry.dependencies) !== JSON.stringify(declared)) {
+      if (check) throw new Error(`package-lock.json: ${key} dependencies do not match its package.json`);
+      if (declared) entry.dependencies = declared;
+      else delete entry.dependencies;
+      changed = true;
+    }
     if (entry.version === version) continue;
     if (check) throw new Error(`package-lock.json: ${key} version ${entry.version} does not match ${version}`);
     entry.version = version;
@@ -142,12 +155,14 @@ async function syncWorkspaceLock(versions: ReadonlyMap<SyncTarget["name"], strin
 async function main() {
   const { check } = parseArgs(Deno.args);
   const versions = new Map<SyncTarget["name"], string>();
+  const dependencies = new Map<SyncTarget["name"], Record<string, string> | undefined>();
   for (const target of TARGETS) {
-    const version = await readPackageVersion(target.packagePath);
+    const { version, dependencies: declared } = await readPackage(target.packagePath);
     await syncTarget(target, version, check);
     versions.set(target.name, version);
+    dependencies.set(target.name, declared);
   }
-  await syncWorkspaceLock(versions, check);
+  await syncWorkspaceLock(versions, dependencies, check);
 }
 
 if (import.meta.main) {
