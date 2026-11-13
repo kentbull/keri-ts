@@ -184,6 +184,15 @@ export interface GroupHabInteraction {
   message: Uint8Array;
 }
 
+/** What `Habery.retireHab` removed: the habitat's identity and how many private keys the Keeper deleted. */
+export interface RetiredHab {
+  pre: string;
+  name: string;
+  domain?: string;
+  /** Private keys deleted from the Keeper's `pris.`; 0 for a keyless habitat. */
+  keys: number;
+}
+
 /**
  * Fixed KERI version tuple used when emitting bootstrap counters.
  *
@@ -584,8 +593,30 @@ export class Hab {
    * - mirrors the pattern where local inception is signed in the habitat layer
    *   and then fed through `Kevery.processEvent()` rather than hand-writing
    *   `states.`/`kels.` directly
+   *
+   * Failure leaves nothing behind: the Keeper rows `Manager.incept` and `move`
+   * wrote roll back with the enclosing Keeper transaction, and the `habs.`
+   * record and `names.` mapping are undone, as `makeSigned` does. KERIpy keeps
+   * them.
    */
   make(args: MakeHabArgs = {}): void {
+    const ns = this.ns ?? "";
+    const priorName = this.db.getName(ns, this.name);
+    try {
+      this.ks.transaction(() => this.inceptLocally(args));
+    } catch (error) {
+      if (this.pre && !args.hidden) {
+        this.db.habs.rem(this.pre);
+        if (priorName) this.db.pinName(ns, this.name, priorName);
+        else this.db.names.rem([ns, this.name]);
+      }
+      this.pre = "";
+      throw error;
+    }
+  }
+
+  /** Derive keys, sign and admit the inception; `make` owns the Keeper transaction and the rollback. */
+  private inceptLocally(args: MakeHabArgs): void {
     const {
       code = "E",
       transferable = true,
@@ -2386,6 +2417,70 @@ export class Habery {
     hab.reconfigure();
     this.habs.set(pre, hab);
     return hab;
+  }
+
+  /**
+   * Retire one local, non-group habitat: it stops being local, and its stored private keys are deleted.
+   *
+   * Removed, durable rows in one `db.transaction` (the Keeper deletes run in a nested Keeper transaction, see
+   * `Manager.forget`): the `habs.` record, its `names.` mapping when that still maps to `pre`, and the
+   * Keeper's stored key rows. After commit, `pre` leaves `db.prefixes`, `habs` and `deferredReconfigure`.
+   *
+   * Kept, deliberately: the KEL with its attachments, `states.`, receipts, key-state notices, every accepted
+   * reply the identifier authored or that names it (end-role and location records and their BADA date-times
+   * and signatures), and the `Kever` cache entry. KERI never deletes a KEL, and BADA/RUN acceptance compares
+   * new replies against the stored ones, so deleting them would let an older signed reply be accepted again.
+   * The identifier is afterwards an ordinary remote one; `Baser.reloadKevers` rebuilds `prefixes` from
+   * `habs.` only, so a reopen agrees. Retirement is one-way: `makeSignedHab` refuses a prefix with a `Kever`,
+   * and the kept Keeper `pres.` rows make `makeHab` refuse an inception that derives the retired keys again.
+   * Retirement deletes the stored keys and the ability to act as a local habitat, not the secret's
+   * derivability: a rooted salty habitat's seeds stay derivable from the Keeper's root salt plus its name.
+   * No event is made and nothing is signed. Runtime state (pollers, held signers, cursors, operations) is the
+   * caller's to clean up.
+   *
+   * Refused with a `ValidationError`, before any write, when `pre` is not a local habitat, is a group
+   * habitat, is the recorded local member (`mid`) of a local group, is an accepted signing or rotation
+   * member of a local group, or is the delegator of a local habitat.
+   *
+   * Differences from KERIpy `Habery.deleteHab(name, ns)`: keyed by prefix rather than by name, throws where
+   * KERIpy returns `False`, refuses the cases above where KERIpy has no guards, and deletes the Keeper's stored
+   * key rows other than `pres.` where KERIpy keeps them all.
+   */
+  retireHab(pre: string): RetiredHab {
+    const record = this.db.getHab(pre);
+    if (!record?.name) {
+      throw new ValidationError(`${pre} is not a local habitat.`);
+    }
+    if (record.mid || this.db.groups.has(pre)) {
+      throw new ValidationError(`${pre} is a group habitat; retiring group habitats is not supported.`);
+    }
+    for (const [key, local] of this.db.getHabItemIter()) {
+      const hid = local.hid || key;
+      if (hid === pre) continue;
+      if (local.mid === pre) {
+        throw new ValidationError(`${pre} is the recorded local member of group ${hid}.`);
+      }
+      if (local.mid && isAcceptedGroupMember(this.db, hid, pre)) {
+        throw new ValidationError(`${pre} is an accepted member of local group ${hid}.`);
+      }
+      if (this.db.getKever(hid)?.delpre === pre) {
+        throw new ValidationError(`${pre} is the delegator of local habitat ${hid}.`);
+      }
+    }
+
+    const name = record.name;
+    const ns = record.domain ?? "";
+    const keys = this.db.transaction(() => {
+      this.db.habs.rem(pre);
+      if (this.db.getName(ns, name) === pre) this.db.names.rem([ns, name]);
+      return this.mgr.forget(pre);
+    });
+
+    this.db.prefixes.delete(pre);
+    this.habs.delete(pre);
+    const deferred = this.deferredReconfigure.indexOf(pre);
+    if (deferred >= 0) this.deferredReconfigure.splice(deferred, 1);
+    return { pre, name, domain: record.domain, keys };
   }
 
   /** Creates this Habery's sidecar stores. */

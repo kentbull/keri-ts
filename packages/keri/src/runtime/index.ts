@@ -1133,8 +1133,8 @@ export {
   waitForChallengeResponse,
 } from "../app/identity/challenging.ts";
 
-// Pre-signed hab adoption (Habery.makeSignedHab).
-export type { SignedHabArgs } from "../app/identity/habbing.ts";
+// Pre-signed hab adoption (Habery.makeSignedHab) and store-level retirement (Habery.retireHab).
+export type { RetiredHab, SignedHabArgs } from "../app/identity/habbing.ts";
 
 // Library legacy IPEX conversation (apply, offer, agree, spurn; status and wait).
 export {

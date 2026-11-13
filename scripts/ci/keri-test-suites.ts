@@ -259,6 +259,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/multisig/group-signing.test.ts",
       "test/unit/app/identity/habbing.test.ts",
       "test/unit/app/identity/hab-reopen.test.ts",
+      "test/unit/app/identity/retire-hab.test.ts",
       "test/unit/app/runtime/counselor-runtime.test.ts",
       "test/unit/app/identity/habery-acquisition.test.ts",
       "test/unit/app/cli/incept.test.ts",
