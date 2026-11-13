@@ -150,7 +150,13 @@ Deno.test("unit shards cover every required suite once and list only shards with
   const members = Object.values(unitShards).flat();
   for (const suite of required) assertEquals(members.filter((member) => member === suite).length, 1, suite);
   assertEquals(selectUnitShards([]), []);
-  assertEquals(selectUnitShards(["ci"]).map((shard) => shard.name), ["keri-app", "keri-runtime", "small"]);
+  assertEquals(selectUnitShards(["ci"]).map((shard) => shard.name), [
+    "keri-app-a",
+    "keri-app-b",
+    "keri-runtime",
+    "keri-stateful",
+    "small",
+  ]);
   assertEquals(selectUnitShards(["tufa", "core-fast-a"]), [
     { name: "tufa", targets: JSON.stringify(["tufa"]) },
     { name: "small", targets: JSON.stringify(["core-fast-a"]) },
