@@ -596,3 +596,60 @@ Deno.test("wallet health is ok after replacing and retiring a member", async () 
     for (const hby of others) await run(() => hby.close(true));
   }
 });
+
+Deno.test("wallet groups.rejoin", async () => {
+  // The custodial co-member: it holds the group and serves the group's OOBI.
+  const agent = await run(() =>
+    openHabery({ name: "agent", temp: true, skipConfig: true, opener: new MemStoreOpener() })
+  );
+  // The wallet's non-transferable member, re-adopted from its signed inception after the store was lost.
+  const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+  const serder = incept([signer.verfer.qb64], { version: Vrsn_2_0, code: signer.verfer.code, nsith: "0", toad: 0 });
+  const sigers = [signer.sign(serder.raw, { index: 0 }) as Siger];
+  const a = agent.makeHab("a");
+  deliverEvent(agent, serder, sigers);
+  const smids = [a.pre, serder.pre!];
+  const gid = agent.makeGroupHab("g", a, smids, [a.pre], undefined, { isith: ["1", "0"], nsith: "1", toad: 0 })
+    .serder.pre!;
+  const oobi = `http://agent.test/oobi/${gid}/controller`;
+  const fetched: string[] = [];
+  const http: HttpClient = {
+    *request(): Operation<HttpResponse> {
+      return { status: 404, ok: false, headers: new Headers(), body: new Uint8Array() };
+    },
+    *open(url): Operation<HttpStreamResponse> {
+      fetched.push(url);
+      if (url !== oobi) return { status: 404, ok: false, headers: new Headers(), body: async function*() {} };
+      const bytes = agent.habs.get(gid)!.replyToOobi(gid, "controller");
+      return {
+        status: 200,
+        ok: true,
+        headers: new Headers({ "content-type": "application/json+cesr" }),
+        body: async function*() {
+          yield bytes;
+        },
+      };
+    },
+  };
+  const p = page();
+  const w = await p.open({ host: { ...p.host, http } });
+  try {
+    const member = w.hby.makeSignedHab("member", undefined, { serder, sigers });
+    w.hby.mgr.hold([signer]);
+    shareKel(agent, a.pre, [w.hby]);
+
+    const options = { oobi, group: gid, member: member.pre, alias: "group" };
+    const joined = await w.groups.rejoin(options);
+    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre] });
+    assertEquals(w.hby.db.getHab(gid)?.mid, member.pre);
+    assertEquals(w.hby.habByName("group")?.pre, gid);
+    // A repeat is joined at once and fetches nothing.
+    assertEquals(await w.groups.rejoin(options), joined);
+    assertEquals(fetched, [oobi]);
+    // The group is not a member of itself.
+    await assertRejects(() => w.groups.rejoin({ ...options, member: gid }), Error, "Group identifiers");
+  } finally {
+    await w.close();
+    await run(() => agent.close(true));
+  }
+});

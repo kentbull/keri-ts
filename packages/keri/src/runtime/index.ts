@@ -449,6 +449,13 @@ export {
   settleProposedRotation,
 } from "../app/multisig/proposing.ts";
 export {
+  type RejoinDeps,
+  rejoinGroup,
+  type RejoinInput,
+  type RejoinResult,
+  type RejoinWait,
+} from "../app/multisig/rejoin-group.ts";
+export {
   type PreviousMemberOutcome,
   type ReplacedGroupMember,
   replaceGroupMember,

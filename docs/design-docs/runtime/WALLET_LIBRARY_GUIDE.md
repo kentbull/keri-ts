@@ -366,6 +366,22 @@ Group work is a set of explicit library calls plus the `Counselor`.
   still a member of another local group, a delegator, a registry issuer, or has live work, and the
   reason names which. After a replacement that retired the old member, `health()` reads `ok` once
   the poller's and publisher's next tocks have run, with no special case.
+- **Rejoining a group after a lost store.** When a host loses its store but keeps its member (a
+  held-signer member re-adopted at open with `makeSignedHab`), the group record is gone while a
+  co-member still holds the group's KEL. `rejoinGroup(deps, { oobi, group, member, alias, timeoutMs })`
+  (the wallet's `groups.rejoin`) resolves the group's OOBI, waits on the runtime clock until the
+  group's key state is accepted locally, reads the signing and rotation members of its latest
+  accepted establishment event, and records the group with `joinGroupHab`. Membership comes from
+  accepted state and its member lists only, never from caller lists and never from signing weight,
+  so a weight-0 member rejoins like any other. Key state names keys, not members: every member's KEL
+  must be local to attribute them, and a group OOBI carries only the group's KEL, so resolve the
+  co-members' OOBIs first. Outcomes are values: `joined` (with the members used), `not-member`,
+  `oobi-failed`, and `timed-out` with `waiting` set to `oobi`, `group-key-state` or
+  `member-key-state`. Only `joined` writes a record; a record already naming the member returns
+  `joined` without any I/O, and one naming a different member throws (use `replaceGroupMember`).
+  After a join the poller, KEL publisher and root replicator are prompted for the group. Rejoin
+  restores the record only: credentials, registry state and exchanges come back by ordinary KERI
+  replay from a co-member, which this call does not request.
 - **Retiring an identifier.** `retireIdentifier(runtime, pre)` (the wallet's `identifiers.retire`)
   retires a local single-signature identifier: `Habery.retireHab` deletes its `habs.` record, its
   name and the Keeper's stored keys, and the runtime then releases its held signers, stops its

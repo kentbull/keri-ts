@@ -64,6 +64,8 @@ import {
   proposeGroupRotation,
   proposeRegistryEvent,
   Receiptor,
+  rejoinGroup,
+  type RejoinResult,
   type ReplacedGroupMember,
   replaceGroupMember,
   requestUnblind,
@@ -210,6 +212,20 @@ export interface ReplaceMemberOptions {
   keepPrevious?: boolean;
 }
 
+/** Inputs of {@link Groups.rejoin}. */
+export interface RejoinGroupOptions {
+  /** OOBI of the group, served by a co-member that holds its KEL. */
+  oobi: string;
+  /** Group prefix. */
+  group: string;
+  /** The wallet's single-signature identifier that is a member of the group. */
+  member: string;
+  /** Local alias the group takes. */
+  alias: string;
+  /** Budget of the wait for the group's key state; default {@link WALLET_TIMEOUTS}.oobi. */
+  timeoutMs?: number;
+}
+
 /** Group identifiers: propose events, join groups, observe the Counselor and add the group's mailbox. */
 export class Groups {
   readonly #scope: WalletScope;
@@ -321,6 +337,39 @@ export class Groups {
       rmids: options.rmids,
       keepPrevious: options.keepPrevious,
     });
+  }
+
+  /**
+   * Record `group` again after the wallet lost its store, with `member` (re-adopted at open) as its local
+   * member. Resolves the group's OOBI, waits for its accepted key state and reads the members from that state
+   * only. The other members' key state must be known too: resolve their OOBIs first, or the result is
+   * `timed-out` with `waiting: "member-key-state"`. `joined` at once when the group already names `member`.
+   * Only `joined` writes. Credentials, registry state and exchanges are not restored by this call; they come
+   * back by ordinary KERI replay from a co-member.
+   *
+   * @throws ValidationError when `member` is not a single-signature identifier of this wallet, or the group is
+   * already recorded with another member (use {@link Groups.replaceMember}).
+   */
+  async rejoin(options: RejoinGroupOptions): Promise<RejoinResult> {
+    const { runtime, changes } = this.#scope.parts;
+    const member = this.#scope.individual(options.member);
+    const input = {
+      oobi: options.oobi,
+      group: options.group,
+      member,
+      alias: options.alias,
+      timeoutMs: options.timeoutMs ?? WALLET_TIMEOUTS.oobi,
+    };
+    const deps = {
+      hby: runtime.hby,
+      oobiery: runtime.oobiery,
+      clock: runtime.clock,
+      mailboxPoller: runtime.mailboxPoller,
+      kelPublisher: runtime.kelPublisher,
+      rootReplicator: runtime.rootReplicator,
+      changes,
+    };
+    return await this.#scope.go(() => rejoinGroup(deps, input));
   }
 
   /** Pure read of a group event's progress through the Counselor. */
