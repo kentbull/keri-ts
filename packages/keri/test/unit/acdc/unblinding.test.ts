@@ -755,7 +755,9 @@ for (const keys of [1, 2]) {
       }
       const [presenter, observer] = parties;
       for (const wire of senderHby.db.clonePreIter(sender.pre, 0)) yield* observer.runtime.reactor.processBytes(wire);
-      for (const wire of verifierHby.db.clonePreIter(verifier.pre, 0)) yield* presenter.runtime.reactor.processBytes(wire);
+      for (const wire of verifierHby.db.clonePreIter(verifier.pre, 0)) {
+        yield* presenter.runtime.reactor.processBytes(wire);
+      }
       const rip = regcept(sender.pre, { stamp });
       yield* observer.runtime.reactor.processBytes(sender.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] }));
       for (const party of parties) yield* party.runtime.reactor.processBytes(rip.raw);
@@ -791,7 +793,12 @@ for (const keys of [1, 2]) {
       // Only the verifier learns the later TEL suffix, which its query then carries.
       let prior = event1;
       for (const sn of [2, 3]) {
-        const proof = makeBlindState({ salt: root.qb64, sn, acdc: sn === 3 ? credential.said! : "", state: sn === 3 ? "issued" : "" });
+        const proof = makeBlindState({
+          salt: root.qb64,
+          sn,
+          acdc: sn === 3 ? credential.said! : "",
+          state: sn === 3 ? "issued" : "",
+        });
         const event = blindate(rip.said!, prior.said!, proof.d.nonce, { sn, stamp });
         yield* observer.runtime.reactor.processBytes(
           sender.interact({ data: [{ i: rip.said!, s: sn.toString(16), d: event.said! }] }),
