@@ -654,7 +654,7 @@ export function unblindingStatus(
       role: live.role,
       phase: live.phase,
       deadline: live.deadline,
-      failure: live.outbox.failure ?? undefined,
+      ...(live.outbox.failure && { failure: live.outbox.failure }),
     };
   }
   const input = deps.exc.retainedInput(grant), recipient = input?.serder.sad?.ri;

@@ -515,7 +515,7 @@ export function presentationStatus(
       verb: live.verb,
       phase: "delivering",
       deadline: live.deadline,
-      failure: live.outbox.failure ?? undefined,
+      ...(live.outbox.failure && { failure: live.outbox.failure }),
     };
   }
   const { serder, verb } = signed(deps, said);

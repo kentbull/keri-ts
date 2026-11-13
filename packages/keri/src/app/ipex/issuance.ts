@@ -827,7 +827,7 @@ export function issuanceStatus(
       role: live.role,
       phase: live.phase,
       deadline: live.deadline ?? undefined,
-      failure: live.outbox.failure ?? undefined,
+      ...(live.outbox.failure && { failure: live.outbox.failure }),
     };
   }
   const parties = grantParties(deps.hby, grant);

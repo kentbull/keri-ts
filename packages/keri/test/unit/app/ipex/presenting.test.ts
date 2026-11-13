@@ -73,7 +73,6 @@ Deno.test("an offer is signed and accepted locally at present; processOnce deliv
       verb: "offer",
       phase: "delivering",
       deadline: s.issuer.runtime.exc.exchangeDeadline(s.issuer.hby.db.exns.get([begun.said])!) ?? undefined,
-      failure: undefined,
     });
     yield* ops.processOnce();
     assertEquals(s.log.length, 1);
