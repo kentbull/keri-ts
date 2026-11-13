@@ -68,8 +68,42 @@ single-signature member) and no local record of the group, it resolves the co-me
 `member-missing` means a wiped store: the member itself is gone, and only the host holds what adopts
 it again. The host re-adopts the member with `wallet.hby.makeSignedHab(alias, undefined, { serder, sigers })` from the member's signed inception, holds its signer (`heldSigners` at open, or
 `hby.mgr.hold`), resolves the co-members' OOBIs and calls `groups.rejoin`. Credentials, registry state
-and exchanges then come back by ordinary KERI replay from a co-member, which `recoverWebWallet` does
-not request.
+and exchanges are refilled from a co-member as the next section describes; `recoverWebWallet` does not
+request them.
+
+### Refilling an empty store from a co-member
+
+A `joined` rejoin, from `recoverWebWallet` or `groups.rejoin`, carries `written`. `written: true` means this
+call wrote the group record: the identifier was already a member and this store had no record of the group, so
+it holds none of the group's credentials either. That is the signal to refill. `written: false` means the
+record was already there and nothing is due. The request to the co-member and its response are the embedder's
+own (a co-member's host answers it from its stores, as KERIA serves its REST API); keri-ts supplies both ends:
+
+1. On the edge: re-adopt the member (`makeSignedHab` and its held signer), then `recoverWebWallet` or
+   `groups.rejoin`. On `written: true`, ask the co-member for the group's credentials.
+2. On the co-member: `listGroupDisclosures(hby, exc, group)` lists the group's completed disclosures, held and
+   issued. For each Grant, `exportDisclosureStream(runtime.operations.issuance.discloser, hab, grant)` returns one
+   CESR stream: KELs, the registry TEL, the Grant and its Admit, in dependency order. For a registry the group
+   issues from, send the registry root copy to the edge member with `replicateRootCopy`; the root is a random
+   salt held in the keeper, so nothing else gives it to the edge.
+3. On the edge: pin each schema the credentials use (`credentials.pinSchema`; schemas are not in the stream),
+   `credentials.importStream(bytes)` each stream, then `credentials.rebuild()`. Import accepts the stream as
+   retained history (KRAM's window does not apply to it, so old exchanges are accepted); rebuild writes the
+   `admitted.` rows of the held credentials and, once the root copy is in, the `issued.` rows of the group's
+   own issuances, and returns the inventory. Rebuild checks a held row against the history it was accepted
+   under, so a credential revoked since is still listed as held.
+
+What is trusted: each artifact is verified on import (signatures, KEL anchors, the route's own checks) and
+every row rebuild writes is checked against that evidence, so a co-member cannot forge a credential. Nothing
+proves the set is complete or current: a co-member can withhold a disclosure or serve an older TEL, and the
+edge cannot tell. An interrupted refill is repaired by comparing the two sides' `listGroupDisclosures` and
+importing what is missing; import and rebuild are idempotent, so repeating a stream or a rebuild changes
+nothing.
+
+Known limit: a Grant in which the sender re-presents a credential that names a presentation registry
+(`a.rd`) is refused on a retained import, because that registry needs the receiver receipt a retained exchange
+does not carry ([message admission](../exchange/MESSAGE_ADMISSION.md)). A direct issuance Grant, which a refill
+mostly carries, needs none.
 
 ### Keeper salt at open
 
@@ -142,6 +176,8 @@ an app never calls `run(...)`.
 | `credentials.requestProof(pre, options)`     | the verifier's `apply`, as `present`                  |
 | `credentials.presentations(pre?)`            | pure read of pending presentation Grants              |
 | `credentials.unblind(grant, opts)`           | `unblinded`, `ended`, `timed-out`                     |
+| `credentials.importStream(bytes, opts)`      | the importer's `CredentialImportResult`; see refill   |
+| `credentials.rebuild()`                      | the inventory, after recording imported history       |
 
 Every call that waits takes `timeoutMs` (defaults in `WALLET_TIMEOUTS`). After `timed-out` the
 operation keeps running in the runtime; `receive` and `unblind` called again resume it, and a
@@ -452,13 +488,13 @@ Group work is a set of explicit library calls plus the `Counselor`.
   accepted state and its member lists only, never from caller lists and never from signing weight,
   so a weight-0 member rejoins like any other. Key state names keys, not members: every member's KEL
   must be local to attribute them, and a group OOBI carries only the group's KEL, so resolve the
-  co-members' OOBIs first. Outcomes are values: `joined` (with the members used), `not-member`,
-  `oobi-failed`, and `timed-out` with `waiting` set to `oobi`, `group-key-state` or
+  co-members' OOBIs first. Outcomes are values: `joined` (with the members used and `written`),
+  `not-member`, `oobi-failed`, and `timed-out` with `waiting` set to `oobi`, `group-key-state` or
   `member-key-state`. Only `joined` writes a record; a record already naming the member returns
-  `joined` without any I/O, and one naming a different member throws (use `replaceGroupMember`).
-  After a join the poller, KEL publisher and root replicator are prompted for the group. Rejoin
-  restores the record only: credentials, registry state and exchanges come back by ordinary KERI
-  replay from a co-member, which this call does not request.
+  `joined` with `written: false` without any I/O, and one naming a different member throws (use
+  `replaceGroupMember`). After a join the poller, KEL publisher and root replicator are prompted for
+  the group. Rejoin restores the record only; `written: true` says the credentials, registry state
+  and exchanges are due from a co-member (see "Refilling an empty store from a co-member").
 - **Retiring an identifier.** `retireIdentifier(runtime, pre)` (the wallet's `identifiers.retire`)
   retires a local single-signature identifier: `Habery.retireHab` deletes its `habs.` record, its
   name and the Keeper's stored keys, and the runtime then releases its held signers, stops its
