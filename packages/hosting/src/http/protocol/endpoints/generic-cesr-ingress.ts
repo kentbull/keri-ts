@@ -11,6 +11,7 @@ import {
   drainWitnessCues,
   type HostedRouteResolution,
   isCesrContentType,
+  type KramRefusalReason,
   requestBytes,
   rethrowCleanupFailure,
   ValidationError,
@@ -25,6 +26,23 @@ const NONE_HOSTED_ROUTE: HostedRouteResolution = {
   endpoint: null,
   relativePath: null,
 };
+
+/** KRAM refusals that are safe to report to the sender of a non-query message. */
+type KramLateReason = Extract<KramRefusalReason, "timeliness" | "lifetime" | "unknownThread">;
+
+/**
+ * Whether a drop reason means the message arrived too late or outside a live exchange.
+ *
+ * Only `timeliness`, `lifetime` and `unknownThread` are reported (as 422), because KRAM decides them solely
+ * after a current-key signature or anchored seal verified (kram-staging.ts); the sender is therefore
+ * authenticated. Accepted and replayed messages both still answer 204, so the status is not a replay
+ * oracle for an unauthenticated prober, and no deadline or clock detail is disclosed. Every other drop or
+ * pending decision (`replay`, `authentication`, `missing`, `pending`, `timestamp`) keeps the 204 ack.
+ * Divergence: KERIpy `HttpEnd.on_post` (indirecting.py) always answers 204.
+ */
+function isKramLateReason(reason: unknown): reason is KramLateReason {
+  return reason === "timeliness" || reason === "lifetime" || reason === "unknownThread";
+}
 
 /** Classify generic POST/PUT CESR ingress after all explicit HTTP routes. */
 export function classifyGenericCesrIngressRoute(
@@ -200,6 +218,7 @@ function* ingest(
 ): Operation<Response> {
   const runtime = context.runtime!;
   let seen = false;
+  let late: KramRefusalReason | undefined;
   let query: { serder: SerderKERI; mailbox: boolean; authorized: boolean; transportOnly?: boolean } | undefined;
   // Close and join the request parser before publishing a mailbox response.
   yield* call(function*() {
@@ -239,6 +258,7 @@ function* ingest(
         const frame = result.value;
         yield* call(function*() {
           query = undefined;
+          late = undefined;
           seen = true;
           const serder = frame.body as SerderKERI;
           const route = classifyCesrIngressRoute(context, hosted, serder);
@@ -254,6 +274,7 @@ function* ingest(
             mailboxAid: route.kind === "witnessLocalIngress" ? hosted.endpoint?.eid : route.mailboxAid,
             escrows: true,
           });
+          if (decision?.kind === "drop" && isKramLateReason(decision.reason)) late = decision.reason;
           if (query) {
             // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
             query.transportOnly = decision?.kind === "drop"
@@ -275,7 +296,7 @@ function* ingest(
     }
   });
   if (!seen) return textResponse("Invalid CESR request", 400);
-  if (!query) return jsonNoContentResponse();
+  if (!query) return late ? textResponse(`KRAM refused message: ${late}`, 422) : jsonNoContentResponse();
   // Unhandled or cached-replayed custom queries acknowledge transport only; no protocol work is authorized.
   if (query.transportOnly) return jsonNoContentResponse();
   if (!query.authorized) return textResponse("Query requester is not authorized", 403);
