@@ -2,6 +2,7 @@ import { concatBytes, Counter, parse, SerderKERI, type Versionage } from "cesr-t
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { Organizer } from "../../app/identity/organizing.ts";
+import { approveGroupIpex, groupIpexStatus, waitForGroupIpex } from "../../app/ipex/group-ipex.ts";
 import {
   type IpexSendDeps,
   requireIpexPrior,
@@ -565,6 +566,32 @@ export function* joinIpexProposal(
 
   if (!ipexArgs.auto) {
     return { exn, group: { embedded, accepted: null, approved: null, lead: null, messages: [], deliveries: [] } };
+  }
+
+  if (embedded.pvrsn.major === 2) {
+    // ACDC v2: the runtime's group IPEX owner approves, publishes, collects and lets the lead deliver.
+    const ops = runtime.operations?.groupIpex;
+    if (!ops) throw new ValidationError("ACDC v2 group IPEX requires the runtime's operation owners.");
+    const said = embedded.said!;
+    const status = groupIpexStatus(ops, said);
+    if (status.state === "active" && status.phase === "awaitingConsent") yield* approveGroupIpex(ops, { said });
+    yield* withRuntimeWorkers(
+      runtime,
+      { hab: localGroupMember(hby, group), pollMailbox: true },
+      () => waitForGroupIpex(ops, said, { timeoutMs: ipexArgs.approvalTimeoutSeconds * 1000 }),
+    );
+    const outcome = ops.outcomes.get(said);
+    return {
+      exn,
+      group: {
+        embedded,
+        accepted: runtime.exc.complete(said),
+        approved: true,
+        lead: runtime.exc.lead(hby.habs.get(group)!, said),
+        messages: outcome?.messages ?? [],
+        deliveries: outcome?.deliveries ?? [],
+      },
+    };
   }
 
   const host = yield* spawn(() => runAgentRuntime(runtime, { hab: localGroupMember(hby, group) }));

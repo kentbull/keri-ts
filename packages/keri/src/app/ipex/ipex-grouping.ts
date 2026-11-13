@@ -220,6 +220,46 @@ export interface MultisigIpexApprovalResult extends GroupSendResult {
   approved: Uint8Array | null;
 }
 
+/** What a member's local approval of one stored IPEX proposal produced, before anything is sent. */
+export interface LocalMultisigIpexApproval {
+  embedded: SerderKERI;
+  groupHab: Hab;
+  genus: Versionage;
+  /** This member's exact approved wire, accepted locally; null while it lacks required evidence. */
+  approved: Uint8Array | null;
+}
+
+/**
+ * Approve one stored multisig wrapper around an IPEX message locally: validate it, reuse or sign this member's
+ * contribution and accept it, without publishing or sending anything. The explicit consent of the library's group
+ * IPEX operations; {@link approveMultisigIpex} adds publication and the lead's delivery.
+ */
+export function* approveMultisigIpexLocally(
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  reger: Reger | null,
+  wrapper: SerderKERI,
+): Operation<LocalMultisigIpexApproval> {
+  const { child, groupHab } = yield* loadIpexProposal(hby, wrapper);
+  const { event: embedded, genus } = child;
+  if (embedded.pvrsn.major === 1 && embedded.route === IPEX_GRANT_ROUTE && !reger) {
+    throw new ValidationError("VDR runtime did not open Reger.");
+  }
+  const payloadSaid = multisigPayloadSaid(wrapper);
+  if (!payloadSaid) throw new ValidationError("Multisig IPEX approval requires its coordination identity.");
+  if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === wrapper.said)) {
+    // Recover only this explicitly selected accepted wrapper after an interrupted
+    // handler. Ordinary intake owns the index; do not synthesize it or sweep history.
+    const message = yield* abortable(signal => collectBytes(protocol.exc.replay(wrapper.said!, signal)));
+    yield* new Reactor(protocol).processBytes(message, { local: true });
+    if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === wrapper.said)) {
+      throw new ValidationError("Selected IPEX wrapper was not indexed by ordinary intake.");
+    }
+  }
+  const approved = yield* approveIpexChild(hby, protocol, groupHab, child, wrapper, reger);
+  return { embedded, groupHab, genus, approved };
+}
+
 /**
  * Approve one pending multisig wrapper around an embedded IPEX message.
  *
@@ -239,24 +279,9 @@ export function* approveMultisigIpex(
   wrapper: SerderKERI,
   options: MultisigIpexApprovalOptions = {},
 ): Operation<MultisigIpexApprovalResult> {
-  const { child, groupHab } = yield* loadIpexProposal(hby, wrapper);
-  const { event: embedded, genus } = child;
+  const local = yield* approveMultisigIpexLocally(hby, protocol, reger, wrapper);
+  const { embedded, groupHab, genus, approved } = local;
   const embeddedSaid = embedded.said!;
-  if (embedded.pvrsn.major === 1 && embedded.route === IPEX_GRANT_ROUTE && !reger) {
-    throw new ValidationError("VDR runtime did not open Reger.");
-  }
-  const payloadSaid = multisigPayloadSaid(wrapper);
-  if (!payloadSaid) throw new ValidationError("Multisig IPEX approval requires its coordination identity.");
-  if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === wrapper.said)) {
-    // Recover only this explicitly selected accepted wrapper after an interrupted
-    // handler. Ordinary intake owns the index; do not synthesize it or sweep history.
-    const message = yield* abortable(signal => collectBytes(protocol.exc.replay(wrapper.said!, signal)));
-    yield* new Reactor(protocol).processBytes(message, { local: true });
-    if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === wrapper.said)) {
-      throw new ValidationError("Selected IPEX wrapper was not indexed by ordinary intake.");
-    }
-  }
-  const approved = yield* approveIpexChild(hby, protocol, groupHab, child, wrapper, reger);
   if (!approved) return { approved: null, accepted: protocol.exc.complete(embeddedSaid), messages: [], deliveries: [] };
   const publication = options.publish
     ? yield* publishGroupIpexProposal(hby, protocol, postman, groupHab, approved, genus)
@@ -877,4 +902,24 @@ function hexToFixedBytes(hex: string, size: number): Uint8Array {
     raw[index] = Number.parseInt(padded.slice(index * 2, (index * 2) + 2), 16);
   }
   return raw;
+}
+
+/** The stored `/multisig/exn` wrapper that carries the IPEX message `embeddedSaid`, if one is held. */
+export function findStoredMultisigIpex(db: Baser, embeddedSaid: string): SerderKERI | null {
+  for (const [, wrapper] of db.exns.getTopItemIter()) {
+    if (wrapper.route === MULTISIG_EXN_ROUTE && storedMultisigIpexBody(db, wrapper)?.said === embeddedSaid) {
+      return wrapper;
+    }
+  }
+  return null;
+}
+
+/** Whether the local member of `group` already holds a verified contribution to `embedded` (a recorded approval). */
+export function groupIpexApproved(hby: Habery, group: string, embedded: SerderKERI): boolean {
+  return !!localIpexContribution(
+    hby.db,
+    localGroupMember(hby, group).pre,
+    embedded,
+    rebuildStoredExchangeGroups(hby.db, embedded.said!),
+  );
 }

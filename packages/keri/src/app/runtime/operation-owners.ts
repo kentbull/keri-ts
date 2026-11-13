@@ -20,6 +20,7 @@ import { RootReplicator } from "../credentials/root-replicator.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
+import { GroupIpexOperations } from "../ipex/group-ipex.ts";
 import { type IssuanceDeps, IssuanceOperations, posterDelivery } from "../ipex/issuance.ts";
 import { PresentationOperations } from "../ipex/presenting.ts";
 import { UnblindingOperations } from "../ipex/unblinding-workflow.ts";
@@ -55,6 +56,8 @@ export interface OperationStores {
 /** The operations owners of one runtime, additive on `AgentRuntime.operations`. */
 export interface RuntimeOperations {
   readonly issuance: IssuanceOperations;
+  /** A local group's v2 IPEX messages (its Admit): propose, approve, status, wait. */
+  readonly groupIpex: GroupIpexOperations;
   readonly presentation: PresentationOperations;
   readonly unblinding: UnblindingOperations;
   /** Wakes the owner loop ({@link operationOwnersDo}) from its idle sleep; the owners call it themselves. */
@@ -65,7 +68,7 @@ export interface RuntimeOperations {
 
 /** The last failure of an owner pass that no single operation owned, and how many there have been. */
 export interface OwnerFault {
-  owner: "issuance" | "presentation" | "unblinding" | "replicator";
+  owner: "issuance" | "groupIpex" | "presentation" | "unblinding" | "replicator";
   error: string;
   /** ISO 8601 time of the failure on the host clock. */
   at: string;
@@ -129,6 +132,16 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
   };
   const operations: RuntimeOperations = {
     issuance: new IssuanceOperations(issuance),
+    groupIpex: new GroupIpexOperations({
+      hby,
+      rgy: acdc,
+      exc,
+      protocol,
+      postman,
+      clock,
+      changes,
+      wake: wake.notify,
+    }),
     presentation: new PresentationOperations({
       hby,
       rgy: acdc,
@@ -193,7 +206,8 @@ export class OwnerWake {
 
 /** Whether any owner has live work or the replicator has copies still owed. */
 function working({ operations, rootReplicator }: Pick<ComposedOwners, "operations" | "rootReplicator">): boolean {
-  return operations.issuance.active() || operations.presentation.active() || operations.unblinding.active()
+  return operations.issuance.active() || operations.groupIpex.active() || operations.presentation.active()
+    || operations.unblinding.active()
     || !!rootReplicator?.pending();
 }
 
@@ -232,6 +246,7 @@ export function* operationOwnersDo(
   };
   while (true) {
     if (operations.issuance.active()) yield* guarded("issuance", () => operations.issuance.processOnce());
+    if (operations.groupIpex.active()) yield* guarded("groupIpex", () => operations.groupIpex.processOnce());
     if (operations.presentation.active()) yield* guarded("presentation", () => operations.presentation.processOnce());
     if (operations.unblinding.active()) yield* guarded("unblinding", () => operations.unblinding.processOnce());
     if (rootReplicator) {
