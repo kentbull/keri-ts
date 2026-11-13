@@ -29,6 +29,7 @@ import {
   runAgentRuntime,
   type RuntimeClock,
   signalerChangeSink,
+  type SignerCondition,
   systemClock,
 } from "keri-ts/runtime";
 import {
@@ -122,12 +123,16 @@ export type OpenWebWalletOptions = WebWalletSecret & {
  * - `mailbox-unreachable`: the runtime gave up telling a mailbox an identifier's rotated KEL (five minutes of
  *   backed-off attempts), so the wallet cannot receive from it until it is told; a new rotation, a successful poll
  *   of that mailbox or reopening the wallet tries again.
- * Precedence: `closed`, `stopped`, `latched`, `faulted`, `mailbox-unreachable`, `ok`.
+ * - `signer-unavailable`: a background loop (the mailbox poller, a counselor or witness pass, ...) needs a signer the
+ *   host has not held (`Manager.release()` without a later `hold()`); the loop waits and resumes by itself when a
+ *   signer is held again, and `conditions` names each waiting loop and the public key it lacks.
+ * Precedence: `closed`, `stopped`, `latched`, `faulted`, `signer-unavailable`, `mailbox-unreachable`, `ok`.
  */
 export type WebWalletHealth =
   | { status: "ok" }
   | { status: "latched"; cause: unknown }
   | { status: "faulted"; faults: number; last: OwnerFault | null }
+  | { status: "signer-unavailable"; conditions: readonly SignerCondition[] }
   | { status: "mailbox-unreachable"; mailboxes: readonly { pre: string; mailbox: string; reason: string | null }[] }
   | { status: "stopped"; cause: unknown }
   | { status: "closed" };
@@ -386,6 +391,8 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
       }
       const owners = parts.runtime.operations?.health;
       if (owners?.faults) return { status: "faulted", faults: owners.faults, last: owners.last };
+      const waiting = parts.runtime.signerConditions.list();
+      if (waiting.length) return { status: "signer-unavailable", conditions: waiting };
       const unreachable = parts.runtime.kelPublisher.status().entries.filter((entry) => entry.state === "timed-out");
       if (unreachable.length) {
         return {

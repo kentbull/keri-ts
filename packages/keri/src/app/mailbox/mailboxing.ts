@@ -394,6 +394,9 @@ export function hostedEndpointPathMatches(
  * @param pathname Incoming URL pathname to compare against accepted endpoint base paths.
  * @param resourceSuffix Protocol resource suffix sought beneath the hosted base path.
  * @param eids Optional explicit hosted-AID filter; do not infer host eligibility from all local identities.
+ * @param destination The request's `CESR-DESTINATION`: when several local identifiers share the longest base
+ *   path (one ingress URL for many identifiers), the one it names is the match. Without it, or when it names
+ *   none of them, the tie stays ambiguous.
  * @returns Matching hosted endpoint projection; ambiguity follows this helper's documented selection policy.
  */
 export function resolveHostedEndpointPath(
@@ -401,6 +404,7 @@ export function resolveHostedEndpointPath(
   pathname: string,
   resourceSuffix = "",
   eids?: Iterable<string>,
+  destination?: string | null,
 ): HostedRouteResolution {
   const matches = hostedEndpointPathMatches(hby, pathname, eids)
     .filter((match) =>
@@ -413,8 +417,11 @@ export function resolveHostedEndpointPath(
   }
 
   const longest = matches[0]!.basePath.length;
-  const narrowed = matches.filter((match) => match.basePath.length === longest);
-  if (narrowed.length > 1) {
+  let narrowed = matches.filter((match) => match.basePath.length === longest);
+  if (narrowed.length > 1 && destination) {
+    narrowed = narrowed.filter((match) => match.eid === destination);
+  }
+  if (narrowed.length !== 1) {
     return { kind: "ambiguous", endpoint: null, relativePath: null };
   }
 

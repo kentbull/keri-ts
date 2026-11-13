@@ -1,8 +1,9 @@
-import { call, type Operation, run, spawn, suspend } from "effection";
+import { call, type Operation, run, sleep, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { ParserError, WireParseError } from "../../../../../cesr/mod.ts";
+import { MtrDex, ParserError, type Siger, Signer, Vrsn_2_0, WireParseError } from "../../../../../cesr/mod.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { SignerNotHeldError } from "../../../../src/app/identity/keeping.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { KelPublisher } from "../../../../src/app/mailbox/kel-publisher.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
@@ -19,12 +20,14 @@ import {
   settleRuntimeIngress,
 } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
+import { SignerConditions } from "../../../../src/app/runtime/signer-conditions.ts";
 import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 import { TransportError } from "../../../../src/app/transport/transport-error.ts";
 import { FakeRuntimeHttpClient } from "../../../support/runtime-fakes.ts";
 
 import { runtimeTurn } from "../../../../src/app/runtime/runtime-turn.ts";
 import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { incept } from "../../../../src/core/protocol-eventing.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../../effection-http.ts";
 import { httpClient } from "../../../support/http-client.ts";
@@ -525,6 +528,90 @@ Deno.test("a connection failure backs the worker off instead of failing pollDo",
       assertEquals(http.requests.length, 2, "the worker is alive and polls again after its backoff");
     } finally {
       yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
+    }
+  });
+});
+
+/** A keyless non-transferable hab whose only signer the host holds, as a custodial host keeps its members. */
+function heldHab(hby: Habery, alias: string) {
+  const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+  const serder = incept([signer.verfer.qb64], { version: Vrsn_2_0, code: signer.verfer.code, nsith: "0", toad: 0 });
+  const hab = hby.makeSignedHab(alias, undefined, { serder, sigers: [signer.sign(serder.raw, { index: 0 }) as Siger] });
+  hby.mgr.hold([signer]);
+  return { hab, signer };
+}
+
+Deno.test("a poll whose signer was released waits and reports the condition; holding it again resumes the poll", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
+    const { hab, signer } = heldHab(hby, "custodial");
+    const endpoint = seedMailboxEndpoint(hby, hab.pre, "released");
+    const http = new FakeRuntimeHttpClient();
+    http.registerOrigin(endpoint.url, () => new Response(null, { status: 204 }));
+    const clock = new ManualRuntimeClock();
+    const conditions = new SignerConditions();
+    // What `runAgentRuntime` does: a held signer wakes everything that waited for one.
+    const stopWatching = hby.mgr.onHold(() => conditions.held());
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, { signerConditions: conditions });
+    poller.registerTopic("/reply");
+    // A worker that threw would fail this root through its parent; the run below only ends if it does not.
+    const worker = yield* spawn(() => poller.pollDo(() => {}));
+    function* settle(): Operation<void> {
+      for (let turn = 0; turn < 50; turn++) yield* runtimeTurn();
+    }
+    try {
+      yield* settle();
+      assert(http.requests.length > 0, "the held signer is polled");
+      assertEquals(conditions.list(), []);
+      hby.mgr.release();
+      yield* settle();
+      const waiting = http.requests.length;
+      assertEquals(
+        conditions.list().map(({ source, pub }) => [source, pub]),
+        [[`mailbox-poller:${hab.pre}/${endpoint.eid}`, signer.verfer.qb64]],
+        "the unsignable poll is reported with the missing public key",
+      );
+      yield* settle();
+      assertEquals(http.requests.length, waiting, "the worker waits instead of polling");
+      hby.mgr.hold([signer]);
+      yield* settle();
+      assert(
+        http.requests.length > waiting,
+        "holding the signer again resumes the poll without waiting out the backoff",
+      );
+      assertEquals(conditions.list(), []);
+    } finally {
+      stopWatching();
+      yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a background loop that meets a released signer waits for it and never ends the runtime", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby, new FakeRuntimeHttpClient(), systemClock);
+    let passes = 0;
+    const missing = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+    runtime.counselor.processOnce = function*() {
+      if (passes++ === 0) throw new SignerNotHeldError(missing.verfer.qb64);
+    };
+    const worker = yield* spawn(() => runAgentRuntime(runtime, { pollMailbox: false }));
+    try {
+      while (!runtime.signerConditions.list().length) yield* sleep(10);
+      assertEquals(
+        runtime.signerConditions.list().map(({ source, pub }) => [source, pub]),
+        [["runtime:counselor", missing.verfer.qb64]],
+        "the condition names the loop and the key",
+      );
+      hby.mgr.hold([missing]);
+      while (passes < 3) yield* sleep(10);
+      assertEquals(runtime.signerConditions.list(), [], "the loop resumed when a signer was held");
+    } finally {
+      yield* waitForTaskHalt(worker);
+      yield* runtime.close();
       yield* hby.close(true);
     }
   });

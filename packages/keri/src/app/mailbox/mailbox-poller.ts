@@ -1,10 +1,12 @@
 /** Recipient mailbox polling: signed queries, awaited SSE intake and persisted cursor progression. */
 import { call, type Operation, scoped, spawn, type Task } from "npm:effection@^3.6.0";
 import type { Hab, Habery } from "../identity/habbing.ts";
+import { SignerNotHeldError } from "../identity/keeping.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { type DoerPacing, doEvery, PROTOCOL_TOCK_MS } from "../runtime/doing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { runtimeTurn } from "../runtime/runtime-turn.ts";
+import type { SignerConditions } from "../runtime/signer-conditions.ts";
 import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { isLegacyCesrMediaRejection, readResponseDetail } from "../transport/cesr-egress.ts";
 import {
@@ -34,6 +36,11 @@ interface MailboxPollerOptions {
    * has its KEL publisher post the KEL again. The worker then backs off.
    */
   onUnauthorized?: (pre: string, mailbox: string) => void;
+  /**
+   * Where a poll that cannot be signed (its signer released) is reported while its worker waits; the worker
+   * resumes as soon as a signer is held again.
+   */
+  signerConditions?: SignerConditions;
 }
 
 /** Tocks between the poller's full re-selection of workers: 160 tocks of 31.25 ms is five seconds. */
@@ -95,6 +102,8 @@ export class MailboxPoller {
   readonly clock: RuntimeClock;
   /** Told after each poll a mailbox served. */
   readonly onPolled: ((pre: string, mailbox: string) => void) | undefined;
+  /** Where unsignable polls are reported, when the host keeps such a record. */
+  readonly signerConditions: SignerConditions | undefined;
   /** Told when a mailbox answers 403. */
   readonly onUnauthorized: ((pre: string, mailbox: string) => void) | undefined;
 
@@ -114,7 +123,8 @@ export class MailboxPoller {
     clock: RuntimeClock,
     options: MailboxPollerOptions = {},
   ) {
-    const { timeouts, onPolled, onUnauthorized } = options;
+    const { timeouts, onPolled, onUnauthorized, signerConditions } = options;
+    this.signerConditions = signerConditions;
     this.onPolled = onPolled;
     this.onUnauthorized = onUnauthorized;
     this.hby = hby;
@@ -191,33 +201,40 @@ export class MailboxPoller {
    * @param target Mailbox subject habitat plus the actual local signer (a member for groups).
    * @param endpoint Selected remote endpoint AID and HTTP(S) URL.
    * @param onBatch Awaited consumer; successful completion precedes durable cursor advancement.
-   * @returns How the poll ended; see {@link PollOutcome}.
+   * @returns How the poll ended; see {@link PollOutcome}. An `unsignable` poll carries the missing public key.
    */
   private *pollRemoteEndpointOnce(
     target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
-  ): Operation<PollOutcome> {
+  ): Operation<{ outcome: PollOutcome; missing?: string }> {
     const cursor = this.mailboxDirector.remoteQueryCursor(target.targetPre, endpoint.eid);
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
-    // The concrete HTTP/SSE operation owns and joins this whole poll attempt.
-    return yield* call(() =>
-      fetchMailboxMessages(
-        target.signerHab,
-        target.targetPre,
-        endpoint.eid,
-        endpoint.url,
-        cursor,
-        mailboxFetchTimeoutPolicy(this.timeoutPolicy),
-        this.http,
-        this.clock,
-        function* deliverThenAdvanceCursor(message) {
-          yield* call(() => onBatch({ pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] }));
-          self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
-        },
-      )
-    );
+    // The concrete HTTP/SSE operation owns and joins this whole poll attempt. A signer the host released
+    // (while signing the query, or in the consumer's protocol work) ends the poll as `unsignable`.
+    try {
+      const outcome = yield* call(() =>
+        fetchMailboxMessages(
+          target.signerHab,
+          target.targetPre,
+          endpoint.eid,
+          endpoint.url,
+          cursor,
+          mailboxFetchTimeoutPolicy(this.timeoutPolicy),
+          this.http,
+          this.clock,
+          function* deliverThenAdvanceCursor(message) {
+            yield* call(() => onBatch({ pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] }));
+            self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
+          },
+        )
+      );
+      return { outcome };
+    } catch (error) {
+      if (error instanceof SignerNotHeldError) return { outcome: "unsignable", missing: error.pub };
+      throw error;
+    }
   }
 
   /**
@@ -278,7 +295,10 @@ export class MailboxPoller {
   ): Operation<never> {
     let state: PollState = { backoffMs: 0 };
     while (true) {
-      const outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
+      const { outcome, missing } = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
+      const source = `mailbox-poller:${target.targetPre}/${endpoint.eid}`;
+      if (missing) this.signerConditions?.report(source, missing, this.clock.now());
+      else this.signerConditions?.clear(source);
       const step = nextPoll(state, outcome, {
         initialMs: this.timeoutPolicy.refusalInitialMs,
         maxMs: this.timeoutPolicy.refusalMaxMs,
@@ -294,7 +314,9 @@ export class MailboxPoller {
           yield* waitOnClock(this.clock, step.action.ms);
           break;
         case "wait":
-          yield* waitOnClock(this.clock, step.action.ms);
+          // A released signer is waited out until one is held again, not for the full backoff.
+          if (missing && this.signerConditions) yield* this.signerConditions.waitForHold(this.clock, step.action.ms);
+          else yield* waitOnClock(this.clock, step.action.ms);
           break;
       }
     }
@@ -415,9 +437,10 @@ export interface MailboxFetchTimeoutPolicy {
  * - `no-response`: no response headers within the open window.
  * - `unreachable`: the connection failed before or while the response was read (refused, DNS, reset).
  * - `unauthorized`: 403, the mailbox cannot authenticate the requester against the KEL it holds.
+ * - `unsignable`: the poll could not be signed because the host released the signer (`Manager.release`).
  * - `refused`: any other non-success status.
  */
-export type PollOutcome = "served" | "no-response" | "unreachable" | "unauthorized" | "refused";
+export type PollOutcome = "served" | "no-response" | "unreachable" | "unauthorized" | "unsignable" | "refused";
 
 /** One request: its outcome, or the exact pre-intake KERIpy media refusal that asks for a second request. */
 type PollAttempt = { kind: "outcome"; outcome: PollOutcome } | { kind: "legacy-media-required" };
@@ -470,6 +493,7 @@ export function nextPoll(
     }
     case "no-response":
     case "unreachable":
+    case "unsignable":
     case "refused":
       return backOff(state, backoff);
   }
