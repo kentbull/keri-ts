@@ -638,7 +638,7 @@
         "packageJson": {
           "dependencies": [
             "npm:cesr-ts@2.2.1",
-            "npm:keri-ts@2.2.3"
+            "npm:keri-ts@2.2.4"
           ]
         }
       },
@@ -664,7 +664,7 @@
         "packageJson": {
           "dependencies": [
             "npm:cesr-ts@2.2.1",
-            "npm:keri-ts@2.2.3"
+            "npm:keri-ts@2.2.4"
           ]
         }
       },
@@ -676,10 +676,10 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@keri-ts/hosting@2.2.3",
-            "npm:@keri-ts/registrar@2.2.1",
+            "npm:@keri-ts/hosting@2.2.4",
+            "npm:@keri-ts/registrar@2.2.2",
             "npm:cesr-ts@2.2.1",
-            "npm:keri-ts@2.2.3"
+            "npm:keri-ts@2.2.4"
           ]
         }
       },
@@ -691,9 +691,9 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@keri-ts/hosting@2.2.3",
+            "npm:@keri-ts/hosting@2.2.4",
             "npm:cesr-ts@2.2.1",
-            "npm:keri-ts@2.2.3"
+            "npm:keri-ts@2.2.4"
           ]
         }
       },
@@ -704,13 +704,13 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@keri-ts/hosting@2.2.3",
-            "npm:@keri-ts/observer@2.2.1",
-            "npm:@keri-ts/registrar@2.2.1",
-            "npm:@keri-ts/verifier@2.2.1",
-            "npm:@keri-ts/wallet@2.2.3",
+            "npm:@keri-ts/hosting@2.2.4",
+            "npm:@keri-ts/observer@2.2.2",
+            "npm:@keri-ts/registrar@2.2.2",
+            "npm:@keri-ts/verifier@2.2.2",
+            "npm:@keri-ts/wallet@2.2.4",
             "npm:cesr-ts@2.2.1",
-            "npm:keri-ts@2.2.3"
+            "npm:keri-ts@2.2.4"
           ]
         }
       },
@@ -721,9 +721,9 @@
         ],
         "packageJson": {
           "dependencies": [
-            "npm:@keri-ts/registrar@2.2.1",
+            "npm:@keri-ts/registrar@2.2.2",
             "npm:cesr-ts@2.2.1",
-            "npm:keri-ts@2.2.3"
+            "npm:keri-ts@2.2.4"
           ]
         }
       },
@@ -736,7 +736,7 @@
         "packageJson": {
           "dependencies": [
             "npm:cesr-ts@2.2.1",
-            "npm:keri-ts@2.2.3"
+            "npm:keri-ts@2.2.4"
           ]
         }
       }

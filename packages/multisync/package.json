@@ -1,11 +1,11 @@
 {
   "name": "@keri-ts/multisync",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Explicit v2 group newcomer registry-root selection",
   "license": "Apache-2.0",
   "dependencies": {
     "cesr-ts": "2.2.1",
-    "keri-ts": "2.2.3"
+    "keri-ts": "2.2.4"
   },
   "repository": {
     "type": "git",

@@ -1,5 +1,17 @@
 # @keri-ts/tufa
 
+## 2.2.4
+
+### Patch Changes
+
+- Updated dependencies [7849724]
+  - keri-ts@2.2.4
+  - @keri-ts/hosting@2.2.4
+  - @keri-ts/observer@2.2.2
+  - @keri-ts/registrar@2.2.2
+  - @keri-ts/verifier@2.2.2
+  - @keri-ts/wallet@2.2.4
+
 ## 2.2.3
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @keri-ts/wallet
 
+## 2.2.4
+
+### Patch Changes
+
+- Updated dependencies [7849724]
+  - keri-ts@2.2.4
+
 ## 2.2.3
 
 ### Patch Changes
