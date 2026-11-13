@@ -24,6 +24,7 @@ import { acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { publicOpeningAttachment } from "../../../../src/acdc/registering.ts";
 import { Unblind } from "../../../../src/acdc/unblinding.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
+import { pendingPresentations } from "../../../../src/app/ipex/pending-presentations.ts";
 import {
   abandonUnblinding,
   requestUnblind,
@@ -133,6 +134,13 @@ Deno.test("the disclosee consents; the discloser answers on its own and the owne
       ValidationError,
       "Only the disclosee",
     );
+    assertEquals(
+      pendingPresentations(requester).map((p) => [p.grant, p.disclosee, p.presenter, p.status.state]),
+      [[g, f.verifier.pre, f.sender.pre, "interrupted"]],
+      "the verifier lists the pending Grant before any consent",
+    );
+    assertEquals(pendingPresentations(requester, { hab: f.sender }), [], "only Grants addressed to that identifier");
+    assertEquals(pendingPresentations(responder), [], "the presenter has no Grant addressed to it");
     const begun = requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
     assertEquals(begun.role, "requester");
     assertEquals(unblindingStatus(requester, g), {
@@ -145,6 +153,7 @@ Deno.test("the disclosee consents; the discloser answers on its own and the owne
     yield* drive(requester, responder, g);
     assertEquals(unblindingStatus(requester, g), { state: "done", role: "requester" });
     assertEquals(unblindingStatus(responder, g), { state: "done", role: "responder" });
+    assertEquals(pendingPresentations(requester), [], "a finished Grant is no longer pending");
     assert(f.observer.runtime.exc.complete(g), "the pending Grant was finished with the released openings");
     assertEquals(f.observer.runtime.exc.exchangeDeadline(f.grant), deadline, "the original deadline is kept");
     assertEquals(f.observer.hby.db.erpy.get([g]), null, "opening completion does not Admit");

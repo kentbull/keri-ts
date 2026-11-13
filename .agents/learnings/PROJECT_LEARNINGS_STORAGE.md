@@ -89,7 +89,7 @@ every method is `async` so none throws synchronously. `health()` adds `faulted` 
 composition ended without `close()`: a runtime crash) and `closed`. The owners' `ChangeSink` is the wallet's own
 (`walletChangeSink`): it forwards to the host or Signaler and records a tracked issuance when it finishes, which is
 sync; the holder's `recordAdmission` is async and consent-bearing, so `receive` records it inline, before delivery.
-Presentation needs `PresentationDeps.views` (the wallet) from the runtime composition and is not exposed yet.
+Presentation selects from the wallet's inventory through `OperationStores.views`, which `openWebWallet` binds late to its `Wallet`; `credentials.present`, `requestProof` (the verifier's `apply`), `presentations` (pending Grants minus the issuance ones) and `unblind` are thin wraps of the runtime's presentation and Unblind owners, and `resendAdmit` rebuilds the stored Admit's wire (`rebuildIssuanceAdmit`) without signing.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;

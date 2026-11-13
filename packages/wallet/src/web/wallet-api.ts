@@ -43,12 +43,26 @@ import {
   type OobiRecord,
   type PendingGrant,
   pendingIssuanceGrants,
+  type PendingPresentation,
+  pendingPresentations,
+  present,
+  type PresentationInput,
+  type PresentationStatus,
+  presentationStatus,
+  rebuildIssuanceAdmit,
   Receiptor,
+  removeMailbox,
+  requestUnblind,
   requireMailboxEndpointUrl,
   type RuntimeClock,
+  type UnblindingEndState,
+  type UnblindingStatus,
+  unblindingStatus,
   ValidationError,
   waitForIssuance,
   waitForOobi,
+  waitForPresentation,
+  waitForUnblinding,
   type WorkflowChange,
 } from "keri-ts/runtime";
 import { WalletAuthor } from "../authoring.ts";
@@ -68,6 +82,8 @@ export const WALLET_TIMEOUTS = Object.freeze({
   receive: 90_000,
   issue: 120_000,
   delivery: 30_000,
+  present: 30_000,
+  unblind: 60_000,
 });
 
 /** What the surface reads and drives; built by `openWebWallet`. */
@@ -125,8 +141,17 @@ function* within<T>(clock: RuntimeClock, ms: number, op: () => Operation<T>): Op
   return yield* race([work(), timer()]);
 }
 
-function reason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** Run a delivery within `ms`; a failure or an expired budget reads `undelivered` with its reason. */
+function* delivered(clock: RuntimeClock, ms: number, send: () => Operation<string[]>): Operation<AdmitDelivery> {
+  try {
+    const sent = yield* within(clock, ms, send);
+    return sent.done
+      ? { state: "delivered", to: sent.value }
+      : { state: "undelivered", reason: `Delivery did not finish within ${ms} ms.` };
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    return { state: "undelivered", reason: error.message };
+  }
 }
 
 /** Shared by the four namespaces: the parts, and the one place an app's promise meets the runtime's scope. */
@@ -373,9 +398,12 @@ export class Oobis extends Surface {
 
 // --- mailboxes -------------------------------------------------------------------------------------------
 
-/** Result of {@link Mailboxes.add}: the accepted end-role state, a refusal with its reason, or the budget. */
-export type MailboxOutcome =
-  | { outcome: "authorized"; status: MailboxStatus }
+/**
+ * Result of {@link Mailboxes.add} (`done` is `authorized`) and {@link Mailboxes.remove} (`revoked`): the accepted
+ * end-role state, a refusal with its reason, or the budget.
+ */
+export type MailboxOutcome<Done extends "authorized" | "revoked" = "authorized"> =
+  | { outcome: Done; status: MailboxStatus }
   | { outcome: "rejected"; reason: string; status: MailboxStatus }
   | { outcome: "timed-out"; timeoutMs: number; status: MailboxStatus };
 
@@ -388,17 +416,50 @@ export class Mailboxes extends Surface {
    * @throws ValidationError when `pre` is not a local identifier or the mailbox's endpoint is unknown
    * (resolve its OOBI first).
    */
-  async add(pre: string, mailbox: string, { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {}) {
+  async add(
+    pre: string,
+    mailbox: string,
+    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
+  ): Promise<MailboxOutcome<"authorized">> {
+    return await this.change(pre, mailbox, timeoutMs, "authorized", addMailbox);
+  }
+
+  /**
+   * Revoke `mailbox` for `pre`: sign an end-role cut, post it to the provider and accept it locally. The
+   * runtime stops polling that mailbox for `pre`.
+   *
+   * @throws ValidationError as for {@link Mailboxes.add}.
+   */
+  async remove(
+    pre: string,
+    mailbox: string,
+    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
+  ): Promise<MailboxOutcome<"revoked">> {
+    return await this.change(pre, mailbox, timeoutMs, "revoked", removeMailbox);
+  }
+
+  /** Pure read of the accepted end-role state. */
+  status(pre: string, mailbox: string): MailboxStatus {
+    return mailboxStatus(this.parts.hby, pre, mailbox);
+  }
+
+  private change<Done extends "authorized" | "revoked">(
+    pre: string,
+    mailbox: string,
+    timeoutMs: number,
+    done: Done,
+    admin: typeof addMailbox,
+  ): Promise<MailboxOutcome<Done>> {
     const { hby, runtime } = this.parts;
     const hab = this.individual(pre);
     requireMailboxEndpointUrl(hby, mailbox);
-    return await this.go(function*(): Operation<MailboxOutcome> {
+    return this.go(function*(): Operation<MailboxOutcome<Done>> {
       const deps = { hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol };
       try {
-        const result = yield* within(runtime.clock, timeoutMs, () => addMailbox(deps, hab, mailbox));
+        const result = yield* within(runtime.clock, timeoutMs, () => admin(deps, hab, mailbox));
         const status = mailboxStatus(hby, pre, mailbox);
         return result.done
-          ? { outcome: "authorized", status: result.value }
+          ? { outcome: done, status: result.value }
           : { outcome: "timed-out", timeoutMs, status };
       } catch (error) {
         // The provider refused, or its reply was not accepted into local state.
@@ -406,11 +467,6 @@ export class Mailboxes extends Surface {
         return { outcome: "rejected", reason: error.message, status: mailboxStatus(hby, pre, mailbox) };
       }
     });
-  }
-
-  /** Pure read of the accepted end-role state. */
-  status(pre: string, mailbox: string): MailboxStatus {
-    return mailboxStatus(this.parts.hby, pre, mailbox);
   }
 }
 
@@ -421,6 +477,40 @@ export type EndedStatus = Extract<IssuanceStatus, { state: IssuanceEndState }>;
 
 /** Whether the Admit reached the issuer. The Admit is accepted and recorded locally either way. */
 export type AdmitDelivery = { state: "delivered"; to: string[] } | { state: "undelivered"; reason: string };
+
+/** A terminal state of a presentation other than delivery. */
+export type EndedPresentation = Extract<PresentationStatus, { state: UnblindingEndState }>;
+
+/** Inputs of {@link Credentials.present}: a library presentation input with `pre` in place of the `hab`. */
+export type PresentInput = PresentationInput extends infer Input
+  ? Input extends { hab: Hab } ? Omit<Input, "hab"> & { pre: string } : never
+  : never;
+
+/**
+ * Result of {@link Credentials.present}. `delivered`: the transport reached the recipient (`status.deliveries`),
+ * which is not their acceptance. `ended`: delivery stopped (`status.reason`). `timed-out`: delivery is still
+ * being attempted (`status.blocked` says the last transport failure).
+ */
+export type PresentOutcome =
+  | { outcome: "delivered"; said: string; recipient: string; status: Extract<PresentationStatus, { state: "done" }> }
+  | { outcome: "ended"; said: string; recipient: string; status: EndedPresentation }
+  | { outcome: "timed-out"; said: string; recipient: string; timeoutMs: number; status: PresentationStatus };
+
+/** A terminal state of an Unblind other than completion. */
+export type EndedUnblinding = Extract<UnblindingStatus, { state: UnblindingEndState }>;
+
+/**
+ * Result of {@link Credentials.unblind}. `unblinded`: the registry proofs behind the Grant are current.
+ * `ended`: the request stopped (`status.reason`). `timed-out`: the presenter has not answered; the request
+ * keeps running.
+ */
+export type UnblindOutcome =
+  | { outcome: "unblinded"; grant: string; status: Extract<UnblindingStatus, { state: "done" }> }
+  | { outcome: "ended"; grant: string; status: EndedUnblinding }
+  | { outcome: "timed-out"; grant: string; timeoutMs: number; status: UnblindingStatus };
+
+/** The credential-state vocabulary an Unblind freezes when the caller names none. */
+export const DEFAULT_UNBLIND_STATES: readonly string[] = Object.freeze(["issued", "revoked", ""]);
 
 /**
  * Result of {@link Credentials.receive}. `admitted`: the credential is in the inventory (`held`) and the
@@ -524,26 +614,20 @@ export class Credentials extends Surface {
           grant,
           admit,
           held: record,
-          delivery: { state: "undelivered", reason: "Admitted by an earlier call; delivery is not repeated." },
+          delivery: {
+            state: "undelivered",
+            reason: "Admitted by an earlier call; use resendAdmit to deliver it again.",
+          },
         };
       }
       const admitted = yield* admitIssuance(ops.deps, { hab, grant, message });
       // The inventory record precedes delivery: whatever happens to the network, consent is on record.
       const held = yield* call(() => wallet.recordAdmission(grant, admitted.admit.said!, { consent: true }));
-      let delivery: AdmitDelivery;
-      try {
-        const sent = yield* within(
-          runtime.clock,
-          deliveryTimeoutMs,
-          () => deliverIssuanceAdmit(ops.deps, hab, admitted),
-        );
-        delivery = sent.done
-          ? { state: "delivered", to: sent.value }
-          : { state: "undelivered", reason: `Delivery did not finish within ${deliveryTimeoutMs} ms.` };
-      } catch (error) {
-        if (!(error instanceof Error)) throw error;
-        delivery = { state: "undelivered", reason: error.message };
-      }
+      const delivery = yield* delivered(
+        runtime.clock,
+        deliveryTimeoutMs,
+        () => deliverIssuanceAdmit(ops.deps, hab, admitted),
+      );
       return { outcome: "admitted", grant, admit: admitted.admit.said!, held, delivery };
     });
   }
@@ -615,6 +699,126 @@ export class Credentials extends Surface {
       }
       return { outcome: "issued", grant, credential: credential.said!, registry, issued: record() };
     });
+  }
+
+  /**
+   * Deliver the Admit of a Grant this wallet admitted again, after `receive` reported it `undelivered` or the
+   * page restarted. Rebuilds the stored Admit's bytes and signs nothing. An issuer that already took the first
+   * Admit may drop the repeat as a replay; the result then still reads `delivered`, since the transport reached it.
+   *
+   * @throws ValidationError when this wallet signed no Admit for `grant`.
+   */
+  async resendAdmit(
+    grant: string,
+    { timeoutMs = WALLET_TIMEOUTS.delivery }: { timeoutMs?: number } = {},
+  ): Promise<AdmitDelivery> {
+    const { hby, runtime } = this.parts;
+    const ops = this.owner();
+    const admit = hby.db.erpy.get([grant])?.qb64;
+    if (!admit) throw new ValidationError("This wallet has not admitted that Grant.");
+    return await this.go(function*(): Operation<AdmitDelivery> {
+      const rebuilt = yield* rebuildIssuanceAdmit(ops.deps, admit);
+      const hab = hby.habs.get(rebuilt.admit.pre!)!;
+      return yield* delivered(runtime.clock, timeoutMs, () => deliverIssuanceAdmit(ops.deps, hab, rebuilt));
+    });
+  }
+
+  /**
+   * Present a credential: sign the message (`offer`, `grant`, `apply`, or `agree`/`spurn` answering one),
+   * queue it for delivery and wait until the transport reports. `delivered` means the transport reached the
+   * recipient, not that the recipient accepted it; read the peer's answer from `status.response` later with
+   * {@link Credentials.presentationStatus}. Selecting a credential (`selection`) reads the wallet's inventory.
+   *
+   * @throws ValidationError for an unknown or group identifier or a selection the discloser refuses.
+   */
+  async present(
+    input: PresentInput,
+    { timeoutMs = WALLET_TIMEOUTS.present, maxAttempts }: { timeoutMs?: number; maxAttempts?: number } = {},
+  ): Promise<PresentOutcome> {
+    const { pre, ...rest } = input;
+    const hab = this.individual(pre), ops = this.presenter();
+    return await this.go(function*(): Operation<PresentOutcome> {
+      const begun = yield* present(ops, { ...rest, hab } as PresentationInput, { maxAttempts });
+      const { said, recipient } = begun;
+      const waited = yield* waitForPresentation(ops, said, { timeoutMs });
+      const { status } = waited;
+      if (waited.outcome === "timed-out") return { outcome: "timed-out", said, recipient, timeoutMs, status };
+      if (status.state === "done") return { outcome: "delivered", said, recipient, status };
+      return { outcome: "ended", said, recipient, status: status as EndedPresentation };
+    });
+  }
+
+  /**
+   * Ask a holder for a presentation (the verifier's `apply`). A thin form of {@link Credentials.present}.
+   * The holder's answer arrives as an exchange the runtime stores.
+   */
+  requestProof(
+    pre: string,
+    options: Extract<PresentInput, { verb: "apply" }>["options"],
+    wait?: { timeoutMs?: number; maxAttempts?: number },
+  ): Promise<PresentOutcome> {
+    return this.present({ verb: "apply", pre, options }, wait);
+  }
+
+  /** Pure read of a presentation this wallet sent. */
+  presentationStatus(said: string): PresentationStatus {
+    return presentationStatus(this.presenter(), said);
+  }
+
+  /**
+   * The presentation Grants this wallet received and holds pending until it fetches their registry proofs
+   * ({@link Credentials.unblind}); a pure read. Grants waiting for the issuance consent
+   * ({@link Credentials.pending}) are not listed.
+   */
+  presentations(pre?: string): PendingPresentation[] {
+    const issuance = new Set(this.pending(pre).map((pending) => pending.grant));
+    return pendingPresentations(this.unblinder(), pre ? { hab: this.hab(pre) } : {}).filter((item) =>
+      !issuance.has(item.grant)
+    );
+  }
+
+  /**
+   * Consent to fetch the missing registry proofs for a presentation Grant addressed to this wallet and wait
+   * for them. Calling it again for a Grant that timed out waits on the running request. It authorizes
+   * nothing else: admitting a presented credential is a separate consent.
+   *
+   * @throws ValidationError when `grant` is not a Grant addressed to a local identifier.
+   */
+  async unblind(
+    grant: string,
+    { states = DEFAULT_UNBLIND_STATES, timeoutMs = WALLET_TIMEOUTS.unblind }: {
+      states?: readonly string[];
+      timeoutMs?: number;
+    } = {},
+  ): Promise<UnblindOutcome> {
+    const { runtime } = this.parts;
+    const ops = this.unblinder();
+    const holder = runtime.exc.retainedInput(grant)?.serder.sad?.ri;
+    const hab = typeof holder === "string" ? this.parts.hby.habs.get(holder) : undefined;
+    if (!hab) throw new ValidationError("The Grant is not addressed to a local identifier of this wallet.");
+    return await this.go(function*(): Operation<UnblindOutcome> {
+      const before = unblindingStatus(ops, grant);
+      if (before.state !== "active" && before.state !== "done" && before.state !== "expired") {
+        requestUnblind(ops, { hab, grant, states });
+      }
+      const waited = yield* waitForUnblinding(ops, grant, { timeoutMs });
+      const { status } = waited;
+      if (waited.outcome === "timed-out") return { outcome: "timed-out", grant, timeoutMs, status };
+      if (status.state === "done") return { outcome: "unblinded", grant, status };
+      return { outcome: "ended", grant, status: status as EndedUnblinding };
+    });
+  }
+
+  private presenter() {
+    const ops = this.parts.runtime.operations?.presentation;
+    if (!ops) throw new ValidationError("This wallet's runtime has no presentation owner.");
+    return ops;
+  }
+
+  private unblinder() {
+    const ops = this.parts.runtime.operations?.unblinding;
+    if (!ops) throw new ValidationError("This wallet's runtime has no Unblind owner.");
+    return ops;
   }
 
   /** The runtime's issuance owner. */

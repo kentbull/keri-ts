@@ -19,6 +19,51 @@ Exchanger and an opened WalletBaser. Callers own and close those stores.
 - `@keri-ts/wallet/lmdb` is the Node-only entry: `createWalletBaser(options)` opens the inventory
   on LMDB. It has no `browser` condition and cannot be bundled for a browser.
 
+## Browser wallet API
+
+`openWebWallet` (from `@keri-ts/wallet/web`) opens an encrypted wallet on IndexedDB with a
+running runtime and returns a promise-based API. An app never calls `run(...)` or builds workflow
+dependencies.
+
+```ts
+const w = await openWebWallet({ name: "alice", bran });
+
+await w.oobis.resolve(witnessOobi); // { outcome: "resolved" | "failed" | "timed-out" }
+const icp = await w.identifiers.incept({ alias: "main", witnesses: [witness], toad: 1 });
+if (icp.outcome !== "complete") console.warn(icp); // "incomplete" has a reason; w.identifiers.complete retries
+await w.oobis.resolve(mailboxOobi);
+await w.mailboxes.add(icp.pre, mailbox); // w.mailboxes.remove revokes
+
+// Holder: take a credential offered to you.
+const [grant] = w.credentials.pending(); // a pure read
+const got = await w.credentials.receive(grant.grant); // consent, wait, admit, record, deliver
+if (got.outcome === "admitted" && got.delivery.state === "undelivered") {
+  await w.credentials.resendAdmit(grant.grant);
+}
+
+// Issuer: one call; `onBegun` hands out the Grant SAID while the exchange runs.
+const issued = await w.credentials.issue({
+  pre: icp.pre,
+  registry: "members",
+  credential: { issuee: holder, attribute: { role: "member" } },
+});
+
+// Present, and verify what was presented to you.
+await w.credentials.present({ verb: "grant", pre: icp.pre, selection: { said }, options: { message: "", recipient } });
+await w.credentials.requestProof(icp.pre, { message: "", recipient: holder, plan: [] }); // the verifier's apply
+for (const p of w.credentials.presentations()) await w.credentials.unblind(p.grant);
+
+const health = w.health(); // ok | latched | faulted | stopped | closed
+await w.close();
+```
+
+Every call that waits takes `timeoutMs` (defaults in `WALLET_TIMEOUTS`) and returns a typed
+`outcome` with the status read at return. Remote and clock results are values; only a call that
+breaks its contract (an unknown identifier, a Grant not addressed to you, an unresolved mailbox
+endpoint) rejects. After `timed-out` the runtime keeps the operation going: calling `receive` or
+`unblind` again resumes it, and a finished `issue` is recorded in the inventory by the wallet.
+Group identifiers are not covered yet.
+
 `recordIssued` verifies accepted local issuance and accepts an explicit blinded
 opening. `recordAdmission(..., {consent: true})` requires current authenticated
 root truth, the intended local holder and the actual accepted response.

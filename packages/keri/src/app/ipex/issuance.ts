@@ -900,6 +900,29 @@ export function* deliverIssuanceAdmit(
 }
 
 /**
+ * Rebuild an Admit this process signed earlier so it can be delivered again, after a failed delivery or a
+ * restart. The wire is rebuilt from the stored signatures or source seal, so it is the bytes first made and
+ * nothing is signed. Delivery stays with {@link deliverIssuanceAdmit}. A peer that already took the Admit
+ * may drop the repeat as a replay.
+ *
+ * @throws ValidationError for an Admit no local identifier signed or whose retained factors no longer authenticate.
+ */
+export function* rebuildIssuanceAdmit(
+  deps: Pick<AdmitDeps, "hby" | "rgy" | "exc" | "receiptor">,
+  admit: string,
+): Operation<IssuanceAdmit> {
+  const retained = deps.exc.retainedInput(admit), serder = retained?.serder;
+  const hab = serder?.pre ? deps.hby.habs.get(serder.pre) : undefined;
+  if (!retained || !serder || serder.route !== "/ipex/admit" || !hab || typeof serder.sad?.ri !== "string") {
+    throw new ValidationError("No Admit was signed by a local identifier with this SAID");
+  }
+  const support = retained.sourceSeals?.length
+    ? new IpexDiscloser(deps.hby, deps.rgy.store, deps.exc, deps.receiptor).kel(hab)
+    : new Uint8Array();
+  return { admit: serder, wire: concatBytes(support, yield* storedExchangeWire(retained)), dest: serder.sad.ri };
+}
+
+/**
  * Local abandon: release the DH approval (ephemeral keys, permanent refusal of
  * this operation) and read `abandoned` until the process ends. Does not message the peer and does
  * not undo a retained root or a registry update that was already anchored.

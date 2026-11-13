@@ -21,6 +21,7 @@ import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { GroupIpexOperations } from "../ipex/group-ipex.ts";
+import type { CredentialViews } from "../ipex/ipex-discloser.ts";
 import { type IssuanceDeps, IssuanceOperations, posterDelivery } from "../ipex/issuance.ts";
 import { PresentationOperations } from "../ipex/presenting.ts";
 import { UnblindingOperations } from "../ipex/unblinding-workflow.ts";
@@ -49,6 +50,8 @@ export interface OperationStores {
    * registry store is; a wallet with its own table supplies that instead.
    */
   derived?: DerivedUpdateStore;
+  /** The embedder's credential inventory, from which presentation selects issued and held credentials. Without it only replies and `apply` can be presented. */
+  views?: CredentialViews;
   /** Receives identity-only changes after commit; defaults to the runtime's Signaler when it has one. */
   changes?: ChangeSink;
 }
@@ -152,6 +155,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       delivery,
       clock,
       derived: issuance.derived,
+      views: stores.views,
       changes,
       wake: wake.notify,
     }),
