@@ -8,7 +8,8 @@
  *
  * Recovery from a latched composition (ADR-0015 rule 3): `close()` reports the
  * persistence failure but still stops everything and releases the lock, after
- * which `openWebWallet()` with the same name loads exactly the durable prefix.
+ * which `openWebWallet()` with the same name loads exactly the durable prefix. `recoverWebWallet()`
+ * (recover-web-wallet.ts) performs that sequence and returns the new handle.
  */
 import { call, createScope, type Operation, run, spawn, suspend } from "effection";
 import type { PersistenceStatus, WebStoreOpener } from "keri-ts/db";
@@ -165,7 +166,7 @@ export interface WebWallet extends WalletApi {
   /**
    * Whether persistence is still accepting commits. A failed write is retried in place for about half a
    * second; if it still fails, every store of the composition refuses commits and reads continue.
-   * Recover with `close()` then `openWebWallet()`.
+   * Recover with `recoverWebWallet()`, which closes this handle, reopens and returns a new one.
    */
   health(): WebWalletHealth;
   /**
@@ -178,7 +179,8 @@ export interface WebWallet extends WalletApi {
    * Run `task` on the composition's persistence queue, after every commit made before this call is
    * durable, and resolve with its result; for reading what the stores persisted. A throwing `task`
    * rejects only this call, with `PersistenceReadError`, and never latches the wallet. After a latch it
-   * still runs, against the durable prefix only.
+   * still runs, against the durable prefix only. After `close()` or a runtime stop it rejects with
+   * `WalletStoppedError` and does not run `task`.
    */
   readPersisted<T>(task: () => Promise<T>): Promise<T>;
   /**
@@ -431,7 +433,11 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
       return { status: "ok" };
     },
     persistenceStatus: () => parts.opener.queue.status(),
-    readPersisted: (task) => parts.opener.queue.read(task),
+    readPersisted: async (task) => {
+      // A closed or stopped wallet has released its stores; reading would see whatever the connections left.
+      assertRunning();
+      return await parts.opener.queue.read(task);
+    },
     close: () =>
       closing ??= (async () => {
         lifecycle?.page.removeEventListener("pagehide", onHide);
