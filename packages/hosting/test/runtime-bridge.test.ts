@@ -3,17 +3,33 @@ import { systemClock } from "../../keri/src/app/runtime/runtime-clock.ts";
 import { httpClient } from "../../keri/test/support/http-client.ts";
 // @file-test-lane app-fast-parallel
 
-import { concatBytes, Counter, parseBytes, Vrsn_2_0 } from "cesr-ts";
-import { call, run, sleep, spawn } from "effection";
+import {
+  collectPayload,
+  concatBytes,
+  Counter,
+  Diger,
+  framePayload,
+  MtrDex,
+  nestedPayload,
+  parseBytes,
+  Vrsn_2_0,
+} from "cesr-ts";
+import { call, run, sleep, spawn, suspend } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import {
+  type AgentRuntime,
   createAgentRuntime,
   envelopeFromFrame,
+  exchange,
+  type Habery,
   type KramConfig,
+  mailboxTopicKey,
   query,
   readCesrRequestBytes,
   Roles,
+  settleRuntimeIngress,
 } from "keri-ts/runtime";
+import { introduce } from "../../keri/src/app/delivery/introducing.ts";
 import { runHostKernel } from "../src/host/kernel.ts";
 import { drainRuntimeCues } from "../src/http/protocol/runtime-bridge.ts";
 
@@ -130,6 +146,7 @@ Deno.test("host listener precedes loopback mailbox consumption and shutdown join
       const worker = yield* spawn(() =>
         runHostKernel(hby, {
           enableMailboxStore: true,
+          enableRelay: false,
           kram,
           serviceHab: hab,
           http: { port, hostname: "127.0.0.1" },
@@ -162,4 +179,132 @@ Deno.test("host listener precedes loopback mailbox consumption and shutdown join
       }
     });
   }
+});
+
+/** Reserve a free loopback port for a host that binds it next. */
+function reservePort(): number {
+  const reservation = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  const port = (reservation.addr as Deno.NetAddr).port;
+  reservation.close();
+  return port;
+}
+
+/** Accept wire into a Habery's state before its host starts, through a short-lived runtime. */
+function* preload(hby: Habery, messages: Uint8Array[]) {
+  const runtime = yield* createAgentRuntime(hby, httpClient(() => Promise.reject(new Error("no egress"))), systemClock);
+  try {
+    yield* settleRuntimeIngress(runtime, messages);
+  } finally {
+    yield* runtime.close();
+  }
+}
+
+Deno.test("edge to agent to third-party mailbox delivers the signed child", async () => {
+  const agentPort = reservePort();
+  const mailboxPort = reservePort();
+  await run(function*() {
+    const agentHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const mailboxHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const edgeHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const agent = agentHby.makeHab("agent");
+      const mailbox = mailboxHby.makeHab("mailbox", undefined, { transferable: false });
+      const sender = edgeHby.makeHab("sender");
+      const recipient = edgeHby.makeHab("recipient");
+      const mailboxUrl = `http://127.0.0.1:${mailboxPort}/`;
+      agentHby.db.locs.pin([agent.pre, "http"], { url: `http://127.0.0.1:${agentPort}/` });
+      mailboxHby.db.locs.pin([mailbox.pre, "http"], { url: mailboxUrl });
+      // The recipient uses a mailbox the agent does not host; both know it only from the recipient's replies.
+      const recipientMailbox = recipient.makeEndRole(mailbox.pre, Roles.mailbox, true);
+      yield* preload(mailboxHby, [introduce(recipient, mailbox.pre), recipientMailbox]);
+      yield* preload(agentHby, [
+        introduce(recipient, agent.pre),
+        recipientMailbox,
+        mailbox.makeLocScheme(mailboxUrl),
+      ]);
+
+      const listening = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+      let mailboxRuntime: AgentRuntime | undefined;
+      let agentRuntime: AgentRuntime | undefined;
+      const mailboxHost = yield* spawn(() =>
+        runHostKernel(mailboxHby, {
+          enableMailboxStore: true,
+          enableRelay: false,
+          serviceHab: mailbox,
+          http: { port: mailboxPort, hostname: "127.0.0.1", onListen: () => listening[0].resolve() },
+          protocolPolicy: {},
+          companionHosts: [function*(runtime) {
+            mailboxRuntime = runtime;
+            yield* suspend();
+          }],
+        })
+      );
+      const agentHost = yield* spawn(() =>
+        runHostKernel(agentHby, {
+          enableMailboxStore: true,
+          enableRelay: true,
+          // The plan's agent runs KRAM; every message the edge hands it is judged as received input.
+          kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+          serviceHab: agent,
+          http: { port: agentPort, hostname: "127.0.0.1", onListen: () => listening[1].resolve() },
+          protocolPolicy: {},
+          companionHosts: [function*(runtime) {
+            agentRuntime = runtime;
+            yield* suspend();
+          }],
+        })
+      );
+      try {
+        yield* call(() => Promise.all(listening.map((listener) => listener.promise)));
+        // The edge signs locally and hands the agent one `/fwd` for the recipient, as Poster would wrap it.
+        const [child] = yield* call(() =>
+          parseBytes(sender.endorse(
+            exchange("/relay/check", { value: "through the agent" }, { sender: sender.pre, pvrsn: Vrsn_2_0 })[0],
+            { pipelined: false, gvrsn: Vrsn_2_0, genusify: true },
+          ))
+        );
+        const [fwd] = exchange("/fwd", {
+          evt: new Diger({ code: MtrDex.Blake3_256, raw: Diger.digest(child.body.raw, MtrDex.Blake3_256) }).qb64,
+        }, { sender: sender.pre, modifiers: { pre: recipient.pre, topic: "relay" }, pvrsn: Vrsn_2_0 });
+        const [outer] = yield* call(() =>
+          parseBytes(sender.endorse(fwd, { pipelined: false, gvrsn: Vrsn_2_0, genusify: true }))
+        );
+        const wrapper = yield* call(() => collectPayload(framePayload({ ...outer, nests: [child] })));
+        const status = yield* call(async () => {
+          const response = await fetch(`http://127.0.0.1:${agentPort}/`, {
+            method: "POST",
+            headers: { "content-type": "application/cesr" },
+            body: new Blob([concatBytes(
+              introduce(sender, agent.pre),
+              sender.makeEndRole(agent.pre, Roles.mailbox, true),
+              wrapper,
+            ) as Uint8Array<ArrayBuffer>]),
+          });
+          await response.body?.cancel();
+          return response.status;
+        });
+        assertEquals(status, 204);
+
+        const key = mailboxTopicKey(recipient.pre, "relay");
+        const deadline = performance.now() + 10_000;
+        while (!mailboxRuntime?.mailboxer?.getTopicMsgs(key).length && performance.now() < deadline) {
+          yield* sleep(25);
+        }
+        const stored = mailboxRuntime!.mailboxer!.getTopicMsgs(key);
+        assertEquals(stored.length, 1);
+        // The third-party mailbox holds the sender's own signed child, not anything the agent signed.
+        assertEquals(stored[0], yield* call(() => collectPayload(nestedPayload(child, Vrsn_2_0))));
+        assertExists(agentRuntime!.reactor.kvy.kramer, "the agent judged the edge's input under KRAM");
+        // The agent relayed the child; it kept no copy for a recipient it does not serve.
+        assertEquals(agentRuntime!.mailboxer!.getTopicMsgs(key), []);
+      } finally {
+        yield* agentHost.halt();
+        yield* mailboxHost.halt();
+      }
+    } finally {
+      yield* edgeHby.close(true);
+      yield* mailboxHby.close(true);
+      yield* agentHby.close(true);
+    }
+  });
 });

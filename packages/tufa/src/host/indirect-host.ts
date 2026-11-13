@@ -25,6 +25,7 @@ export function* runIndirectHost(
 ): Operation<void> {
   yield* runHostKernel(hby, {
     enableMailboxStore: true,
+    enableRelay: false,
     serviceHab: options.serviceHab,
     hostedPrefixes: options.hostedPrefixes,
     kram: options.kram,

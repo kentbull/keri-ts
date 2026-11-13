@@ -33,6 +33,11 @@ export interface HostKernelHttpSpec {
 export interface HostKernelSpec {
   /** Whether this host constructs provider mailbox storage. */
   enableMailboxStore: boolean;
+  /**
+   * Whether `/fwd` intake re-sends a served sender's child through this host's Poster (the agent side of relay
+   * mode). Requires `enableMailboxStore`.
+   */
+  enableRelay: boolean;
   /** Explicit receiver policy selected by this host's composition root; omission leaves KRAM disabled. */
   kram?: KramConfig;
   serviceHab: Hab;
@@ -56,6 +61,7 @@ export function* runHostKernel(
 ): Operation<void> {
   const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
     enableMailboxStore: spec.enableMailboxStore,
+    relaying: spec.enableRelay,
     kram: spec.kram,
   });
   const hostedPrefixes = spec.hostedPrefixes ?? [spec.serviceHab.pre];
