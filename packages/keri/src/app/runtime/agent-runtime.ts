@@ -96,6 +96,11 @@ export interface AgentRuntime {
   hby: Habery;
   /** Provider mailbox store, borrowed when injected and otherwise owned when enabled. */
   mailboxer: Mailboxer | null;
+  /**
+   * Whether this runtime relays for served senders (the agent side of relay mode, `AgentRuntimeOptions.relaying`).
+   * A host reads it to serve the OOBI of any identifier whose KEL it holds, the edge's replay source.
+   */
+  readonly relaying: boolean;
   /** Persistent notice store; ownership follows explicit injection. */
   noter: Noter | null;
   /** Configured notice producer, sharing the composed signer and signaler. */
@@ -211,7 +216,8 @@ export interface AgentRuntimeOptions {
   /**
    * Agent side of relay mode: `/fwd` intake delivers the child of a sender that authorized this host as its
    * `mailbox` or `agent`, through this runtime's own ingress to a local habitat and through its Poster to anyone
-   * else. Requires a mailbox store, which hosts `/fwd` intake. Omitted or false keeps store-only intake.
+   * else. Requires a mailbox store, which hosts `/fwd` intake. The `/oobis` handler then resolves an OOBI only
+   * for such a sender. Omitted or false keeps store-only intake and accepts `/oobis` from any sender.
    */
   relaying?: boolean;
   /**
@@ -270,7 +276,8 @@ export interface AgentRuntimeOptions {
    * is refused unless it goes to the relay's OOBI origin or an accepted relay location. Poster forwards every
    * message to the relay, every query is addressed to the relay, and the relay is the only mailbox polled. Each
    * needs a mailbox end role naming the relay: from the wrapper or query signer (a group's local member) to send,
-   * and from the polled subject (a group itself) to poll. The relay's OOBI
+   * and from the polled subject (a group itself) to poll. The Oobiery fetches only the relay's origin: it asks the
+   * relay to resolve any other OOBI and reads the result from the relay's OOBI endpoint. The relay's OOBI
    * is queued when its location is not yet accepted. Omitted, the runtime is a forwarder and delivers directly.
    */
   relay?: Relay;
@@ -437,7 +444,7 @@ export function* createAgentRuntime(
   const reactor = new Reactor(protocol);
   loadChallengeHandlers(hby.db, exc);
   loadDelegationHandlers(hby, exc, notifier);
-  loadOobiHandlers(hby, exc, notifier);
+  loadOobiHandlers(hby, exc, notifier, options.relaying === true);
   const mux = loadMultisigHandlers(hby, exc, { notifier, registry: protocol.registry, messageKevery: protocol.kvy });
   loadIpexHandlers(hby, exc, {
     notifier,
@@ -518,23 +525,16 @@ export function* createAgentRuntime(
     }
   });
   const delegating = new Anchorer(hby, postman, querying, protocol, http, clock);
-  // Group receipting reaches TCP-only witnesses as `WitnessReceiptor` does, as KERIpy's Counselor does.
-  const groupReceiptor = new Receiptor(hby, protocol, http, clock);
+  // Only a runtime with operations owners and a registry root has a root replicator to drain this deck.
+  const groupChanges = registryRoot && ipex ? new Deck<string>() : undefined;
   const counselor = new Counselor(
     hby,
-    {
-      receipt: (pre, options) => groupReceiptor.receipt(pre, { ...options, allowTcp: true }),
-      get: (pre, options) => groupReceiptor.get(pre, options),
-    },
+    new Receiptor(hby, protocol, http, clock),
     clock,
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
-    {
-      rotated: (cue) => {
-        kelPublisher.rotated.push(cue);
-        owned?.rootReplicator?.prompt(cue.pre);
-      },
-    },
+    kelPublisher.rotated,
+    groupChanges,
     options.counselorReceiptRetry,
     groupEventForwarding(hby, postman),
   );
@@ -552,18 +552,27 @@ export function* createAgentRuntime(
       registryRoot,
       mux,
       counselor,
+      groupChanges,
       retry: options.operationRetry,
       queryResendMs: options.issuanceQueryResendMs,
       changes: signaler ? signalerChangeSink(signaler) : undefined,
     }, options.operationStores)
     : null;
-  const oobiery = new Oobiery(hby, protocol, revery, http, cues);
+  const oobiery = new Oobiery(
+    hby,
+    protocol,
+    revery,
+    http,
+    cues,
+    options.relay ? { relay: options.relay, postman, clock } : null,
+  );
   oobiery.registerReplyRoutes(revery.rtr);
   if (options.relay && !relayEndpoint(hby, options.relay)) oobiery.resolve(options.relay.oobi);
   const authenticator = new Authenticator(hby, http);
   return {
     hby,
     mailboxer,
+    relaying: options.relaying === true,
     noter,
     notifier,
     signaler,

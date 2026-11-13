@@ -38,6 +38,7 @@
 import { Diger, Ilks, NumberPrimitive, NumDex, ParserError, type SerderKERI, Verfer } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import type { RotatedCue } from "../../core/cues.ts";
+import type { Deck } from "../../core/deck.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import type { Baser } from "../../db/basing.ts";
@@ -116,13 +117,8 @@ export interface GroupDelegation {
 
 /** Receipting collaborator; `Receiptor` fits. */
 export interface GroupReceipting {
-  receipt(pre: string, options: { sn: number; auths: WitnessAuthMap }): Operation<unknown>;
+  receipt(pre: string, options: { sn: number; auths: WitnessAuthMap; allowTcp?: boolean }): Operation<unknown>;
   get(pre: string, options: { sn: number; said: string }): Operation<boolean>;
-}
-
-/** Told when a group rotation completes, so its mailboxes are told; the runtime's `kelPublisher.rotated` fits. */
-export interface GroupMailboxes {
-  rotated(cue: RotatedCue): void;
 }
 
 /**
@@ -206,8 +202,12 @@ export class Counselor {
    * @param clock Time source for fallback and retry; only `now` is used.
    * @param changes Optional sink told `{kind:"group", id:"<pre>:<sn>"}` after commits.
    * @param delegation Anchorer and query port for delegated events; omit for non-delegated hosts.
-   * @param mailboxes Told when one of the group's rotations completes; the member runtime's publisher then tells
-   *   the group's mailboxes the new key state, and several members doing so is harmless.
+   * @param rotated Deck that gets a record of each completed group rotation (`rot` or `drt`); the member runtime
+   *   passes its KEL publisher's, which then tells the group's mailboxes the new key state. Several members doing
+   *   so is harmless.
+   * @param groupChanges Deck that gets the prefix of a group whose establishment event completed or whose stored
+   *   members were aligned late; the member runtime shares it with its root replicator, which re-derives the
+   *   copies the group owes on its next pass instead of at its next sweep.
    */
   constructor(
     private readonly hby: Habery,
@@ -215,7 +215,8 @@ export class Counselor {
     private readonly clock: Pick<RuntimeClock, "now">,
     private readonly changes?: ChangeSink,
     private readonly delegation?: GroupDelegation,
-    private readonly mailboxes?: GroupMailboxes,
+    private readonly rotated?: Deck<RotatedCue>,
+    private readonly groupChanges?: Deck<string>,
     private readonly receiptRetry: Readonly<RetryPolicy> = DEFAULT_RECEIPT_RETRY,
     private readonly forwarding?: GroupForwarding,
   ) {
@@ -487,8 +488,7 @@ export class Counselor {
    * KEL is missing) is left as it is and read again on a later pass, which the arriving KEL's write brings about.
    *
    * After a change, an elected member whose latest establishment event already completed owes it again to the
-   * members it now has. Other components read the stored members themselves (the root replicator re-derives a
-   * group whose stored members changed); nothing here tells them.
+   * members it now has, and the group goes on `groupChanges` so the root replicator re-derives its copies.
    */
   private alignMembers(): void {
     const db = this.hby.db;
@@ -500,6 +500,7 @@ export class Counselor {
       this.aligned.set(pre, est.d);
       if (alignment === "unchanged") continue;
       this.changes?.push({ kind: "group", id: `${pre}:${est.s}` });
+      this.groupChanges?.push(pre);
       const event = { pre, sn: est.s, said: est.d };
       if (this.completed(pre, est.s) === est.d) this.owe(event);
     }
@@ -516,7 +517,10 @@ export class Counselor {
     if (members.length) this.forwards.set(this.runKey(event), { event, members, attempts: 0, nextAt: 0 });
   }
 
-  /** Record completion of a counseled event and drop its row from `table`. */
+  /**
+   * Record completion of a counseled event and drop its row from `table`. A completed establishment event goes on
+   * `groupChanges`, and a completed rotation on `rotated` as well.
+   */
   private finish(table: Baser["gpse"], event: GroupEventRef, row: [NumberPrimitive, Diger]): void {
     const db = this.hby.db;
     db.transaction(() => {
@@ -526,9 +530,10 @@ export class Counselor {
     this.runs.delete(this.runKey(event));
     this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
     this.owe(event);
-    const ilk = db.getEvtSerder(event.pre, event.said)?.ilk;
-    if (ilk === Ilks.rot || ilk === Ilks.drt) {
-      this.mailboxes?.rotated({ kin: "rotated", pre: event.pre, sn: event.sn, said: event.said });
+    const serder = db.getEvtSerder(event.pre, event.said);
+    if (serder?.estive) this.groupChanges?.push(event.pre);
+    if (serder?.ilk === Ilks.rot || serder?.ilk === Ilks.drt) {
+      this.rotated?.push({ kin: "rotated", pre: event.pre, sn: event.sn, said: event.said });
     }
   }
 
@@ -556,7 +561,8 @@ export class Counselor {
     if (now < run.nextAt) return;
     const submit = forceSubmit || groupWitnesser(this.hby, event.pre, event) || now - run.since >= run.fallbackAfterMs;
     try {
-      if (submit) yield* this.receipting.receipt(event.pre, { sn: event.sn, auths: run.auths });
+      // Group receipting reaches TCP-only witnesses, as `WitnessReceiptor` and KERIpy's Counselor do.
+      if (submit) yield* this.receipting.receipt(event.pre, { sn: event.sn, auths: run.auths, allowTcp: true });
       else yield* this.receipting.get(event.pre, { sn: event.sn, said: event.said });
       run.failure = null;
       run.delay = this.receiptRetry.baseMs;

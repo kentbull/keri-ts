@@ -10,7 +10,7 @@
 import { Dater, Diger, GroupSizeError, NumberPrimitive, NumDex, type SerderKERI, Siger } from "cesr-ts";
 import { ensure, type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
-import type { RegistryRoot } from "../../../../src/acdc/salting.ts";
+import { type RegistryRoot, RootDeferred } from "../../../../src/acdc/salting.ts";
 import { RootReplicator } from "../../../../src/app/credentials/root-replicator.ts";
 import type { Poster } from "../../../../src/app/delivery/forwarding.ts";
 import { Anchorer } from "../../../../src/app/identity/delegating.ts";
@@ -36,6 +36,8 @@ import { remoteGroupMembers } from "../../../../src/app/multisig/multisig-messag
 import { replaceGroupMember } from "../../../../src/app/multisig/replace-member.ts";
 import type { AgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
+import type { RotatedCue } from "../../../../src/core/cues.ts";
+import { Deck } from "../../../../src/core/deck.ts";
 import { exchange } from "../../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
 import { MemStoreOpener } from "../../../../src/db/core/memstore.ts";
@@ -139,6 +141,8 @@ class FakeReceipting implements GroupReceipting {
   calls: string[] = [];
   /** Auths seen by the last `receipt`. */
   auths: Record<string, string> = {};
+  /** `allowTcp` seen by the last `receipt`. */
+  allowTcp: boolean | undefined;
   /** `receipt` throws this instead of storing receipts. */
   fail: string | null = null;
   /** `receipt` throws unless every witness has an auth entry. */
@@ -151,9 +155,10 @@ class FakeReceipting implements GroupReceipting {
   unreadable: Error | null = null;
   constructor(private readonly hby: Habery, private readonly signers: Hab[]) {}
 
-  *receipt(pre: string, { sn, auths }: { sn: number; auths: Record<string, string> }) {
+  *receipt(pre: string, { sn, auths, allowTcp }: { sn: number; auths: Record<string, string>; allowTcp?: boolean }) {
     this.calls.push(`receipt:${sn}`);
     this.auths = auths;
+    this.allowTcp = allowTcp;
     if (this.fail) throw new Error(this.fail);
     if (this.requireAuth && this.signers.some(w => !auths[w.pre!])) throw new Error("401 unauthorized");
     if (!this.silent) this.store(pre, sn);
@@ -176,13 +181,19 @@ class FakeReceipting implements GroupReceipting {
   }
 }
 
+/** Where a test Counselor announces completed rotations and changed groups. */
+interface Announced {
+  rotated?: Deck<RotatedCue>;
+  groupChanges?: Deck<string>;
+}
+
 /** Counselor with a controllable clock over `side`. */
 function counselor(
   side: Side,
   wits: Hab[] = [],
   clock = { t: 0 },
   delegated = false,
-  mailboxes?: ConstructorParameters<typeof Counselor>[5],
+  announced: Announced = {},
   forwarding?: GroupForwarding,
 ) {
   const receipting = new FakeReceipting(side.hby, wits);
@@ -196,7 +207,8 @@ function counselor(
     { now: () => clock.t },
     changes,
     delegation,
-    mailboxes,
+    announced.rotated,
+    announced.groupChanges,
     undefined,
     forwarding,
   );
@@ -267,28 +279,70 @@ Deno.test("KERIpy test_counselor: signatures stage across inception and three ro
   });
 });
 
-Deno.test("a completed group rotation, and only a rotation, is announced for the group's mailboxes", async () => {
+/** A 2-of-2 group both sides hold accepted, counseled to completion at `s0` by `c`. */
+function* counseledGroup(sides: Side[], c: Counselor): Operation<string> {
+  const [s0, s1] = sides;
+  const created = [s0, s1].map(s => incept(s, pres(sides), { isith: "2", nsith: "2", toad: 0, wits: [] }));
+  c.start(ref(created[0].serder));
+  deliver(s0.hby, created[1]);
+  yield* c.processOnce();
+  deliver(s1.hby, created[0]);
+  return created[0].serder.pre!;
+}
+
+Deno.test("a completed group rotation puts one rotated record on the deck it was given", async () => {
   await run(function*() {
     const sides = yield* members(2);
     const [s0, s1] = sides;
-    const told: string[] = [];
-    const { c } = counselor(s0, [], { t: 0 }, false, { rotated: cue => told.push(cue.pre) });
-    const smids = pres(sides);
-    const created = [s0, s1].map(s => incept(s, smids, { isith: "2", nsith: "2", toad: 0, wits: [] }));
-    const gid = created[0].serder.pre!;
-    c.start(ref(created[0].serder));
-    deliver(s0.hby, created[1]);
-    yield* c.processOnce();
-    assertEquals(told, [], "an inception announces nothing");
-    deliver(s1.hby, created[0]);
+    const rotated = new Deck<RotatedCue>(), groupChanges = new Deck<string>();
+    const { c } = counselor(s0, [], { t: 0 }, false, { rotated, groupChanges });
+    const gid = yield* counseledGroup(sides, c);
+    assertEquals(rotated.toArray(), [], "an inception puts no rotated record on the deck");
+    assertEquals(groupChanges.toArray(), [gid], "a completed inception is a changed group");
+    groupChanges.clear();
     rotateMembers(sides, sides);
+    const smids = pres(sides);
     const proposals = sides.map(s => rotate(s, smids, smids, { isith: "2", nsith: "2", toad: 0 }));
     const event = ref(proposals[0].serder);
     c.start(event);
     deliver(s0.hby, proposals[1]);
     yield* c.processOnce();
     assert(c.complete(event));
-    assertEquals(told, [gid], "the completed rotation is announced once");
+    assertEquals(rotated.toArray(), [{ kin: "rotated", ...event }]);
+    assertEquals(groupChanges.toArray(), [gid], "the root replicator is told the group changed");
+    deliver(s1.hby, proposals[0]);
+    yield* c.processOnce();
+    assertEquals(rotated.length, 1, "a later pass puts nothing more on the deck");
+  });
+});
+
+Deno.test("a completed interaction puts nothing on the deck", async () => {
+  await run(function*() {
+    const sides = yield* members(2);
+    const [s0] = sides;
+    const rotated = new Deck<RotatedCue>(), groupChanges = new Deck<string>();
+    const { c } = counselor(s0, [], { t: 0 }, false, { rotated, groupChanges });
+    yield* counseledGroup(sides, c);
+    groupChanges.clear();
+    const interactions = sides.map(s => s.hby.interactGroupHab("g"));
+    const event = ref(interactions[0].serder);
+    c.start(event);
+    deliver(s0.hby, interactions[1]);
+    yield* c.processOnce();
+    assert(c.complete(event));
+    assertEquals([rotated.toArray(), groupChanges.toArray()], [[], []]);
+  });
+});
+
+Deno.test("group receipting allows TCP witnesses", async () => {
+  await run(function*() {
+    const sides = yield* members(2);
+    const [w] = yield* witnesses(1);
+    const gid = pair(sides, { wits: [w.pre], toad: 1 });
+    const { c, receipting } = counselor(sides[0], [w]);
+    c.start(ref(sides[0].hby.db.getEvtSerder(gid, gid)!));
+    yield* c.processOnce();
+    assertEquals([receipting.calls, receipting.allowTcp], [["receipt:0"], true]);
   });
 });
 
@@ -1290,14 +1344,19 @@ function* lateRotation() {
 
 /**
  * A root replicator over `hby` holding one registry root, whose members are the group's stored signing members (a
- * stand-in for `RegistryRoot.members`, so these tests show what the stored list alone makes owed). Nothing is sent.
+ * stand-in for `RegistryRoot.members`, so these tests show what the stored list alone makes owed). Nothing is sent:
+ * every copy is deferred, as for a root whose hint evidence is not local yet.
  */
-function storedMemberReplicator(hby: Habery): RootReplicator {
+function storedMemberReplicator(hby: Habery, changed?: Deck<string>): RootReplicator {
   const root = { hby, held: () => ["Eregistry"], members: (group: string) => groupSigningMembers(hby, group) };
+  const prepare = () => {
+    throw new RootDeferred("no hint evidence in this test");
+  };
   return new RootReplicator({
-    root: { ...root, contributor: () => "K" } as unknown as RegistryRoot,
+    root: { ...root, contributor: () => "K", prepare } as unknown as RegistryRoot,
     postman: {} as Poster,
     clock: new ManualRuntimeClock(0),
+    changed,
   });
 }
 
@@ -1382,6 +1441,27 @@ Deno.test("stored members are not rewritten while a member's KEL is missing, and
     // The establishment event is unchanged; the replicator re-derives because the stored members changed.
     replicator.sweep();
     assertEquals(owedCopies(replicator), next.slice().sort(), "the new member is owed its copy");
+  });
+});
+
+Deno.test("a member list aligned late makes the root copy due on the next owner tock", async () => {
+  await run(function*() {
+    const { p, e, n, gid, own, late, next } = yield* lateRotation();
+    const groupChanges = new Deck<string>();
+    const { c } = counselor(e, [], { t: 0 }, false, { groupChanges });
+    const replicator = storedMemberReplicator(e.hby, groupChanges);
+    deliver(e.hby, { serder: own.serder, sigers: [...own.sigers, ...late.sigers] });
+    yield* c.processOnce();
+    replicator.sweep();
+    assertEquals(owedCopies(replicator), [p.hab.pre!], "the stored members still name the old list");
+    groupChanges.clear();
+    share(n.hby, n.hab.pre!, [e.hby]);
+    yield* c.processOnce();
+    assertEquals(groupChanges.toArray(), [gid], "the late alignment is put on the replicator's deck");
+    // The next owner tock runs the fixed-tock pass, not the sweep.
+    yield* replicator.processDue();
+    assertEquals(owedCopies(replicator), next.slice().sort(), "the new member is owed its copy");
+    assertEquals(groupChanges.length, 0, "the pass drained the deck");
   });
 });
 
