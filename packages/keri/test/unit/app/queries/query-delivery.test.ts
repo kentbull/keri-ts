@@ -1,12 +1,17 @@
 import { SerderKERI } from "cesr-ts";
-import { call, run, spawn } from "effection";
+import { call, type Operation, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
+import { addressableAttesters, WitnessInquisitor } from "../../../../src/app/queries/witness-inquisitor.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { runtimeTurn } from "../../../../src/app/runtime/runtime-turn.ts";
+import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransportError } from "../../../../src/app/transport/transport-error.ts";
 import { consoleLogger } from "../../../../src/core/logger.ts";
+import { Roles } from "../../../../src/core/roles.ts";
+import { reserveTcpPort } from "../../../http-test-support.ts";
+import { protocolFixture } from "../../../protocol-fixture.ts";
 import { httpClient } from "../../../support/http-client.ts";
 
 Deno.test("finite query delivery propagates failure after consuming its attempt and close clears pending work", async () => {
@@ -212,4 +217,110 @@ Deno.test("background query sending propagates preparation faults even when they
       yield* hby.close(true);
     }
   });
+});
+
+/**
+ * Run the background sender until `done` holds or a second passes; the sender must still be running.
+ *
+ * @param inquisitor Sender under test.
+ * @param done Condition the test waits for.
+ */
+function* runDeliveryUntil(inquisitor: WitnessInquisitor, done: () => boolean): Operation<void> {
+  const worker = yield* spawn(() => inquisitor.deliverDo(5));
+  let ended: unknown = null;
+  const watch = yield* spawn(function*() {
+    try {
+      yield* worker;
+    } catch (error) {
+      ended = error;
+    }
+  });
+  try {
+    const deadline = Date.now() + 1_000;
+    while (!done() && ended === null && Date.now() < deadline) yield* runtimeTurn();
+    assertEquals(ended, null, "query delivery ended");
+    assertEquals(done(), true);
+  } finally {
+    yield* worker.halt();
+    yield* watch.halt();
+  }
+}
+
+Deno.test("a remote end role without a location does not end query delivery", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const signer = hby.makeHab("signer"), subject = hby.makeHab("subject"), other = hby.makeHab("other");
+    // The subject names a controller endpoint that has no accepted location.
+    hby.db.ends.pin([subject.pre, Roles.controller, subject.pre], { allowed: true });
+    hby.db.ends.pin([other.pre, Roles.controller, other.pre], { allowed: true });
+    hby.db.locs.pin([other.pre, "http"], { url: "http://other.query.test/" });
+    const sent: string[] = [];
+    const inquisitor = new WitnessInquisitor(
+      hby,
+      protocolFixture(hby),
+      httpClient((url) => {
+        sent.push(url);
+        return new Response(null, { status: 204 });
+      }),
+      systemClock,
+      null,
+      signer,
+    );
+    try {
+      inquisitor.enqueue({ pre: subject.pre, route: "logs", q: {} });
+      inquisitor.enqueue({ pre: other.pre, route: "logs", q: {} });
+      yield* runDeliveryUntil(inquisitor, () => sent.length > 0);
+      assertEquals([...new Set(sent)], ["http://other.query.test/"]);
+      assertEquals(inquisitor.pending.length, 1, "the unaddressable request waits");
+    } finally {
+      yield* inquisitor.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a remote location the HTTP client refuses does not end query delivery", async () => {
+  const port = reserveTcpPort();
+  const controller = new AbortController();
+  const sent: string[] = [];
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port, signal: controller.signal, onListen: () => {} },
+    (request) => {
+      sent.push(new URL(request.url).host);
+      return new Response(null, { status: 204 });
+    },
+  );
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const signer = hby.makeHab("signer"), subject = hby.makeHab("subject"), other = hby.makeHab("other");
+      // An accepted location URL with credentials: the HTTP client refuses it by construction.
+      hby.db.ends.pin([subject.pre, Roles.controller, subject.pre], { allowed: true });
+      hby.db.locs.pin([subject.pre, "http"], { url: `http://user:secret@127.0.0.1:${port}/` });
+      hby.db.ends.pin([other.pre, Roles.controller, other.pre], { allowed: true });
+      hby.db.locs.pin([other.pre, "http"], { url: `http://127.0.0.1:${port}/` });
+      const inquisitor = new WitnessInquisitor(
+        hby,
+        protocolFixture(hby),
+        new FetchHttpClient(),
+        systemClock,
+        null,
+        signer,
+      );
+      try {
+        inquisitor.enqueue({ pre: subject.pre, route: "logs", q: {} });
+        inquisitor.enqueue({ pre: other.pre, route: "logs", q: {} });
+        yield* runDeliveryUntil(inquisitor, () => sent.length > 0);
+        assertEquals([...new Set(sent)], [`127.0.0.1:${port}`]);
+        assertEquals(inquisitor.pending.length, 1, "the unaddressable request waits");
+        assertEquals(addressableAttesters(signer, subject.pre), [], "a refused location is no location");
+      } finally {
+        yield* inquisitor.close();
+        yield* hby.close(true);
+      }
+    });
+  } finally {
+    controller.abort();
+    await server.finished;
+  }
 });

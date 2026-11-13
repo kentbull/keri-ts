@@ -211,6 +211,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/delivery/relaying.test.ts",
       "test/unit/app/queries/relay-refresh.test.ts",
       "test/unit/app/bootstrap/oobi-relay.test.ts",
+      "test/unit/app/bootstrap/oobi-remote-failures.test.ts",
       "test/unit/app/mailbox/mailbox-director-lifecycle.test.ts",
       "test/unit/app/mailbox/group-mailbox-delivery.test.ts",
       "test/unit/app/mailbox/mailbox-poller-runtime.test.ts",
