@@ -64,6 +64,7 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/registry-root-runtime.test.ts",
       "test/unit/core/kel/delegation-ancestry.test.ts",
       "test/unit/app/protocol/nested-frame-boundary.test.ts",
+      "test/unit/app/protocol/malformed-remote-fields.test.ts",
       "test/unit/app/protocol/kram-default-windows.test.ts",
       "test/unit/app/cli/init-terminal.test.ts",
       "test/unit/app/cli/oobi-clean-cli.test.ts",

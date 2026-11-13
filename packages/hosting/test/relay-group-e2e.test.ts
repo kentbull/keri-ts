@@ -408,6 +408,11 @@ function* edgeThroughAgent(): Operation<Observed> {
     [`${group}/credential`],
     "exactly one stored copy of the Grant waits for the edge",
   );
+  assertEquals(
+    stored(agentRt, member.pre).filter(([, body]) => body.said === grant),
+    [],
+    "the edge member's own mailbox holds no second copy of the Grant",
+  );
   assertExists(edgeHby.db.tops.get([group, agent.pre!]), "the edge polled the group's mailbox at the agent");
   approveGroupIssuanceExchange(edge.operations!.issuance, grant, coordinator.said!);
   const edgeWaiting = yield* waitForIssuance(edge.operations!.issuance, grant, {
@@ -551,20 +556,13 @@ Deno.test("an edge presents its group's credential through its agent to a verifi
   console.log(`relay group e2e wall time: ${observed.wallMs} ms`);
 });
 
-Deno.test({
-  name: "a third party's message to a group the agent co-hosts is processed there exactly once",
-  // EXPECTED FAILURE under the `mailbox` role; it fails today with the agent's cursor at `{"/credential": 9}`. The
-  // `/fwd` intake ingests a third party's message for the custodian and stores one copy for the edge
-  // (keri/src/app/mailbox/forward-handler.ts:205-209 and :251-253, the "ingest" path with `store`). The agent's own
-  // MailboxPoller then polls the group's mailbox at the agent itself (keri/src/app/mailbox/mailbox-poller.ts:328
-  // takes every local habitat, the group included; keri/src/app/mailbox/mailboxing.ts:176 returns the group's
-  // authorized mailbox, the agent) and settleMailboxPollBatch (keri/src/app/runtime/agent-runtime.ts:809) takes
-  // every stored message into the agent's intake a second time. The stored copy is single, as the main test
-  // asserts; the processing is not. Remove `ignore` once a relaying host no longer polls its own endpoint for a
-  // local group whose `/fwd` mail it already ingests.
-  ignore: true,
-  async fn() {
-    const observed = await run(edgeThroughAgent);
-    assertEquals(observed.agentGroupCursor, null, "the agent did not poll the group's mailbox at itself");
-  },
+/**
+ * The `/fwd` intake ingests a third party's message for the custodian and stores one copy for the edge; the agent's
+ * own MailboxPoller never polls the group's mailbox at the agent itself (`MailboxPoller.deliveredOnArrival`), so no
+ * stored message is taken into the agent's intake a second time. The edge still polls its one stored copy, as the
+ * main test asserts.
+ */
+Deno.test("a third party's message to a group the agent co-hosts is processed there exactly once", async () => {
+  const observed = await run(edgeThroughAgent);
+  assertEquals(observed.agentGroupCursor, null, "the agent did not poll the group's mailbox at itself");
 });

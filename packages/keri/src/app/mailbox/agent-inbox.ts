@@ -22,13 +22,11 @@
  *   member of the recipient group (an edge's own traffic, or a local group's own events); and a message whose topic,
  *   derived from its remote route, the mailbox store cannot key.
  * - Kept only when the body verifies its SAID, carries attached authentication, and the agent's own processor
- *   decided it from content it decoded ({@link keptDecision}). The edge is the verifier of signatures and state and
- *   re-verifies everything, so a decision that waits on state is kept: `accept`, `escrow`, KRAM `pending`/`missing`
- *   and an `unverified` reply. The agent never keeps what it could not decode: a message dispatch refuses as
- *   malformed is a `reject` or `drop` and is not kept, nor is a KEL event's `ooo` or `duplicitous` escrow (decided
- *   from its prefix, sequence number and SAID before the agent evaluated its keys, thresholds or signatures), nor a
- *   message no processor decided (none reports a decision), except a receipt, whose processor decodes it and reports
- *   none.
+ *   decided it ({@link keptDecision}). The edge is the verifier of signatures and state and re-verifies everything,
+ *   so a decision that waits on state is kept: `accept`, `escrow`, KRAM `pending`/`missing` and an `unverified`
+ *   reply. The agent never keeps what it could not decode: dispatch refuses malformed field values as a typed
+ *   `reject` or `drop` before any escrow decision (`core/wire-fields.ts`), and those are not kept; nor is a message
+ *   no processor decided, except a receipt, whose processor decodes it and reports none.
  */
 import {
   type CesrFrame,
@@ -39,7 +37,6 @@ import {
   SerderKERI,
 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
-import type { EscrowKind } from "../../core/kel/kever-decisions.ts";
 import {
   CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
@@ -266,36 +263,29 @@ function agentPrincipals(hby: Habery, hostAid: string): string[] {
 }
 
 /**
- * Whether the agent's decision shows it decoded the message and leaves it worth delivering: not refused, not a repeat
- * of what it holds, and decided from the message's content rather than before reading it. See the module rules.
+ * Whether the agent's decision shows it decoded the message and leaves it worth delivering: decided by a processor,
+ * not refused, and not a repeat of what it holds. See the module rules.
  *
  * Malformed fields are the dispatch processors' typed `reject` or `drop`; this reads only the decision they return.
  *
  * @param body Dispatched message body.
  * @param decision Dispatch decision; undefined when no processor reported one.
- * @returns True for `accept`, `escrow` (except a KEL event's `ooo` or `duplicitous`), `pending`, `missing` and
- *   `unverified`, and for a receipt with no decision; false otherwise.
+ * @returns True for `accept`, `escrow`, `pending`, `missing` and `unverified`, and for a receipt with no decision;
+ *   false otherwise.
  */
 function keptDecision(body: SerderKERI | SerderACDC, decision: DispatchDecision | undefined): boolean {
   if (!decision) return body instanceof SerderKERI && body.ilk === Ilks.rct;
   switch (decision.kind) {
     case "accept":
+    case "escrow":
     case "pending":
     case "missing":
     case "unverified":
       return true;
-    case "escrow":
-      return !(KEL_EVENT_ILKS.has(body.ilk ?? "") && PRE_EVALUATION_ESCROWS.has(decision.reason));
     default:
       return false;
   }
 }
-
-/** Ilks dispatched to Kevery as key events; their escrow decision carries an `EscrowKind` reason. */
-const KEL_EVENT_ILKS: ReadonlySet<string> = new Set([Ilks.icp, Ilks.rot, Ilks.ixn, Ilks.dip, Ilks.drt]);
-
-/** Kevery escrows decided from a key event's prefix, sequence number and SAID alone, before Kever evaluates it. */
-const PRE_EVALUATION_ESCROWS: ReadonlySet<string> = new Set<EscrowKind>(["ooo", "duplicitous"]);
 
 /** Whether the body's SAID matches its content. */
 function saidVerifies(body: SerderKERI | SerderACDC): boolean {

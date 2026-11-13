@@ -427,9 +427,9 @@ authorization; reading requires current requester proof/threshold, not correlati
 alone. `ForwardHandler` decides the child once: verify refuses a `/fwd` whose recipient
 is not a prefix, whose topic is empty or not `storableTopic`, or whose child does not
 parse as exactly one complete message, so nothing is stored, relayed or ingested.
-`keepRawArrival` keeps only what the agent decoded (accept, escrow but not a KEL
-`ooo`/`duplicitous`, KRAM pending/missing, unverified reply, a receipt with no
-decision) and a storable topic. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
+`keepRawArrival` keeps only what a processor decided (accept, escrow, KRAM
+pending/missing, unverified reply, a receipt with no decision; dispatch rejects
+malformed fields first) and a storable topic. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
 HTTP(S), alongside all current KEL witnesses. TCP-only providers do not suppress
 witness polling. A shared provider AID has one worker and cursor even if authorized
 as both mailbox and witness; locally controlled providers use ordinary HTTP intake.

@@ -8,6 +8,6 @@ Before, a legacy (v1) `/fwd` whose embedded event was not a message (for example
 
 `ForwardHandler.verify` now refuses, as a typed reject, a `/fwd` whose recipient is not an identifier prefix, whose topic is empty or cannot key a mailbox row, or whose child (legacy embed or v2 nest) does not parse as exactly one complete message with its attachments; nothing is stored, relayed or ingested for it. The Poster decodes each event once: bytes that are not complete CESR, and an ordinary forwarded event that is not exactly one message, fail that event with the new `UnsendableMessageError`, and the loop continues. A location no messenger can use (`messengerUrl`, which applies `isRequestableHttpUrl`) is treated as no location, and a relay whose only location is such a URL reads as unresolved.
 
-An agent keeping raw arrivals for an edge (`keepRawArrival`) no longer keeps a key event the agent escrowed out of order or as likely duplicitous (decided before it evaluated the event's keys), a message no processor decided other than a receipt, or a message whose topic cannot key a mailbox row.
+An agent keeping raw arrivals for an edge (`keepRawArrival`) keeps only a message a processor decided (accept, escrow, KRAM pending or missing, an unverified reply) or a receipt; a message dispatch refuses as malformed, a message no processor decided, and a message whose topic cannot key a mailbox row are not kept.
 
 New: `storableTopic`, `messengerUrl`, `UnsendableMessageError`. `messengerFrom` now refuses an unparseable URL with its `ValidationError` instead of a `TypeError`.

@@ -30,6 +30,14 @@ import { reply as replyEvent } from "../protocol-eventing.ts";
 import { KeyStateRecord, ObservedRecord } from "../records.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, Revery, Router, unverifiedReplyDecision } from "../routing.ts";
 import {
+  kelEventFieldDefect,
+  readDater,
+  readDiger,
+  readOrdinal,
+  readPrefixer,
+  readSequenceNumber,
+} from "../wire-fields.ts";
+import {
   acceptEscrow,
   acceptQuery,
   acceptReceipt,
@@ -524,14 +532,15 @@ export class Kevery {
   processReceipt(envelope: ReceiptEnvelope): void {
     const serder = envelope.serder;
     const pre = serder.pre;
-    const sn = serder.sn;
+    // Decided before any escrow: a remote receipt's sn and prefix are read through the guarded readers.
+    const sn = readSequenceNumber(serder);
     const said = serder.said;
     const local = envelope.local ?? this.local;
-    if (!pre || sn === null || !said) {
+    if (!pre || !readPrefixer(pre) || sn === null || !said) {
       this.cues.push({
         kin: "invalid",
         serder,
-        reason: "Receipt message is missing receipted pre, sn, or said.",
+        reason: "Receipt message is missing a valid receipted pre, hex sn, or said.",
       });
       return;
     }
@@ -850,24 +859,24 @@ export class Kevery {
     const pre = serder.pre;
     const ilk = serder.ilk;
     const said = serder.said;
-    const sn = serder.sn;
+    // Every remote field value is decided here, before any escrow or store write: escrow replay re-enters through
+    // this method, so a row stored with a malformed value is rejected and removed instead of failing every pass.
+    const sn = readSequenceNumber(serder);
 
     if (!pre || !ilk || !said || sn === null) {
       return {
         kind: "reject",
         code: !pre ? "invalidPre" : !ilk ? "invalidIlk" : "invalidSn",
-        message: "KEL event must include pre, ilk, said, and sn.",
+        message: `KEL event must include pre, ilk, said, and a hex sn of at most ${Number.MAX_SAFE_INTEGER}.`,
       };
     }
 
-    try {
-      new Prefixer({ qb64: pre });
-    } catch (error) {
-      return {
-        kind: "reject",
-        code: "invalidPre",
-        message: `Invalid pre=${pre} for event ${said}: ${error instanceof Error ? error.message : String(error)}`,
-      };
+    if (!readPrefixer(pre)) {
+      return { kind: "reject", code: "invalidPre", message: `Invalid pre=${pre} for event ${said}.` };
+    }
+    const defect = kelEventFieldDefect(serder);
+    if (defect) {
+      return { kind: "reject", code: "malformedField", message: `Malformed ${defect} in event ${said} for ${pre}.` };
     }
 
     const local = envelope.local ?? this.local;
@@ -1243,17 +1252,19 @@ export class Kevery {
     }
 
     const ksn = KeyStateRecord.fromDict(args.serder.ked?.a);
-    const pre = typeof ksn.i === "string" ? ksn.i : null;
-    const sn = typeof ksn.s === "string" ? parseInt(ksn.s, 16) : null;
-    const said = typeof ksn.d === "string" ? ksn.d : null;
-    const dt = typeof ksn.dt === "string" ? ksn.dt : null;
-    if (!pre || sn === null || Number.isNaN(sn) || !said || !dt) {
+    // Decide the notice's field values before decideReply can escrow it.
+    const pre = readPrefixer(ksn.i)?.qb64 ?? null;
+    const sn = typeof ksn.s === "string" ? readOrdinal(ksn.s) : null;
+    const saider = readDiger(ksn.d);
+    const dater = readDater(ksn.dt);
+    if (!pre || sn === null || !saider || !dater) {
       throw new ValidationError("Malformed key state notice reply body.");
     }
+    const said = saider.qb64;
 
     if (!this.lax) {
       const watchers = this.configuredWatchers();
-      const backers = ksn.b ?? [];
+      const backers = Array.isArray(ksn.b) ? ksn.b : [];
       // In non-lax mode, only the controller, a reported KSN backer, or a
       // locally configured watcher may advance saved key state.
       const trusted = args.aid === pre
@@ -1302,8 +1313,6 @@ export class Kevery {
         `Mismatch key state at sn=${sn} with accepted event log for ${pre}.`,
       );
     }
-    const saider = new Diger({ qb64: said });
-    const dater = new Dater({ qb64: encodeDateTimeToDater(dt) });
     const cues: AgentCue[] = [{ kin: "keyStateSaved", ksn }];
 
     this.rvy.writeReply(reply);
@@ -1358,16 +1367,12 @@ export class Kevery {
     }
 
     const data = args.serder.ked?.a as Record<string, unknown> | undefined;
-    const cid = typeof data?.cid === "string"
-      ? new Prefixer({ qb64: data.cid }).qb64
-      : null;
-    const oid = typeof data?.oid === "string"
-      ? new Prefixer({ qb64: data.oid }).qb64
-      : null;
+    const cid = readPrefixer(data?.cid)?.qb64 ?? null;
+    const oid = readPrefixer(data?.oid)?.qb64 ?? null;
     const oobi = typeof data?.oobi === "string" ? data.oobi : null;
     if (!cid || !oid) {
       throw new ValidationError(
-        "Missing one of cid/oid in /watcher reply.",
+        "Missing or malformed one of cid/oid in /watcher reply.",
       );
     }
 

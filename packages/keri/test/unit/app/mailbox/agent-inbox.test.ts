@@ -219,7 +219,7 @@ Deno.test("rejected raw message is not kept", async () => {
 Deno.test("an arrival the agent could not decode is not kept for pickup", async () => {
   await inboxScenario(function*(fixture) {
     const { member } = fixture;
-    // A prefix the agent has never seen: its rotation is escrowed out of order, from its prefix, sn and SAID alone.
+    // A prefix the agent has never seen: without its key check, this rotation would be escrowed out of order.
     const stranger = fixture.edge.makeHab("stranger");
     stranger.rotate();
     const rotation = [...stranger.db.replay(stranger.pre)!][1];
@@ -227,8 +227,8 @@ Deno.test("an arrival the agent could not decode is not kept for pickup", async 
     const junk = new SerderKERI({ sad: { ...frame.body.ked!, d: "", k: ["junk"] }, makify: true });
     const poisoned = concatBytes(junk.raw, rotation.slice(frame.body.raw.length));
     const [arrival] = yield* arrive(fixture, poisoned);
-    assertEquals(arrival.decision?.kind, "escrow");
-    assertEquals(arrival.decision?.kind === "escrow" && arrival.decision.reason, "ooo");
+    // Dispatch refuses the key it cannot decode, and a refused arrival is never kept for the edge.
+    assertEquals(arrival.decision?.kind, "reject");
     assertEquals(arrival.kept, 0);
     assertEquals(stored(fixture, member.pre, "/replay"), []);
   });

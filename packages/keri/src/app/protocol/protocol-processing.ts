@@ -4,6 +4,7 @@ import { call, type Operation } from "npm:effection@^3.6.0";
 import type { RegistryObserver } from "../../acdc/observing.ts";
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
+import type { KeriDispatchEnvelope } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Kevery } from "../../core/kel/eventing.ts";
 import { consoleLogger } from "../../core/logger.ts";
@@ -21,6 +22,7 @@ import {
   dispatchEnvelope,
   type DispatchResult,
   envelopeFromFrame,
+  hasUnsupportedNests,
   queryEnvelopeFromDispatch,
 } from "./parsering.ts";
 
@@ -70,6 +72,26 @@ export interface ProtocolDispatchResult extends DispatchResult {
  */
 function isInvalidMessageError(error: unknown): error is ValidationError {
   return error instanceof ValidationError;
+}
+
+/** Why a remote frame whose nested children no consumer owns is refused. */
+const NESTED_REFUSAL = "KERI runtime normalization does not yet support nested message trees";
+
+/**
+ * Report and describe the refusal of one extracted message, so its input continues with the next frame.
+ *
+ * @param envelope The refused message's own body and attachments.
+ * @param detail Why validation refused it.
+ * @returns The `invalidMessage` drop for this envelope.
+ */
+function invalidMessage(envelope: KeriDispatchEnvelope, detail: string): DispatchResult {
+  consoleLogger.warn("Skipping invalid message", {
+    said: envelope.serder.said,
+    ilk: envelope.serder.ilk,
+    route: envelope.serder.route,
+    detail,
+  });
+  return { envelope, decision: { kind: "drop", reason: "invalidMessage", detail } };
 }
 
 /**
@@ -174,11 +196,13 @@ export class ProtocolProcessor {
     const self = this;
     return call(function*() {
       try {
-        const envelope = envelopeFromFrame(frame, local);
+        // Children no consumer owns make the frame one invalid message; its own body and attachments remain evidence.
+        const nested = hasUnsupportedNests(frame);
+        const envelope = envelopeFromFrame(nested ? { ...frame, nests: [] } : frame, local);
         let result: DispatchResult;
         let invalid = false;
         try {
-          result = yield* dispatchEnvelope(
+          result = nested ? invalidMessage(envelope, NESTED_REFUSAL) : yield* dispatchEnvelope(
             envelope,
             self.rvy,
             kvy,
@@ -191,16 +215,11 @@ export class ProtocolProcessor {
             self.qvy,
             retained,
           );
+          invalid = nested;
         } catch (error) {
           if (!isInvalidMessageError(error)) throw error;
           invalid = true;
-          consoleLogger.warn("Skipping invalid message", {
-            said: envelope.serder.said,
-            ilk: envelope.serder.ilk,
-            route: envelope.serder.route,
-            detail: error.message,
-          });
-          result = { envelope, decision: { kind: "drop", reason: "invalidMessage", detail: error.message } };
+          result = invalidMessage(envelope, error.message);
         }
         const mailboxQueryAuthorized = !invalid && result.envelope.serder.route === "mbx"
           && kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope));

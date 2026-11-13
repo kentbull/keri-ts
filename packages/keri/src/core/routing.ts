@@ -1,6 +1,6 @@
 import { Cigar, Dater, Diger, NumberPrimitive, Prefixer, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
-import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
+import { timestampMicros } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import type { QueryCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
@@ -15,6 +15,7 @@ import {
 } from "./kel/kever-decisions.ts";
 import { EndpointRecord, LocationRecord } from "./records.ts";
 import { isRole } from "./roles.ts";
+import { readDater, readPrefixer, readUrl } from "./wire-fields.ts";
 
 /** Live reply outcome for one reply that was accepted this pass. */
 export interface ReplyAccept {
@@ -498,11 +499,10 @@ export class Revery {
     // Same-call groups see the last staged pin exactly as they previously saw the durable write.
     const staged = new Map<string, Parameters<Revery["escrowReply"]>[0]>();
     const groupKey = (pre: string, snh: string, said: string) => `${pre}.${snh}.${said}`;
-    const daterText = args.serder.ked?.dt;
-    if (typeof daterText !== "string") {
-      throw new ValidationError("Reply message is missing 'dt'.");
+    const dater = readDater(args.serder.ked?.dt);
+    if (!dater) {
+      throw new ValidationError("Reply message is missing a valid 'dt'.");
     }
-    const dater = new Dater({ qb64: encodeDateTimeToDater(daterText) });
     const odater = args.osaider ? this.db.sdts.get([args.osaider.qb64]) : null;
     let pending = false;
     const escrow = (material: Parameters<Revery["escrowReply"]>[0]) => {
@@ -960,12 +960,12 @@ export class BasicReplyRouteHandler {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       throw new ValidationError("Missing one of cid/role/eid in /end/role reply.");
     }
-    const cid = "cid" in data && typeof data.cid === "string" ? new Prefixer({ qb64: data.cid }).qb64 : null;
+    const cid = "cid" in data ? readPrefixer(data.cid)?.qb64 ?? null : null;
     const role = "role" in data && typeof data.role === "string" ? data.role : null;
-    const eid = "eid" in data && typeof data.eid === "string" ? new Prefixer({ qb64: data.eid }).qb64 : null;
+    const eid = "eid" in data ? readPrefixer(data.eid)?.qb64 ?? null : null;
     if (!cid || !role || !eid) {
       throw new ValidationError(
-        "Missing one of cid/role/eid in /end/role reply.",
+        "Missing or malformed one of cid/role/eid in /end/role reply.",
       );
     }
     if (!isRole(role)) {
@@ -1031,16 +1031,17 @@ export class BasicReplyRouteHandler {
     if (!data || typeof data !== "object" || Array.isArray(data)) {
       throw new ValidationError("Missing one of eid/scheme/url in /loc/scheme reply.");
     }
-    const eid = "eid" in data && typeof data.eid === "string" ? new Prefixer({ qb64: data.eid }).qb64 : null;
+    const eid = "eid" in data ? readPrefixer(data.eid)?.qb64 ?? null : null;
     const scheme = "scheme" in data && typeof data.scheme === "string" ? data.scheme : null;
     const url = "url" in data && typeof data.url === "string" ? data.url : null;
     if (!eid || !scheme || url === null) {
       throw new ValidationError(
-        "Missing one of eid/scheme/url in /loc/scheme reply.",
+        "Missing or malformed one of eid/scheme/url in /loc/scheme reply.",
       );
     }
     if (url) {
-      const parsed = new URL(url);
+      const parsed = readUrl(url);
+      if (!parsed) throw new ValidationError(`Unparseable URL ${url} in /loc/scheme reply.`);
       if (parsed.protocol && parsed.protocol.slice(0, -1) !== scheme) {
         throw new ValidationError(
           `URL ${url} does not match declared scheme ${scheme}.`,

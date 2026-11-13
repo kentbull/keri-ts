@@ -66,7 +66,7 @@ async function scenario(
       const sender = hby.makeHab("sender");
       const recipient = hby.makeHab("recipient", undefined, { wits: [provider.pre], toad: 1 });
       const director = new MailboxDirector(hby, { mailboxer });
-      const exchanger = new Exchanger(hby, { handlers: [new ForwardHandler(director, null)] });
+      const exchanger = new Exchanger(hby, { handlers: [new ForwardHandler(director, null, null)] });
       yield* call(() => test(hby, sender, recipient, provider, director, exchanger));
     } finally {
       yield* mailboxer.close(true);
@@ -128,10 +128,10 @@ interface RelayFixture {
 type RelayTest = (fixture: RelayFixture) => Operation<void>;
 
 /**
- * Compose an agent with `relaying: true` and a separate edge Habery. The sender names the agent as its witness
- * when `witnessed`; nothing else about the sender reaches the agent until a test ingests it.
+ * Compose an agent with `relaying` (on unless a test turns it off) and a separate edge Habery. The sender names the
+ * agent as its witness when `witnessed`; nothing else about the sender reaches the agent until a test ingests it.
  */
-async function relayScenario(witnessed: boolean, test: RelayTest): Promise<void> {
+async function relayScenario(witnessed: boolean, test: RelayTest, relaying = true): Promise<void> {
   await run(function*() {
     const agentHby = yield* createHabery({ name: `relay-agent-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const edgeHby = yield* createHabery({ name: `relay-edge-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -142,7 +142,7 @@ async function relayScenario(witnessed: boolean, test: RelayTest): Promise<void>
       const recipient = edgeHby.makeHab("recipient");
       const runtime = yield* createAgentRuntime(agentHby, new FetchHttpClient(), systemClock, {
         enableMailboxStore: true,
-        relaying: true,
+        relaying,
       });
       try {
         // A witness takes its controller's events as local input (its receipt endpoint), never as misfits.
@@ -280,6 +280,10 @@ Deno.test("group named in a third party's /fwd is ingested once and stored once 
   await relayScenario(false, (fixture) => groupPickup(fixture, Roles.agent));
 });
 
+Deno.test("a non-relaying host ingests a third party's /fwd for a co-hosted group once and stores it once", async () => {
+  await relayScenario(false, (fixture) => groupPickup(fixture, Roles.mailbox), false);
+});
+
 Deno.test("a group member's forward is relayed on the group's authorization", async () => {
   await relayScenario(false, function*(fixture) {
     const { runtime, agent, edge, sender, recipient } = fixture;
@@ -354,7 +358,7 @@ function* legacyForwardWithJunk(sender: Hab, recipient: Hab, junk: string): Oper
 Deno.test("a v1 forward with a junk embed is refused by verify", async () => {
   await scenario(async (hby, sender, recipient, provider, director, exchanger) => {
     const serder = legacyForward(sender, recipient, { t: "zzz" });
-    const handler = new ForwardHandler(director, null);
+    const handler = new ForwardHandler(director, null, null);
     assertEquals(handler.verify({ serder, attachments: [] }), false);
     // Through the Exchanger: a typed reject, nothing stored, and no escrow row a retry would replay.
     const decision = await run(() =>
@@ -412,7 +416,7 @@ Deno.test("nested forwarding rechecks provider authority before publishing colle
   await scenario(async (_hby, sender, recipient, provider, director) => {
     const nest = await child(sender, "authority changed");
     const input = forward(sender, recipient, provider, nest);
-    const handler = new ForwardHandler(director, null);
+    const handler = new ForwardHandler(director, null, null);
     const pending = handler.handle({ ...input, attachments: [] });
     if (!pending) throw new Error("The nested handler must return its collection operation");
     // The returned operation has yet to collect its child; revoke the real witness authority.
@@ -498,7 +502,7 @@ Deno.test("nested forward preserves signed tree, ciphertext and duplicates acros
     await run(function*() {
       yield* hby.db.reopen();
     });
-    const reopened = new Exchanger(hby, { handlers: [new ForwardHandler(director, null)] });
+    const reopened = new Exchanger(hby, { handlers: [new ForwardHandler(director, null, null)] });
     for await (const frame of parse(reopened.replay(input.serder.said!))) {
       assertEquals(frame.body.raw, input.serder.raw);
       assertEquals(envelopeFromFrame(frame).tsgs.length, 1);

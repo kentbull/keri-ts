@@ -7,6 +7,7 @@
  * do not select a stored framing preference or acquire workers, stores or queues.
  */
 import { ValidationError } from "../../core/errors.ts";
+import { readUrl } from "../../core/wire-fields.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type HttpClient, isRequestableHttpUrl } from "./http-client.ts";
 import { HTTPMessenger } from "./http-messenger.ts";
@@ -51,12 +52,8 @@ function selectEndpoint(urls: MessengerUrls): EndpointSelection {
   for (const scheme of ["https", "http", "tcp"] as const) {
     const value = urls[scheme];
     if (value === undefined) continue;
-    let endpoint: URL;
-    try {
-      endpoint = new URL(value);
-    } catch {
-      return { kind: "refused", reason: `Invalid ${scheme} messenger endpoint: ${value}` };
-    }
+    const endpoint = readUrl(value);
+    if (!endpoint) return { kind: "refused", reason: `Invalid ${scheme} messenger endpoint: ${value}` };
     const usable = scheme === "tcp" ? !endpoint.username && !endpoint.password : isRequestableHttpUrl(value);
     if (endpoint.protocol !== `${scheme}:` || !usable) {
       return { kind: "refused", reason: `Invalid ${scheme} messenger endpoint: ${value}` };
