@@ -1136,9 +1136,11 @@ export class Multiplexor {
     if (typeof recipient === "string" && recipient.length > 0 && !this.isLocalHab(recipient)) {
       return `Multisig wrapper is addressed to ${recipient}, which is not a local identifier.`;
     }
+    // A rotation's proposed members answer it before they are signing members of the group, so they are not strays.
+    const proposed = request.kind === "rotate" && request.members.includes(sender);
     if (
       request.kind !== "reject" && request.kind !== "join" && this.isLocalGroup(request.group)
-      && !groupSigningMembers(this.hby, request.group).includes(sender)
+      && !proposed && !groupSigningMembers(this.hby, request.group).includes(sender)
     ) {
       return `Multisig wrapper sender ${sender} is not a signing member of group ${request.group}.`;
     }

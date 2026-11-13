@@ -338,3 +338,25 @@ Deno.test("a wrapper for a member the receiver does not hold, or from a non-memb
     }, "2");
   });
 });
+
+Deno.test("a rotation's proposed new member can answer it before it is a signing member of the group", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const carol = s.right.makeHab("carol");
+      yield* call(() => learn(s.left, carol));
+      const smids = [...s.mids, carol.pre];
+      const rot = s.right.rotateGroupHab("group", smids, smids, GROUP);
+      const wrapper = signGroupMessage(
+        carol,
+        s.alice.pre,
+        yield* multisigRotateExn(rot.serder.pre!, carol, smids, smids, messagize(rot.serder, { sigers: rot.sigers })),
+      );
+      yield* receive(s, wrapper.message);
+      assertEquals(
+        listGroupProposals(readDeps(s)).map((proposal) => proposal.said),
+        [wrapper.exnSaid],
+        "the proposed member's wrapper is stored and listed",
+      );
+    }, "2");
+  });
+});
