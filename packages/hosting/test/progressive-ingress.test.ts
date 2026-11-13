@@ -54,6 +54,7 @@ import { incept as inceptRegistry, issue } from "../../keri/src/core/protocol-vd
 import type { Reger } from "../../keri/src/db/reger.ts";
 import { Tevery } from "../../keri/src/vdr/eventing.ts";
 import { createProtocolHandler } from "../src/http/protocol-handler.ts";
+import { buildProtocolRequestContext } from "../src/http/protocol/context.ts";
 
 /** Bound a protocol-progress assertion so an atomic-parser regression fails instead of hanging. */
 async function promptly<T>(pending: Promise<T>): Promise<T> {
@@ -708,6 +709,50 @@ Deno.test("a mailbox that cannot be reached is reported by the publisher and doe
         yield* host.close(true);
       }
       yield* client.close(true);
+    }
+  });
+});
+
+Deno.test("several local identifiers behind one ingress URL are routed by CESR-DESTINATION, and per-identifier paths still work", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { enableMailboxStore: true });
+    try {
+      const [alice, bob, carol] = ["alice", "bob", "carol"].map((name) => hby.makeHab(name));
+      // alice and bob share one URL (a custodial host); carol has a path of her own.
+      for (const hab of [alice, bob]) hby.db.locs.pin([hab.pre, "http"], { url: "http://custody.test/" });
+      hby.db.locs.pin([carol.pre, "http"], { url: "http://custody.test/carol" });
+      const handler = createProtocolHandler(runtime);
+      const wire = alice.query(alice.pre, alice.pre, { route: "logs", q: {} });
+      const post = (path: string, destination?: string) =>
+        new Request(`http://custody.test${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/cesr", ...(destination ? { "CESR-DESTINATION": destination } : {}) },
+          body: new Uint8Array(wire),
+        });
+      const routedTo = (request: Request) => {
+        const route = buildProtocolRequestContext(request, runtime).genericIngress;
+        return route?.kind === "one" ? route.endpoint?.eid : route?.kind;
+      };
+      // A message for each identifier is accepted and routed to that identifier.
+      for (const hab of [alice, bob]) {
+        assertEquals(routedTo(post("/", hab.pre)), hab.pre);
+        const accepted = yield* call(() => handler(post("/", hab.pre)));
+        assertEquals(accepted.status, 204);
+        yield* call(() => accepted.body?.cancel());
+      }
+      // Neither the path nor a destination identifies one of them: still a conflict, and 409 says so.
+      const unaddressed = yield* call(() => handler(post("/")));
+      assertEquals(unaddressed.status, 409);
+      assertEquals(yield* call(() => unaddressed.text()), "Ambiguous hosted endpoint path");
+      // A destination that is not one of the identifiers behind the URL does not pick one either.
+      assertEquals(routedTo(post("/", carol.pre)), "ambiguous");
+      // The identifier with her own path is found by the path, whatever the destination says.
+      assertEquals(routedTo(post("/carol")), carol.pre);
+      assertEquals(routedTo(post("/carol", alice.pre)), carol.pre);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
     }
   });
 });
