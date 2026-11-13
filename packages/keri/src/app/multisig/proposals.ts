@@ -77,8 +77,9 @@ export interface GroupProposal {
   /**
    * Standing of this host's member:
    * - `approved`: its own contribution to this payload is stored.
-   * - `inapplicable`: the event is already accepted here and names no local signing member (for example a rotation that only
-   *   adds this member as a next member), so there is nothing to sign; hosts should not offer it.
+   * - `inapplicable`: the event is already accepted in the local KEL (for example a rotation that only adds this member
+   *   as a next member, or an event the other members completed and this one received another way), so there is
+   *   nothing to sign; hosts should not offer it.
    * - `unapproved`: otherwise.
    *
    * A group with several local members is judged by its recorded joining member, or for a group not joined yet by the first
@@ -202,7 +203,7 @@ interface Decoded {
   rmids: readonly string[];
   event?: GroupEventRef;
   kind: GroupProposalKind;
-  /** KEL event already accepted here with no local signing member. */
+  /** KEL event already accepted in the local KEL. */
   inapplicable?: boolean;
 }
 
@@ -221,7 +222,7 @@ function decode(deps: GroupProposalReadDeps, exn: SerderKERI, route: string, kin
       smids,
       rmids: rmids ?? [],
       event: eventRef(approval.event, approval.group),
-      inapplicable: eventAccepted(hby, approval.event) && !smids.some(mid => hby.habs.has(mid)),
+      inapplicable: eventAccepted(hby, approval.event),
     };
   }
   if (isV2RegistryRoute(route)) {

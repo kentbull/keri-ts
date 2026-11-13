@@ -1,6 +1,7 @@
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
+import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { Poster } from "./forwarding.ts";
 
 /**
@@ -49,6 +50,13 @@ export class Respondant {
     const cue = cues.peekHead();
     if (!cue) return false;
     const dest = recipientForCue(cue), topic = topicForCue(cue);
+    const subject = cue.kin === "receipt" && dest ? this.hby.habs.get(dest) : undefined;
+    if (subject && isLocalGroupHab(this.hby, subject)) {
+      // A receipt goes to the controller of the event; when that is a group this runtime is a member of, it is
+      // the group's own event and its members are the Counselor's business, not a recipient with end roles.
+      cues.pull();
+      return true;
+    }
     const src = senderHabForCue(this.hby, cue, hint);
     if (!dest || !topic || !src) return false;
     const msgs = [...hab.processCuesIter([cue])];

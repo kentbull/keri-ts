@@ -1,8 +1,10 @@
+import { parseBytes } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import {
   createAgentRuntime,
   settleRuntimeIngress,
@@ -18,6 +20,7 @@ import {
   processWitnessIngressSource,
 } from "../../../../src/app/witness/ingress.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";
+import { Deck } from "../../../../src/core/deck.ts";
 import { query as queryEvent, reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
@@ -410,6 +413,29 @@ Deno.test("witness recovery queries use the concrete query owner and sign only o
     } finally {
       witness.query = query;
       yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("app/runtime-responder - a receipt cue for the runtime's own group is consumed without a delivery attempt", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const other = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    try {
+      const member = hby.makeHab("member"), peer = other.makeHab("peer");
+      for (const wire of other.db.clonePreIter(peer.pre, 0)) {
+        yield* dispatchEnvelope(envelopeFromFrame(parseBytes(wire)[0]), hby.rvy, hby.kevery);
+      }
+      const mids = [member.pre!, peer.pre!];
+      const created = hby.makeGroupHab("group", member, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+      const cues = new Deck<AgentCue>([{ kin: "receipt", serder: created.serder }]);
+      assertEquals(runtime.respondant.enqueueCue(member, cues), true);
+      assertEquals([cues.empty, runtime.postman.evts.length], [true, 0]);
+    } finally {
+      yield* runtime.close();
+      yield* other.close(true);
       yield* hby.close(true);
     }
   });

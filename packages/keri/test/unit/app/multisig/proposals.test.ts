@@ -11,6 +11,7 @@ import { groupEndorseReply } from "../../../../src/app/identity/endpoint-roleing
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   multisigInceptExn,
+  multisigInteractExn,
   multisigRotateExn,
   multisigRpyExn,
 } from "../../../../src/app/multisig/grouping.ts";
@@ -151,7 +152,7 @@ Deno.test("listGroupProposals pages past the 100-notice cap", async () => {
       assertEquals(s.notifier.count(), 101);
       assertEquals(s.notifier.list(0, 100).some(n => n.pad.a["d"] === signed.exnSaid), false);
       assertEquals(listGroupProposals(readDeps(s)).map(p => p.said), [signed.exnSaid]);
-    });
+    }, "2");
   });
 });
 
@@ -174,7 +175,7 @@ Deno.test("a proposal flips to approved once the local member's contribution is 
       assertEquals(proposal.said, signed.exnSaid);
       assertEquals(proposal.local, "approved");
       assertEquals(proposal.needs, { groupAlias: false, registryName: false });
-    });
+    }, "2");
   });
 });
 
@@ -192,7 +193,7 @@ Deno.test("a dismissed proposal leaves the list but is still found, and approved
       assertExists(approved);
       assertEquals(approved.said, signed.exnSaid);
       assertEquals(findGroupProposal(deps, signed.exnSaid)?.local, "approved");
-    });
+    }, "2");
   });
 });
 
@@ -303,5 +304,37 @@ Deno.test("v2 registry proposals list as rip and bup with their anchors", async 
       yield* right.close(true);
       yield* left.close(true);
     }
+  });
+});
+
+Deno.test("a wrapper for a member the receiver does not hold, or from a non-member, is neither stored nor listed", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const carol = s.right.makeHab("carol");
+      yield* call(() => learn(s.left, carol));
+      const made = s.right.interactGroupHab("group", s.mids, { data: [{ n: 1 }] });
+      const ixn = messagize(made.serder, { sigers: made.sigers });
+      // Addressed to carol, whom the receiver does not hold.
+      const misaddressed = signGroupMessage(
+        s.bob,
+        carol.pre,
+        yield* multisigInteractExn(s.group, s.bob, s.mids, ixn, { recipient: carol.pre }),
+      );
+      yield* receive(s, misaddressed.message);
+      // Sent by carol, who is not in the group.
+      const outsider = signGroupMessage(
+        carol,
+        s.alice.pre,
+        yield* multisigInteractExn(s.group, carol, s.mids, ixn, { recipient: s.alice.pre }),
+      );
+      yield* receive(s, outsider.message);
+      assertEquals(s.notifier.count(), 0, "no notice is raised");
+      assertEquals(s.left.db.exns.get([misaddressed.exnSaid]), null, "neither wrapper is stored");
+      assertEquals(s.left.db.exns.get([outsider.exnSaid]), null);
+      assertEquals(listGroupProposals(readDeps(s)), []);
+      // The same event from a member to the receiver is listed.
+      const { signed } = yield* peerInteraction(s, [{ n: 2 }]);
+      assertEquals(listGroupProposals(readDeps(s)).map((proposal) => proposal.said), [signed.exnSaid]);
+    }, "2");
   });
 });
