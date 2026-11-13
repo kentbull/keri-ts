@@ -446,7 +446,10 @@ export function* createAgentRuntime(
     mailboxDirector,
     http,
     clock,
-    { onPolled: (pre, mailbox) => kelPublisher.prompt(pre, mailbox) },
+    {
+      onPolled: (pre, mailbox) => kelPublisher.prompt(pre, mailbox),
+      onUnauthorized: (pre, mailbox) => kelPublisher.repair(pre, mailbox),
+    },
   );
   for (
     const topic of [

@@ -149,6 +149,19 @@ export class KelPublisher {
   }
 
   /**
+   * A mailbox refused the owner's poll with 403: whatever the record says it holds, it cannot authenticate
+   * the owner (it lost its state, or accepted a post it then escrowed). Forget what it was given, so the next
+   * pass posts the KEL again, and give the entry a fresh budget. The poller calls this at most once per backoff
+   * period, which is also the most this posts; a mailbox that never recovers is given up on like any other.
+   */
+  repair(pre: string, mailbox: string): void {
+    const { hby } = this.#deps, record = hby.db.kpub.get([pre, mailbox]);
+    if (!hby.readonly && record?.d) hby.db.kpub.pin([pre, mailbox], { d: null, dt: record.dt });
+    this.#budgets.delete(idOf(pre, mailbox));
+    this.wake.notify();
+  }
+
+  /**
    * Drain the cues, then send up to {@link KelSendsPerPass} due posts, each within `timeoutMs` for the
    * mailbox's answer. A post is recorded when the mailbox answers 2xx; a failure is retried on the schedule
    * until the budget is used up. Never throws on a remote failure; every attempt is returned.
