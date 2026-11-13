@@ -271,6 +271,24 @@ async function awaitMailboxCursor({ mailbox, topic, above }: StepArgs) {
   return { cursor };
 }
 
+/**
+ * Step 6b: after a rotation, post the current KEL to the authorized mailbox again. A mailbox verifies the
+ * wallet's polling query against the key state it holds, which is the KEL as of the last `addMailbox`;
+ * until it is told of the rotation it answers 403 and serves no mail.
+ */
+async function refreshMailbox({ mailbox }: StepArgs) {
+  const { hby, runtime } = open();
+  const refreshed = await run(() =>
+    addMailbox(
+      { hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol },
+      identifier(),
+      mailbox.pre,
+    )
+  );
+  assert(refreshed.state === "authorized", `mailbox after the rotation ${JSON.stringify(refreshed)}`);
+  return { mailbox: mailbox.pre, state: refreshed.state };
+}
+
 /** Step 1: open a new wallet with a passcode and record the persistence request. */
 async function openWallet({ name, bran }: StepArgs) {
   assert(!wallet, "a wallet is already open");
@@ -439,5 +457,6 @@ export const steps: Record<string, (args: StepArgs & Record<string, any>) => Pro
   closeWallet,
   reopenWallet,
   rotate,
+  refreshMailbox,
   closeAndCheckLock,
 };

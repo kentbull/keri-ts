@@ -419,6 +419,11 @@ witness polling. A shared provider AID has one worker and cursor even if authori
 as both mailbox and witness; locally controlled providers use ordinary HTTP intake.
 Polling timeout overrides floor finite positive values with a 1 ms minimum;
 missing/nonfinite/nonpositive values retain the header/poll defaults.
+A provider that refuses the query (any non-success status; 403 when it cannot
+authenticate the requester, as after a rotation it has not been told) is retried on a
+doubling backoff (`MailboxPoller.RefusalBackoff`, 1 s to 30 s, reset by an accepted poll)
+on the host clock, never in a tight loop. A rotated wallet must update its mailbox
+(`addMailbox` posts the current KEL again) before the mailbox can serve it.
 Remote SSE consumer completion precedes durable cursor advancement and the next
 read. Stored positions are last-consumed; requests send next-wanted. MailboxPoller
 retrieves only endpoint streams: batches carry pre/eid/messages, and eid is required.

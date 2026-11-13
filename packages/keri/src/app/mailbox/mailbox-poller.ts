@@ -4,6 +4,7 @@ import type { Hab, Habery } from "../identity/habbing.ts";
 import { abortable } from "../runtime/abortable.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { runtimeTurn } from "../runtime/runtime-turn.ts";
+import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { isLegacyCesrMediaRejection, readResponseDetail } from "../transport/cesr-egress.ts";
 import { buildCesrRequest, CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
@@ -41,6 +42,16 @@ export class MailboxPoller {
    * Idle read window after the first complete event, in milliseconds.
    */
   static readonly ReadIdleTimeoutMs = 500;
+  /**
+   * Wait after a mailbox refuses a query (any non-success status, such as 403 for a requester the mailbox cannot
+   * authenticate), in milliseconds: it starts at `initialMs`, doubles with each consecutive refusal up to `maxMs`
+   * and starts over after an accepted poll. A refusal returns at once, so without a wait the worker would repeat
+   * the same signed request as fast as the loop turns.
+   */
+  static readonly RefusalBackoff: Readonly<{ initialMs: number; maxMs: number }> = Object.freeze({
+    initialMs: 1_000,
+    maxMs: 30_000,
+  });
 
   /** Borrowed habitat collection used to select mailbox signers. */
   readonly hby: Habery;
@@ -120,17 +131,18 @@ export class MailboxPoller {
    * @param target Mailbox subject habitat plus the actual local signer (a member for groups).
    * @param endpoint Selected remote endpoint AID and HTTP(S) URL.
    * @param onBatch Awaited consumer; successful completion precedes durable cursor advancement.
+   * @returns False when the mailbox answered the query with a refusal status.
    */
   private *pollRemoteEndpointOnce(
     target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
-  ): Operation<void> {
+  ): Operation<boolean> {
     const cursor = this.mailboxDirector.remoteQueryCursor(target.targetPre, endpoint.eid);
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     // The concrete HTTP/SSE operation owns and joins this whole poll attempt.
-    yield* call(() =>
+    return yield* call(() =>
       fetchMailboxMessages(
         target.signerHab,
         target.targetPre,
@@ -189,7 +201,8 @@ export class MailboxPoller {
    * Poll one remote endpoint continuously in the long-lived runtime shape.
    *
    * This keeps KERIpy's "one poller per endpoint" behavior while preserving
-   * `keri-ts`'s split between mailbox transport and runtime parser ownership.
+   * `keri-ts`'s split between mailbox transport and runtime parser ownership. A refused query is retried on
+   * {@link MailboxPoller.RefusalBackoff}, not in a tight loop.
    *
    * @param target Mailbox subject habitat plus the actual local signer (a member for groups).
    * @param endpoint Selected remote endpoint AID and HTTP(S) URL.
@@ -200,9 +213,17 @@ export class MailboxPoller {
     endpoint: { eid: string; url: string },
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
   ): Operation<never> {
+    const { initialMs, maxMs } = MailboxPoller.RefusalBackoff;
+    let refusedFor = 0;
     while (true) {
-      yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
-      yield* runtimeTurn();
+      const accepted = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
+      if (accepted) {
+        refusedFor = 0;
+        yield* runtimeTurn();
+      } else {
+        refusedFor = Math.min(maxMs, refusedFor ? refusedFor * 2 : initialMs);
+        yield* waitOnClock(this.clock, refusedFor);
+      }
     }
   }
 
@@ -320,6 +341,7 @@ export interface MailboxFetchTimeoutPolicy {
  * @param http Borrowed HTTP implementation selected by composition.
  * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
  * @param consume Awaited complete-event consumer; false stops the poll and errors propagate before remote cursor advancement.
+ * @returns False when the mailbox refused the query with a non-success status that is not the legacy media refusal.
  */
 function* fetchMailboxMessages(
   hab: Hab,
@@ -331,11 +353,11 @@ function* fetchMailboxMessages(
   http: HttpClient,
   clock: RuntimeClock,
   consume: (message: MailboxSseMessage) => Operation<boolean | void>,
-): Operation<void> {
+): Operation<boolean> {
   const query = hab.query(targetPre, src, { route: "mbx", q: { topics } });
   const prepared = buildCesrRequest(query, { destination: src });
   for (const contentType of [CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE]) {
-    const alternate = yield* scoped(function*() {
+    const attempt = yield* scoped(function*() {
       const controller = new AbortController();
       const request = {
         method: "POST",
@@ -344,21 +366,23 @@ function* fetchMailboxMessages(
         signal: controller.signal,
       };
       const response = yield* requestWithHeaderTimeout(http, clock, url, request, timeouts.requestOpenTimeoutMs);
-      if (!response) return false;
+      // No headers within the open window: that wait was the pause, so the next attempt may start at once.
+      if (!response) return "settled";
       if (!response.ok) {
         const detail = yield* abortable(signal => readResponseDetail(response, signal));
-        return isLegacyCesrMediaRejection(request, response.status, detail);
+        return isLegacyCesrMediaRejection(request, response.status, detail) ? "alternate" : "refused";
       }
       yield* consumeMailboxSse(response, controller, consume, clock, {
         idleTimeoutMs: timeouts.readIdleTimeoutMs,
         maxDurationMs: timeouts.maxReadDurationMs,
       });
-      return false;
+      return "settled";
     });
     // Closing the refused request is part of the scoped operation above. A close
     // failure escapes before another request can submit these same signed bytes.
-    if (!alternate) return;
+    if (attempt !== "alternate") return attempt === "settled";
   }
+  return false;
 }
 
 /**

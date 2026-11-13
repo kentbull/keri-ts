@@ -13,7 +13,7 @@
 
 import { type Context, type PeerResult, steps } from "../test/browser-wallet/scenario.ts";
 import type { StepArgs } from "../test/browser-wallet/steps.ts";
-import { bundle, launch, selectEngines, serve } from "./browser_lane.ts";
+import { bundle, launch, openPage, selectEngines, serve } from "./browser_lane.ts";
 
 const walletDir = new URL("../test/browser-wallet/", import.meta.url);
 const serversScript = new URL("../../../scripts/ci/browser-wallet-servers.sh", import.meta.url).pathname;
@@ -89,7 +89,7 @@ async function runEngine(name: string, pageUrl: string, servers: Servers): Promi
         );
       }
     });
-    await tab.goto(pageUrl);
+    await openPage(tab, pageUrl, "keriWallet");
     console.log(`\n=== ${name} ${browser.version()}`);
     const base: StepArgs = {
       witness: servers.witness,

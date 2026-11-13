@@ -13,7 +13,7 @@
 
 import { type Engine, EXPECTED, expectedFor } from "../test/browser-transport/expectations.ts";
 import type { Config, ProbeResult } from "../test/browser-transport/probes.ts";
-import { bundle, launch, selectEngines, serve } from "./browser_lane.ts";
+import { bundle, launch, openPage, selectEngines, serve } from "./browser_lane.ts";
 import { startEcho } from "./transport_echo.ts";
 
 const transportDir = new URL("../test/browser-transport/", import.meta.url);
@@ -76,7 +76,7 @@ async function runEngine(name: string, page: string, config: Config): Promise<Pr
     const tab = await browser.newPage();
     tab.on("pageerror", (error) => console.error(`[${name}] page error: ${error.message}`));
     tab.on("console", (message) => console.log(`[${name}] ${message.text()}`));
-    await tab.goto(page);
+    await openPage(tab, page, "keriTransport");
     console.log(`\n=== ${name} ${browser.version()}`);
     const run = tab.evaluate(
       (config) =>

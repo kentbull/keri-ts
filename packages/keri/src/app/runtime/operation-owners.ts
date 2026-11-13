@@ -1,7 +1,7 @@
 /**
  * Composition and loop of the runtime's operations owners.
  *
- * With `ipexOwners: "per-identifier"` the runtime owns one `IssuanceOperations`, one
+ * The runtime owns one `IssuanceOperations`, one
  * `PresentationOperations` and one `UnblindingOperations`, each an in-memory live table
  * with status derived from the protocol stores, and,
  * when it has a registry root owner, one `RootReplicator`. `runAgentRuntime` runs each
@@ -82,7 +82,7 @@ export class OwnerHealth {
   last: OwnerFault | null = null;
 }
 
-/** What the runtime composes for `ipexOwners`. */
+/** What the runtime composes for its operations owners. */
 export interface ComposedOwners {
   operations: RuntimeOperations;
   rootReplicator: RootReplicator | null;

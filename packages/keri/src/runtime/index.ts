@@ -930,7 +930,7 @@ export {
   waitForUnblinding,
 } from "../app/ipex/unblinding-workflow.ts";
 
-// Operations owners composed by the runtime for `ipexOwners` hosts.
+// Operations owners composed by the runtime.
 export {
   type ComposedOwners,
   type OperationStores,
