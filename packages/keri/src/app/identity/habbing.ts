@@ -62,7 +62,7 @@ import { Keeper, PreSit } from "../../db/keeping.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { oobiReplyMessages } from "../bootstrap/oobi-replies.ts";
 import { loadStoredReply } from "../delivery/stored-replies.ts";
-import { acceptedGroupMembers, latestGroupContribution } from "../multisig/group-members.ts";
+import { acceptedGroupMembers, isAcceptedGroupMember, latestGroupContribution } from "../multisig/group-members.ts";
 import type { Configer, ConfigerOptions } from "./configing.ts";
 import {
   Algos,
@@ -1920,6 +1920,10 @@ export class Habery {
    * - this is the TypeScript analogue of `Habery.joinGroupHab()`
    * - it does not fabricate key state; accepted KEL state must still arrive
    *   through `Kevery.processEvent()`
+   * - KERIpy overwrites the recorded member unconditionally. Here a recorded member that is still a
+   *   signing or rotation member of the group's accepted key state is kept (a Habery holding two valid
+   *   members must not switch which one signs), and one that is in neither list is replaced by `mhab`.
+   *   Replacing creates no event and signs nothing; membership itself changes only by rotation.
    */
   joinGroupHab(
     pre: string,
@@ -1957,9 +1961,12 @@ export class Habery {
       );
     }
     const existingRecord = this.db.getHab(pre);
-    if (existingRecord?.mid && existingRecord.mid !== mhab.pre) {
+    const replacing = !!existingRecord?.mid && existingRecord.mid !== mhab.pre;
+    if (replacing && isAcceptedGroupMember(this.db, pre, existingRecord.mid!)) {
+      // Membership is decided by accepted key state, never by the caller's lists.
       throw new ValidationError(
-        `Group prefix ${pre} is already joined as ${existingRecord.name}.`,
+        `Group prefix ${pre} is already joined as ${existingRecord.name} by member ${existingRecord.mid}, `
+          + `which is still a member in its accepted key state.`,
       );
     }
 
@@ -1982,12 +1989,15 @@ export class Habery {
       signingMembers,
       rotationMembers,
       ns,
+      existingRecord ?? undefined,
     );
     this.db.groups.add(pre);
     if (hab.accepted) {
       this.markAcceptedGroupHab(pre);
     }
     this.habs.set(pre, hab);
+    // The stored lists must follow accepted state, which the old member's record kept from being committed.
+    if (replacing && !this.readonly) this.recoverAcceptedGroupMembers(pre);
     return hab;
   }
 
@@ -2267,6 +2277,7 @@ export class Habery {
     smids: readonly string[],
     rmids: readonly string[],
     ns?: string,
+    replaced?: HabitatRecord,
   ): void {
     this.db.pinHab(
       pre,
@@ -2275,6 +2286,9 @@ export class Habery {
         name: group,
         domain: ns,
         mid,
+        // A rejoin or replacement keeps the rest of the record.
+        sid: replaced?.sid,
+        watchers: replaced?.watchers ? [...replaced.watchers] : undefined,
         smids: [...smids],
         rmids: [...rmids],
       }),

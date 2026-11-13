@@ -148,6 +148,28 @@ export function groupMemberHasKey(db: Baser, member: string, key: string): boole
 }
 
 /**
+ * True when `aid` is a signing or rotation member of `group`'s latest accepted establishment event: one of its
+ * establishment events supplied a key in that event's key list or committed to a digest in its next list.
+ * Decided from accepted key state only. False when the group has no accepted state.
+ */
+export function isAcceptedGroupMember(db: Baser, group: string, aid: string): boolean {
+  const kever = db.getKever(group);
+  const event = kever ? db.getEvtSerder(group, kever.lastEst.d) : null;
+  if (!event) return false;
+  const keys = new Set((event.verfers ?? []).map(verfer => verfer.qb64));
+  const digs = new Set((event.ndigers ?? []).map(diger => diger.qb64));
+  for (const [, said] of db.getKelItemIter(aid)) {
+    const member = db.getEvtSerder(aid, said);
+    if (!member?.estive) continue;
+    if (
+      (member.verfers ?? []).some(verfer => keys.has(verfer.qb64))
+      || (member.ndigers ?? []).some(diger => digs.has(diger.qb64))
+    ) return true;
+  }
+  return false;
+}
+
+/**
  * Select only a cryptographically valid local partial at an accepted group establishment.
  * The shared esigs table can hold unverified escrow candidates, so a matching
  * index or an authenticated parent wrapper alone is not recorded child approval.

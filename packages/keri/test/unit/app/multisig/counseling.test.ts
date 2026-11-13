@@ -101,6 +101,15 @@ const incept = (s: Side, smids: string[], args: object = {}) =>
 const rotate = (s: Side, smids: string[], rmids: string[], args: object = {}) =>
   s.hby.rotateGroupHab("g", smids, rmids, args);
 
+/** A group every side signs at inception with its own member; all hold it accepted. */
+function pairAt(sides: Side[], smids: string[], rmids: string[]): string {
+  const created = sides.map(s =>
+    s.hby.makeGroupHab("g", s.hab, smids, rmids, undefined, { isith: "2", nsith: "2", toad: 0 })
+  );
+  sides.forEach((s, i) => created.forEach((c, j) => i !== j && deliver(s.hby, c)));
+  return created[0].serder.pre!;
+}
+
 /** A group both sides sign at inception; both hold it accepted. */
 function pair(sides: Side[], args: object = {}): string {
   const smids = pres(sides);
@@ -720,6 +729,79 @@ Deno.test("groupElectedMember requires a current signing member; groupWitnesser 
     hby.joinGroupHab(gid, "g", sides[0].hab, smids.slice(1), smids);
     assertEquals(groupWitnesser(hby, gid, inception), true);
     assertEquals(groupElectedMember(hby, gid, inception), null);
+  });
+});
+
+Deno.test("joinGroupHab replaces a local member that left the accepted key state, and only then", async () => {
+  await run(function*() {
+    const sides = yield* members(3);
+    const [a, b, c] = sides, fresh = a.hby.makeHab("replacement");
+    share(a.hby, fresh.pre!, [b.hby, c.hby]);
+    const smids = pres(sides), rmids = [...smids, fresh.pre!], gid = pairAt(sides, smids, rmids);
+    const body = new TextEncoder().encode("signed by the replacement");
+
+    // A recorded member that is a signing member of the accepted state is kept, whatever the caller lists.
+    assertThrows(
+      () => a.hby.joinGroupHab(gid, "g", fresh, [fresh.pre!], [fresh.pre!]),
+      Error,
+      "still a member",
+    );
+    assertEquals(a.hby.db.getHab(gid)!.mid, a.hab.pre);
+
+    // Only the rotation list: a member that merely holds a next key is kept too.
+    const other = [b, a], smidsH = [fresh.pre!, b.hab.pre!], rmidsH = [fresh.pre!, b.hab.pre!, a.hab.pre!];
+    const created = other.map(s =>
+      s.hby.makeGroupHab("h", s.hab, smidsH, rmidsH, undefined, { isith: "2", nsith: "2", toad: 0 })
+    );
+    deliver(a.hby, created[0]);
+    const hid = created[0].serder.pre!;
+    assertEquals(a.hby.db.getKever(hid)!.sn, 0);
+    assertEquals(a.hby.db.getHab(hid)!.mid, a.hab.pre);
+    assertThrows(() => a.hby.joinGroupHab(hid, "h", fresh, smidsH, rmidsH), Error, "still a member");
+    assertEquals(a.hby.db.getHab(hid)!.mid, a.hab.pre);
+
+    // The other members rotate a out; the Habery's recorded member is no longer in the accepted state.
+    b.hab.rotate();
+    c.hab.rotate();
+    fresh.rotate();
+    share(b.hby, b.hab.pre!, [a.hby, c.hby]);
+    share(c.hby, c.hab.pre!, [a.hby, b.hby]);
+    share(a.hby, fresh.pre!, [b.hby, c.hby]);
+    const next = [b.hab.pre!, c.hab.pre!, fresh.pre!];
+    const rots = [b, c].map(s => rotate(s, next, next, { isith: "2", nsith: "2", toad: 0 }));
+    [b, c].forEach((s, i) => deliver(s.hby, rots[1 - i]));
+    rots.forEach(r => deliver(a.hby, r));
+    assertEquals(a.hby.db.getKever(gid)!.sn, 1);
+    assertEquals(a.hby.db.getHab(gid)!.mid, a.hab.pre, "the record is not changed by a rotation alone");
+
+    const group = a.hby.joinGroupHab(gid, "g", fresh, next, next);
+    const record = a.hby.db.getHab(gid)!;
+    assertEquals(record.mid, fresh.pre);
+    assertEquals(record.name, "g");
+    assertEquals([record.smids, record.rmids], [next, next]);
+    assertEquals(a.hby.ks.getSmids(gid).map(t => t[0].qb64), next);
+    assertEquals(a.hby.db.getKever(gid)!.sn, 1, "no event was made");
+
+    // The re-pointed habitat signs as the replacement, at the replacement's index.
+    const signed = group.sign(body, true);
+    assertEquals(signed.map(sig => sig.index), [2]);
+    assert(fresh.kever!.verfers[0].verify(signed[0].raw, body));
+    const interaction = a.hby.interactGroupHab("g");
+    assertEquals(interaction.sigers.map(sig => sig.index), [2]);
+
+    // It contributes to a rotation: its next key was committed by the group's last rotation.
+    for (const side of [b, c]) side.hab.rotate();
+    fresh.rotate();
+    share(b.hby, b.hab.pre!, [a.hby]);
+    share(c.hby, c.hab.pre!, [a.hby]);
+    const contributed = a.hby.rotateGroupHab("g", undefined, undefined, { isith: "2", nsith: "2", toad: 0 });
+    assertEquals(contributed.sigers.map(sig => sig.index), [2]);
+
+    // A reopen's member-list repair keeps the replacement.
+    assertEquals(a.hby.recoverAcceptedGroupMembers(gid), false);
+    (a.hby as unknown as { loadHabs(): void }).loadHabs();
+    assertEquals(a.hby.db.getHab(gid)!.mid, fresh.pre);
+    assertEquals(a.hby.habs.get(gid)!.sign(body, true).map(sig => sig.index), [2]);
   });
 });
 

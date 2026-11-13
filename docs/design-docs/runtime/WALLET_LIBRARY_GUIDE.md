@@ -324,6 +324,20 @@ Group work is a set of explicit library calls plus the `Counselor`.
   Grant contribution waits for it, phase `awaitingRegistryUpdate`), and proves with `requestUnblind` / `answerUnblind`
   naming a `proposer`. Root copies for the other members come from the runtime's `RootReplicator`, which derives what is
   owed from state and records sent copies in `rrsn.`; `RegistryRoot` publishes a `root` change when it retains one.
+- **Replacing the local member after a rotation.** A group habitat records one local member, the
+  habitat that signs, polls and contributes for it. Membership changes only by a rotation; the record
+  does not follow one. When a rotation removes the recorded member and another habitat of the same
+  Habery is now a member, `hby.joinGroupHab(group, alias, newMember, smids, rmids)` re-points the record.
+  It creates no event and signs nothing. It is refused while the recorded member still appears in the
+  signing or rotation members of the group's accepted key state, so a Habery holding two valid members
+  never switches silently; the caller's lists are not consulted for that decision. The record keeps its
+  name, domain and other fields, and its stored member lists are brought in line with accepted state.
+  What is keyed by the group stays: registry roots (`rroots`), mailbox cursors, held DH and Unblind
+  queries, and the credentials the group holds, so the new member needs no root copy from a peer when
+  the Habery already holds the group's roots. `kpub` re-posts the new member's KEL. Work bound to the old
+  member does not move: a DH operation whose frozen custodian is the old member, and an exchange led by
+  it, can no longer be completed by this Habery and need a new proposal. The wallet's approval
+  workflow joins a group only the first time; replacing the member is this explicit library call.
 
 ## Mailboxes and rotation
 
