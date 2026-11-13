@@ -37,7 +37,7 @@ import { ValidationError } from "../../../../src/core/errors.ts";
 import type { KramConfig } from "../../../../src/core/mailbox/kraming.ts";
 import { query } from "../../../../src/core/protocol-eventing.ts";
 import { makeNowIso8601, timestampMicros } from "../../../../src/time/mod.ts";
-import { type Party, route, scenario } from "./issuance-fixtures.ts";
+import { KRAM, type Party, party, route, scenario, TestClock } from "./issuance-fixtures.ts";
 
 const STATES = ["issued", "revoked", ""];
 
@@ -309,5 +309,83 @@ Deno.test("an aged Unblind query is re-dated and accepted instead of resent as a
     assert(queries[0].some((byte, i) => byte !== queries[1][i]) || queries[0].length !== queries[1].length);
     yield* drive(requester, responder, g);
     assertEquals(unblindingStatus(requester, g), { state: "done", role: "requester" });
+  });
+});
+
+Deno.test("one Habery holding both the discloser and the disclosee of a presentation runs both sides of its Unblind", async () => {
+  await run(function*() {
+    const clock = new TestClock();
+    const both = yield* party(clock, "Colocated", ["sender", "verifier"], undefined, true, KRAM);
+    const [sender, verifier] = both.habs;
+    const stamp = makeNowIso8601(new Date());
+    const rip = regcept(sender.pre!, { stamp });
+    yield* both.runtime.reactor.processBytes(sender.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] }));
+    yield* both.runtime.reactor.processBytes(rip.raw);
+    const root = new Salter({ raw: new TextEncoder().encode("public-test-root"), code: MtrDex.Salt_128 });
+    sender.mgr.putRegistryRoot(sender.pre!, rip.said!, root);
+    const credential = acdcmap(sender.pre!, { regid: rip.said!, attribute: { d: "", i: verifier.pre!, name: "Ada" } });
+    const first = makeBlindState({ salt: root.qb64, sn: 1, acdc: credential.said!, state: "issued" });
+    let prior = blindate(rip.said!, rip.said!, first.d.nonce, { stamp });
+    yield* both.runtime.reactor.processBytes(
+      sender.interact({ data: [{ i: rip.said!, s: "1", d: prior.said! }] }),
+    );
+    yield* both.runtime.reactor.processBytes(prior.raw);
+    for (const sn of [2, 3]) {
+      const proof = makeBlindState({
+        salt: root.qb64,
+        sn,
+        acdc: sn === 3 ? credential.said! : "",
+        state: sn === 3 ? "issued" : "",
+      });
+      const event = blindate(rip.said!, prior.said!, proof.d.nonce, { sn, stamp });
+      yield* both.runtime.reactor.processBytes(
+        sender.interact({ data: [{ i: rip.said!, s: sn.toString(16), d: event.said! }] }),
+      );
+      yield* both.runtime.reactor.processBytes(event.raw);
+      prior = event;
+    }
+    const child: CesrFrame = {
+      body: credential,
+      gvrsn: Vrsn_2_0,
+      attachments: [parseAttachmentGroup(publicOpeningAttachment(first), Vrsn_2_0, "txt").group],
+    };
+    const grant = ipexExnBody(sender.pre!, "/ipex/grant", [credential], {
+      kind: Kinds.json,
+      recipient: verifier.pre!,
+      message: "Presentation inside one Habery",
+      date: stamp,
+    });
+    const wire = yield* call(() =>
+      collectPayload(framePayload({
+        body: grant,
+        gvrsn: Vrsn_2_0,
+        attachments: parseBytes(sender.endorse(grant, { gvrsn: Vrsn_2_0 }))[0].attachments,
+        nests: [child],
+      }))
+    );
+    yield* both.runtime.reactor.processBytes(wire);
+    const g = grant.said!;
+    const ops = new UnblindingOperations({
+      hby: both.hby,
+      exc: both.runtime.exc,
+      unblinds: both.runtime.ipex!,
+      delivery: {
+        *deliver() {
+          throw new Error("a recipient held in this Habery is not delivered over the wire");
+        },
+      },
+      reactor: both.runtime.reactor,
+      clock,
+    });
+    const begun = requestUnblind(ops, g, { states: STATES });
+    assertEquals(begun.role, "requester");
+    // A read for this Habery answers for the requester and says so; the responder is asked for by name.
+    assertEquals(unblindingStatus(ops, g).role, "requester");
+    assertEquals(ops.liveOf(g, "responder"), undefined);
+    for (let i = 0; i < 20 && unblindingStatus(ops, g, { role: "requester" }).state === "active"; i++) {
+      yield* ops.processOnce();
+    }
+    assertEquals(unblindingStatus(ops, g, { role: "requester" }), { state: "done", role: "requester" });
+    assertEquals(unblindingStatus(ops, g, { role: "responder" }), { state: "done", role: "responder" });
   });
 });

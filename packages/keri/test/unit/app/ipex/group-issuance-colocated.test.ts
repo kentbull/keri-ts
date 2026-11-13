@@ -25,7 +25,7 @@ import {
   proposeGroupIssuance,
 } from "../../../../src/app/ipex/group-issuance.ts";
 import {
-  type IssuanceOperations,
+  IssuanceOperations,
   type IssuanceStatus,
   issuanceStatus,
   waitForIssuance,
@@ -265,5 +265,10 @@ Deno.test("one Habery holding a member of the issuer group and a member of the h
       role: "holder",
       phase: "admitted",
     });
+    // A member with no operation record reads the finished issuance from the stores, not as interrupted.
+    for (const site of [y, z]) {
+      const fresh = new IssuanceOperations(issuanceOf(site).deps);
+      assertEquals(issuanceStatus(fresh, grant).state, "done", site.name);
+    }
   });
 });

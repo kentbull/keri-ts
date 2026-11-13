@@ -36,9 +36,12 @@ import type { Exchanger, ExchangeRouteHandler } from "../exchanges/exchanging.ts
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
 import { type Multiplexor, MULTISIG_QRY_ROUTE, MULTISIG_RPY_ROUTE, multisigExnBody } from "../multisig/grouping.ts";
+import { remoteGroupMembers } from "../multisig/multisig-messaging.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
+import type { Reactor } from "../protocol/reactor.ts";
 import { type DeliveryFailure, DeliveryOutbox } from "../runtime/delivery-outbox.ts";
+import type { DeliveryMessage } from "../runtime/delivery-outbox.ts";
 import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
@@ -49,6 +52,19 @@ export const UNBLIND_QUERY_RESEND_MS = 1000;
 
 /** Which side of the presentation the local identifier is. */
 export type UnblindingRole = "requester" | "responder";
+
+/**
+ * Which party to read or act for when one Habery holds both sides of a presentation. Absent, the Habery's only
+ * party is meant; when it holds both, a read answers for the requester and says so in its `role`.
+ */
+export interface UnblindingParty {
+  role?: UnblindingRole;
+}
+
+/** The key of one party's operation on a Grant. */
+export function unblindingKey(grant: string, role: UnblindingRole): string {
+  return `${role}:${grant}`;
+}
 
 /** Terminal states that are not completion; each carries a reason. */
 export type UnblindingEndState = "abandoned" | "interrupted" | "expired" | "failed";
@@ -79,6 +95,8 @@ export interface UnblindingDeps {
   /** Per-identifier Unblind owners (`runtime.ipex`), so several identifiers can unblind on one runtime. */
   readonly unblinds: { unblind(hab: Hab): Unblind; unblindOwners(): Iterable<Unblind> };
   readonly delivery: IssuanceDelivery;
+  /** Takes in bytes for a recipient held in this Habery, through the ordinary path; without it they go to `delivery`. */
+  readonly reactor?: Pick<Reactor, "processBytes">;
   /** Same clock the exchanger and Unblind owners were composed with. */
   readonly clock: RuntimeClock;
   /** Delivery retry delays; the production policy when absent. */
@@ -166,18 +184,34 @@ type SettledUnblinding =
 
 /** The live operations table and its driver. One per host runtime; every identifier may unblind through it. */
 export class UnblindingOperations {
-  /** Operations whose approval is live in this process. Internal to this module's functions. */
+  /** Operations whose approval is live in this process, by {@link unblindingKey}. Read them through {@link liveOf}. */
   readonly live = new Map<string, LiveUnblinding>();
-  /** Operations that finished or ended in this process; not durable, see the module doc. */
+  /** Operations that finished or ended in this process, by {@link unblindingKey}; not durable, see the module doc. */
   readonly settled = new Map<string, SettledUnblinding>();
   /** The Unblind child handlers registered on the multiplexor, once a group operation began. */
   groupRoutes: Array<[string, ExchangeRouteHandler]> | null = null;
 
   constructor(readonly deps: UnblindingDeps) {}
 
-  /** Whether the live operation for `grant` still holds a message the transport has not taken. */
-  owes(grant: string): boolean {
-    return (this.live.get(grant)?.outbox.length ?? 0) > 0;
+  /** The live operation of one party of `grant`; without `role`, the requester's when this Habery holds both. */
+  liveOf(grant: string, role?: UnblindingRole): LiveUnblinding | undefined {
+    return role
+      ? this.live.get(unblindingKey(grant, role))
+      : this.live.get(unblindingKey(grant, "requester")) ?? this.live.get(unblindingKey(grant, "responder"));
+  }
+
+  /** The operation of one party of `grant` that finished or ended in this process; without `role`, as {@link liveOf}. */
+  settledOf(grant: string, role?: UnblindingRole): SettledUnblinding | undefined {
+    return role
+      ? this.settled.get(unblindingKey(grant, role))
+      : this.settled.get(unblindingKey(grant, "requester")) ?? this.settled.get(unblindingKey(grant, "responder"));
+  }
+
+  /** Whether a live operation for `grant` (or only its party `role`) still holds a message the transport has not taken. */
+  owes(grant: string, role?: UnblindingRole): boolean {
+    return role
+      ? (this.liveOf(grant, role)?.outbox.length ?? 0) > 0
+      : this.owes(grant, "requester") || this.owes(grant, "responder");
   }
 
   /**
@@ -195,7 +229,7 @@ export class UnblindingOperations {
     const { deps } = this;
     this.adopt();
     for (const op of [...this.live.values()]) {
-      if (op.busy || !this.live.has(op.grant)) continue;
+      if (op.busy || this.live.get(unblindingKey(op.grant, op.role)) !== op) continue;
       op.busy = true;
       try {
         const left = op.expires - BigInt(deps.clock.now()) * 1000n;
@@ -221,7 +255,7 @@ export class UnblindingOperations {
     const { deps } = this;
     for (const owner of deps.unblinds.unblindOwners()) {
       for (const { xid, grant } of owner.awaitingReply()) {
-        if (this.live.has(grant)) continue;
+        if (this.live.has(unblindingKey(grant, "responder"))) continue;
         let input, deadline, expires;
         try {
           input = deps.exc.retainedInput(grant);
@@ -230,13 +264,17 @@ export class UnblindingOperations {
         } catch (error) {
           // Unreadable stored state fails this reply alone; release the owner's approval so it is not retried.
           owner.abandon(xid);
-          this.settled.set(grant, { role: "responder", state: "failed", reason: message(error) });
+          this.settled.set(unblindingKey(grant, "responder"), {
+            role: "responder",
+            state: "failed",
+            reason: message(error),
+          });
           deps.changes?.push({ kind: "unblinding", id: grant });
           continue;
         }
         if (!input || !deadline || expires === null || BigInt(deps.clock.now()) * 1000n >= expires) continue;
-        this.settled.delete(grant);
-        this.live.set(grant, {
+        this.settled.delete(unblindingKey(grant, "responder"));
+        this.live.set(unblindingKey(grant, "responder"), {
           grant,
           xid,
           role: "responder",
@@ -260,13 +298,13 @@ export class UnblindingOperations {
   /** End a live operation: release the approval, remember why until the process ends, tell the sink. */
   end(op: LiveUnblinding, state: UnblindingEndState, reason: string): void {
     this.release(op);
-    this.settled.set(op.grant, { role: op.role, state, reason });
+    this.settled.set(unblindingKey(op.grant, op.role), { role: op.role, state, reason });
     this.deps.changes?.push({ kind: "unblinding", id: op.grant });
   }
 
   /** Drop the live entry and the owner's approval and frozen messages; delivered bytes stay the peer's. */
   private release(op: LiveUnblinding): void {
-    this.live.delete(op.grant);
+    this.live.delete(unblindingKey(op.grant, op.role));
     try {
       op.owner.abandon(op.xid);
     } catch (error) {
@@ -276,7 +314,7 @@ export class UnblindingOperations {
 
   private finished(op: LiveUnblinding): void {
     this.release(op);
-    this.settled.set(op.grant, { role: op.role, state: "done" });
+    this.settled.set(unblindingKey(op.grant, op.role), { role: op.role, state: "done" });
     this.deps.changes?.push({ kind: "unblinding", id: op.grant });
   }
 
@@ -439,9 +477,29 @@ export class UnblindingOperations {
     return "stepped";
   }
 
+  /**
+   * The delivery the outboxes use. A recipient that is an identifier of this Habery takes the bytes through the
+   * ordinary reactor path in process, so the checks a remote delivery meets run too; a local group's members that
+   * are not held here are still delivered to.
+   */
+  private readonly transport: IssuanceDelivery = { deliver: (message) => this.deliverToParty(message) };
+
+  private *deliverToParty(message: DeliveryMessage): Operation<string[]> {
+    const { hby, reactor, delivery } = this.deps, recipient = hby.habs.get(message.dest);
+    if (!recipient || !reactor) return yield* delivery.deliver(message);
+    yield* reactor.processBytes(message.msg);
+    const reached = [`local:${recipient.pre}`];
+    if (!isLocalGroupHab(hby, recipient)) return reached;
+    const member = localGroupMember(hby, recipient.pre!);
+    for (const dest of remoteGroupMembers(hby, member, groupSigningMembers(hby, recipient.pre!))) {
+      reached.push(...yield* delivery.deliver({ ...message, dest }));
+    }
+    return reached;
+  }
+
   /** One pass: send what is queued, step only once the queue is empty, send what the step queued. */
   private *advance(op: LiveUnblinding): Operation<"stepped"> {
-    const drain = () => op.outbox.drain(this.deps.delivery, this.deps.clock);
+    const drain = () => op.outbox.drain(this.transport, this.deps.clock);
     if (!(yield* drain())) return "stepped";
     if (!op.finished) yield* this.step(op);
     if ((yield* drain()) && op.finished) this.finished(op);
@@ -452,7 +510,7 @@ export class UnblindingOperations {
 /** The exact live Grant the local party may consent to, with its deadline and role. */
 function selectGrant(ops: UnblindingOperations, grant: string, role: UnblindingRole, proposer?: string) {
   const { deps } = ops;
-  if (ops.live.has(grant)) throw new ValidationError("Unblind was already begun for this Grant");
+  if (ops.live.has(unblindingKey(grant, role))) throw new ValidationError("Unblind was already begun for this Grant");
   const input = deps.exc.retainedInput(grant);
   if (!input) throw new ValidationError("Unblind requires an authenticated retained Grant");
   const sender = input.serder.pre, recipient = input.serder.sad?.ri;
@@ -496,7 +554,7 @@ function consent(
     const current = deps.exc.verifyGrantProofs(grant, selected.input.nests ?? []);
     if (current === true || typeof current === "object" && current.kind === "accept") {
       owner.abandon(xid);
-      ops.settled.set(grant, { role: "requester", state: "done" });
+      ops.settled.set(unblindingKey(grant, "requester"), { role: "requester", state: "done" });
       deps.changes?.push({ kind: "unblinding", id: grant });
       return { op: null, begun };
     }
@@ -543,8 +601,8 @@ export function requestUnblind(
       // Only the proposer authors the threshold query; the other members contribute to it when it arrives.
       if (op.group.member.pre === options.proposer) op.owner.start(grant);
     } else op.query = op.owner.start(grant);
-    ops.settled.delete(grant);
-    ops.live.set(grant, op);
+    ops.settled.delete(unblindingKey(grant, "requester"));
+    ops.live.set(unblindingKey(grant, "requester"), op);
     ops.deps.changes?.push({ kind: "unblinding", id: grant });
   }
   return begun;
@@ -567,8 +625,8 @@ export function answerUnblind(
   const { deps } = ops;
   const { op, begun } = consent(ops, grant, "responder", options);
   registerUnblindRoutes(ops);
-  ops.settled.delete(grant);
-  ops.live.set(grant, op!);
+  ops.settled.delete(unblindingKey(grant, "responder"));
+  ops.live.set(unblindingKey(grant, "responder"), op!);
   deps.changes?.push({ kind: "unblinding", id: grant });
   return begun;
 }
@@ -646,8 +704,10 @@ function registerUnblindRoutes(ops: UnblindingOperations): void {
 export function unblindingStatus(
   ops: UnblindingOperations,
   grant: string,
+  party: UnblindingParty = {},
 ): UnblindingStatus {
-  const { deps } = ops, settled = ops.settled.get(grant), live = ops.live.get(grant);
+  const { deps } = ops, role = chooseParty(deps, grant, party);
+  const settled = ops.settledOf(grant, role), live = ops.liveOf(grant, role);
   if (settled) {
     return settled.state === "done"
       ? { state: "done", role: settled.role }
@@ -678,8 +738,27 @@ export function unblindingStatus(
   return { state: "interrupted", role: "requester", reason: INTERRUPTED };
 }
 
+/**
+ * The party a read is for: the one asked for, else the Habery's only party, else (it holds both) the requester.
+ * Undefined when the Grant is not stored here, so only what is live or remembered answers.
+ *
+ * @throws ValidationError when `choice` names a party this Habery does not hold.
+ */
+function chooseParty(deps: UnblindingDeps, grant: string, choice: UnblindingParty): UnblindingRole | undefined {
+  const input = deps.exc.retainedInput(grant);
+  if (!input) return choice.role;
+  const held: UnblindingRole[] = [
+    ...(deps.hby.habs.has(String(input.serder.sad?.ri)) ? ["requester" as const] : []),
+    ...(input.serder.pre && deps.hby.habs.has(input.serder.pre) ? ["responder" as const] : []),
+  ];
+  if (choice.role && !held.includes(choice.role)) {
+    throw new ValidationError(`This Habery holds no ${choice.role} of this presentation`);
+  }
+  return choice.role ?? held[0];
+}
+
 /** Options for {@link waitForUnblinding}. */
-export interface UnblindingWaitOptions {
+export interface UnblindingWaitOptions extends UnblindingParty {
   /** Wall-clock budget. */
   timeoutMs: number;
   clock?: RuntimeClock;
@@ -692,13 +771,13 @@ export interface UnblindingWaitOptions {
 export function* waitForUnblinding(
   ops: UnblindingOperations,
   grant: string,
-  { timeoutMs, clock = ops.deps.clock }: UnblindingWaitOptions,
+  { timeoutMs, clock = ops.deps.clock, role }: UnblindingWaitOptions,
 ): Operation<WaitResult<UnblindingStatus>> {
-  const settled = yield* observeUntil(() => unblindingStatus(ops, grant).state !== "active" && !ops.owes(grant), {
-    timeoutMs,
-    clock,
-  });
-  const status = unblindingStatus(ops, grant);
+  const settled = yield* observeUntil(
+    () => unblindingStatus(ops, grant, { role }).state !== "active" && !ops.owes(grant, role),
+    { timeoutMs, clock },
+  );
+  const status = unblindingStatus(ops, grant, { role });
   return settled ? { outcome: "settled", status } : { outcome: "timed-out", status, timeoutMs };
 }
 
@@ -709,13 +788,18 @@ export function* waitForUnblinding(
  *
  * @throws ValidationError when no Unblind was begun for `grant`.
  */
-export function abandonUnblinding(ops: UnblindingOperations, grant: string, reason = "Abandoned by the user"): void {
-  const status = unblindingStatus(ops, grant);
+export function abandonUnblinding(
+  ops: UnblindingOperations,
+  grant: string,
+  reason = "Abandoned by the user",
+  party: UnblindingParty = {},
+): void {
+  const status = unblindingStatus(ops, grant, party);
   if (status.state !== "active" && status.state !== "interrupted") return;
-  const live = ops.live.get(grant);
+  const live = ops.liveOf(grant, status.role);
   if (live) ops.end(live, "abandoned", reason);
   else {
-    ops.settled.set(grant, { role: status.role, state: "abandoned", reason });
+    ops.settled.set(unblindingKey(grant, status.role), { role: status.role, state: "abandoned", reason });
     ops.deps.changes?.push({ kind: "unblinding", id: grant });
   }
 }

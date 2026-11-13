@@ -603,6 +603,7 @@ export {
   DatabaseOperationError,
   InvalidPathNameError,
   PathError,
+  PresentationClosedError,
   ValidationError,
 } from "../core/errors.ts";
 export { verifyExchangeProofs } from "../core/exchange/exchange-proofing.ts";
@@ -1020,8 +1021,10 @@ export {
   type UnblindingBegun,
   type UnblindingDeps,
   type UnblindingEndState,
+  unblindingKey,
   UnblindingOperations,
   type UnblindingOptions,
+  type UnblindingParty,
   type UnblindingPhase,
   type UnblindingRole,
   type UnblindingStatus,

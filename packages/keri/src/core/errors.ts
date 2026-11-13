@@ -23,6 +23,15 @@ export class PathError extends AppError {
   override readonly name: string = "PathError";
 }
 
+/**
+ * An Unblind was asked of a presentation whose exchange already has its terminal response (an Admit or a Spurn). The
+ * discloser consented to answer queries about a live presentation; the response ends that authority, so the
+ * Unblind must be requested before the response is made.
+ */
+export class PresentationClosedError extends ValidationError {
+  override readonly name: string = "PresentationClosedError";
+}
+
 /** Rejected path name because it violates relative-name constraints. */
 export class InvalidPathNameError extends ValidationError {
   override readonly name: string = "InvalidPathNameError";

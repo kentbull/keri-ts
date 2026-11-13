@@ -43,7 +43,7 @@ import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { ValidationError } from "../../../src/core/errors.ts";
+import { PresentationClosedError, ValidationError } from "../../../src/core/errors.ts";
 import { consoleLogger } from "../../../src/core/logger.ts";
 import { interact as interactEvent, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
@@ -83,7 +83,7 @@ function* libraryUnblind(
     let counted = false;
     try {
       const stop = Date.now() + timeoutMs;
-      while (!begun && !ops.live.has(grant) && !ops.settled.has(grant)) {
+      while (!begun && !ops.liveOf(grant) && !ops.settledOf(grant)) {
         if (Date.now() > stop) throw new Error("no Unblind began");
         yield* sleep(20);
       }
@@ -277,6 +277,12 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     const second = yield* presentation("Second pending presentation");
     const deadline = observer.exc.exchangeDeadline(pending);
     assertThrows(() => presenter.route.approve(original.said!), Error, undefined, "an admitted Grant is terminal");
+    // The verifier's own request after its Admit is refused for that reason, as a typed error.
+    assertThrows(
+      () => observer.route.approve(original.said!),
+      PresentationClosedError,
+      "Unblind must be requested before the response is made",
+    );
     const xid = observer.route.approve(pending.said!);
     const started = observer.route.start(pending.said!);
     assertEquals(observer.route.start(pending.said!), started, "retry keeps the exact signed query");
@@ -610,8 +616,8 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       const opening = makeBlindState({
         salt: root.qb64,
         sn,
-        acdc: sn === 2 ? credential.said! : "",
-        state: sn === 2 ? "issued" : "",
+        acdc: sn === 2 || sn === 4 ? credential.said! : "",
+        state: sn === 2 ? "issued" : sn === 4 ? "revoked" : "",
       });
       const event = blindate(rip.said!, prior.said!, opening.d.nonce, { sn });
       yield* anchor(event, verifiers);
@@ -702,7 +708,9 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     assert(queries.length > 0 && replies.length > 0, "finite commands deliver actual HTTP query and reply messages");
     for (const repeated of queries) assertEquals(repeated.body.raw, query.body.raw);
     const response = replies[0], evidence = envelopeFromFrame(response);
-    assertEquals(evidence.bsqs.map(opening => opening.d.nonce).sort(), proofs.map(opening => opening.d.nonce).sort());
+    // The newest update is a revocation the group derived from its registry root; it binds the credential's state, so
+    // it is the one opening the reply needs.
+    assertEquals(evidence.bsqs.map(opening => opening.d.nonce), [proofs.at(-1)!.d.nonce]);
     assertEquals(evidence.bsss, []);
     assertEquals(response.nests ?? [], []);
     const indices = evidence.tsgs.flatMap(group => group.sigers.map(siger => siger.index)).sort();
