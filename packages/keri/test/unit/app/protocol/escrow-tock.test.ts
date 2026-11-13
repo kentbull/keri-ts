@@ -33,7 +33,12 @@ function stepClock() {
 
 Deno.test("escrowDo runs a pass every tock regardless of pass cost", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, bran: "TockPasscodeSecretABCD" });
+    const hby = yield* createHabery({
+      name: crypto.randomUUID(),
+      temp: true,
+      skipConfig: true,
+      bran: "TockPasscodeSecretABCD",
+    });
     yield* ensure(() => hby.close(true));
     const protocol = createProtocolProcessor(hby), steps = stepClock();
     const costs = [0, 400, 0, 90];
