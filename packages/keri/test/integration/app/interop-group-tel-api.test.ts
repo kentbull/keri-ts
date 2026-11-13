@@ -51,6 +51,7 @@ import type { TelPublication } from "../../../src/vdr/tel-publication.ts";
 import { approvePending } from "../../unit/app/multisig/approve-pending.ts";
 import {
   createInteropContext,
+  parseFixtureAnswer,
   randomPort,
   runCmdWithTimeout,
   spawnChild,
@@ -93,7 +94,7 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
         });
         const body = await response.text();
         assertEquals(response.status, 200, body);
-        return JSON.parse(body) as Record<string, unknown>;
+        return parseFixtureAnswer<Record<string, unknown>>(action, body);
       }
       const accepted = await run(function*() {
         const hby = yield* createHabery({ name: "group-api", headDirPath: ctx.home, skipConfig: true });
@@ -378,7 +379,7 @@ Deno.test({
         });
         const text = await response.text();
         assertEquals(response.status, 200, text);
-        return JSON.parse(text);
+        return parseFixtureAnswer<any>(`${role}.${action}`, text);
       }
       const completed = await run(function*() {
         const roles: {

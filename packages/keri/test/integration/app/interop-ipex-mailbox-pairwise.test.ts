@@ -25,6 +25,7 @@ import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { loadNests } from "../../../src/db/exchange/exchange-nests.ts";
 import {
   createInteropContext,
+  parseFixtureAnswer,
   randomPort,
   resolveKeripyRuntime,
   spawnChild,
@@ -49,7 +50,7 @@ async function command<T>(url: string, path: string, args: object): Promise<T> {
   });
   const text = await response.text();
   assertEquals(response.status, 200, text);
-  return JSON.parse(text);
+  return parseFixtureAnswer(path, text);
 }
 
 for (const tsDiscloser of [true, false]) {

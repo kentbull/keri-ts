@@ -25,6 +25,7 @@ import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
 import { WitnessReceiptor } from "../../../src/app/witness/receipting.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
+import { parseFixtureAnswer } from "./interop-test-helpers.ts";
 
 /** Fresh commitment salts keep independent test runs and hidden fields distinct. */
 export function nonce(): string {
@@ -120,7 +121,7 @@ export async function inspectMailbox(url: string, pre: string, saids: string[] =
   });
   const text = await response.text();
   assertEquals(response.status, 200, text);
-  return JSON.parse(text);
+  return parseFixtureAnswer("inspect", text);
 }
 
 /** Send accepted KEL evidence through the production bulk intake with explicit v2 genera. */
