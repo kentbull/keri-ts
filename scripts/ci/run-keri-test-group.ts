@@ -161,6 +161,35 @@ async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
   }
 }
 
+/**
+ * Compile the Tufa CLI once so every spawned `tufa` skips the module-graph load that
+ * `deno run packages/tufa/mod.ts` repeats (about 400 ms of a 520 ms `tufa init`).
+ *
+ * Returns the binary's directory for cleanup, or null when the caller already supplied
+ * KERI_TEST_TUFA_BIN, no selected suite spawns Tufa, or the build failed (tests then run
+ * from source, which is slower but identical in behavior).
+ */
+async function compileTufa(selected: readonly string[]): Promise<string | null> {
+  if (Deno.env.get("KERI_TEST_TUFA_BIN") || !selected.some((name) => name.startsWith("interop-"))) return null;
+  const directory = await Deno.makeTempDir({ prefix: "keri-tufa-bin-" });
+  const binary = join(directory, "tufa");
+  const start = performance.now();
+  const result = await new Deno.Command(Deno.execPath(), {
+    args: ["compile", "--allow-all", "--unstable-ffi", "--output", binary, "packages/tufa/mod.ts"],
+    cwd: repoDir,
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!result.success) {
+    console.log(`==> Tufa compile failed; running Tufa from source:\n${new TextDecoder().decode(result.stderr)}`);
+    await Deno.remove(directory, { recursive: true });
+    return null;
+  }
+  Deno.env.set("KERI_TEST_TUFA_BIN", binary);
+  console.log(`==> Compiled Tufa once: ${binary} (${((performance.now() - start) / 1000).toFixed(1)}s)`);
+  return directory;
+}
+
 /** Resolve the artifact path for local and hosted runs, on success as well as failure. */
 function timingPath(target: string): string {
   const explicit = Deno.env.get("KERI_TEST_TIMINGS_JSON");
@@ -228,9 +257,11 @@ async function main(): Promise<void> {
   const lmdb = await lmdbRuntime();
   const timings: CommandTiming[] = [];
   const started = performance.now();
+  const tufaBinary = await compileTufa(selected);
   try {
     for (const name of selected) await runSuite(name, timings);
   } finally {
+    if (tufaBinary) await Deno.remove(tufaBinary, { recursive: true });
     const path = timingPath(target);
     await Deno.mkdir(dirname(path), { recursive: true });
     await Deno.writeTextFile(

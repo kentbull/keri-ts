@@ -2,7 +2,7 @@ import { action, type Operation } from "effection";
 import { t } from "../../../../cesr/mod.ts";
 import { type Habery } from "../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
-import { resolveKeripyRuntime } from "./interop-test-helpers.ts";
+import { resolveKeripyRuntime, tufaCommand } from "./interop-test-helpers.ts";
 
 /** Exit status and decoded diagnostics from one CLI invocation. */
 interface CmdResult {
@@ -151,12 +151,8 @@ export async function runTufa(
   env: Record<string, string>,
   cwd: string,
 ): Promise<CmdResult> {
-  return await runCmd(
-    Deno.execPath(),
-    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
-    env,
-    cwd,
-  );
+  const tufa = tufaCommand(args);
+  return await runCmd(tufa.command, tufa.args, env, cwd);
 }
 
 /**

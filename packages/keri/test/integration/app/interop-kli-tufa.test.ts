@@ -29,6 +29,7 @@ import {
   runTufa,
   runTufaWithTimeout,
   spawnChild,
+  tufaCommand,
   waitForHealth,
   withStartedChild,
   workspaceRoot,
@@ -225,13 +226,10 @@ Deno.test("Interop: KLI verify fails on a rotated tufa key before query and succ
   const tufaAgentConfig = "alice-agent";
   const tufaOrigin = `http://127.0.0.1:${tufaPort}`;
   let rotatedSignature = "";
-  const runTufaFromRoot = (args: string[]) =>
-    runCmd(
-      "deno",
-      ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
-      ctx.env,
-      tufaRepoRoot,
-    );
+  const runTufaFromRoot = (args: string[]) => {
+    const tufa = tufaCommand(args);
+    return runCmd(tufa.command, tufa.args, ctx.env, tufaRepoRoot);
+  };
 
   await requireSuccess(
     "tufa init",

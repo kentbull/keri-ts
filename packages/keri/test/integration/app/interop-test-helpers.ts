@@ -1235,18 +1235,30 @@ export async function ensurePinnedKeripyKli(
   return kli;
 }
 
-/** Run the local `tufa` CLI from source. */
+/**
+ * Build the command line that runs the local `tufa` CLI.
+ *
+ * `scripts/ci/run-keri-test-group.ts` compiles `packages/tufa/mod.ts` once per run and exports its
+ * path as `KERI_TEST_TUFA_BIN`; that binary skips the ~400 ms module-graph load every `deno run`
+ * spawn pays. Without it (a direct `deno test`) the CLI runs from source as before.
+ */
+export function tufaCommand(args: string[]): { command: string; args: string[] } {
+  const compiled = Deno.env.get("KERI_TEST_TUFA_BIN");
+  if (compiled) return { command: compiled, args };
+  return {
+    command: Deno.execPath(),
+    args: ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
+  };
+}
+
+/** Run the local `tufa` CLI (compiled once per run when available, otherwise from source). */
 export async function runTufa(
   args: string[],
   env: Record<string, string>,
   cwd: string,
 ): Promise<CmdResult> {
-  return await runCmd(
-    Deno.execPath(),
-    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
-    env,
-    cwd,
-  );
+  const tufa = tufaCommand(args);
+  return await runCmd(tufa.command, tufa.args, env, cwd);
 }
 
 /** Run the local `tufa` CLI from source with a hard timeout. */
@@ -1256,9 +1268,10 @@ export async function runTufaWithTimeout(
   cwd: string,
   timeoutMs = 20_000,
 ): Promise<CmdResult> {
+  const tufa = tufaCommand(args);
   return await runCmdWithTimeout(
-    Deno.execPath(),
-    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
+    tufa.command,
+    tufa.args,
     env,
     timeoutMs,
     cwd,
@@ -1804,31 +1817,23 @@ function startTufaWitnessHost(
   env: Record<string, string>,
   repoRoot: string,
 ): SpawnedChild {
-  return spawnChild(
-    "deno",
-    [
-      "run",
-      "--allow-all",
-      "--unstable-ffi",
-      "mod.ts",
-      "witness",
-      "start",
-      "--name",
-      name,
-      "--head-dir",
-      headDirPath,
-      "--alias",
-      alias,
-      "--url",
-      `http://127.0.0.1:${httpPort}`,
-      "--tcp-url",
-      `tcp://127.0.0.1:${tcpPort}`,
-      "--listen-host",
-      "127.0.0.1",
-    ],
-    env,
-    repoRoot,
-  );
+  const tufa = tufaCommand([
+    "witness",
+    "start",
+    "--name",
+    name,
+    "--head-dir",
+    headDirPath,
+    "--alias",
+    alias,
+    "--url",
+    `http://127.0.0.1:${httpPort}`,
+    "--tcp-url",
+    `tcp://127.0.0.1:${tcpPort}`,
+    "--listen-host",
+    "127.0.0.1",
+  ]);
+  return spawnChild(tufa.command, tufa.args, env, repoRoot);
 }
 
 /** Start explicit Tufa witness hosts from isolated stores and random ports. */
