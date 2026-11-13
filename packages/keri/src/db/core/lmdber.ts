@@ -552,7 +552,7 @@ export class LMDBer extends BaseDBer {
     const env = this.requireEnv();
 
     try {
-      env.transactionSync(() => {
+      this.writing(env).transactionSync(() => {
         env.putSync(b("__version__"), b(val));
       });
     } catch (error) {
@@ -595,6 +595,7 @@ export class LMDBer extends BaseDBer {
 
   /** Run `fn` in one native synchronous write transaction; nesting is a child transaction. */
   transaction<T>(fn: () => T): T {
+    // A transaction is not itself a write: the puts and removes inside it count, so one that writes nothing does not.
     return this.requireEnv().transactionSync(fn);
   }
 
@@ -611,6 +612,20 @@ export class LMDBer extends BaseDBer {
       if (long && pastEnd(key, end!, options.reverse)) return;
       yield { key, value: copyDbBytes(entry.value) };
     }
+  }
+
+  /** Write attempts made through this handle; a process-local counter, so reading it touches no store. */
+  private commits = 0;
+
+  /** Count one write attempt through this handle and return the environment to write through. */
+  private writing(env: ReturnType<LMDBer["requireEnv"]>): ReturnType<LMDBer["requireEnv"]> {
+    this.commits++;
+    return env;
+  }
+
+  /** Counts this handle's own writes without reading the store; other processes' commits are not seen. */
+  get writeActivity(): number {
+    return this.commits;
   }
 
   /** LMDB's committed transaction ID, which also counts other processes' commits. */
@@ -687,10 +702,12 @@ export class LMDBer extends BaseDBer {
 
   protected putRow(table: Table, key: Uint8Array, val: Uint8Array): void {
     assertRowFits(table, key, val);
+    this.commits++;
     lmdbTable(table).putSync(key, val);
   }
 
   protected removeRow(table: Table, key: Uint8Array, val?: Uint8Array): boolean {
+    this.commits++;
     return val === undefined ? lmdbTable(table).removeSync(key) : lmdbTable(table).removeSync(key, val);
   }
 
@@ -717,7 +734,7 @@ export class LMDBer extends BaseDBer {
     const env = this.requireEnv();
 
     try {
-      const result = env.transactionSync(() => {
+      const result = this.writing(env).transactionSync(() => {
         const existing = db.get(key);
         if (existing !== null && existing !== undefined) {
           return false;
@@ -747,7 +764,7 @@ export class LMDBer extends BaseDBer {
     const env = this.requireEnv();
 
     try {
-      env.transactionSync(() => {
+      this.writing(env).transactionSync(() => {
         assertRowFits(db, key, val);
         db.put(key, val);
       });
@@ -794,7 +811,7 @@ export class LMDBer extends BaseDBer {
     const env = this.requireEnv();
 
     try {
-      const result = env.transactionSync(() => {
+      const result = this.writing(env).transactionSync(() => {
         if (val !== undefined) {
           // An empty key must still fail, but an over-long one can only be absent.
           if (key.length > MAX_KEY_BYTES) return false;
@@ -917,7 +934,7 @@ export class LMDBer extends BaseDBer {
         return false;
       }
 
-      env.transactionSync(() => {
+      this.writing(env).transactionSync(() => {
         for (const key of keys) {
           db.remove(key);
         }
@@ -998,7 +1015,7 @@ export class LMDBer extends BaseDBer {
       this.getVals(db, key).map((val) => bytesHex(val)),
     );
     const env = this.requireEnv();
-    env.transactionSync(() => {
+    this.writing(env).transactionSync(() => {
       for (const val of vals) {
         const vh = bytesHex(val);
         if (existing.has(vh)) {

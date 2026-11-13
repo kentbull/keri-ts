@@ -13,8 +13,8 @@ import type { Verifier } from "../credentials/verifying.ts";
 import { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { QueryReplies } from "../queries/query-replies.ts";
+import { type DoerPacing, doEveryOnWrite, PROTOCOL_PACING } from "../runtime/doing.ts";
 import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
-import { waitOnClock } from "../runtime/workflow-contract.ts";
 import {
   type AuxiliaryQueryProcessor,
   dispatchEnvelope,
@@ -250,12 +250,21 @@ export class ProtocolProcessor {
    * KERIpy correspondence:
    * - mirrors the dedicated `escrowDo` loop rather than folding escrow
    *   processing into parser ingress
+   *
+   * A pass is a function of the store and of time, so this is a {@link doEveryOnWrite} doer: a pass on tock 0,
+   * after any store write, and every `pacing.idleTocks` tocks for what only time releases (timeouts, KRAM
+   * windows). Data-driven work waits at most one tock.
    */
-  *escrowDo(clock: RuntimeClock = systemClock): Operation<never> {
-    while (true) {
-      yield* this.processEscrowsOnce();
-      yield* waitOnClock(clock, ESCROW_TOCK_MS);
-    }
+  *escrowDo(clock: RuntimeClock = systemClock, pacing: Readonly<DoerPacing> = PROTOCOL_PACING): Operation<never> {
+    // Escrows live in the KEL store and, for TEL and registry work, in the registry stores; a write to any of them
+    // runs the next tock's pass.
+    const stores = [this.kvy.db, this.tvy?.reger, this.registry?.store.baser].filter((store) => !!store);
+    const written = {
+      get writeActivity() {
+        return stores.reduce((sum, store) => sum + store.writeActivity, 0);
+      },
+    };
+    return yield* doEveryOnWrite(clock, pacing, written, () => this.processEscrowsOnce());
   }
 }
 

@@ -75,7 +75,10 @@ Deno.test("a runtime with nothing counseled makes no receipt, anchor or network 
   await run(function*() {
     const hby = yield* open(crypto.randomUUID());
     const http = new NoNetwork();
-    const runtime = yield* createAgentRuntime(hby, http, systemClock);
+    // An idle cadence of one tock makes every tock a pass, so the test still proves a pass with nothing counseled is free.
+    const runtime = yield* createAgentRuntime(hby, http, systemClock, {
+      protocolPacing: { tockMs: 31.25, sweepTocks: 1920, idleTocks: 1 },
+    });
     hby.makeHab("idle");
     let passes = 0;
     const processOnce = runtime.counselor.processOnce.bind(runtime.counselor);

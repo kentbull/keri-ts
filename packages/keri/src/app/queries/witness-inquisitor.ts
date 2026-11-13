@@ -19,8 +19,9 @@ import { Schemes } from "../../core/schemes.ts";
 import { introduce } from "../delivery/introducing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
+import { PROTOCOL_TOCK_MS } from "../runtime/doing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
-import { runtimeTurn } from "../runtime/runtime-turn.ts";
+import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { CesrHttpRefusal } from "../transport/cesr-egress.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { HTTPMessenger } from "../transport/http-messenger.ts";
@@ -327,11 +328,14 @@ export class WitnessInquisitor {
    * preparation/cleanup faults terminate the worker. Caller cancellation joins
    * the current attempt; it does not close the borrowed state or HTTP service.
    */
-  *deliverDo(): Operation<never> {
+  *deliverDo(tockMs: number = PROTOCOL_TOCK_MS): Operation<never> {
     while (true) {
-      const failure = yield* this.deliveryPass();
-      if (failure) consoleLogger.warn("Query delivery failed", failure);
-      yield* runtimeTurn();
+      // Fixed tock: a pass only when a request is queued; a request waits at most `tockMs` to start.
+      if (!this.requests.empty) {
+        const failure = yield* this.deliveryPass();
+        if (failure) consoleLogger.warn("Query delivery failed", failure);
+      }
+      yield* waitOnClock(this.clock, tockMs);
     }
   }
 

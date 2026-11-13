@@ -76,6 +76,11 @@ export abstract class StoreOwner {
     return this.store.writeVersion;
   }
 
+  /** Writes made through this handle, counted without a store read (see `Dber.writeActivity`). */
+  get writeActivity(): number {
+    return this.store.writeActivity;
+  }
+
   transaction<T>(fn: () => T): T {
     return this.store.transaction(fn);
   }

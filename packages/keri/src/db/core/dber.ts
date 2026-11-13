@@ -170,6 +170,11 @@ export abstract class BaseDBer {
    * one open handle; increments need not be one.
    */
   abstract get writeVersion(): number;
+  /**
+   * Increases when this handle writes, and reads no store: a loop can ask whether to scan at all. It does not
+   * see another process's commits, so a loop that must see those also scans on a slow cadence.
+   */
+  abstract get writeActivity(): number;
   /** Complete when every earlier commit is durable, or fail with the recorded persistence failure. */
   abstract flushed(): Operation<void>;
   /** Discard any retained read view so later reads observe the latest commit. */

@@ -335,6 +335,11 @@ export class Counselor {
     for (const sn of removed) this.changes?.push({ kind: "group", id: `${pre}:${sn}` });
   }
 
+  /** Whether completed events are held in memory for forwarding, which a pass retries without any store write. */
+  get holdsForwards(): boolean {
+    return this.forwards.size > 0;
+  }
+
   /** One pass over all stages, as KERIpy `processEscrows`. */
   *processOnce(): Operation<void> {
     // A runtime calls this every turn; with nothing counseled, three row counts are the whole cost.

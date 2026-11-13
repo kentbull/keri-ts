@@ -19,7 +19,7 @@ import { persistResolvedContact } from "../identity/organizing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { abortable } from "../runtime/abortable.ts";
-import { type DoerPacing, doEvery, PROTOCOL_PACING } from "../runtime/doing.ts";
+import { type DoerPacing, doEveryOnWrite, PROTOCOL_PACING } from "../runtime/doing.ts";
 import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
 import { collectBytes } from "../transport/byte-source.ts";
 import type { HttpStreamResponse } from "../transport/http-client.ts";
@@ -239,7 +239,7 @@ export class Oobiery {
    * doer rather than root-owned queue plumbing.
    */
   *oobiDo(clock: RuntimeClock = systemClock, pacing: Readonly<DoerPacing> = PROTOCOL_PACING): Operation<never> {
-    return yield* doEvery(clock, pacing.tockMs, () => this.processOnce());
+    return yield* doEveryOnWrite(clock, pacing, this.hby.db, () => this.processOnce());
   }
 
   /** Select queued work, including a surviving in-flight row whose former process is gone. */
