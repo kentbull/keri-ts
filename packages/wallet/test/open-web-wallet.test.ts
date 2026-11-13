@@ -284,7 +284,7 @@ Deno.test("presentation, Unblind, Admit resend and mailbox removal are wired and
   }
 });
 
-Deno.test("groups and proposals: refusals, an empty consent list, and a group inception that waits for its members", async () => {
+Deno.test("groups and proposals: refusals, an empty consent list, and a group inception that needs its co-members' endpoints", async () => {
   const first = await page().open({ name: "member-a" }), second = await page().open({ name: "member-b" });
   try {
     const a = await first.identifiers.incept({ alias: "a" }), b = await second.identifiers.incept({ alias: "b" });
@@ -307,17 +307,16 @@ Deno.test("groups and proposals: refusals, an empty consent list, and a group in
         yield* first.runtime.reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire));
       });
     }
-    const proposed = await first.groups.incept({
-      alias: "pair",
-      member: a.pre,
-      smids: [a.pre, b.pre],
-      timeoutMs: 200,
-    });
-    // One of two signatures: the group waits for the other member, and the wait is a value, not an exception.
-    assertEquals(proposed.outcome, "timed-out");
-    assertEquals(proposed.status.state, "pending");
-    assertEquals(first.groups.status(proposed.event), proposed.status);
-    assert(first.hby.habByName("pair"), "the proposer holds the group habitat while it waits");
+    // The library signs this member's contribution, then needs a route to every co-member to publish the proposal.
+    // A co-member whose endpoint roles are unknown is a refusal, not a wait; the group stays held locally.
+    await assertRejects(
+      () => first.groups.incept({ alias: "pair", member: a.pre, smids: [a.pre, b.pre], timeoutMs: 200 }),
+      Error,
+      "No end roles",
+    );
+    const held = first.hby.habByName("pair");
+    assert(held, "the proposer holds the group habitat");
+    assertEquals(first.groups.status({ pre: held.pre!, sn: 0, said: held.kever?.serder.said ?? "" }).state, "unknown");
   } finally {
     await first.close();
     await second.close();
