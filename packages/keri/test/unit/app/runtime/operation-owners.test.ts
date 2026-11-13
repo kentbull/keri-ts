@@ -2,14 +2,26 @@
  * Runtime wiring of the operations owners: owner composition, DH owners created at the first
  * message that addresses an identifier, one fiber per owner, and root replication as a runtime reaction.
  */
-import { parseBytes } from "cesr-ts";
-import { type Operation, run, sleep, spawn } from "effection";
-import { assert, assertEquals } from "jsr:@std/assert";
-import { beginIssuance, issuanceStatus, proposeIssuance } from "../../../../src/app/ipex/issuance.ts";
+import { concatBytes, makeBlindState, parseBytes, SerderACDC, Vrsn_2_0 } from "cesr-ts";
+import { call, type Operation, race, run, sleep, spawn, suspend } from "effection";
+import { assert, assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
+import { publicOpeningAttachment } from "../../../../src/acdc/registering.ts";
+import { prepareIpexExn } from "../../../../src/app/ipex/ipex-building.ts";
+import { exchangeWire } from "../../../../src/app/ipex/ipex-discloser.ts";
+import {
+  approveIssuanceExchange,
+  beginIssuance,
+  issuanceStatus,
+  pendingIssuanceGrants,
+  proposeIssuance,
+} from "../../../../src/app/ipex/issuance.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
+import { runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import type { DoerPacing } from "../../../../src/app/runtime/doing.ts";
 import { operationOwnersDo, OWNER_TOCK_MS } from "../../../../src/app/runtime/operation-owners.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
+import { DatabaseOperationError, ValidationError } from "../../../../src/core/errors.ts";
+import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { httpClient } from "../../../support/http-client.ts";
 import { rotate, seed, type Side, storeGrant, type World, world } from "../../../support/registry-root-world.ts";
@@ -200,7 +212,7 @@ Deno.test("an operation begun between tocks is picked up on the next tock, with 
   });
 });
 
-Deno.test("a delivery that throws is retried, not failed, and the loop keeps serving; an escaped fault is readable", async () => {
+Deno.test("a delivery that throws is retried, not failed, and the loop keeps serving", async () => {
   await run(function*() {
     const s = yield* scenario();
     const { operations, ipex } = s.issuer.runtime;
@@ -219,30 +231,102 @@ Deno.test("a delivery that throws is retried, not failed, and the loop keeps ser
       credential: reg.credential(),
       options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
     });
-    yield* until(() => (operations!.issuance.liveOf(grant)?.outbox.attempts ?? 0) > 0, 1500);
-    assertEquals(operations!.issuance.liveOf(grant)?.outbox.attempts, 1, "the refusal was seen and the message kept");
-    assertEquals(issuanceStatus(operations!.issuance, grant).state, "active", "one failure does not end the issuance");
-    assertEquals(operations!.health.faults, 0, "a delivery failure is not an owner fault");
+    yield* until(() => (operations!.issuance.liveOf(grant)?.outbox.attempts ?? 0) > 1, 1500);
+    assert((operations!.issuance.liveOf(grant)?.outbox.attempts ?? 0) > 1, "the refusal is retried by the same loop");
+    assertEquals(
+      issuanceStatus(operations!.issuance, grant).state,
+      "active",
+      "a delivery failure does not end the issuance",
+    );
+  });
+});
 
-    // Something no operation owns throws out of an owner pass: the loop survives and records it.
-    const presentation = operations!.presentation;
-    let faulted = false;
-    presentation.active = () => !faulted;
-    presentation.processOnce = function*() {
-      faulted = true;
-      throw new Error("unreadable state");
+/**
+ * Run `operation` and return what it threw, `"returned"`, or `"still running"` after `ms`. `call` is the error
+ * boundary: a failed loop that `operation` spawned is thrown here, as it ends a host's scope.
+ */
+function* outcomeWithin(operation: () => Operation<unknown>, ms: number): Operation<unknown> {
+  return yield* race([
+    (function*(): Operation<unknown> {
+      try {
+        yield* call(operation);
+        return "returned";
+      } catch (error) {
+        return error;
+      }
+    })(),
+    (function*(): Operation<unknown> {
+      yield* sleep(ms);
+      return "still running";
+    })(),
+  ]);
+}
+
+Deno.test("a store fault in an operation owner ends the runtime", async () => {
+  await run(function*() {
+    const s = yield* scenario();
+    const db = s.issuer.hby.db;
+    // The issuance owner's first pass scans the pending exchange escrow; that read fails as a damaged store would.
+    db.epse.getTopItemIter = () => {
+      throw new DatabaseOperationError("pending exchange escrow is unreadable");
     };
-    yield* until(() => operations!.health.faults > 0, 1500);
-    assertEquals(operations!.health.last?.owner, "presentation");
-    assertEquals(operations!.health.last?.error, "unreadable state");
-    let passes = 0;
-    const once = operations!.unblinding.processOnce.bind(operations!.unblinding);
-    operations!.unblinding.active = () => true;
-    operations!.unblinding.processOnce = function*() {
-      passes++;
-      yield* once();
+    const ended = yield* outcomeWithin(() => runAgentRuntime(s.issuer.runtime, { pollMailbox: false }), 3000);
+    assertInstanceOf(ended, DatabaseOperationError);
+    assertEquals(ended.message, "pending exchange escrow is unreadable");
+  });
+});
+
+Deno.test("closing the runtime during a pass is not reported as a fault", async () => {
+  await run(function*() {
+    const s = yield* scenario();
+    const { operations } = s.issuer.runtime;
+    let delivering = false;
+    // A delivery that never returns keeps the issuance pass in flight until the runtime is halted.
+    (operations!.issuance.deps.delivery as { deliver: unknown }).deliver = function*() {
+      delivering = true;
+      yield* suspend();
     };
-    yield* until(() => passes > 2, 1500);
-    assert(passes > 2, "the other owners still run after a fault");
+    const worker = yield* spawn(() => runAgentRuntime(s.issuer.runtime, { pollMailbox: false }));
+    const reg = yield* s.registry(0);
+    yield* proposeIssuance(operations!.issuance, {
+      credential: reg.credential(),
+      options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
+    });
+    yield* until(() => delivering);
+    assert(delivering, "the owner pass is in flight");
+    // The wallet's order: halt the runtime's loops mid-pass; scope exit then runs `runtime.close()` and closes the
+    // stores. `run` rejects if the halt, the close or any other teardown threw.
+    yield* worker.halt();
+  });
+});
+
+Deno.test("a peer Grant with a non-canonical registry root ends that operation and nothing else", async () => {
+  await run(function*() {
+    const s = yield* scenario();
+    const reg = yield* s.registry(0);
+    const issued = reg.credential();
+    // The issuer presents a credential whose registry is not a SAID; the holder escrows the Grant waiting for its TEL.
+    const forged = new SerderACDC({ sad: { ...issued.sad!, rd: "notasaid" }, makify: true });
+    const raw = messagize(forged, publicOpeningAttachment(makeBlindState({ acdc: forged.said!, state: "issued" })), {
+      gvrsn: Vrsn_2_0,
+    });
+    const issuer = s.issuer.habs[0], holder = s.holder.habs[0];
+    const [exn, nests] = yield* prepareIpexExn(issuer.pre!, "/ipex/grant", raw, {
+      recipient: holder.pre!,
+      message: "",
+    });
+    const support = s.owner().discloser.proofSupportFor(concatBytes(raw, issued.raw), [issuer.pre!]);
+    yield* s.holder.runtime.reactor.processBytes(concatBytes(support, exchangeWire(issuer, exn, nests)));
+    assert(s.holder.runtime.exc.retainedInput(exn.said!, { pending: true }), "the peer's Grant is held pending");
+    // The holder's resumable-Grant sweep reads the registry of every pending Grant; this one names no held root.
+    const ops = s.holderOwner();
+    yield* ops.processOnce();
+    assertEquals(ops.liveOps(), [], "the Grant is not resumable, so no operation is adopted");
+    // It reads as any Grant awaiting consent, and consenting to its exchange is refused for this Grant alone.
+    assertEquals(pendingIssuanceGrants(ops).map(({ grant }) => grant), [exn.said]);
+    assertThrows(() => approveIssuanceExchange(ops, exn.said!), ValidationError);
+    // The holder's runtime keeps running past the sweep that reads it.
+    const ended = yield* outcomeWithin(() => runAgentRuntime(s.holder.runtime, { pollMailbox: false }), 500);
+    assertEquals(ended, "still running");
   });
 });

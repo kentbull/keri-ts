@@ -1,10 +1,13 @@
 /** `KelPublisher`: the KEL posts a wallet's identifiers owe their mailboxes, derived from state. */
 import { Diger, NumberPrimitive, Siger } from "cesr-ts";
-import { run } from "effection";
-import { assert, assertEquals } from "jsr:@std/assert";
+import { call, ensure, type Operation, race, run, sleep, spawn } from "effection";
+import { assert, assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
-import { KelPublisher } from "../../../../src/app/mailbox/kel-publisher.ts";
+import { KelPublisher, kelPublisherDo } from "../../../../src/app/mailbox/kel-publisher.ts";
+import { createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
+import { MissingDurableStateError } from "../../../../src/core/errors.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
 import { FakeRuntimeHttpClient, ManualRuntimeClock } from "../../../support/runtime-fakes.ts";
 
@@ -190,5 +193,66 @@ Deno.test("a group's mailbox is told again when the local signing member's key s
     } finally {
       yield* hby.close(true);
     }
+  });
+});
+
+function* until(condition: () => boolean, ms = 4000): Operation<void> {
+  for (let waited = 0; !condition() && waited < ms; waited += 10) yield* sleep(10);
+}
+
+Deno.test("a failed mailbox post does not end the publisher loop", async () => {
+  await run(function*() {
+    const hby = yield* open();
+    // Closed after the loop spawned below is halted.
+    yield* ensure(() => hby.close(true));
+    const { http, posts, answers } = hosts(["alpha"], { alpha: 500 });
+    const hab = wallet(hby, { allowed: ["alpha"] });
+    const publisher = new KelPublisher({
+      hby,
+      http,
+      clock: systemClock,
+      retry: { baseMs: 10, maxMs: 20, boundMs: 60_000 },
+    });
+    yield* spawn(() => kelPublisherDo(publisher, systemClock, { tockMs: 10, sweepTocks: 1_000_000 }));
+    yield* until(() => posts.length >= 3);
+    assert(posts.length >= 3, "the loop keeps retrying a mailbox that answers 500");
+    assertEquals(publisher.status().entries[0].state, "pending");
+    answers.alpha = 204;
+    yield* until(() => publisher.status().entries[0].state === "published");
+    assertEquals(
+      hby.db.kpub.get([hab.pre, "alpha"])?.d,
+      hab.kever!.lastEst.d,
+      "the same loop tells it once it answers",
+    );
+  });
+});
+
+Deno.test("a missing local member ends the runtime with MissingDurableStateError", async () => {
+  await run(function*() {
+    const hby = yield* open();
+    // Closed after the runtime, which this scope also owns.
+    yield* ensure(() => hby.close(true));
+    const [alice, bob] = ["alice", "bob"].map((name) => hby.makeHab(name, undefined, { transferable: true, toad: 0 }));
+    hby.makeGroupHab("team", alice, [alice.pre, bob.pre], undefined, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const runtime = yield* createAgentRuntime(hby, hosts([]).http, systemClock);
+    // The store a group's record names a member in, opened without that member's habitat.
+    hby.habs.delete(alice.pre);
+    const ended = yield* race([
+      (function*(): Operation<unknown> {
+        try {
+          // `call` is the error boundary: the failed loop ends this operation as it ends a host's scope.
+          yield* call(() => runAgentRuntime(runtime, { pollMailbox: false }));
+          return "returned";
+        } catch (error) {
+          return error;
+        }
+      })(),
+      (function*(): Operation<unknown> {
+        yield* sleep(3000);
+        return "still running";
+      })(),
+    ]);
+    assertInstanceOf(ended, MissingDurableStateError);
+    assert(ended.message.includes(alice.pre), ended.message);
   });
 });

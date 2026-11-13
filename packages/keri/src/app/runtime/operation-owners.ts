@@ -12,7 +12,7 @@
  * sent copies in the Baser (`rrsn.`), so a CLI command that sends copies through its own
  * replicator shares that record with the loop and a later pass does not repeat its sends.
  */
-import { action, type Operation } from "npm:effection@^3.6.0";
+import type { Operation } from "npm:effection@^3.6.0";
 import { BaserDerivedUpdateStore, type DerivedUpdateStore } from "../../acdc/custody.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import type { RegistryRoot } from "../../acdc/salting.ts";
@@ -71,27 +71,6 @@ export interface RuntimeOperations {
   readonly groupIpex: GroupIpexOperations;
   readonly presentation: PresentationOperations;
   readonly unblinding: UnblindingOperations;
-  /** What the owner loop could not do; read by a host that reports runtime health. */
-  readonly health: OwnerHealth;
-}
-
-/** The last failure of an owner pass that no single operation owned, and how many there have been. */
-export interface OwnerFault {
-  owner: "issuance" | "groupIpex" | "presentation" | "unblinding" | "replicator";
-  error: string;
-  /** ISO 8601 time of the failure on the host clock. */
-  at: string;
-}
-
-/**
- * Failures of the owner loop itself. A failure of one operation (a delivery that throws, an unreadable stored
- * Grant) ends that operation as `failed` and is never recorded here; this records only what escaped an owner
- * pass, which the loop survives so that the other owners keep running. `faults` counts them and `last` keeps
- * the latest. Nothing clears it: a host reads it and decides.
- */
-export class OwnerHealth {
-  faults = 0;
-  last: OwnerFault | null = null;
 }
 
 /** What the runtime composes for its operations owners. */
@@ -171,7 +150,6 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       retry: parts.retry,
       changes,
     }),
-    health: new OwnerHealth(),
     unblinding: new UnblindingOperations({
       hby,
       exc,
@@ -207,40 +185,31 @@ export interface OwnerLoopParts extends ComposedOwners {
  * tock 0 and every `pacing.sweepTocks`. No owner reads a protocol store. Only the first pass, once, scans the
  * pending exchange escrow for resumable Grants.
  *
- * A failure that escapes an owner pass is recorded in `operations.health` and the loop keeps running, so
- * one owner's fault never stops the others. The owners run one after another, so a delivery that does not return holds the others up until it fails or
- * its Grant deadline passes; operations already bound each delivery by that deadline.
+ * Nothing is caught here. Every remote, network or validation outcome an owner meets is already a typed result
+ * below this loop: a failed delivery is retried by its operation, and an operation that cannot go on ends `failed`
+ * or `expired` alone. What escapes a pass is a real fault (a store that cannot be read or written, corrupt or
+ * missing durable state such as a `MissingDurableStateError`, a `SignerNotHeldError` past a `canSign`
+ * gate), and it ends the loop and with it `runAgentRuntime`. Halting the loop is not a fault: Effection halts a
+ * pass by returning from it, so no error is thrown. The owners run one after another, so a delivery that does not
+ * return holds the others up until it fails or its Grant deadline passes; operations already bound each delivery by
+ * that deadline.
  */
 export function* operationOwnersDo(
   owners: OwnerLoopParts,
   pacing: Readonly<DoerPacing> = OWNER_PACING,
 ): Operation<never> {
-  const { operations, rootReplicator, ipex, clock } = owners, { health } = operations;
-  const guarded = function*(owner: OwnerFault["owner"], pass: () => Operation<unknown>): Operation<void> {
-    try {
-      yield* pass();
-    } catch (error) {
-      health.faults++;
-      health.last = {
-        owner,
-        error: error instanceof Error ? error.message : String(error),
-        at: new Date(clock.now()).toISOString(),
-      };
-    }
-  };
+  const { operations, rootReplicator, ipex, clock } = owners;
   return yield* doEvery(clock, pacing.tockMs, function*(tock) {
-    if (operations.issuance.active()) yield* guarded("issuance", () => operations.issuance.processOnce());
-    if (operations.groupIpex.active()) yield* guarded("groupIpex", () => operations.groupIpex.processOnce());
-    if (operations.presentation.active()) yield* guarded("presentation", () => operations.presentation.processOnce());
-    if (operations.unblinding.active()) yield* guarded("unblinding", () => operations.unblinding.processOnce());
+    if (operations.issuance.active()) yield* operations.issuance.processOnce();
+    if (operations.groupIpex.active()) yield* operations.groupIpex.processOnce();
+    if (operations.presentation.active()) yield* operations.presentation.processOnce();
+    if (operations.unblinding.active()) yield* operations.unblinding.processOnce();
     if (rootReplicator) {
-      yield* guarded("replicator", function*() {
-        for (const dh of ipex.dhkeOwners()) {
-          while (dh.replicated.length) rootReplicator.replicate(dh.replicated.pull()!);
-        }
-        if (tock % pacing.sweepTocks === 0) rootReplicator.sweep();
-        yield* rootReplicator.processDue();
-      });
+      for (const dh of ipex.dhkeOwners()) {
+        while (dh.replicated.length) rootReplicator.replicate(dh.replicated.pull()!);
+      }
+      if (tock % pacing.sweepTocks === 0) rootReplicator.sweep();
+      yield* rootReplicator.processDue();
     }
   });
 }
