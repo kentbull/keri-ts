@@ -8,6 +8,14 @@ signatures satisfying its **current accepted** threshold. Verify nontransferable
 cigars too; duplicate indices do not add threshold weight. After rotation the
 recipient must sign again with current keys. Public logs/ksn policy is separate.
 
+A group's mailbox is also read by its signing members. A member polls as itself with `q.i` set to the group
+(KERIpy's `GroupHab.query` shape); the host accepts it when the member's own current threshold is met and the member
+provably controlled a group-current key: a poll signature by a key in both key lists, or a verifying signature by such
+a key on an establishment event in the member's KEL as the host holds it. Listing a group key proves nothing. The host
+must hold the member's KEL (the keri-ts poller and `KelPublisher` submit it; a KERIpy member's KEL must arrive by OOBI
+or a mailbox add), and a rotation-only member holds no current group key and is refused. Forwarded mail is plaintext
+CESR unless ESSR is used, so these checks are the read protection. KERIpy hosts do no read authorization at all.
+
 Tufa authenticates the exact incoming envelope before consulting shared stream
 cues. Attachments are outside the query SAID: a previously accepted body/cue cannot
 authorize forged or old signatures. It then correlates the accepted stream cue and

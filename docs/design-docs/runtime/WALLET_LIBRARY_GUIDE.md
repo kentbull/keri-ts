@@ -230,6 +230,22 @@ rotation has to reach it. Telling it is the `KelPublisher`'s job (`app/mailbox/k
   `mailboxes.waitForPublication(pre)`, and `health()` reports `mailbox-unreachable` (with the identifier,
   mailbox and last reason) while an entry is `timed-out`.
 
+### Who may read a mailbox
+
+On a keri-ts host a transferable identifier's mailbox is read by the identifier itself (its current threshold met) and,
+for a group, by any signing member that polls as itself with `q.i` set to the group, which is also the shape
+KERIpy's `GroupHab.query` emits. The member must meet its own current threshold and provably have controlled a
+group-current key (a poll signature by a key in both key lists, or a verifying signature by such a key on an
+establishment event in the member's KEL), so a member that rotated ahead of its group is still served. Forwarded mail
+is plaintext CESR unless the sender used ESSR, which makes this check the read protection. A KERIpy host does no
+read authorization of `mbx` queries at all, so a poll it accepts can be refused here. Two refusals are expected:
+
+- **The host does not hold the member's KEL.** The keri-ts poller and `KelPublisher` submit it (a local group's
+  submission carries the signing member's KEL). A KERIpy member's poller does not, so its KEL has to reach the host
+  by OOBI or a mailbox add first; until then its poll is refused with 403.
+- **A rotation-only member.** A member named only in the group's `rmids` holds no current group key and is refused
+  until a rotation makes it a signing member.
+
 How the poller schedules, backs off and classifies its polls is being rewritten and is not described here.
 
 ## Known limits in 2.2.0
@@ -243,6 +259,9 @@ How the poller schedules, backs off and classifies its polls is being rewritten 
   runtime answers it with no resend. A group Unblind keeps its per-operation state (the members' wrappers it has
   taken in and the contributions) in memory (`GroupUnblind` in `unblinding-workflow.ts`); what a restart does to a
   partly contributed group reply is **unconfirmed**: no test I read pins it.
+- A rotation-only group member (in `rmids`, not `smids`) cannot read the group's mailbox until a rotation makes it a
+  signing member, and a refused poll reports only 403 "Query requester is not authorized": the response does not
+  say whether the requester's KEL is unknown to the host or its keys are not the group's.
 - A KERIpy controller using a keri-ts mailbox after rotating is not told by its own runtime: only keri-ts runs the
   `KelPublisher`, so the mailbox learns of the rotation from a keri-ts runtime or by other means.
   **Inferred; not exercised.**
