@@ -45,6 +45,7 @@ export {
   type ProposalStanding,
   type ProposalStatus,
   type ProposalSummary,
+  type RejoinGroupOptions,
   type ReplaceMemberOptions,
   type WalletProposal,
 } from "./src/web/group-api.ts";
