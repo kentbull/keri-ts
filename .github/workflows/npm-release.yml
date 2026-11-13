@@ -332,7 +332,9 @@ jobs:
           retention-days: 3
 
   publish:
-    if: inputs.publish
+    # An explicit status function: without one GitHub applies success() over the whole needs chain, and a
+    # skipped release check upstream of artifact (green evidence found) would skip publication.
+    if: ${{ !cancelled() && inputs.publish && needs.artifact.result == 'success' }}
     needs: artifact
     runs-on: ubuntu-latest
     environment: publishing
@@ -364,7 +366,8 @@ jobs:
           fi
 
   github-release:
-    if: inputs.publish && (github.event_name == 'push' || inputs.tag != '')
+    # Same explicit status check as publish; it also requires the publish job itself to have succeeded.
+    if: ${{ !cancelled() && inputs.publish && (github.event_name == 'push' || inputs.tag != '') && needs.artifact.result == 'success' && needs.publish.result == 'success' }}
     needs: [artifact, publish]
     runs-on: ubuntu-latest
     permissions:
