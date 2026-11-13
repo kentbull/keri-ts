@@ -133,11 +133,13 @@ Changed:
 - The CORS preflight allows the `CESR-Genus` and `Authorization` request headers.
 - `FetchHttpClient` requests can be cancelled in WebKit.
 
-## Patch releases 2.2.1 and 2.2.2
+## Patch releases 2.2.1 to 2.2.3
 
 2.2.1 and 2.2.2 fix defects found by qualification; read their notes:
 [2.2.1](../../versioning/2.2.1-release-notes.md) and
-[2.2.2](../../versioning/2.2.2-release-notes.md). 2.2.2 changes types a 2.2.0 caller may
+[2.2.2](../../versioning/2.2.2-release-notes.md). 2.2.3 adds
+`replaceGroupMember` for a group's local member; see the
+[2.2.3 notes](../../versioning/2.2.3-release-notes.md). 2.2.2 changes types a 2.2.0 caller may
 already use:
 
 - The IPEX disclosure options take `priorSaid` only; `prior` is a type error and is refused
