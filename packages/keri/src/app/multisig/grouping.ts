@@ -885,17 +885,27 @@ export class Multiplexor {
   }
 
   /**
-   * Whether the proposed group interaction (or the anchor of a registry proposal) is already signed by enough of the
-   * group's current signing keys to be the group's next event. Rotations and replies are not judged here: they need
-   * their own keys or reply proofs, and wait for approval.
+   * Whether the proposed event is already signed by enough keys to be the group's next event or reply, so that a
+   * member that only receives it need not approve it. An interaction (or the anchor of a registry proposal) is judged
+   * against the group's current keys and threshold; a rotation against its own keys and threshold, when it names the
+   * members the group already has (the prior next-key commitments are checked by ordinary processing, and a
+   * membership change waits for approval); a reply against the group's current establishment.
    */
   private alreadyComplete(serder: SerderKERI, nests: readonly CesrFrame[], route: string): boolean {
     let event: SerderKERI | undefined, frame: CesrFrame | undefined;
     if (serder.pvrsn.major === 1) {
-      if (route !== MULTISIG_IXN_ROUTE) return false;
-      const child = multisigChild(this.hby, serder, "ixn");
-      const gid = isRecord(serder.ked?.a) ? serder.ked.a.gid : undefined;
-      if (!child?.attachment.length || gid !== child.event.pre) return false;
+      const label = route === MULTISIG_IXN_ROUTE
+        ? "ixn"
+        : route === MULTISIG_ROT_ROUTE
+        ? "rot"
+        : route === MULTISIG_RPY_ROUTE
+        ? "rpy"
+        : null;
+      if (!label) return false;
+      const child = multisigChild(this.hby, serder, label);
+      const attrs = isRecord(serder.ked?.a) ? serder.ked.a : {};
+      if (!child?.attachment.length || attrs.gid !== child.event.pre) return false;
+      if (route === MULTISIG_ROT_ROUTE && !this.namesCurrentMembers(attrs)) return false;
       frame = parseBytes(concatBytes(Counter.makeGVC(child.genus), child.event.raw, child.attachment))[0];
       event = child.event;
     } else if (isV2RegistryRoute(route)) {
@@ -903,11 +913,32 @@ export class Multiplexor {
       frame = nests.find((nest) => nest.body.said === anchor?.said);
       event = anchor;
     }
-    if (!event || !frame || event.ilk !== "ixn" || !event.pre || !this.isLocalGroup(event.pre)) return false;
+    if (!event || !frame || !event.pre || !this.isLocalGroup(event.pre)) return false;
     const kever = this.hby.db.getKever(event.pre);
-    if (!kever?.tholder || event.sn !== kever.sn + 1 || event.prior !== kever.said) return false;
-    const { indices } = Kever.verifyIndexedSignatures(event.raw, envelopeFromFrame(frame).sigers, kever.verfers);
-    return kever.tholder.satisfy(indices);
+    if (!kever?.tholder) return false;
+    const envelope = envelopeFromFrame(frame);
+    if (route === MULTISIG_RPY_ROUTE) {
+      const proof = envelope.tsgs.find((group) =>
+        group.pre === event.pre && group.sn === BigInt(`0x${kever.lastEst.s}`) && group.said === kever.lastEst.d
+      );
+      return !!proof
+        && kever.tholder.satisfy(Kever.verifyIndexedSignatures(event.raw, proof.sigers, kever.verfers).indices);
+    }
+    if (event.sn !== kever.sn + 1 || event.prior !== kever.said) return false;
+    if (event.ilk === "rot") {
+      return !!event.tholder
+        && event.tholder.satisfy(Kever.verifyIndexedSignatures(event.raw, envelope.sigers, event.verfers).indices);
+    }
+    return event.ilk === "ixn"
+      && kever.tholder.satisfy(Kever.verifyIndexedSignatures(event.raw, envelope.sigers, kever.verfers).indices);
+  }
+
+  /** Whether a rotation proposal names exactly the group's current signing members. */
+  private namesCurrentMembers(attrs: Record<string, unknown>): boolean {
+    const group = typeof attrs.gid === "string" ? attrs.gid : "";
+    const named = new Set(memberPrefixes(attrs.smids, []));
+    const current = groupSigningMembers(this.hby, group);
+    return named.size === current.length && current.every((member) => named.has(member));
   }
 
   /** Return true when this wrapper can be accepted for local group work. */

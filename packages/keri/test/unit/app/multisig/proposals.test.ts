@@ -49,7 +49,7 @@ Deno.test("listGroupProposals reads every proposal kind the multisig routes carr
       const found = new Map<GroupProposalKind, { embedded: string; event?: unknown; said: string }>();
 
       // icp for a group this member has not joined
-      const other = right.makeGroupHab("other", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+      const other = right.makeGroupHab("other", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
       const incept = signGroupMessage(bob, alice.pre, yield* multisigInceptExn(bob, mids, mids, other.message));
       yield* receive(s, incept.message);
       found.set("icp", {
@@ -111,7 +111,7 @@ Deno.test("listGroupProposals reads every proposal kind the multisig routes carr
       bob.rotate();
       yield* call(() => learn(s.left, bob));
       yield* call(() => learn(right, alice));
-      const rot = right.rotateGroupHab("group", mids, mids, GROUP);
+      const rot = right.rotateGroupHab("group", mids, mids, { isith: "2", nsith: "2", toad: 0 });
       const rotation = signGroupMessage(
         bob,
         alice.pre,
@@ -133,14 +133,14 @@ Deno.test("listGroupProposals reads every proposal kind the multisig routes carr
         assertEquals(proposal.event, expected.event, proposal.kind);
         assertEquals(proposal.proposer, bob.pre);
         assertEquals(proposal.group, proposal.kind === "icp" ? other.hab.pre : group);
-        assertEquals(proposal.local, "unapproved");
+        assertEquals(proposal.local, "unapproved", proposal.kind);
         assertEquals(proposal.needs, { groupAlias: proposal.kind === "icp", registryName: proposal.kind === "vcp" });
         assertEquals(findGroupProposal(readDeps(s), proposal.said), proposal);
       }
       assertEquals(listed.find(p => p.kind === "rot")?.rmids, mids);
       assertEquals(listGroupProposals(readDeps(s), { group: "group" }).length, listed.length - 1);
       assertEquals(listGroupProposals({ ...readDeps(s), notifier: null }), []);
-    });
+    }, "2");
   });
 });
 
@@ -295,6 +295,90 @@ Deno.test("v2 registry proposals list as rip and bup with their anchors", async 
         assertEquals(bups[0].said, bup.said);
         assertEquals(bups[0].embedded, update.said);
         assertEquals(bups[0].local, "unapproved");
+      } finally {
+        yield* sender.close();
+        yield* receiver.close();
+      }
+    } finally {
+      yield* noter.close(true);
+      yield* right.close(true);
+      yield* left.close(true);
+    }
+  });
+});
+
+Deno.test("a member that only receives takes a v2 registry anchor the proposer's signature completes, with the registry inception", async () => {
+  await run(function*() {
+    const left = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const right = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const noter = yield* openNoterForHabery(left);
+    try {
+      const alice = left.makeHab("alice");
+      const bob = right.makeHab("bob");
+      yield* call(() => learn(left, bob));
+      yield* call(() => learn(right, alice));
+      const members = [alice.pre, bob.pre];
+      const local = left.makeGroupHab("acdc-v2-group", alice, members, members, undefined, { isith: "1", nsith: "1" });
+      const remote = right.makeGroupHab("acdc-v2-group", bob, members, members, undefined, {
+        isith: "1",
+        nsith: "1",
+      });
+      const notifier = new Notifier(left.signator!, { noter });
+      const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
+      try {
+        for (const runtime of [receiver, sender]) {
+          yield* runtime.reactor.processBytes(
+            messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }),
+            { local: true },
+          );
+        }
+        const rip = acdcV2Regcept(local.hab.pre);
+        const anchor = interactEvent(
+          local.hab.pre,
+          local.hab.kever!.said,
+          1,
+          [{ i: rip.said!, s: "0", d: rip.said! }],
+          { version: Vrsn_2_0 },
+        );
+        const source = messageAttachmentGroups({
+          sourceSeals: [{
+            i: new Prefixer({ qb64: local.hab.pre }),
+            s: anchor.sner!,
+            d: new Diger({ qb64: anchor.said! }),
+          }],
+        }, Vrsn_2_0);
+        const telFrame = parseBytes(messagize(rip, concatBytes(...source.map(group => group.raw)), {
+          gvrsn: Vrsn_2_0,
+        }))[0];
+        const kelFrame =
+          parseBytes(messagize(anchor, { sigers: remote.hab.sign(anchor.raw, true), gvrsn: Vrsn_1_0 }))[0];
+        const wrapper = exchange("/multisig/rip", { gid: local.hab.pre, tel: rip.said!, anc: anchor.said! }, {
+          sender: bob.pre,
+          version: Vrsn_2_0,
+        })[0];
+        const establishment = bob.db.getEvtSerder(bob.pre, bob.kever!.lastEst.d)!;
+        const tsgs = [
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: bob.pre }),
+            establishment.sner!,
+            new Diger({ qb64: establishment.said! }),
+            bob.sign(wrapper.raw, true),
+          ),
+        ];
+        assertEquals(
+          (yield* receiver.exc.processEvent({ serder: wrapper, nests: [telFrame, kelFrame], tsgs })).kind,
+          "accept",
+        );
+        assertEquals(left.db.kels.getLast(local.hab.pre, 1), anchor.said, "the anchor is accepted on receipt");
+        yield* receiver.protocol.processEscrowsOnce();
+        assertEquals(receiver.acdc!.store.seqEvent(rip.said!, 0)?.said, rip.said, "so is the registry inception");
+        assertEquals(
+          listGroupProposals({ hby: left, exc: receiver.exc, notifier, registryStore: receiver.acdc!.store })
+            .map((proposal) => [proposal.kind, proposal.local]),
+          [],
+          "nothing is left to approve, and it raised no notice",
+        );
       } finally {
         yield* sender.close();
         yield* receiver.close();

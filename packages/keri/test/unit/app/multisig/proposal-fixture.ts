@@ -1,5 +1,5 @@
 /** Shared two-member scenario for group proposal tests. */
-import { parseBytes } from "cesr-ts";
+import { parseBytes, type ThresholdSith } from "cesr-ts";
 import { call, type Operation, run } from "effection";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
@@ -26,7 +26,7 @@ export const GROUP = { isith: "1", nsith: "1", toad: 0 } as const;
 /** Two members, each with a store; `left` is the local member and has joined and accepted "group". */
 export function* scenario(
   body: (s: Scenario) => Operation<void>,
-  threshold: "1" | "2" = "1",
+  threshold: ThresholdSith = "1",
 ): Operation<void> {
   const left = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
   const right = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
