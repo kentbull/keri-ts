@@ -32,8 +32,8 @@
  * `abandonPresentation` is local. A host that wants only the signed bytes (a file, a QR code) uses
  * `preparePresentation`, which commits locally and queues nothing.
  *
- * Group identifiers are refused: group presentation needs member coordination and belongs to the group
- * proposal API (a later change).
+ * Group identifiers are refused here: a group presents through {@link proposeGroupPresentation}, which hands the
+ * frozen Grant to the group IPEX owner (`group-ipex.ts`) for member approval.
  */
 import { collectPayload, concatBytes, Counter, framePayload, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { action, call, type Operation, race } from "npm:effection@^3.6.0";
@@ -48,6 +48,7 @@ import type { Reactor } from "../protocol/reactor.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
+import { type GroupIpexBegun, type GroupIpexOperations, proposeGroupIpex } from "./group-ipex.ts";
 import type { IpexV2BodyOptions } from "./ipex-building.ts";
 import {
   type CredentialViews,
@@ -335,6 +336,39 @@ export function* preparePresentation(
   yield* deps.protocol.processEscrowsOnce();
   if (!deps.exc.complete(prepared.exn.said!)) throw new ValidationError(PENDING);
   return { exn: prepared.exn, wire, recipient: prepared.exn.sad!.ri as string };
+}
+
+/**
+ * A group's consent to present an accepted Grant or credential view: freezes the Grant body once (selection and
+ * authorization) and proposes it as a group-authored message, so the other members list and approve it with
+ * `approveGroupIpex` and the elected lead delivers the completed Grant. Returns after local commit.
+ *
+ * A presentation registry (the Grant anchoring a presented-state update under the group's own anchor) is not
+ * supported here: that update is a separate group proposal (`proposeRegistryEvent`).
+ *
+ * @throws ValidationError for an identifier that is not a local group, a selection the discloser refuses, or a
+ * message awaiting authenticating dependencies.
+ */
+export function* proposeGroupPresentation(
+  deps: PresentationDeps,
+  groupIpex: GroupIpexOperations,
+  { hab, selection, options, deliver }: {
+    hab: Hab;
+    selection: DisclosureSelection;
+    options: Omit<PresentationOptions, "presentationRegistry">;
+    /** False when the caller takes the completed Grant itself (a file) and the lead must not send it. */
+    deliver?: boolean;
+  },
+): Operation<GroupIpexBegun> {
+  const discloser = discloserFor(deps, hab, selection.derive);
+  const prepared = yield* discloser.prepareGrantBody(hab.pre!, selection, options);
+  return yield* proposeGroupIpex(groupIpex, {
+    hab,
+    exn: prepared.exn,
+    nests: prepared.nests,
+    gvrsn: options.gvrsn ?? undefined,
+    deliver,
+  });
 }
 
 /**

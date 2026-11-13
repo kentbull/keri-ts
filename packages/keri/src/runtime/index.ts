@@ -936,6 +936,7 @@ export {
   type PresentationVerb,
   type PresentationWaitOptions,
   type PresentOptions,
+  proposeGroupPresentation,
   resendPresentation,
   waitForPresentation,
 } from "../app/ipex/presenting.ts";
@@ -945,6 +946,8 @@ export { type PendingPresentation, pendingPresentations } from "../app/ipex/pend
 // Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
 export {
   abandonUnblinding,
+  answerUnblind,
+  type GroupUnblindDeps,
   requestUnblind,
   type UnblindingBegun,
   type UnblindingDeps,

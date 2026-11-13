@@ -1,4 +1,4 @@
-import { createProtocolHandler } from "@keri-ts/hosting";
+import { createProtocolHandler, startServer } from "@keri-ts/hosting";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { openLmdbRegistry } from "../../../src/db/lmdb-stores.ts";
 /** Real encrypted owners repair exact presentations through the maintained finite HTTP workflow. */
@@ -21,7 +21,6 @@ import {
 } from "cesr-ts";
 import { call, ensure, run, sleep, spawn } from "effection";
 import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { runGroupUnblind, runIndividualUnblind } from "../../../../tufa/src/cli/commands/ipex-unblinding.ts";
 import { loadNests } from "../../../db.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { publicOpeningAttachment, type RegistryStore } from "../../../src/acdc/registering.ts";
@@ -30,20 +29,71 @@ import { Unblind } from "../../../src/acdc/unblinding.ts";
 import type { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
 import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
+import {
+  answerUnblind,
+  requestUnblind,
+  waitForUnblinding,
+} from "../../../src/app/ipex/unblinding-workflow.ts";
+import { isLocalGroupHab, localGroupMember } from "../../../src/app/multisig/group-members.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import type { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
 import type { Reactor } from "../../../src/app/protocol/reactor.ts";
-import { type AgentRuntime, createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
+import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { interact as interactEvent, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 
 const ST = ["issued", "revoked", ""];
+
+/** Unblind through `runtime.operations.unblinding` alone (no CLI code); `listen` hosts the member's endpoint. */
+function* libraryUnblind(
+  runtime: AgentRuntime,
+  hab: Hab,
+  grant: string,
+  { timeoutMs, proposer, listen, states }: {
+    timeoutMs: number;
+    proposer?: string;
+    listen?: number;
+    states?: readonly string[];
+  },
+) {
+  const ops = runtime.operations!.unblinding, group = isLocalGroupHab(runtime.hby, hab);
+  const member = group ? localGroupMember(runtime.hby, hab.pre!) : hab;
+  const requester = runtime.exc.retainedInput(grant)?.serder.sad?.ri === hab.pre;
+  const request = { hab, grant, states, proposer };
+  const hosted = listen === undefined ? null : yield* spawn(() =>
+    startServer(listen, consoleLogger, runtime, {
+      hostname: "127.0.0.1",
+      serviceHab: member,
+      hostedPrefixes: [...new Set([member.pre!, hab.pre!])],
+    })
+  );
+  try {
+    const begun = requester ? requestUnblind(ops, request) : group ? answerUnblind(ops, request) : null;
+    const host = yield* spawn(() => runAgentRuntime(runtime, { hab: member, pollMailbox: true }));
+    try {
+      const stop = Date.now() + timeoutMs;
+      while (!begun && !ops.live.has(grant) && !ops.settled.has(grant)) {
+        if (Date.now() > stop) throw new Error("no Unblind began");
+        yield* sleep(20);
+      }
+      const { status } = yield* waitForUnblinding(ops, grant, { timeoutMs: Math.max(1, stop - Date.now()) });
+      if (status.state !== "done") throw new ValidationError(`Unblind did not complete: ${JSON.stringify(status)}`);
+      return { grant, completed: true, admitted: false };
+    } finally {
+      yield* host.halt();
+    }
+  } finally {
+    if (hosted) yield* hosted.halt();
+  }
+}
 
 Deno.test("Unblind repairs pending and live exact presentations without changing admitted history", async () => {
   await run(function*() {
@@ -343,9 +393,9 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     assertEquals(observer.exc.verifyAccepted(live.said!, "/ipex/grant"), false);
     assertEquals(observer.hby.db.enst.get(live.said!), liveView);
     const liveRequest = yield* spawn(() =>
-      runIndividualUnblind(observer.runtime, observer.hab, live.said!, { timeoutMs: 15000, states: ST })
+      libraryUnblind(observer.runtime, observer.hab, live.said!, { timeoutMs: 15000, states: ST })
     );
-    const liveRelease = yield* runIndividualUnblind(presenter.runtime, presenter.hab, live.said!, {
+    const liveRelease = yield* libraryUnblind(presenter.runtime, presenter.hab, live.said!, {
       timeoutMs: 15000,
       states: ST,
     });
@@ -572,7 +622,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* call(finiteListener.stop);
     // Start the ordinary nonproposer command first; one setup cannot publish a group query.
     const peerRequest = yield* spawn(() =>
-      runGroupUnblind(verifiers[1].runtime, verifiers[1].hab, grant.said!, {
+      libraryUnblind(verifiers[1].runtime, verifiers[1].hab, grant.said!, {
         timeoutMs: 15000,
         proposer: verifier.member.pre,
         listen: finiteListener.port,
@@ -581,7 +631,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* sleep(100);
     assertEquals(queries, []);
     const request = yield* spawn(() =>
-      runGroupUnblind(verifier.runtime, verifier.hab, grant.said!, {
+      libraryUnblind(verifier.runtime, verifier.hab, grant.said!, {
         timeoutMs: 15000,
         proposer: verifier.member.pre,
       })
@@ -598,7 +648,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
 
     // Index 1 authors the proof; rootless index 0 validates and contributes under its one setup approval.
     const peerRelease = yield* spawn(() =>
-      runGroupUnblind(sender.runtime, sender.hab, grant.said!, {
+      libraryUnblind(sender.runtime, sender.hab, grant.said!, {
         timeoutMs: 15000,
         proposer: presenters[1].member.pre,
       })
@@ -606,7 +656,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* sleep(100);
     assertEquals(replies, [], "one approved presenter cannot release a threshold reply");
     const release = yield* spawn(() =>
-      runGroupUnblind(presenters[1].runtime, presenters[1].hab, grant.said!, {
+      libraryUnblind(presenters[1].runtime, presenters[1].hab, grant.said!, {
         timeoutMs: 15000,
         proposer: presenters[1].member.pre,
       })
@@ -619,7 +669,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* call(() =>
       assertRejects(() =>
         run(() =>
-          runGroupUnblind(verifiers[1].runtime, verifiers[1].hab, "missing", {
+          libraryUnblind(verifiers[1].runtime, verifiers[1].hab, "missing", {
             timeoutMs: 15000,
             proposer: verifier.member.pre,
             listen: finiteListener.port,
