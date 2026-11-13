@@ -14,11 +14,11 @@
  * `candidate` (kentbull/keripy v2-spec); upstream `main` is a fast follow, and its checks are recorded below as
  * ignored expected failures with what was observed.
  */
+import { runHostKernel } from "@keri-ts/hosting";
 import { collectPayload, concatBytes, MtrDex, nestedPayload, parseBytes, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
 import { call, ensure, type Operation, run, sleep, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { runHostKernel } from "@keri-ts/hosting";
 import { createHabery } from "keri-ts/db/lmdb";
 import {
   AcdcV2Regery as Regery,
@@ -49,8 +49,8 @@ import {
   waitForGroupIpex,
   waitForPresentation,
 } from "keri-ts/runtime";
-import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import type { RegBaser } from "../../../src/acdc/regbasing.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { loadNests } from "../../../src/db/exchange/exchange-nests.ts";
 import { openLmdbRegistry } from "../../../src/db/lmdb-stores.ts";
 import {
@@ -132,7 +132,7 @@ function* stores(name: string): Operation<Stores> {
     skipSignator: true,
   });
   const baser = yield* openLmdbRegistry({ name: `${name}-${crypto.randomUUID()}`, temp: true });
-  yield* ensure(function* () {
+  yield* ensure(function*() {
     yield* hby.close(true);
     yield* baser.close(true);
   });
@@ -318,7 +318,7 @@ function* startAgent(agentKind: AgentKind): Operation<Agent> {
       serviceHab: hab,
       http: { port, hostname: "127.0.0.1", onListen: () => listening.resolve() },
       protocolPolicy: {},
-      companionHosts: [function* (runtime) {
+      companionHosts: [function*(runtime) {
         hosted = runtime;
         yield* suspend();
       }],
@@ -445,7 +445,7 @@ interface Received {
  */
 function* receiveFromKeriPy(py: KeriPyRelayPeer, agentKind: AgentKind, credential: Credential): Operation<Received> {
   let issued: PeerIssued | undefined;
-  const side = yield* singleSigRelay(py, agentKind, function* (edge) {
+  const side = yield* singleSigRelay(py, agentKind, function*(edge) {
     issued = yield* call(() => py.issue(edge.pre!, credential));
   });
   const { edge, edgeHab, agentRt } = side;
@@ -555,7 +555,7 @@ function unwitnessed(hby: Habery): Receiptor {
  * from TEL intake (retention is caller policy there), so only its acceptance shows the state it read.
  */
 function* issueToKeriPy(py: KeriPyRelayPeer, agentKind: AgentKind): Operation<void> {
-  const side = yield* singleSigRelay(py, agentKind, function* () {});
+  const side = yield* singleSigRelay(py, agentKind, function*() {});
   const { edge, edgeHab } = side;
   const author = new RegistryAuthor(edge.acdc!, unwitnessed(edge.hby));
   yield* author.incept("relay", edgeHab.pre!);
@@ -666,7 +666,7 @@ interface GroupReceived {
  */
 function* groupReceives(py: KeriPyRelayPeer, credential: Credential): Operation<GroupReceived> {
   let issued: PeerIssued | undefined;
-  const side = yield* groupRelay(py, function* (group) {
+  const side = yield* groupRelay(py, function*(group) {
     issued = yield* call(() => py.issue(group.pre!, credential));
   });
   const { agent, edge, group } = side;
