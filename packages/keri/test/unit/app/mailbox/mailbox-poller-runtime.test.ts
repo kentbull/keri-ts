@@ -157,7 +157,7 @@ Deno.test("mailbox endpoints and later habitats progress independently of blocke
         available = false;
         return mailboxResponse(new TextEncoder().encode("proxy replay"));
       });
-      const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, systemClock);
+      const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, systemClock, null);
       poller.registerTopic("/challenge");
       const batches: MailboxPollBatch[] = [];
       const worker = yield* spawn(() =>
@@ -272,6 +272,7 @@ Deno.test("continuous mailbox polling hands off one event before requesting its 
       new MailboxDirector(hby),
       httpClient(() => Promise.resolve(new Response(responseBody))),
       systemClock,
+      null,
       {},
     );
     poller.registerTopic("/reply");
@@ -322,6 +323,7 @@ Deno.test("remote mailbox consumer failures preserve the cursor and join respons
           new MailboxDirector(hby),
           httpClient(() => Promise.resolve(new Response(body))),
           systemClock,
+          null,
         );
         poller.registerTopic("/reply");
         try {
@@ -376,6 +378,7 @@ Deno.test("mailbox polling normalizes positive fractional timeouts without produ
           new MailboxDirector(hby),
           new NodeHttpClient(),
           new ManualRuntimeClock(),
+          null,
           { timeouts: { requestOpenTimeoutMs: value, maxPollDurationMs: value } },
         );
         assertEquals(poller.timeoutPolicy, {
@@ -401,7 +404,7 @@ Deno.test("a mailbox that refuses the query is retried on a doubling backoff, an
       status === 500
         ? new Response("Mailbox unavailable", { status })
         : mailboxResponse(new TextEncoder().encode("late reply"), "/reply"));
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, null);
     poller.registerTopic("/reply");
     const batches: MailboxPollBatch[] = [];
     const worker = yield* spawn(() => poller.pollDo((batch) => void batches.push(batch)));
@@ -468,7 +471,7 @@ Deno.test("the KEL publisher re-posts after an unauthorized poll through its dec
     // The mailbox was told the KEL once, so the publisher thinks it holds it; the 403 says it does not.
     hby.db.kpub.pin([hab.pre, endpoint.eid], { d: hab.kever!.lastEst.d, dt: "2026-01-01T00:00:00.000000+00:00" });
     const publisher = new KelPublisher({ hby, http, clock });
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, { polls: publisher.polls });
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, null, { polls: publisher.polls });
     poller.registerTopic("/reply");
     const worker = yield* spawn(() => poller.pollDo(() => {}));
     const kinds = () => bodies.map((body) => body.includes("\"qry\"") ? "poll" : "kel");
@@ -520,7 +523,7 @@ Deno.test("the KEL publisher reacts to a polled mailbox through its deck", async
     kelStatus = 204;
     clock.advance(10);
     assertEquals(yield* publisher.processDue(), [], "a timed-out post is not retried on its own");
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, { polls: publisher.polls });
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, null, { polls: publisher.polls });
     poller.registerTopic("/reply");
     const worker = yield* spawn(() => poller.pollDo(() => {}));
     try {
@@ -545,7 +548,7 @@ Deno.test("a connection failure backs the worker off instead of failing pollDo",
     http.registerOrigin(endpoint.url, () => {
       throw new TransportError("connection refused");
     });
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, null);
     poller.registerTopic("/reply");
     // A worker that threw would fail this root through its parent; the run below only ends if it does not.
     const worker = yield* spawn(() => poller.pollDo(() => {}));
@@ -581,7 +584,7 @@ Deno.test("poller worker resumes within one tock of hold", async () => {
     const http = new FakeRuntimeHttpClient();
     http.registerOrigin(endpoint.url, () => new Response(null, { status: 204 }));
     const clock = new ManualRuntimeClock();
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, null);
     poller.registerTopic("/reply");
     // A worker that threw would fail this root through its parent; the run below only ends if it does not.
     const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
@@ -654,7 +657,7 @@ for (const boundary of ["headers", "SSE"] as const) {
           { headers: { "Content-Type": "text/event-stream" } },
         );
       });
-      const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, {
+      const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, null, {
         timeouts: { requestOpenTimeoutMs: 0.25, maxPollDurationMs: 0.25 },
       });
       poller.registerTopic("/reply");
@@ -719,7 +722,7 @@ Deno.test("mailbox polling includes providers and current witnesses once per sha
           }, { once: true });
         }));
     }
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, systemClock);
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, systemClock, null);
     poller.registerTopic("/reply");
     const worker = yield* spawn(() => poller.pollDo(function*() {}));
     try {
@@ -952,7 +955,7 @@ Deno.test("a witness rotated in is polled within one poller sweep", async () => 
     const http = new FakeRuntimeHttpClient();
     http.registerOrigin(url, () => new Response(null, { status: 204 }));
     const clock = new ManualRuntimeClock();
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, null);
     poller.registerTopic("/challenge");
     const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
     const settle = function*() {
@@ -1014,7 +1017,7 @@ Deno.test("poller respawns group worker when local member changes", async () => 
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const { alice, bob, group, http, bodies, replaceWith } = groupWithMailbox(hby);
     const clock = new ManualRuntimeClock();
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, null);
     poller.registerTopic("/reply");
     const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
     try {
@@ -1040,7 +1043,7 @@ Deno.test("poller signs group poll with replacement member", async () => {
     const { alice, bob, group, http, bodies, replaceWith } = groupWithMailbox(hby);
     replaceWith(bob);
     const clock = new ManualRuntimeClock();
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, null);
     poller.registerTopic("/reply");
     const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
     try {

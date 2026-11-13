@@ -31,7 +31,7 @@ import { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../trans
 import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
 import { introduce } from "./introducing.ts";
-import { type Relay, relayEndpoint, RelayUnresolvedError } from "./relaying.ts";
+import { type Relay, relayEndpoint, relayRefusal } from "./relaying.ts";
 
 /** Prepared signed source; Poster copies its bytes before publishing an ordinary admission. */
 export interface PosterMsg {
@@ -191,7 +191,9 @@ function remoteCesrTarget(
  * With a relay (an edge runtime) there is no role traversal: every recipient other
  * than the relay gets one `/fwd` delivery to the relay, which does the forwarding,
  * and the relay itself gets the message directly. `sent` then means the relay
- * accepted the wrapper, not that the final recipient received it.
+ * accepted the wrapper, not that the final recipient received it. A forwarded
+ * delivery fails with `RelayUnauthorizedError`, sending nothing, until its wrapper
+ * signer (a group's local member) has authorized the relay as its mailbox.
  */
 export class Poster {
   /** Borrowed habitat collection and backing accepted protocol state. */
@@ -461,13 +463,9 @@ export class Poster {
   private *deliverEvent(evt: PosterEvent, deliveries: string[], signal: AbortSignal): Operation<PosterOutcome> {
     const hab = this.hby.habs.get(evt.src);
     if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
-    if (this.relay && !relayEndpoint(this.hby, this.relay)) {
-      return {
-        kin: "failed",
-        evt,
-        deliveries,
-        error: new RelayUnresolvedError(`Relay ${this.relay.aid} has no accepted location; its OOBI has not resolved.`),
-      };
+    if (this.relay) {
+      const refusal = relayRefusal(this.hby, this.relay, this.relaySigner(hab, this.relay, evt.dest));
+      if (refusal) return { kin: "failed", evt, deliveries, error: refusal };
     }
     const routes = this.findBytesRoutes(hab, evt.dest, evt.topic, evt.kin);
     if (!routes.length) {
@@ -590,7 +588,7 @@ export class Poster {
    * @returns Ordered role groups; no eligible role returns an empty array.
    */
   private findBytesRoutes(hab: Hab, recipient: string, topic: string, kin: PosterEvent["kin"] = "msg"): RawCesrRoute[] {
-    if (this.relay) return this.relayRoutes(this.relay, recipient, topic);
+    if (this.relay) return this.relayRoutes(hab, this.relay, recipient, topic);
     const ends = hab.endsFor(recipient);
     const roles: string[] = [Roles.controller, Roles.agent, Roles.mailbox].filter((role) =>
       Object.keys(ends[role] ?? {}).length
@@ -621,24 +619,52 @@ export class Poster {
    * Route through the relay: one `forward` route to the relay for every other recipient, never a direct fallback,
    * and one `direct` route when the recipient is the relay. Recipient end roles are not read.
    *
+   * @param hab Local sending habitat; its wrapper signer must have authorized the relay as mailbox.
    * @param relay The configured relay agent.
    * @param recipient Resolved final recipient AID.
    * @param topic Recipient mailbox topic; the forwarded route requires a nonempty topic.
-   * @returns One route to the relay, or none while the relay has no accepted location.
+   * @returns One route to the relay, or none while {@link relayRefusal} refuses the relay for this sender.
    */
-  private relayRoutes(relay: Relay, recipient: string, topic: string): RawCesrRoute[] {
-    const endpoint = relayEndpoint(this.hby, relay);
-    if (!endpoint) return [];
+  private relayRoutes(hab: Hab, relay: Relay, recipient: string, topic: string): RawCesrRoute[] {
+    if (relayRefusal(this.hby, relay, this.relaySigner(hab, relay, recipient))) return [];
+    const endpoint = relayEndpoint(this.hby, relay)!;
     if (recipient === relay.aid) return [{ kind: "direct", targets: [endpoint] }];
     if (!topic) throw new ValidationError(`Forwarded delivery requires an explicit topic for ${recipient}.`);
     return [{ kind: "forward", targets: [endpoint] }];
   }
 
   /**
+   * The identifier whose mailbox authorization of the relay a delivery needs: the `/fwd` wrapper's signer (see
+   * {@link Poster.wrapperSigner}), the same `i` the agent reads to decide it serves the sender. For a group source
+   * that is the local member, not the group. A message addressed to the relay is not wrapped and needs none (null).
+   *
+   * @param hab Local sending habitat.
+   * @param relay The configured relay agent.
+   * @param recipient Resolved final recipient AID.
+   * @returns The wrapper signer's AID, or null when the recipient is the relay.
+   */
+  private relaySigner(hab: Hab, relay: Relay, recipient: string): string | null {
+    return recipient === relay.aid ? null : this.wrapperSigner(hab).pre!;
+  }
+
+  /**
+   * The habitat that signs a `/fwd` wrapper for `hab`. A group cannot sign the wrapper alone: one member's signature
+   * does not meet a threshold above one, and the host would escrow the wrapper. The local member wraps; the payload
+   * keeps whatever signatures it carries.
+   *
+   * @param hab Local sending habitat, possibly a group.
+   * @returns `hab` itself, or the group's local member.
+   * @throws ValidationError when a group has no local member metadata.
+   */
+  private wrapperSigner(hab: Hab): Hab {
+    return this.hby.db.groups.has(hab.pre!) ? localGroupMember(this.hby, hab.pre!) : hab;
+  }
+
+  /**
    * Whether `src` has any eligible role (controller, agent, mailbox or witness) from which to reach `dest`, as
    * delivery would find it now. A pure read of accepted endpoint state: it says nothing about whether the
    * endpoint answers. A proposer uses it to refuse before it creates anything it could not publish. With a relay,
-   * it is whether the relay's location is accepted.
+   * it is whether {@link relayRefusal} accepts the relay for this sender.
    */
   canReach(src: string, dest: string, topic = "multisig"): boolean {
     const hab = this.hby.habs.get(src);
@@ -701,9 +727,7 @@ export class Poster {
       if (!stored) throw new Error("Mailbox publication did not complete");
       return { kind: "stored" };
     }
-    // A group cannot sign the wrapper alone: one member's signature does not meet a threshold above one, and the
-    // host would escrow the wrapper. The local member wraps; the payload keeps whatever signatures it carries.
-    const signer = this.hby.db.groups.has(hab.pre!) ? localGroupMember(this.hby, hab.pre!) : hab;
+    const signer = this.wrapperSigner(hab);
     // Poster does not retry: an event whose wrapper cannot be signed now fails like any other undeliverable one.
     if (!signer.canSign()) return { kind: "unsignable", signer: signer.pre! };
     const msgs: Uint8Array[] = [];

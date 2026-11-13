@@ -2,6 +2,7 @@
 import { call, type Operation, scoped, spawn, type Task } from "npm:effection@^3.6.0";
 import type { MailboxPollCue } from "../../core/cues.ts";
 import type { Deck } from "../../core/deck.ts";
+import type { Relay } from "../delivery/relaying.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { type DoerPacing, doEvery, PROTOCOL_TOCK_MS } from "../runtime/doing.ts";
@@ -95,6 +96,8 @@ export class MailboxPoller {
   readonly clock: RuntimeClock;
   /** Where served polls and 403s are pushed, for the KEL publisher; null when nothing consumes them. */
   readonly polls: Deck<MailboxPollCue> | null;
+  /** The agent this runtime polls through (an edge), its only provider; null polls mailboxes and witnesses. */
+  readonly relay: Relay | null;
 
   /**
    * Bind polling inputs and dependencies without starting workers or acquiring stores.
@@ -103,6 +106,7 @@ export class MailboxPoller {
    * @param mailboxDirector Borrowed provider/topic/cursor owner.
    * @param http Borrowed HTTP implementation selected by composition.
    * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+   * @param relay The agent every subject is polled through; null selects authorized mailboxes and witnesses.
    * @param options Optional timeout overrides and poll-report deck; finite positive timeouts are floored with a 1 ms minimum. Missing/nonpositive/nonfinite values use 5-second headers and 30-second poll windows.
    */
   constructor(
@@ -110,6 +114,7 @@ export class MailboxPoller {
     mailboxDirector: MailboxDirector,
     http: HttpClient,
     clock: RuntimeClock,
+    relay: Relay | null,
     options: MailboxPollerOptions = {},
   ) {
     const { timeouts, polls } = options;
@@ -119,6 +124,7 @@ export class MailboxPoller {
     this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
     this.http = http;
     this.clock = clock;
+    this.relay = relay;
   }
 
   /**
@@ -237,7 +243,7 @@ export class MailboxPoller {
     const wanted = new Map<string, { target: MailboxPollTarget; endpoint: { eid: string; url: string } }>();
     if (topics.length > 0) {
       for (const target of this.remotePollTargets(only)) {
-        for (const endpoint of mailboxPollEndpoints(target.hab)) {
+        for (const endpoint of mailboxPollEndpoints(target.hab, this.relay)) {
           // The signer is part of the identity: a group whose local member was replaced gets a new worker.
           wanted.set(`${target.targetPre}:${target.signerHab.pre}:${endpoint.key}`, { target, endpoint });
         }

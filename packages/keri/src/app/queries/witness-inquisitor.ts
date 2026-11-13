@@ -7,6 +7,11 @@
  * is an explicitly selected remote attester. Resolve/sign just before sending,
  * using accepted endpoint evidence. One worker owns the unsigned request Deck
  * and current network attempt; there is no retained signed retry backlog.
+ *
+ * With a relay (an edge runtime) every query is addressed and sent to the relay,
+ * which is the attester: it answers from its own store through its Respondant
+ * and Poster into the edge's mailbox, which it hosts. No query goes to a witness
+ * or controller, whatever `src` or `wits` the request names.
  */
 import { concatBytes } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
@@ -17,6 +22,7 @@ import { consoleLogger } from "../../core/logger.ts";
 import { Roles } from "../../core/roles.ts";
 import { Schemes } from "../../core/schemes.ts";
 import { introduce } from "../delivery/introducing.ts";
+import { type Relay, relayEndpoint, relayRefusal } from "../delivery/relaying.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { PROTOCOL_TOCK_MS } from "../runtime/doing.ts";
@@ -158,6 +164,8 @@ export class WitnessInquisitor {
   private closed = false;
   /** Explicit default signer; null requires a unique local habitat. */
   private hab: Hab | null;
+  /** The agent every query is addressed and sent to (an edge); null selects ordinary attesters. */
+  readonly relay: Relay | null;
 
   /**
    * Bind actual protocol and I/O collaborators; acquire no store or network lifetime.
@@ -166,14 +174,23 @@ export class WitnessInquisitor {
    * @param protocol Borrowed same-database processor for incoming query replies.
    * @param http Borrowed HTTP implementation selected by composition.
    * @param clock Borrowed clock for transport deadlines; times are milliseconds.
+   * @param relay The agent every query goes to; null selects attesters from accepted endpoint roles.
    * @param hab Optional default local signer; null requires an unambiguous sole habitat.
    */
-  constructor(hby: Habery, protocol: ProtocolProcessor, http: HttpClient, clock: RuntimeClock, hab: Hab | null = null) {
+  constructor(
+    hby: Habery,
+    protocol: ProtocolProcessor,
+    http: HttpClient,
+    clock: RuntimeClock,
+    relay: Relay | null,
+    hab: Hab | null = null,
+  ) {
     if (protocol.kvy.db !== hby.db) throw new RangeError("Query protocol must use the same database");
     this.hby = hby;
     this.protocol = protocol;
     this.http = http;
     this.clock = clock;
+    this.relay = relay;
     this.hab = hab;
   }
 
@@ -376,6 +393,7 @@ export class WitnessInquisitor {
     const hab = this.configuredHab(request.signer);
     // A signer that cannot sign yet leaves the request unresolved: it goes to the tail, and the next pass tries again.
     if (!hab || !hab.canSign()) return null;
+    if (this.relay) return this.prepareRelayRequest(hab, request, this.relay);
     const attesters = request.src ? [] : this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits });
     const destination = request.src ?? attesters[Math.floor(Math.random() * attesters.length)];
     if (!destination) return null;
@@ -389,7 +407,25 @@ export class WitnessInquisitor {
   }
 
   /**
-   * Return the first eligible role’s attester IDs; preparation chooses one randomly.
+   * Address one query to the relay and sign it for the relay's location. The relay must have an accepted location
+   * and the signer must have authorized it as mailbox (where the answer is stored); until then the request stays
+   * unresolved and is tried again on a later pass, as for a signer that cannot sign yet.
+   *
+   * @param hab Local signing habitat.
+   * @param request Deferred unsigned request; its `src` and `wits` are not consulted.
+   * @param relay The configured relay agent, which is the attester.
+   * @returns Prepared packet for the relay, or null while {@link relayRefusal} refuses the relay for this signer.
+   */
+  private prepareRelayRequest(hab: Hab, request: QueryRequest, relay: Relay): QueryDelivery | null {
+    if (relayRefusal(this.hby, relay, hab.pre)) return null;
+    const endpoint = relayEndpoint(this.hby, relay)!;
+    const message = hab.query(request.pre, relay.aid, copyQuery(request));
+    return { url: endpoint.url, body: concatBytes(introduce(hab, relay.aid), message), destination: relay.aid };
+  }
+
+  /**
+   * Return the first eligible role’s attester IDs; preparation chooses one randomly. With a relay, the relay is the
+   * only attester.
    *
    * @param pre Subject AID whose accepted endpoint roles are consulted.
    * @param options Optional local signer AID and remote witness/attester overrides; neither selects a transport implementation.
@@ -399,6 +435,7 @@ export class WitnessInquisitor {
     pre: string,
     { signer, wits }: { signer?: string; wits?: string[] } = {},
   ): string[] {
+    if (this.relay) return [this.relay.aid];
     if (wits && wits.length > 0) {
       // Explicit watcher/witness overrides outrank endpoint-role lookup.
       return [...wits];

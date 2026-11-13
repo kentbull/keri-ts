@@ -164,10 +164,14 @@ export {
 } from "../app/delivery/forwarding.ts";
 export {
   type Relay,
+  relayAuthorized,
   type RelayEndpoint,
   relayEndpoint,
   RelayOnlyError,
   relayOnlyHttpClient,
+  type RelayRefusal,
+  relayRefusal,
+  RelayUnauthorizedError,
   RelayUnresolvedError,
 } from "../app/delivery/relaying.ts";
 export {
@@ -377,6 +381,7 @@ export {
   type HostedEndpoint,
   type HostedEndpointPathMatch,
   type HostedRouteResolution,
+  type MailboxPollEndpoint,
   mailboxPollEndpoints,
   mailboxQueryTopics,
   mailboxTopicKey,
