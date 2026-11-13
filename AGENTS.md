@@ -177,3 +177,14 @@ For new modules, classes, and functions:
   indirection
 - For CESR/TLV parsing, favor deterministic behavior and explicit invariants
   over flexibility by accident
+- Keep function signatures plain: parameters and return types are primitives
+  or named types, never inline unions, intersections, object literals,
+  Pick/Omit, or destructuring with an inline type. Declare each named type once
+  beside what it describes (a route union beside the route constants). When
+  several functions pass the same cluster of values, give the cluster a class
+  if it has an invariant or behaviour, a named interface if it is only data,
+  and neither if one plain collaborator will do. `Pick<...>` fields inside a
+  named deps interface stay (the workflow contract's narrow declared deps).
+- Do not use `extends` only to share helpers or injected dependencies; pass a
+  collaborator. `extends` is for error taxonomies, codec/record families that
+  mirror KERIpy, and bases with abstract or overridden hooks.

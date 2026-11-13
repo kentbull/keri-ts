@@ -64,6 +64,13 @@ export const MULTISIG_RPY_ROUTE = "/multisig/rpy";
 export const MULTISIG_QRY_ROUTE = "/multisig/qry";
 export const MULTISIG_IPEX_PROOF_ROUTE = "/multisig/ipex-proof";
 
+/** The routes whose wrapper commits one exact child, as group issuance wraps its Grant, queries, replies and proof. */
+export type MultisigChildRoute =
+  | typeof MULTISIG_EXN_ROUTE
+  | typeof MULTISIG_QRY_ROUTE
+  | typeof MULTISIG_RPY_ROUTE
+  | typeof MULTISIG_IPEX_PROOF_ROUTE;
+
 /** Ordered route list used for handler registration. */
 export const MULTISIG_ROUTES = [
   MULTISIG_RIP_ROUTE,

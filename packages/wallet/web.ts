@@ -31,7 +31,6 @@ export {
   type GroupReceiveOutcome,
   type GroupRotateOptions,
   type Groups,
-  type GroupSelection,
   type GroupUnblindOptions,
   type GroupWaitOptions,
   type IssuanceBegunNotice,

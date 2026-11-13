@@ -9,20 +9,21 @@
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { Diger, NumberPrimitive, parseBytes, Prefixer, type SerderACDC, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, ensure, type Operation, run, sleep, spawn } from "effection";
-import { assert, assertEquals, assertExists, assertNotEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertNotEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import type { RegBaser } from "../../../../src/acdc/regbasing.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
+  approveGroupIssuance,
   approveGroupIssuanceExchange,
-  beginGroupIssuance,
   deriveGroupCustody,
   followGroupIssuanceProof,
+  groupIssuanceElection,
   groupIssuanceProof,
   groupIssuanceProposals,
-  prepareGroupIssuance,
+  proposeGroupIssuance,
 } from "../../../../src/app/ipex/group-issuance.ts";
 import {
   admitIssuance,
@@ -38,6 +39,7 @@ import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../..
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { ValidationError } from "../../../../src/core/errors.ts";
 import { interact, reply } from "../../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../../src/core/roles.ts";
@@ -235,22 +237,25 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
         countCopies(side);
       };
 
-      const selection = (side: Side) => ({
-        hab: side.hab,
-        coordinator: coordinator.said!,
-        custodian: lead.member.pre!,
-      });
+      // The election reads the same under the pinned coordinator and the default (the latest establishment), and an
+      // event that is not an accepted group event is refused.
+      const pinned = groupIssuanceElection(ops(lead), lead.hab.pre!, coordinator.said!);
+      const byDefault = groupIssuanceElection(ops(lead), lead.hab.pre!);
+      assertEquals([byDefault.custodian, byDefault.lead], [pinned.custodian, pinned.lead]);
+      assertEquals([pinned.custodian, pinned.lead], [lead.member.pre, true]);
+      assertEquals(groupIssuanceElection(ops(peer), peer.hab.pre!).lead, false);
+      assertThrows(
+        () => groupIssuanceElection(ops(lead), lead.hab.pre!, rip.said!),
+        ValidationError,
+        "accepted group event",
+      );
       const host = (side: Side) => spawn(() => runAgentRuntime(side.runtime, { hab: side.member, pollMailbox: false }));
 
       // --- the custodian prepares and consents; its host sends the proposal ---
-      const prepared = yield* prepareGroupIssuance(ops(lead), {
-        ...selection(lead),
-        credential,
-        options: { recipient: holder.hab.pre!, message: "Group issuance" },
-      });
-      const grant = prepared.grant;
-      yield* beginGroupIssuance(ops(lead), { ...selection(lead), grant, proposal: prepared.proposal });
+      const draft = { credential, options: { recipient: holder.hab.pre!, message: "Group issuance" } };
+      const { grant } = yield* proposeGroupIssuance(ops(lead), draft, { coordinator: coordinator.said! });
       assertEquals(issuanceStatus(ops(lead), grant).state, "active");
+      assertEquals(ops(lead).live.get(grant)!.group!.xid, grant, "the derived transaction id is the Grant's own");
       let leadHost = yield* host(lead);
       const holderHost = yield* host(holder);
 
@@ -263,7 +268,7 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       assertEquals(listed.map((p) => [p.grant, p.proposer, p.recipient, p.complete]), [
         [grant, lead.member.pre, holder.hab.pre, false],
       ]);
-      yield* beginGroupIssuance(ops(peer), { ...selection(peer), grant });
+      yield* approveGroupIssuance(ops(peer), grant, { coordinator: coordinator.said! });
       assertEquals((issuanceStatus(ops(peer), grant) as { phase: string }).phase, "awaitingGrantSignatures");
       assertEquals(sentCopies, []);
 
@@ -277,7 +282,7 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       );
 
       // --- it consents again with the same call and the issuance completes ---
-      yield* beginGroupIssuance(ops(peer), { ...selection(peer), grant });
+      yield* approveGroupIssuance(ops(peer), grant, { coordinator: coordinator.said! });
       const peerHost = yield* host(peer);
 
       // The holder consents to the DH exchange once the full Grant has arrived.
@@ -347,7 +352,7 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       );
 
       // The custodian's public proof is derivable from the stores, and the status of a completed Grant reads from them.
-      const proof = yield* groupIssuanceProof(ops(lead), { ...selection(lead), grant });
+      const proof = yield* groupIssuanceProof(ops(lead), grant);
       const delivered = [...peer.hby.db.exns.getTopItemIter()].map(([, body]) => body)
         .filter((body) => body.route === "/multisig/ipex-proof");
       assertEquals(delivered.map((body) => body.pre), [lead.member.pre]);
@@ -384,29 +389,21 @@ Deno.test("a member that left after contributing follows the custodian's proof w
     });
     const hab = hby.makeHab("solo");
     const unknown = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    const issuance = runtime.operations!.issuance;
     let refused = "";
     try {
-      yield* followGroupIssuanceProof(runtime.operations!.issuance, {
-        hab,
-        coordinator: unknown,
-        custodian: hab.pre!,
-        grant: unknown,
-      });
+      yield* followGroupIssuanceProof(issuance, unknown, { coordinator: unknown });
     } catch (error) {
       refused = String((error as Error).message);
     }
-    assert(refused.includes("local group"), refused);
+    assert(refused.includes("pending group issuance"), refused);
     let holderRefused = "";
     try {
-      approveGroupIssuanceExchange(runtime.operations!.issuance, {
-        hab,
-        coordinator: unknown,
-        custodian: hab.pre!,
-        grant: unknown,
-      });
+      approveGroupIssuanceExchange(issuance, unknown);
     } catch (error) {
       holderRefused = String((error as Error).message);
     }
-    assert(holderRefused.includes("local group"), holderRefused);
+    assert(holderRefused.includes("pending group issuance"), holderRefused);
+    assertThrows(() => groupIssuanceElection(issuance, hab.pre!), ValidationError, "local group");
   });
 });

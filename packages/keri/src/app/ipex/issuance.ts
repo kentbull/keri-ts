@@ -81,20 +81,20 @@ import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { ExchangeInput, Exchanger } from "../exchanges/exchanging.ts";
-import type { ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
-import { DeliveryOutbox, type Outbound } from "../runtime/delivery-outbox.ts";
+import { type DeliveryMessage, DeliveryOutbox, type Outbound } from "../runtime/delivery-outbox.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
 import {
   deriveGroupCustody,
-  type GroupBegin,
   GroupIssuance,
   type GroupIssuanceDeps,
+  GroupParty,
+  type GroupRouteBinding,
   registerGroupRoutes,
   stepGroup,
 } from "./group-issuance.ts";
@@ -152,7 +152,7 @@ export type IssuanceStatus =
 /** Delivery of signed bytes; resolves once the transport reports an outcome and throws when it failed. */
 export interface IssuanceDelivery {
   /** `topic` defaults to the credential mailbox topic; group members coordinate on `multisig`. */
-  deliver(message: { src: string; dest: string; msg: Uint8Array; topic?: string }): Operation<string[]>;
+  deliver(message: DeliveryMessage): Operation<string[]>;
 }
 
 /**
@@ -296,7 +296,7 @@ export class IssuanceOperations {
   readonly ended = new Map<string, EndedIssuance>();
   readonly discloser: IpexDiscloser;
   /** The DH child handlers this owner registered on the multiplexor, once a group operation began. */
-  groupRoutes: Array<[string, ExchangeRouteHandler]> | null = null;
+  groupRoutes: GroupRouteBinding[] | null = null;
   /** When the next scan for resumable Grants is due (host clock, ms); 0 until the first pass. */
   private nextSweep = 0;
   /** Grants a scan found resumable and adoption refused; they are not tried again in this process. */
@@ -402,7 +402,7 @@ export class IssuanceOperations {
     const group = isLocalGroupHab(this.deps.hby, hab);
     const { retained, credential, deadline, expires } = selectGrant(this, hab, grant, role, group);
     if (group) {
-      this.adoptGroup(hab, grant, role, retained, credential.regid!, deadline, expires);
+      this.adoptGroup(hab, grant, role, retained);
       return;
     }
     const wires = role === "issuer" ? yield* grantWires(retained) : null;
@@ -434,48 +434,36 @@ export class IssuanceOperations {
    * already held, and the group steps finish the Grant against the accepted update. The only signature is the
    * endorsement of the public proof wrapper the original consent already covers.
    */
-  private adoptGroup(
-    hab: Hab,
-    grant: string,
-    role: IssuanceRole,
-    retained: ExchangeInput,
-    registry: string,
-    deadline: string,
-    expires: bigint,
-  ): void {
-    const sel = deriveGroupCustody(this.deps, hab, grant)!, { coordinator, custodian } = sel;
-    const dh = this.deps.dhkes.dhke(hab), xid = dh.resume(grant, { coordinator, custodian });
-    const frozen = retained.serder;
+  private adoptGroup(hab: Hab, grant: string, role: IssuanceRole, retained: ExchangeInput): void {
+    const election = deriveGroupCustody(this.deps, hab, grant)!;
+    const party = GroupParty.resolve(this.deps, hab, election.coordinator.said);
+    const group = new GroupIssuance(party, role, retained.serder, retained.nests ?? [], { mode: "resumed" });
+    const dh = this.deps.dhkes.dhke(hab), xid = dh.resume(grant, party);
     this.ended.delete(grant);
-    this.live.set(grant, {
-      grant,
+    this.live.set(grant, this.liveGroup(group, dh, xid, "rootRetained"));
+    this.deps.changes?.push({ kind: "issuance", id: grant });
+    this.deps.wake?.();
+  }
+
+  /** The live entry of a group operation; its lifetime is the Grant's once KRAM has accepted it, else unknown. */
+  private liveGroup(group: GroupIssuance, dh: Dhke, xid: string, phase: IssuancePhase): LiveIssuance {
+    const deadline = this.deps.exc.exchangeDeadline(group.grant), expires = deadline ? timestampMicros(deadline) : null;
+    return {
+      grant: group.said,
       xid,
-      role,
+      role: group.role,
       deadline,
-      hab,
+      hab: group.party.group,
       dh,
-      peer: role === "issuer" ? frozen.sad!.ri as string : frozen.pre!,
-      registry,
+      peer: group.peer,
+      registry: group.registry,
       expires,
-      group: new GroupIssuance({
-        grant,
-        xid,
-        role,
-        sel,
-        frozen,
-        nodes: retained.nests ?? [],
-        registry,
-        peer: role === "issuer" ? frozen.sad!.ri as string : frozen.pre!,
-        approved: true,
-        resumed: true,
-      }),
-      phase: "rootRetained",
+      group,
+      phase,
       outbox: new DeliveryOutbox(),
       finished: false,
       busy: false,
-    });
-    this.deps.changes?.push({ kind: "issuance", id: grant });
-    this.deps.wake?.();
+    };
   }
 
   private *timer(milliseconds: number): Operation<"expired"> {
@@ -523,42 +511,28 @@ export class IssuanceOperations {
   }
 
   /**
-   * Record one group operation the user consented to ({@link beginGroupIssuance},
+   * Record one group operation the user consented to ({@link approveGroupIssuance},
    * {@link approveGroupIssuanceExchange}, {@link followGroupIssuanceProof}). A holder approves DH here, with its
    * consent; an issuer approves once the group has authenticated the Grant.
    */
-  beginGroup(begin: GroupBegin): IssuanceBegun {
-    const { deps } = this, { hab, coordinator, custodian } = begin.sel;
-    // A group issuer's partial Grant has no accepted lifetime yet; `stepGroup` fixes it once the group authenticates it.
-    const deadline = deps.exc.exchangeDeadline(begin.frozen), expires = deadline ? timestampMicros(deadline) : null;
+  beginGroup(group: GroupIssuance): IssuanceBegun {
+    const { deps } = this, { party } = group;
     registerGroupRoutes(this);
-    const dh = deps.dhkes.dhke(hab);
-    const approve = begin.role === "holder" && !begin.proofOnly;
-    const xid = approve ? dh.approve(begin.grant, { coordinator, custodian }) : begin.xid;
-    this.ended.delete(begin.grant);
-    this.live.set(begin.grant, {
-      grant: begin.grant,
-      xid,
-      role: begin.role,
-      deadline,
-      hab,
-      dh,
-      peer: begin.peer,
-      registry: begin.registry,
-      expires,
-      group: new GroupIssuance({ ...begin, approved: approve }),
-      phase: begin.proofOnly
-        ? "awaitingAnchor"
-        : begin.role === "issuer"
-        ? "awaitingGrantSignatures"
-        : "exchangingKeys",
-      outbox: new DeliveryOutbox(),
-      finished: false,
-      busy: false,
-    });
-    deps.changes?.push({ kind: "issuance", id: begin.grant });
+    const dh = deps.dhkes.dhke(party.group);
+    // A holder approves DH with its consent; an issuer approves once the group has authenticated the Grant.
+    const holder = group.role === "holder" && group.mode !== "proofOnly";
+    const xid = holder ? dh.approve(group.said, party) : group.xid;
+    group.approved = holder;
+    const phase = group.mode === "proofOnly"
+      ? "awaitingAnchor"
+      : group.role === "issuer"
+      ? "awaitingGrantSignatures"
+      : "exchangingKeys";
+    this.ended.delete(group.said);
+    this.live.set(group.said, this.liveGroup(group, dh, xid, phase));
+    deps.changes?.push({ kind: "issuance", id: group.said });
     deps.wake?.();
-    return { grant: begin.grant, xid };
+    return { grant: group.said, xid };
   }
 
   /** One pass of the issuer loop, in the order of the CLI loop it replaces. */
