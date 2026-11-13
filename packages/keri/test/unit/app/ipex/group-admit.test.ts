@@ -364,6 +364,21 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
     yield* approveGroupIpex(ops2, spurned.said);
     yield* until(() => issuer.runtime.exc.complete(spurned.said), "the issuer to accept the group Spurn");
     assertEquals(issuer.hby.db.erpy.get([second])?.qb64, spurned.said);
+
+    // The group offers the credential it holds: the message is an Offer, not a Grant.
+    const offered = yield* proposeGroupNegotiation(presenting(h1), ops1, {
+      verb: "offer",
+      hab: h1.hab,
+      selection: { fromGrant: grant, presenterAuthorized: true },
+      options: { recipient: issuer.hab.pre!, message: "Group Offer", plan: [] },
+    });
+    yield* until(
+      () => groupIpexProposals(ops2, h2.hab).some((proposal) => proposal.said === offered.said),
+      "the second member to hold the Offer",
+    );
+    yield* approveGroupIpex(ops2, offered.said);
+    yield* until(() => issuer.runtime.exc.complete(offered.said), "the issuer to accept the group Offer");
+    assertEquals(issuer.hby.db.exns.get([offered.said])?.route, "/ipex/offer");
     for (const task of hosts) yield* task.halt();
   });
 });
