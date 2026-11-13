@@ -37,9 +37,20 @@ function targets<Owner extends string>(value: unknown, owners: readonly Owner[])
 export const unitShards: Record<string, readonly UnitTarget[]> = {
   "keri-app": ["app-fast-parallel", "app-fast-isolated"],
   "keri-runtime": ["runtime-medium", "runtime-slow", "app-stateful-a", "app-stateful-b"],
-  "keri-core": ["db-fast", "db-web", "core-fast-a", "core-fast-b"],
   tufa: ["tufa"],
-  packages: ["verifier", "hosting", "wallet", "registrar", "observer", "cesr", "ci-tools"],
+  small: [
+    "db-fast",
+    "db-web",
+    "core-fast-a",
+    "core-fast-b",
+    "verifier",
+    "hosting",
+    "wallet",
+    "registrar",
+    "observer",
+    "cesr",
+    "ci-tools",
+  ],
 };
 
 /** One CI matrix entry: the shard name and the unit targets it runs, as a JSON array string. */
