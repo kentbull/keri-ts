@@ -1,5 +1,7 @@
 /** Recipient mailbox polling: signed queries, awaited SSE intake and persisted cursor progression. */
 import { call, type Operation, scoped, spawn, type Task } from "npm:effection@^3.6.0";
+import type { MailboxPollCue } from "../../core/cues.ts";
+import type { Deck } from "../../core/deck.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { type DoerPacing, doEvery, PROTOCOL_TOCK_MS } from "../runtime/doing.ts";
@@ -27,13 +29,11 @@ interface MailboxPollerOptions {
    * Optional millisecond header and poll-window overrides.
    */
   timeouts?: Partial<MailboxPollingTimeoutPolicy>;
-  /** Told after each poll a mailbox served; the runtime re-arms a timed-out KEL publication with it. */
-  onPolled?: (pre: string, mailbox: string) => void;
   /**
-   * Told when a mailbox answers 403 (it cannot authenticate the requester against the KEL it holds); the runtime
-   * has its KEL publisher post the KEL again. The worker then backs off.
+   * Where each served poll (`polled`) and each 403 (`unauthorized`) is pushed; the runtime wires the KEL publisher's
+   * `polls` deck here, which the publisher drains on its tock. Omitted, polls are reported nowhere.
    */
-  onUnauthorized?: (pre: string, mailbox: string) => void;
+  polls?: Deck<MailboxPollCue>;
 }
 
 /** Tocks between the poller's full re-selection of workers: 160 tocks of 31.25 ms is five seconds. */
@@ -93,10 +93,8 @@ export class MailboxPoller {
   readonly http: HttpClient;
   /** Borrowed clock for this owner's actual network deadlines. */
   readonly clock: RuntimeClock;
-  /** Told after each poll a mailbox served. */
-  readonly onPolled: ((pre: string, mailbox: string) => void) | undefined;
-  /** Told when a mailbox answers 403. */
-  readonly onUnauthorized: ((pre: string, mailbox: string) => void) | undefined;
+  /** Where served polls and 403s are pushed, for the KEL publisher; null when nothing consumes them. */
+  readonly polls: Deck<MailboxPollCue> | null;
 
   /**
    * Bind polling inputs and dependencies without starting workers or acquiring stores.
@@ -105,7 +103,7 @@ export class MailboxPoller {
    * @param mailboxDirector Borrowed provider/topic/cursor owner.
    * @param http Borrowed HTTP implementation selected by composition.
    * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
-   * @param options Optional timeout overrides; finite positive values are floored with a 1 ms minimum. Missing/nonpositive/nonfinite values use 5-second headers and 30-second poll windows.
+   * @param options Optional timeout overrides and poll-report deck; finite positive timeouts are floored with a 1 ms minimum. Missing/nonpositive/nonfinite values use 5-second headers and 30-second poll windows.
    */
   constructor(
     hby: Habery,
@@ -114,9 +112,8 @@ export class MailboxPoller {
     clock: RuntimeClock,
     options: MailboxPollerOptions = {},
   ) {
-    const { timeouts, onPolled, onUnauthorized } = options;
-    this.onPolled = onPolled;
-    this.onUnauthorized = onUnauthorized;
+    const { timeouts, polls } = options;
+    this.polls = polls ?? null;
     this.hby = hby;
     this.mailboxDirector = mailboxDirector;
     this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
@@ -268,7 +265,8 @@ export class MailboxPoller {
    * `keri-ts`'s split between mailbox transport and runtime parser ownership. Each poll ends in a
    * {@link PollOutcome}; {@link nextPoll} maps it and the backoff state to the next action. A mailbox that is
    * unreachable or refuses is retried on {@link MailboxPoller.RefusalBackoff}, never in a tight loop and never
-   * by failing the runtime. A 403 also prompts the KEL publisher, which owns posting the KEL.
+   * by failing the runtime. A served poll and a 403 are pushed onto `polls` for the KEL publisher, which owns posting
+   * the KEL.
    *
    * A signer that cannot sign yet (a store opened without it) is not a remote failure: the worker neither polls
    * nor backs off, and looks again each tock, so it polls within one tock of `Manager.hold`. Because it never polls
@@ -299,11 +297,11 @@ export class MailboxPoller {
       state = step.state;
       switch (step.action.kind) {
         case "poll":
-          this.onPolled?.(target.targetPre, endpoint.eid);
+          this.polls?.push({ kin: "polled", pre: target.targetPre, mailbox: endpoint.eid });
           yield* runtimeTurn();
           break;
         case "prompt-publisher":
-          this.onUnauthorized?.(target.targetPre, endpoint.eid);
+          this.polls?.push({ kin: "unauthorized", pre: target.targetPre, mailbox: endpoint.eid });
           yield* waitOnClock(this.clock, step.action.ms);
           break;
         case "wait":

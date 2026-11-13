@@ -1,6 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import type { AgentCue } from "../../core/cues.ts";
+import type { AgentCue, EndRoleSavedCue } from "../../core/cues.ts";
 import type { Deck } from "../../core/deck.ts";
+import { Roles } from "../../core/roles.ts";
 import type { Hab } from "../identity/habbing.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import { type DoerPacing, doEvery, PROTOCOL_PACING } from "./doing.ts";
@@ -20,10 +21,24 @@ function resolveCueHab(runtime: AgentRuntime, hab?: Hab): Hab | null {
 }
 
 /**
+ * Hand an accepted mailbox end role to the KEL publisher and the mailbox poller, so both look at its controller on
+ * their next tock rather than at their next sweep. Other roles concern neither.
+ *
+ * @param runtime Borrowed composed runtime containing the publisher and poller.
+ * @param cue The committed end-role fact from `Revery`.
+ */
+export function promptForEndRole(runtime: AgentRuntime, cue: EndRoleSavedCue): void {
+  if (cue.role !== Roles.mailbox) return;
+  runtime.kelPublisher.prompt(cue.cid);
+  runtime.mailboxPoller.prompt(cue.cid);
+}
+
+/**
  * Route one initial cue batch to its concrete owners before removing source records.
  *
- * Transfer query instructions to the sender, stream cues to mailbox correlation
- * and produced responder messages to Poster. No network delivery runs inline.
+ * Transfer query instructions to the sender, stream cues to mailbox correlation,
+ * accepted mailbox end roles to the KEL publisher and poller, and produced responder
+ * messages to Poster. No network delivery runs inline.
  * A responder cue whose signing habitat cannot sign yet moves to the tail and is
  * tried again on a later pass; the cues behind it still go now.
  * Saved key-state facts transfer once to the command's optional query Deck;
@@ -47,6 +62,11 @@ export function* processCuesOnce(
       // Pulled first: a faulty sink must not wedge the head of the Deck.
       runtime.cues.pull();
       runtime.changes?.push({ kind: "kramRefused", id: cue.said, refusal: cue });
+      continue;
+    }
+    if (cue.kin === "endRoleSaved") {
+      runtime.cues.pull();
+      promptForEndRole(runtime, cue);
       continue;
     }
     if (cue.kin === "query") {

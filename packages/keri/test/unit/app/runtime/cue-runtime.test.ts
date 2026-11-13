@@ -3,7 +3,7 @@ import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals, asse
 import { MtrDex, SerderKERI, type Siger, Signer, Vrsn_1_0, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Signaler } from "../../../../src/app/notifications/signaling.ts";
-import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../../src/app/runtime/agent-runtime.ts";
 import { processCuesOnce } from "../../../../src/app/runtime/cue-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import {
@@ -19,6 +19,7 @@ import { incept, reply } from "../../../../src/core/protocol-eventing.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { UnsupportedTelReplayError } from "../../../../src/db/replay/tel-replay.ts";
 import { httpClient } from "../../../support/http-client.ts";
+import { FakeRuntimeHttpClient } from "../../../support/runtime-fakes.ts";
 
 Deno.test("Respondant finishes local replay construction before publishing or removing its source", async () => {
   await run(function*() {
@@ -406,6 +407,42 @@ Deno.test("cue pass keeps an unsignable reply cue and routes the cues behind it"
       yield* processCuesOnce(runtime, { hab: keyless });
       assertEquals(runtime.cues.empty, true);
       assertEquals([...runtime.postman.evts].map((evt) => evt.topic), ["/replay", "/reply"]);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("an accepted end-role reply reaches its consumer as a cue", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const http = new FakeRuntimeHttpClient();
+    const runtime = yield* createAgentRuntime(hby, http, systemClock);
+    try {
+      const hab = hby.makeHab("controller", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const mailbox = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false }).verfer.qb64;
+      const url = "http://new.mailbox.test/";
+      hby.db.locs.pin([mailbox, "http"], { url });
+      http.registerOrigin(url, () => new Response(null, { status: 204 }));
+      yield* settleRuntimeIngress(runtime, [hab.makeEndRole(mailbox, Roles.mailbox, true)]);
+      assertEquals(runtime.cues.toArray(), [
+        { kin: "endRoleSaved", cid: hab.pre, role: Roles.mailbox, eid: mailbox, allowed: true },
+      ]);
+      assertEquals(yield* runtime.kelPublisher.processDue(), [], "the publisher has not been told yet");
+      yield* processCuesOnce(runtime);
+      assertEquals(runtime.cues.empty, true);
+      // The cue pass prompted the publisher: its next tock posts the KEL to the new mailbox without a sweep.
+      const posted = yield* runtime.kelPublisher.processDue();
+      assertEquals(posted.map((result) => result.outcome), ["told"]);
+      assertEquals(http.requests.length, 1);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

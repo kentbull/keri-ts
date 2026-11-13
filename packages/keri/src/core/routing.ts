@@ -366,6 +366,7 @@ export class Router {
  * - persist accepted reply artifacts into `sdts.`, `rpys.`, `scgs.`, `ssgs.`
  * - escrow partially verifiable transferable replies into `rpes.`
  * - emit `query` cues when missing signer state blocks verification
+ * - emit an `endRoleSaved` cue after an accepted `/end/role` reply commits (TypeScript-only; KERIpy has no consumer)
  *
  * Current `keri-ts` differences:
  * - only the Gate E bootstrap reply families are currently routed
@@ -380,12 +381,6 @@ export class Revery {
   readonly cues: Deck<AgentCue>;
   readonly lax: boolean;
   readonly local: boolean;
-  /**
-   * Told after an `/end/role` reply is accepted, with the controller, role, endpoint and whether the role is
-   * allowed. The runtime uses it to have the mailbox poller and KEL publisher look at a controller whose mailbox
-   * role just changed, rather than at their next sweep.
-   */
-  onEndRole: ((cid: string, role: string, eid: string, allowed: boolean) => void) | undefined;
 
   /**
    * Create one reply verifier bound to one `Baser` and optional shared router.
@@ -940,7 +935,8 @@ export class BasicReplyRouteHandler {
    * - derives the BADA route base `/end/role`
    * - applies same-SAID idempotence before acceptance
    * - evaluates proof and updates proof/`eans.`/`ends.` in its own transaction
-   * - publishes queries only after that commit; caller-owned writers are refused
+   * - publishes queries, then an `endRoleSaved` cue for an accepted reply, only after that commit; caller-owned
+   *   writers are refused
    */
   processReplyEndRole(args: {
     serder: SerderKERI;
@@ -1004,7 +1000,7 @@ export class BasicReplyRouteHandler {
       return acceptReplyDecision();
     });
     if (queryCues.length) this.rvy.cues.extend(queryCues);
-    if (decision.kind === "accept") this.rvy.onEndRole?.(cid, role, eid, allowed);
+    if (decision.kind === "accept") this.rvy.cues.push({ kin: "endRoleSaved", cid, role, eid, allowed });
     return decision;
   }
 

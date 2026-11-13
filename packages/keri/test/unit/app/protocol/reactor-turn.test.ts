@@ -477,35 +477,6 @@ Deno.test("two request reservations survive an interleaved background cue drain"
   });
 });
 
-Deno.test("reply readiness observers may reenter protocol processing without losing another reply", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const protocol = protocolFixture(hby);
-    const first = protocol.replies.reserve("first"), second = protocol.replies.reserve("second");
-    const a: ReplayCue = { kin: "replay", querySaid: "first", msgs: [Uint8Array.of(1)] };
-    const b: ReplayCue = { kin: "replay", querySaid: "second", msgs: [Uint8Array.of(2)] };
-    const ordinary: ReplayCue = { kin: "replay", msgs: [Uint8Array.of(3)] };
-    let nested: ReturnType<typeof run> | undefined;
-    const stop = first.observeReady(() => {
-      nested = run(() => protocol.processEscrowsOnce());
-    });
-    try {
-      protocol.kvy.cues.extend([a, b, ordinary]);
-      yield* protocol.processEscrowsOnce();
-      if (nested) yield* call(() => nested!);
-      assertStrictEquals(first.takeAll()?.cues[0], a);
-      assertStrictEquals(second.takeAll()?.cues[0], b);
-      assertEquals(protocol.cues.toArray(), [ordinary]);
-    } finally {
-      stop();
-      first.close();
-      second.close();
-      if (nested) yield* call(() => nested!.halt());
-      yield* hby.close(true);
-    }
-  });
-});
-
 Deno.test("dispatch returns mailbox authorization from its exact protocol state", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });

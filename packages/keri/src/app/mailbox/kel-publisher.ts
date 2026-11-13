@@ -18,13 +18,14 @@
  * A failed post is retried with a doubling delay up to {@link KEL_PUBLISH_MAX_DELAY_MS}, in memory, and given
  * up when the next attempt would start more than {@link KEL_PUBLISH_BUDGET_MS} after the first. Giving up
  * writes `failed` to the record and a change to the sink. A timed-out entry is not retried on its own: a new
- * rotation, a successful poll of that mailbox (the mailbox is evidently back), a successful 403 repair, a
- * `prompt`, or the next runtime open (memory starts empty, so each owed entry gets a fresh budget) re-arms it.
+ * rotation, a successful poll of that mailbox (the mailbox is evidently back), a 403 from it, a `prompt`, or the
+ * next runtime open (memory starts empty, so each owed entry gets a fresh budget) re-arms it. The mailbox poller
+ * reports polls as {@link MailboxPollCue} records on the `polls` deck; the publisher acts on them on its own tock.
  * A host that cannot take a multi-message stream (KERIpy answers 400 or 406) is recorded as told: it does
  * not authenticate polls, so nothing is lost.
  */
 import { type Operation } from "npm:effection@^3.6.0";
-import type { RotatedCue } from "../../core/cues.ts";
+import type { MailboxPollCue, RotatedCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { type DoerPacing, doEvery } from "../runtime/doing.ts";
@@ -123,6 +124,8 @@ const idOf = (pre: string, mailbox: string) => `${pre}/${mailbox}`;
 export class KelPublisher {
   /** Completion points push here; the next tock gives that identifier's entries a fresh budget. */
   readonly rotated = new Deck<RotatedCue>();
+  /** The mailbox poller pushes what each poll said here; the next tock re-arms or repairs that entry. */
+  readonly polls = new Deck<MailboxPollCue>();
   /** A failure that escapes a pass is counted and kept here; the fiber keeps running. */
   readonly health: { faults: number; last: { error: unknown; at: number } | null } = { faults: 0, last: null };
   readonly #deps: KelPublisherDeps;
@@ -139,7 +142,7 @@ export class KelPublisher {
 
   /**
    * Give `pre`'s entries a fresh budget and derive them on the next tock; with `mailbox`, re-arm only that mailbox's
-   * entry, and only if it timed out (the poller calls this after a successful poll).
+   * entry, and only if it timed out (what a `polled` record on {@link KelPublisher.polls} does).
    */
   prompt(pre: string, mailbox?: string): void {
     if (mailbox !== undefined) {
@@ -155,10 +158,11 @@ export class KelPublisher {
   /**
    * A mailbox refused the owner's poll with 403: whatever the record says it holds, it cannot authenticate
    * the owner (it lost its state, or accepted a post it then escrowed). Forget what it was given, so the next
-   * pass posts the KEL again, and give the entry a fresh budget. The poller calls this at most once per backoff
-   * period, which is also the most this posts; a mailbox that never recovers is given up on like any other.
+   * pass posts the KEL again, and give the entry a fresh budget. An `unauthorized` record on
+   * {@link KelPublisher.polls} runs it; the poller reports a 403 at most once per backoff period, which is also the
+   * most this posts; a mailbox that never recovers is given up on like any other.
    */
-  repair(pre: string, mailbox: string): void {
+  #repair(pre: string, mailbox: string): void {
     const { hby } = this.#deps, record = hby.db.kpub.get([pre, mailbox]);
     if (!hby.readonly && record?.d) hby.db.kpub.pin([pre, mailbox], { d: null, dt: record.dt });
     this.#budgets.delete(idOf(pre, mailbox));
@@ -177,7 +181,7 @@ export class KelPublisher {
   }
 
   /**
-   * The fixed-tock pass: drain the cues, derive the marked identifiers and those still owed, then send up to
+   * The fixed-tock pass: drain the decks, derive the marked identifiers and those still owed, then send up to
    * {@link KelSendsPerPass} due posts, each within `timeoutMs` for the mailbox's answer. An idle pass reads no
    * store. A post is recorded when the mailbox answers 2xx; a failure is retried on the schedule until the budget
    * is used up. Never throws on a remote failure; every attempt is returned.
@@ -187,6 +191,10 @@ export class KelPublisher {
   > {
     const { clock, hby } = this.#deps;
     for (let cue = this.rotated.pull(); cue; cue = this.rotated.pull()) this.prompt(cue.pre);
+    for (let cue = this.polls.pull(); cue; cue = this.polls.pull()) {
+      if (cue.kin === "polled") this.prompt(cue.pre, cue.mailbox);
+      else this.#repair(cue.pre, cue.mailbox);
+    }
     if (hby.readonly) return [];
     const owed: Derived[] = [];
     for (const pre of new Set([...this.#dirty, ...this.#owed])) {

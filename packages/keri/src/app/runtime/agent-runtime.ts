@@ -17,7 +17,6 @@ import {
   REPLAY_MAILBOX_TOPIC,
   REPLY_MAILBOX_TOPIC,
 } from "../../core/mailbox/mailbox-topics.ts";
-import { Roles } from "../../core/roles.ts";
 import { Revery } from "../../core/routing.ts";
 import { openOwner } from "../../db/core/store-owner.ts";
 import { Mailboxer } from "../../db/mailbox/mailboxing.ts";
@@ -475,18 +474,8 @@ export function* createAgentRuntime(
     mailboxDirector,
     http,
     clock,
-    {
-      onPolled: (pre, mailbox) => kelPublisher.prompt(pre, mailbox),
-      onUnauthorized: (pre, mailbox) => kelPublisher.repair(pre, mailbox),
-      timeouts: options.mailboxPolling,
-    },
+    { polls: kelPublisher.polls, timeouts: options.mailboxPolling },
   );
-  // A mailbox role accepted from a reply (a group member's approved add, an OOBI) is acted on at the next tock.
-  revery.onEndRole = (cid, role) => {
-    if (role !== Roles.mailbox) return;
-    kelPublisher.prompt(cid);
-    mailboxPoller.prompt(cid);
-  };
   for (
     const topic of [
       DELEGATE_MAILBOX_TOPIC,

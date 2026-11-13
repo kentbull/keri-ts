@@ -5,7 +5,7 @@ import type { Deck } from "../../core/deck.ts";
 /** One request's direct proof/reply. Duplicate requests may share immutable evidence. */
 type DirectReply = ReplayCue | ReplyCue | ReceiptCue | WitnessCue;
 /**
- * One request's retained evidence and optional readiness observer.
+ * One request's retained evidence.
  * The first reply may gain one ordered companion; duplicate requests have separate
  * slots while sharing the same immutable cue records.
  */
@@ -14,8 +14,6 @@ type Slot = {
   reply?: DirectReply;
   /** Optional second TSN cue, ordered after the registry reply. */
   companion?: DirectReply;
-  /** Synchronous sole readiness observer; removed on unsubscribe or request close. */
-  notify?: () => void;
 };
 
 /** One correlated response or ordered protocol pair. */
@@ -26,15 +24,11 @@ interface QueryReplyBatch {
   readonly cues: readonly DirectReply[];
 }
 
-/** A request correlation slot; close it when its HTTP/TCP request completes or is cancelled. */
+/**
+ * A request correlation slot; close it when its HTTP/TCP request completes or is cancelled.
+ * A request that waits for its reply reads `ready` on its own loop; the slot tells nobody.
+ */
 export interface QueryReply {
-  /**
-   * Observe this existing slot without queues or retained Promise waiters; one observer at a time.
-   *
-   * @param notify Synchronous wake-up callback, including already-ready/closed state.
-   * @returns Unsubscribe function; cancellation must call it.
-   */
-  observeReady(notify: () => void): () => void;
   /** Whether a captured batch is available for request-owned consumption. */
   readonly ready: boolean;
   /** Take the receipt/witness or ordered TSN pair. */
@@ -106,20 +100,6 @@ export class QueryReplies {
         return slot.reply !== undefined;
       },
       /**
-       * Install the sole readiness observer for this slot.
-       *
-       * @param notify Synchronous wake-up callback; invoked immediately if ready or closed.
-       * @returns A function removing this observer without closing the request slot.
-       */
-      observeReady(notify) {
-        if (slot.notify) throw new Error("Reply slot already has a readiness observer");
-        slot.notify = notify;
-        if (slot.reply || closed) notify();
-        return () => {
-          if (slot.notify === notify) slot.notify = undefined;
-        };
-      },
-      /**
        * Inspect evidence without consuming it so callers can finish construction first.
        *
        * @returns Borrowed ordered cue batch, or undefined without a first reply.
@@ -144,8 +124,6 @@ export class QueryReplies {
         slot.reply = slot.companion = undefined;
         group.delete(slot);
         if (group.size === 0) this.active.delete(said);
-        slot.notify?.();
-        slot.notify = undefined;
       },
     };
   }
@@ -177,8 +155,6 @@ export class QueryReplies {
             || slot.reply.kin === "receipt" && cue.kin === "witness"
           )
         ) slot.companion = cue;
-        else continue;
-        slot.notify?.();
       }
     }
   }

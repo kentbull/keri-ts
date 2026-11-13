@@ -446,7 +446,7 @@ Deno.test("a mailbox that refuses the query is retried on a doubling backoff, an
   });
 });
 
-Deno.test("a 403 prompts the publisher, which posts the KEL again, and the worker backs off before polling", async () => {
+Deno.test("the KEL publisher re-posts after an unauthorized poll through its deck, and the worker backs off", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = makeTransferableHab(hby, "recipient"), endpoint = seedMailboxEndpoint(hby, hab.pre, "stale");
@@ -468,13 +468,7 @@ Deno.test("a 403 prompts the publisher, which posts the KEL again, and the worke
     // The mailbox was told the KEL once, so the publisher thinks it holds it; the 403 says it does not.
     hby.db.kpub.pin([hab.pre, endpoint.eid], { d: hab.kever!.lastEst.d, dt: "2026-01-01T00:00:00.000000+00:00" });
     const publisher = new KelPublisher({ hby, http, clock });
-    const prompts: string[] = [];
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, {
-      onUnauthorized: (pre, mailbox) => {
-        prompts.push(`${pre}/${mailbox}`);
-        publisher.repair(pre, mailbox);
-      },
-    });
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, { polls: publisher.polls });
     poller.registerTopic("/reply");
     const worker = yield* spawn(() => poller.pollDo(() => {}));
     const kinds = () => bodies.map((body) => body.includes("\"qry\"") ? "poll" : "kel");
@@ -484,9 +478,11 @@ Deno.test("a 403 prompts the publisher, which posts the KEL again, and the worke
     try {
       yield* settle();
       assertEquals(kinds(), ["poll"], "the poller does not post the KEL itself");
-      assertEquals(prompts, [`${hab.pre}/${endpoint.eid}`]);
-      assertEquals(hby.db.kpub.get([hab.pre, endpoint.eid])?.d, null, "the publisher is told to post it again");
-      assertEquals((yield* publisher.processOnce()).map((result) => result.outcome), ["told"]);
+      assertEquals([...publisher.polls], [{ kin: "unauthorized", pre: hab.pre, mailbox: endpoint.eid }]);
+      assertEquals(hby.db.kpub.get([hab.pre, endpoint.eid])?.d, hab.kever!.lastEst.d, "nothing acts until a tock");
+      // The publisher's tock drains the record, forgets what the mailbox was given and posts the KEL again.
+      assertEquals((yield* publisher.processDue()).map((result) => result.outcome), ["told"]);
+      assert(publisher.polls.empty);
       assert(bodies[1].includes(hab.pre) && bodies[1].includes("\"icp\""), "the publisher's post carries the KEL");
       const { initialMs } = MailboxPoller.RefusalBackoff;
       clock.advance(initialMs - 1);
@@ -495,7 +491,44 @@ Deno.test("a 403 prompts the publisher, which posts the KEL again, and the worke
       clock.advance(1);
       yield* settle();
       assertEquals(kinds().slice(0, 3), ["poll", "kel", "poll"], "the next poll is served");
-      assertEquals(prompts.length, 1);
+      assertEquals(publisher.polls.peekHead(), { kin: "polled", pre: hab.pre, mailbox: endpoint.eid });
+    } finally {
+      yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("the KEL publisher reacts to a polled mailbox through its deck", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = makeTransferableHab(hby, "recipient"), endpoint = seedMailboxEndpoint(hby, hab.pre, "back");
+    const http = new FakeRuntimeHttpClient();
+    const clock = new ManualRuntimeClock(1_000);
+    let kelStatus = 503;
+    http.registerOrigin(endpoint.url, async (request) => {
+      const body = new TextDecoder().decode(await request.arrayBuffer());
+      return body.includes("\"qry\"") ? new Response(null, { status: 204 }) : new Response(null, { status: kelStatus });
+    });
+    const publisher = new KelPublisher({ hby, http, clock, retry: { baseMs: 1, maxMs: 1, boundMs: 1 } });
+    const state = () => publisher.statusOf(hab.pre).map((entry) => entry.state);
+    // The mailbox refuses the KEL until the publisher gives the post up.
+    yield* publisher.processOnce();
+    clock.advance(2);
+    yield* publisher.processDue();
+    assertEquals(state(), ["timed-out"]);
+    kelStatus = 204;
+    clock.advance(10);
+    assertEquals(yield* publisher.processDue(), [], "a timed-out post is not retried on its own");
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, { polls: publisher.polls });
+    poller.registerTopic("/reply");
+    const worker = yield* spawn(() => poller.pollDo(() => {}));
+    try {
+      for (let turn = 0; turn < 50 && publisher.polls.empty; turn++) yield* runtimeTurn();
+      assertEquals(publisher.polls.peekHead(), { kin: "polled", pre: hab.pre, mailbox: endpoint.eid });
+      // The served poll says the mailbox is back: the publisher's next tock re-arms the entry and posts.
+      assertEquals((yield* publisher.processDue()).map((result) => result.outcome), ["told"]);
+      assertEquals(state(), ["published"]);
     } finally {
       yield* waitForTaskHalt(worker);
       yield* hby.close(true);
