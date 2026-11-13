@@ -881,6 +881,7 @@ export {
   type GroupIpexProposal,
   groupIpexProposals,
   type GroupIpexStatus,
+  groupIpexMessages,
   groupIpexStatus,
   type GroupIpexWaitOptions,
   proposeGroupAdmit,
