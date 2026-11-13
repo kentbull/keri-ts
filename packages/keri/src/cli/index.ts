@@ -24,6 +24,7 @@ export {
   parseBooleanOption,
   parseCountOption,
   parseIntegerOption,
+  parseKeriVersionOption,
   parseNumberOption,
   parseStringListOption,
   parseStringOption,

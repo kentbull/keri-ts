@@ -357,7 +357,14 @@ export function* createAgentRuntime(
   // Every runtime with a v2 registry store owns the per-identifier DH and Unblind owners: one dispatch path.
   const ipex = registry
     ? yield* resource<IpexAuxiliaries>(function*(provide) {
-      const owners = new IpexAuxiliaries(exc, registry, revery, now, options.kram?.enabled === true, options.ipexQueries !== "refuse");
+      const owners = new IpexAuxiliaries(
+        exc,
+        registry,
+        revery,
+        now,
+        options.kram?.enabled === true,
+        options.ipexQueries !== "refuse",
+      );
       try {
         owners.registerReplyRoutes(revery.rtr);
         yield* provide(owners);
@@ -777,6 +784,9 @@ export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
 
 /**
  * Return true once OOBI acceptance and its ingress/query dependencies settle.
+ * This is a whole-runtime drain predicate: any unrelated pending cue, query,
+ * delegation or OOBI keeps it false. A command or request that asked for one
+ * OOBI must wait with `waitForOobi` (`app/bootstrap/oobi-resolving.ts`) instead.
  * Background receipt delivery is not remote acknowledgement of OOBI acceptance;
  * static OOBI servers may refuse unsolicited posts. Runtime close still joins I/O.
  *

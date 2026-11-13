@@ -380,7 +380,11 @@ function registerDelegateCmd(
         collectOption,
         [],
       )
-      .option("--code-time <time>", "Time the witness codes were captured."),
+      .option("--code-time <time>", "Time the witness codes were captured.")
+      .option(
+        "--timeout <seconds>",
+        "Seconds to wait for a delegation request to arrive and for a group delegator's anchor (default 30)",
+      ),
     dispatch,
     "delegate.confirm",
     "delegateConfirmCommand",
@@ -396,6 +400,7 @@ function registerDelegateCmd(
       authenticate: options.authenticate || false,
       code: options.code || [],
       codeTime: options.codeTime,
+      timeout: options.timeout,
     }),
   );
 }

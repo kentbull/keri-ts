@@ -10,8 +10,9 @@
  *   durable state.
  * - `approveDelegation` is the only operation that signs. It returns after the
  *   anchor is committed locally and the follow-up requests are sent.
- * - `waitForDelegationApproval` only observes; the host's runtime workers make
- *   the delegate's event arrive.
+ * - `waitForPendingDelegation`, `waitForDelegationAnchor` and `waitForDelegationApproval`
+ *   only observe, each on the one thing asked for; the host's runtime workers make the
+ *   request and the delegate's event arrive.
  * - `dismissDelegation` removes the local controller notice only.
  *
  * Idempotence evidence: the anchor is the seal `{i, s, d}` of the delegated event
@@ -142,6 +143,9 @@ export type DelegationApprovalStatus =
 
 /** Outcome of a wait; `settled` means `approved`, `timed-out` carries the last status read. */
 export type DelegationApprovalWaitResult = WaitResult<DelegationApprovalStatus>;
+
+/** Outcome of {@link waitForPendingDelegation}; `settled` carries the pending requests, `timed-out` the (empty) last read. */
+export type PendingDelegationWaitResult = WaitResult<PendingDelegation[]>;
 
 /** Delegator prefix for escrowed `dip` or `drt` material, if it is derivable. */
 function delegationSourcePrefix(db: Baser, serder: SerderKERI, pre: string): string | undefined {
@@ -385,6 +389,45 @@ export function* proposeGroupDelegationApproval(
   }
   if (findAnchor(hby.db, request)) return null;
   return yield* proposeGroupInteraction(deps, group, [delegationSeal(delegated)], inputs);
+}
+
+/**
+ * Observe until at least one delegated event awaits the delegator, or the budget
+ * expires. Waits on the delegator's own `delegables.` escrow only: unrelated
+ * group proposals, queries or OOBIs never hold it open. Starts no worker; the
+ * host's runtime brings the request in through its mailbox or witness polling.
+ *
+ * `timed-out` means no request reached local state in the budget, which is also
+ * what a request that was already approved and committed looks like.
+ */
+export function* waitForPendingDelegation(
+  deps: DelegationApprovalWaitDeps,
+  filter: PendingDelegationFilter = {},
+  { timeoutMs = DELEGATION_APPROVAL_TIMEOUT_MS }: WaitForDelegationApprovalOptions = {},
+): Operation<PendingDelegationWaitResult> {
+  const done = yield* observeUntil(() => listPendingDelegations(deps, filter).length > 0, { timeoutMs });
+  const status = listPendingDelegations(deps, filter);
+  if (!done && status.length === 0) return { outcome: "timed-out", status, timeoutMs };
+  for (const request of status) deps.changes?.push({ kind: "delegation", id: `${request.delegate}:${request.sn}` });
+  return { outcome: "settled", status };
+}
+
+/**
+ * Observe a group delegator's request until its anchor is in the group's KEL and
+ * receipted by witnesses, or the delegate's event is already accepted. This is
+ * the point where {@link requestDelegatedEvent} can ask for the delegate's event.
+ */
+export function* waitForDelegationAnchor(
+  deps: DelegationApprovalWaitDeps,
+  request: DelegationRequest,
+  { timeoutMs = DELEGATION_APPROVAL_TIMEOUT_MS }: WaitForDelegationApprovalOptions = {},
+): Operation<DelegationApprovalWaitResult> {
+  const ready = (status: DelegationApprovalStatus) =>
+    status.state === "approved" || (status.state === "anchored" && status.receipted);
+  const done = yield* observeUntil(() => ready(delegationApprovalStatus(deps, request)), { timeoutMs });
+  const status = delegationApprovalStatus(deps, request);
+  if (!done && !ready(status)) return { outcome: "timed-out", status, timeoutMs };
+  return { outcome: "settled", status };
 }
 
 /**

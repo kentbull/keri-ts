@@ -1,6 +1,9 @@
 // @file-test-lane app-fast-parallel
 
+import { parseBytes, type SerderKERI, Vrsn_1_0 } from "cesr-ts";
+import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import type { Habery } from "keri-ts/runtime";
 import {
   configFileCandidates,
@@ -10,8 +13,8 @@ import {
   resolveListenPort,
 } from "../src/operator/host-planning.ts";
 import { normalizeMailboxTopic } from "../src/operator/mailbox-debug.ts";
-import { resolveConfiguredMailboxStartup } from "../src/operator/mailbox-startup.ts";
-import { resolveWitnessStartupMaterial } from "../src/operator/witness-startup.ts";
+import { resolveConfiguredMailboxStartup, resolveMailboxHostStartup } from "../src/operator/mailbox-startup.ts";
+import { resolveWitnessHostStartup, resolveWitnessStartupMaterial } from "../src/operator/witness-startup.ts";
 
 const EMPTY_ENDPOINT_STATE = {
   db: {
@@ -113,4 +116,34 @@ Deno.test("tufa/operator planning - witness explicit startup resolves partial CL
 Deno.test("tufa/operator planning - mailbox topic normalization preserves leading slash", () => {
   assertEquals(normalizeMailboxTopic("receipt"), "/receipt");
   assertEquals(normalizeMailboxTopic("/replay"), "/replay");
+});
+
+Deno.test("tufa/operator planning - a host AID created as KERI 1.0 signs v1 /loc/scheme replies", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const datetime = "2026-06-11T17:00:00.000Z";
+      const witness = resolveWitnessHostStartup(hby, {
+        alias: "witness",
+        url: "http://127.0.0.1:5631",
+        tcpUrl: "tcp://127.0.0.1:5632",
+        datetime,
+        version: Vrsn_1_0,
+      }, null).hab;
+      const mailbox = resolveMailboxHostStartup(hby, {
+        alias: "mailbox",
+        url: "http://127.0.0.1:8000",
+        datetime,
+        version: Vrsn_1_0,
+      }, null).hab;
+
+      for (const hab of [witness, mailbox]) {
+        assertEquals(hab.kelVersion.major, 1);
+        const reply = parseBytes(hab.makeLocScheme("http://127.0.0.1:5631", hab.pre, "http", datetime))[0]!;
+        assertEquals((reply.body as SerderKERI).pvrsn.major, 1);
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });

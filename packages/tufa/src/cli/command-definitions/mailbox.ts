@@ -23,6 +23,10 @@ export function registerMailboxCmds(
       .option("--config-file <name>", "Mailbox startup config file or path")
       .option("--port <port>", "Local HTTP port override")
       .option("--listen-host <host>", "Local listen host override")
+      .option(
+        "--version <version>",
+        "KERI protocol version for a newly created mailbox AID, such as 1.0 or 2.0 (default 2.0)",
+      )
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
@@ -43,6 +47,7 @@ export function registerMailboxCmds(
         configFile: options.configFile,
         port: options.port,
         listenHost: options.listenHost,
+        version: options.version,
         base: options.base,
         compat: options.compat || false,
         headDirPath: options.headDir,
