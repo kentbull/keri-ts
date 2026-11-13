@@ -758,6 +758,8 @@ Deno.test("tufa/cli - delegate confirm dispatches expected command args", () => 
     "Bwitness:123456",
     "--code-time",
     "2026-06-11T17:00:00.000Z",
+    "--timeout",
+    "45",
   ]);
 
   assertEquals(confirm.name, "delegate.confirm");
@@ -773,6 +775,7 @@ Deno.test("tufa/cli - delegate confirm dispatches expected command args", () => 
     authenticate: true,
     code: ["Bwitness:123456"],
     codeTime: "2026-06-11T17:00:00.000Z",
+    timeout: "45",
   });
 });
 
@@ -1515,7 +1518,8 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
         await assertRejects(
           () => run(() => ipexAdmitCommand({ ...acdcV2, said, consent: true })),
           ValidationError,
-          "Accepted ACDC v2 exchange at the exact route is required.",
+          // Intake refused these Grants, so none is stored: the admit command reports no accepted Grant.
+          "Admit requires an accepted v2 Grant addressed to a local identifier",
         );
       }
       assertEquals(signatures, 0, "consent and v2 false/unknown refusal precede holder signing");
