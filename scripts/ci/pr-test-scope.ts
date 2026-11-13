@@ -30,6 +30,33 @@ function targets<Owner extends string>(value: unknown, owners: readonly Owner[])
   return result;
 }
 
+/**
+ * Unit shards: independent CI jobs that run at the same time. The suites inside one shard run one after
+ * another, and the shards are balanced to finish together (see docs/reference/PR_TEST_SCOPE.md).
+ */
+export const unitShards: Record<string, readonly UnitTarget[]> = {
+  "keri-app": ["app-fast-parallel", "app-fast-isolated"],
+  "keri-runtime": ["runtime-medium", "runtime-slow", "app-stateful-a", "app-stateful-b"],
+  "keri-core": ["db-fast", "db-web", "core-fast-a", "core-fast-b"],
+  tufa: ["tufa"],
+  packages: ["verifier", "hosting", "wallet", "registrar", "observer", "cesr", "ci-tools"],
+};
+
+/** One CI matrix entry: the shard name and the unit targets it runs, as a JSON array string. */
+export interface UnitShard {
+  name: string;
+  targets: string;
+}
+
+/** Expand the selection into the shards that have something to run, keeping each shard's declared order. */
+export function selectUnitShards(selected: readonly UnitTarget[]): UnitShard[] {
+  const wanted = new Set<UnitTarget>(selected.flatMap((name) => name === "ci" ? required : [name]));
+  return Object.entries(unitShards)
+    .map(([name, members]) => ({ name, members: members.filter((member) => wanted.has(member)) }))
+    .filter(({ members }) => members.length > 0)
+    .map(({ name, members }) => ({ name, targets: JSON.stringify(members) }));
+}
+
 /** A broad KERI group cannot run alongside one of its own owners. */
 function unitTargets(value: unknown): UnitTarget[] {
   const result = targets(value, unitOwners);
@@ -173,12 +200,13 @@ async function runUnit(): Promise<void> {
 /** Publish selected checks as job outputs and reviewable evidence. */
 async function publish(scope: PrTestScope, source: string): Promise<void> {
   const unit = scope.unit.kind === "ci" ? scope.unit.targets : [];
+  const shards = selectUnitShards(unit);
   const output = [
-    `run_unit=${unit.length > 0}`,
+    `run_unit=${shards.length > 0}`,
     `run_interop=${scope.interop.length > 0}`,
     `run_package=${scope.packageSmoke}`,
     `run_browser=${scope.browser}`,
-    `unit_targets=${JSON.stringify(unit)}`,
+    `unit_shards=${JSON.stringify(shards)}`,
     `interop_targets=${JSON.stringify(scope.interop)}`,
   ].join("\n");
   await Deno.writeTextFile(Deno.env.get("GITHUB_OUTPUT")!, output + "\n", { append: true });

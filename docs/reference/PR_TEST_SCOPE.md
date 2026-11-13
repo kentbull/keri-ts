@@ -33,6 +33,12 @@ required owners), `tufa`, `verifier` (the verifier package tests), `hosting` (th
 `observer` (the scheduled-source/cache service test) and `ci-tools` (the scope contract tests). Interop choices are the concrete owners in
 `extended-interop`. No new inventory, arbitrary command or test-name filtering is
 introduced. Existing suite isolation and participant topology remain in force.
+
+The plan job groups the selected unit owners into shards (`unitShards` in
+`scripts/ci/pr-test-scope.ts`) and lists only shards that have work; CI runs one
+`unit (<shard>)` job per listed shard, concurrently, with the owners inside a shard in
+order. Shards are balanced by measured owner time, so move an owner between shards when
+timings change. The stage gate still waits on the single `unit-tests` result.
 `interop-ipex-disclosure` owns the maintained bidirectional v2 conversation and
 graph cases separately from the reference-profile credential workflows, so disclosure
 changes can select those files alone. Its reciprocal derived-issuance stories swap
