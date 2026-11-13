@@ -253,8 +253,20 @@ path (`RegistryAuthor.stage(registry, credential, "revoked")`), which derives th
 A verifier cannot Admit a presentation of a credential the issuer has since revoked: signing an Admit requires the graph
 to be currently authenticated for new use (`proposeGroupAdmit` and `admitIssuance` refuse with "Current authenticated
 graph acceptance is required before signing"). That is intended, because an Admit states that the verifier accepts the
-credential. To record "presented, then found revoked", respond with a Spurn, or keep the presentation Grant and the
-registry state as the evidence (the revoked head is on the registry; an Unblind before the response opens it).
+credential. What a verifier answers instead depends on how the Grant began. A Spurn rejects an Apply, an Offer, an Agree
+or a _flow-starting_ Grant (one with no prior, an unsolicited presentation), as in KERIpy (`ipexing.spurn` and its receiver
+refuse a Grant that has a prior, and the ACDC specification lists no rejection of a Grant at all). A Grant that answers the
+verifier's own Apply or Agree cannot be spurned: `proposeGroupIpex` and the individual builder refuse it ("Only a
+flow-starting Grant ... may be spurned"), because a KERIpy peer would drop that Spurn. For it the verifier simply does not
+Admit, and keeps the presentation Grant and the registry state as the evidence (the revoked head is on the registry; an
+Unblind before any response opens it). The group path is the same builder, so it refuses the same Grants.
+
+A discloser whose presentation closed before it was asked (the verifier already held the opening, settled with no query, and
+answered) ends its Unblind `unneeded`, which is not a failure; `answerUnblind` after the close returns at once with that
+status. A query whose registry updates are anchored by an issuer event the discloser has not received is held (`heldu`, the
+durable record of an owed reply), the issuer's KEL is requested through the ordinary missing-state query cue, and the query is
+answered when the event arrives; if it never does, the Unblind ends at the Grant deadline with a reason naming the missing
+anchor.
 
 Restart behavior: status after a reopen is what the protocol stores prove. In-memory only: the
 transient phases, `abandoned` and `failed` reasons, consent times, and the destinations of a

@@ -124,6 +124,17 @@ function ordinal(event: SerderACDC): number {
  * sign exact proposals under that approval. Ordinary thresholds elect delivery
  * from the completed aggregate; neither contribution nor delivery requires a root.
  */
+/** A query's source event is not known here yet: the issuer's KEL has not reached the anchoring event. */
+class SourceNotYetKnown extends ValidationError {
+  override readonly name: string = "SourceNotYetKnown";
+  constructor(readonly issuer: string, readonly sn: number) {
+    super(`Query event has an unverified source: the anchoring event ${sn} of ${issuer} is not known`);
+  }
+}
+
+/** Milliseconds between requests for the issuer's KEL while a query waits for its anchoring event. */
+const KEL_ASK_MS = 5000;
+
 export class Unblind implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/unblind";
   readonly resource = Unblind.Route;
@@ -131,6 +142,12 @@ export class Unblind implements AuxiliaryQueryProcessor {
   private readonly operations = new Map<string, UnblindOperation>();
   /** Whether the persisted requests this identifier owes replies to were taken up by this owner. */
   private restored = false;
+  /**
+   * Queries held until the issuer's anchoring event is known here, by transaction. The wire is already in `heldu`; this
+   * only says which are still waiting and when the issuer's KEL was last asked for. Memory only: a reopened owner
+   * processes `heldu` again and the query waits again.
+   */
+  private readonly waiting = new Map<string, { issuer: string; sn: number; askedAt: number }>();
   readonly hab: Hab;
   readonly exc: Exchanger;
   readonly rvy: Revery;
@@ -410,7 +427,17 @@ export class Unblind implements AuxiliaryQueryProcessor {
         this.groupMessage(op, "query", serder, groups, extra);
         return { kind: "accept" };
       }
-      this.receiveEvents(selected, envelope.nests);
+      try {
+        this.receiveEvents(selected, envelope.nests);
+      } catch (error) {
+        if (!(error instanceof SourceNotYetKnown)) throw error;
+        // Not invalid, only early: keep the query durably, ask for the issuer's KEL, and take it up when it arrives.
+        this.hab.db.heldu.pin([this.hab.pre!, op.xid], auxiliaryQueryWire(envelope, this.publicEvents(envelope.nests)));
+        this.waiting.set(op.xid, { issuer: error.issuer, sn: error.sn, askedAt: 0 });
+        this.askForKel(op.xid);
+        return { kind: "accept" };
+      }
+      this.waiting.delete(op.xid);
       this.live(op);
       op.requested = selected;
       op.requestedByPeer = true;
@@ -430,6 +457,40 @@ export class Unblind implements AuxiliaryQueryProcessor {
    * processed again as when first accepted, and one that no longer holds (the Grant ended, its evidence changed)
    * is dropped. Done once per owner, before the first look at what is owed.
    */
+  /** Ask, through the ordinary missing-state query cue, for the issuer's events up to the anchoring one; at most every few seconds. */
+  private askForKel(xid: string): void {
+    const held = this.waiting.get(xid), now = Date.now();
+    if (!held || now - held.askedAt < KEL_ASK_MS) return;
+    held.askedAt = now;
+    this.rvy.cues.push({ kin: "query", pre: held.issuer, route: "logs", q: { s: held.sn.toString(16) } });
+  }
+
+  /** Take up the held queries whose anchoring event has since arrived; the rest ask for it again in due time. */
+  private retryWaiting(): void {
+    for (const [xid, held] of [...this.waiting]) {
+      if (this.hab.db.kels.getLast(held.issuer, held.sn) === null) {
+        this.askForKel(xid);
+        continue;
+      }
+      const wire = this.hab.db.heldu.get([this.hab.pre!, xid]);
+      this.waiting.delete(xid);
+      if (!wire) continue;
+      let decision;
+      try {
+        decision = this.processQuery(restoreAuxiliaryQuery(wire));
+      } catch (error) {
+        if (!(error instanceof ValidationError)) throw error;
+      }
+      if (decision?.kind !== "accept") this.hab.db.heldu.rem([this.hab.pre!, xid]);
+    }
+  }
+
+  /** Why the query of `xid` has not been answered, when it is waiting for the issuer's anchoring event. */
+  missingSource(xid: string): string | null {
+    const held = this.waiting.get(xid);
+    return held ? `the anchoring event ${held.sn} of the issuer ${held.issuer} was never received` : null;
+  }
+
   private restoreHeld(): void {
     if (this.restored) return;
     this.restored = true;
@@ -752,9 +813,10 @@ export class Unblind implements AuxiliaryQueryProcessor {
    */
   awaitingReply(): { xid: string; grant: string }[] {
     this.restoreHeld();
+    this.retryWaiting();
     if (this.group) return [];
     return [...this.operations.values()]
-      .filter((op) => op.sender === this.hab.pre && op.requestedByPeer && !op.abandoned)
+      .filter((op) => op.sender === this.hab.pre && (op.requestedByPeer || this.waiting.has(op.xid)) && !op.abandoned)
       .map(({ xid, grant }) => ({ xid, grant }));
   }
 
@@ -987,9 +1049,14 @@ export class Unblind implements AuxiliaryQueryProcessor {
           ...envelope.ssts.map((seal) => ({ issuer: seal.i.qb64, number: seal.s, diger: seal.d })),
         ];
         for (const source of sources) {
-          if (source.issuer !== rip.issuer || !verifyRegistryAnchor(checked.event, { db: this.hab.db, ...source })) {
-            throw new ValidationError("Query event has an unverified source");
+          if (source.issuer !== rip.issuer) throw new ValidationError("Query event has an unverified source");
+          if (verifyRegistryAnchor(checked.event, { db: this.hab.db, ...source })) continue;
+          const sn = Number(source.number.num);
+          // An anchoring event the issuer's KEL here has not reached is early; one that is known and does not seal is wrong.
+          if (Number.isSafeInteger(sn) && this.hab.db.kels.getLast(source.issuer, sn) === null) {
+            throw new SourceNotYetKnown(source.issuer, sn);
           }
+          throw new ValidationError("Query event has an unverified source");
         }
         const accepted = this.registry.store.seqEvent(regid, first + i);
         if (accepted && !bytesEqual(accepted.raw, event.raw)) {
