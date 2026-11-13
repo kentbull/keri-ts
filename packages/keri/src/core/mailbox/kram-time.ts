@@ -1,16 +1,23 @@
 /** Read-only KRAM replay inspection and receiver-clocked cache planning. */
 import type { SerderKERI } from "cesr-ts";
 import type { Baser } from "../../db/basing.ts";
-import { timestampMicros } from "../../time/mod.ts";
+import { timestampFromMicros, timestampMicros } from "../../time/mod.ts";
 import { MsgCacheRecord, type MsgCacheRecordShape, TxnMsgCacheRecord } from "../records.ts";
 import type { KramPolicy } from "./kram-policy.ts";
 
 /** At least one authenticator has verified; multi-key threshold completion is separate. */
 export type KramTimeAuthentication = { kind: "seal" | "single" } | { kind: "multi"; complete: boolean };
-/** Remote refusal is distinct from corrupt local state or infrastructure failure. */
+/** Why replay or timeliness policy refused a message. */
+export type KramRefusalReason = "timestamp" | "replay" | "timeliness" | "unknownThread" | "lifetime";
+/**
+ * Remote refusal is distinct from corrupt local state or infrastructure failure.
+ * `deadline` (ISO 8601) is the last receiver instant the message was acceptable: stamp + drift + lag for
+ * `timeliness` (KERIpy `Kramer.deadline`), opener + exchange window for `lifetime`; absent for other reasons.
+ */
 export interface KramTimeRefusal {
   kind: "drop";
-  reason: "timestamp" | "replay" | "timeliness" | "unknownThread" | "lifetime";
+  reason: KramRefusalReason;
+  deadline?: string;
 }
 /** Receiver-independent inspection lets callers drop completed replays before source queries. */
 export interface KramReplayInspection {
@@ -89,8 +96,9 @@ export function evaluateKramTime(
   else {
     const type = policy.cacheType(body.ilk!, body.route), multi = authentication.kind === "multi";
     const ml = multi ? type.ll : type.sl, pml = multi ? type.pll : type.psl;
-    if (!within(mdt, receipt - (BigInt(type.d) + BigInt(ml)) * 1000n, receipt + BigInt(type.d) * 1000n)) {
-      return { kind: "drop", reason: "timeliness" };
+    const reach = (BigInt(type.d) + BigInt(ml)) * 1000n;
+    if (!within(mdt, receipt - reach, receipt + BigInt(type.d) * 1000n)) {
+      return { kind: "drop", reason: "timeliness", deadline: timestampFromMicros(mdt + reach) };
     }
     values = { mdt: body.stamp!, d: type.d, ml, pml, xl: type.xl, pxl: type.pxl };
   }
@@ -110,7 +118,10 @@ export function evaluateKramTime(
   if (xdt === undefined) return { kind: "drop", reason: "unknownThread" };
   const opener = timestampMicros(xdt);
   if (opener === null) throw new Error("Corrupt KRAM transaction opener");
-  if (!cache && !within(mdt, opener, opener + BigInt(values.xl) * 1000n)) return { kind: "drop", reason: "lifetime" };
+  const closing = opener + BigInt(values.xl) * 1000n;
+  if (!cache && !within(mdt, opener, closing)) {
+    return { kind: "drop", reason: "lifetime", deadline: timestampFromMicros(closing) };
+  }
   const complete = authentication.kind !== "multi" || authentication.complete;
   const rdt = cache instanceof TxnMsgCacheRecord && cache.rdt ? cache.rdt : complete ? receiverTime : "";
   return {

@@ -4,12 +4,15 @@ import { makeNowIso8601, timestampMicros } from "../../time/mod.ts";
 import type { AgentCue } from "../cues.ts";
 import { Deck } from "../deck.ts";
 import type { KeriDispatchEnvelope } from "../dispatch.ts";
+import { consoleLogger, type Logger } from "../logger.ts";
 import { type KramConfig, KramPolicy } from "./kram-policy.ts";
 import { KramPruner, type KramPruneResult } from "./kram-pruning.ts";
 import { type KramStageRefusal, stageKram } from "./kram-staging.ts";
 
 /** Expected pending/refusal outcomes; cancellation, corruption and infrastructure failures throw. */
 export type KramRefusal = KramStageRefusal | { kind: "pending"; key: readonly string[] };
+/** A refusal that drops the message; only these are reported. */
+type KramDrop = Extract<KramStageRefusal, { kind: "drop" }>;
 /** Accepted input carries ordinary buffered evidence, including combined threshold proofs. */
 export type KramIntakeResult = KramRefusal | {
   kind: "ready";
@@ -34,11 +37,12 @@ export class Kramer {
       cues?: Deck<AgentCue>;
       now?: () => number;
     } = {},
+    private readonly logger: Logger = consoleLogger,
   ) {
     this.now = now;
     this.policy = new KramPolicy(db, config, now);
     this.cues = cues;
-    this.pruner = new KramPruner(db, this.policy);
+    this.pruner = new KramPruner(db, this.policy, logger);
   }
 
   /** Decide intake synchronously; protocol dispatch consumes the returned evidence. */
@@ -58,7 +62,27 @@ export class Kramer {
         q: result.sn === null ? {} : { s: result.sn.toString(16) },
       });
     }
+    if (result.kind === "drop") this.report(envelope, result);
     return result;
+  }
+
+  /**
+   * Report one refused message. Replay is routine (every duplicate delivery lands here), so it logs at debug;
+   * the other reasons mean a sender or clock is misbehaving and log at warn. Dispatch does not log again.
+   */
+  private report(envelope: KeriDispatchEnvelope, refusal: KramDrop): void {
+    const { serder } = envelope;
+    const fields = {
+      said: serder.said,
+      sender: serder.pre,
+      ilk: serder.ilk,
+      route: serder.route,
+      reason: refusal.reason,
+      stamp: serder.stamp,
+      deadline: "deadline" in refusal ? refusal.deadline : undefined,
+    };
+    if (refusal.reason === "replay") this.logger.debug("KRAM refused message", fields);
+    else this.logger.warn("KRAM refused message", fields);
   }
 
   /** Reconfigure cache windows through the durable policy transition facility. */

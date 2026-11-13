@@ -4,6 +4,7 @@ import type { Baser } from "../../db/basing.ts";
 import type { Table } from "../../db/core/dber.ts";
 import { removeKramFactors } from "../../db/mailbox/kram-factors.ts";
 import { timestampMicros } from "../../time/mod.ts";
+import { consoleLogger, type Logger } from "../logger.ts";
 import { TxnMsgCacheRecord } from "../records.ts";
 import type { KramPolicy } from "./kram-policy.ts";
 import { kramCacheValues } from "./kram-time.ts";
@@ -14,6 +15,8 @@ export interface KramPruneResult {
   visited: number;
   removed: number;
   openers: number;
+  /** Expired messages that were still waiting for more multi-signature proof. */
+  partials: number;
   passComplete: boolean;
 }
 /** One finite physical-key range; no LMDB iterator survives a read. */
@@ -30,7 +33,7 @@ export class KramPruner {
   private scans: Scan[] = [{}, {}, {}];
   private orphan?: { xid: string; physical: Uint8Array; scan: Scan; version: number };
 
-  constructor(readonly db: Baser, readonly policy: KramPolicy) {
+  constructor(readonly db: Baser, readonly policy: KramPolicy, private readonly logger: Logger = consoleLogger) {
     if (policy.db !== db) throw new Error("KRAM pruning policy must use its backing store");
   }
 
@@ -84,7 +87,14 @@ export class KramPruner {
     const when = timestampMicros(receiverTime);
     if (when === null) throw new Error("Invalid KRAM pruning receiver clock");
     if (!Number.isSafeInteger(maxRows) || maxRows < 1) throw new RangeError("Invalid KRAM pruning batch");
-    const result: KramPruneResult = { kind: "pruned", visited: 0, removed: 0, openers: 0, passComplete: false };
+    const result: KramPruneResult = {
+      kind: "pruned",
+      visited: 0,
+      removed: 0,
+      openers: 0,
+      partials: 0,
+      passComplete: false,
+    };
     if (!this.db.opened) throw new Error("KRAM pruning database is closed");
     if (this.bound !== this.db.msgc.sdb) {
       this.bound = this.db.msgc.sdb;
@@ -102,14 +112,19 @@ export class KramPruner {
           continue;
         }
         const keys = this.keys(physical, this.phase + 2), table = this.phase ? this.db.tmsc : this.db.msgc;
-        this.db.transaction(() => {
+        const partial = this.db.transaction(() => {
           const record = table.get(keys);
-          if (!record || !this.expired(record, when)) return;
+          if (!record || !this.expired(record, when)) return null;
           table.rem(keys);
-          const partial = [keys[0], keys.at(-1)!];
-          removeKramFactors(this.db, partial);
+          const owner = [keys[0], keys.at(-1)!], incomplete = this.db.pmkm.get(owner) !== null;
+          removeKramFactors(this.db, owner);
           result.removed++;
+          return incomplete ? owner : null;
         });
+        if (partial) {
+          result.partials++;
+          this.logger.warn("KRAM expired incomplete multi-signature message", { sender: partial[0], said: partial[1] });
+        }
         scan.start = this.after(physical);
         result.visited++;
         continue;

@@ -42,3 +42,9 @@ export function timestampMicros(value: unknown): bigint | null {
   const epoch = Date.parse(`${base}${zone}`);
   return Number.isFinite(epoch) ? BigInt(epoch) * 1000n + BigInt(fraction.padEnd(6, "0")) : null;
 }
+
+/** Format epoch microseconds in the same fixed-width UTC text as `makeNowIso8601`, keeping microsecond precision. */
+export function timestampFromMicros(micros: bigint): string {
+  const whole = makeNowIso8601(new Date(Number(micros / 1000n)));
+  return whole.replace(/\.\d{6}/, `.${(micros % 1000000n).toString().padStart(6, "0")}`);
+}

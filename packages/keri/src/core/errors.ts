@@ -1,3 +1,5 @@
+import type { KramTimeRefusal } from "./mailbox/kram-time.ts";
+
 /**
  * Base application error for `keri-ts` app/db infrastructure.
  *
@@ -16,6 +18,21 @@ export class AppError extends Error {
 /** Invalid caller input or state transition at an application boundary. */
 export class ValidationError extends AppError {
   override readonly name: string = "ValidationError";
+}
+
+/**
+ * A caller asked to treat a KRAM refusal as a failure. Carries the refused message SAID and the refusal decision;
+ * the message names the reason and, when the refusal has one, the last instant the message was acceptable.
+ */
+export class KramRefusedError extends ValidationError {
+  override readonly name: string = "KramRefusedError";
+
+  constructor(readonly said: string, readonly refusal: KramTimeRefusal) {
+    super(
+      `KRAM refused message ${said}: ${refusal.reason}`
+        + (refusal.deadline ? ` (acceptable until ${refusal.deadline})` : ""),
+    );
+  }
 }
 
 /** Filesystem or path-resolution failure from path-managed resources. */

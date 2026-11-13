@@ -2,6 +2,8 @@
 import { b, Dater, Diger, NumberPrimitive, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { KeriDispatchEnvelope } from "../../../../src/core/dispatch.ts";
+import type { Logger } from "../../../../src/core/logger.ts";
 import { type KramExemption, KramPolicy, type KramWindows } from "../../../../src/core/mailbox/kram-policy.ts";
 import { KramPruner } from "../../../../src/core/mailbox/kram-pruning.ts";
 import {
@@ -9,6 +11,7 @@ import {
   inspectKramReplay,
   type KramTimeAuthentication,
 } from "../../../../src/core/mailbox/kram-time.ts";
+import { Kramer } from "../../../../src/core/mailbox/kraming.ts";
 import { reply } from "../../../../src/core/protocol-eventing.ts";
 import { MsgCacheRecord, TxnMsgCacheRecord } from "../../../../src/core/records.ts";
 import { lmdbTable } from "../../../../src/db/core/lmdber.ts";
@@ -165,18 +168,16 @@ Deno.test("KRAM replay and time plans match frozen receipts, openers and inclusi
         yield* db.close(false);
         yield* db.reopen({ reuse: true });
         const inspection = inspectKramReplay(db, body);
-        const decision = inspection.kind === "drop"
-          ? inspection
-          : evaluateKramTime(
-            db,
-            policy,
-            inspection,
-            timeReference
-              .authentications[
-                row.authentication as keyof typeof timeReference.authentications
-              ] as KramTimeAuthentication,
-            row.receiverTime,
-          );
+        const decision = inspection.kind === "drop" ? inspection : evaluateKramTime(
+          db,
+          policy,
+          inspection,
+          timeReference
+            .authentications[
+              row.authentication as keyof typeof timeReference.authentications
+            ] as KramTimeAuthentication,
+          row.receiverTime,
+        );
         if (row.refusal) {
           assertEquals<string | false>(decision.kind === "drop" && decision.reason, row.refusal, row.name);
         } else {
@@ -388,6 +389,111 @@ Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without
       lmdbTable(db.msgc.sdb).getKeys = getKeys;
       db.env!.transactionSync = transaction;
       db.pmkm.rem = remove;
+      yield* db.close(true);
+    }
+  });
+});
+
+/** Evaluate one frozen body against a fresh store; the refusal is the decision under test. */
+function* refusalFor(bodyName: keyof typeof timeReference.bodies, receiverTime: string, opener?: string) {
+  const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
+  try {
+    const policy = new KramPolicy(db, { caches: { "~": initial } });
+    const body = new SerderKERI({ raw: b(timeReference.bodies[bodyName]) });
+    if (opener) db.xdt.pin(String(body.ked?.x), new Dater({ qb64: encodeDateTimeToDater(opener) }));
+    const inspection = inspectKramReplay(db, body);
+    if (inspection.kind === "drop") return inspection;
+    return evaluateKramTime(
+      db,
+      policy,
+      inspection,
+      timeReference.authentications.multiPartial as KramTimeAuthentication,
+      receiverTime,
+    );
+  } finally {
+    yield* db.close(true);
+  }
+}
+
+Deno.test("KRAM timeliness refusal carries stamp plus drift plus lag as its deadline", async () => {
+  await run(function*() {
+    // Multi-signature lag is the long window: 11:59:00.999999 + 1s drift + 60s lag.
+    const refusal = yield* refusalFor("beforeLower", "2026-10-13T12:00:02.000000+00:00");
+    assertEquals(refusal, { kind: "drop", reason: "timeliness", deadline: "2026-10-13T12:00:01.999999+00:00" });
+  });
+});
+
+Deno.test("KRAM lifetime refusal carries opener plus exchange window as its deadline", async () => {
+  await run(function*() {
+    const opener = "2026-10-13T12:00:02.000000+00:00";
+    const refusal = yield* refusalFor("afterLast", "2026-10-13T12:05:02.000001+00:00", opener);
+    assertEquals(refusal, { kind: "drop", reason: "lifetime", deadline: "2026-10-13T12:05:02.000000+00:00" });
+  });
+});
+
+/** Logger that records each call's level and fields. */
+function recordingLogger(): { logger: Logger; calls: [string, string, Record<string, unknown>][] } {
+  const calls: [string, string, Record<string, unknown>][] = [];
+  const at = (level: string) => (message: string, ...meta: unknown[]) =>
+    void calls.push([level, message, meta[0] as Record<string, unknown>]);
+  return { logger: { debug: at("debug"), info: at("info"), warn: at("warn"), error: at("error") }, calls };
+}
+
+Deno.test("Kramer warns once for a refused message and logs replay at debug", async () => {
+  await run(function*() {
+    const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
+    try {
+      const { logger, calls } = recordingLogger();
+      const kramer = new Kramer(db, { config: { enabled: true, caches: { "~": initial } }, now: () => 1 }, logger);
+      const body = new SerderKERI({ raw: b(timeReference.bodies.transaction) });
+      const envelope = new KeriDispatchEnvelope({ serder: body, attachmentGroups: [], local: false });
+      assertEquals(kramer.intake(envelope), { kind: "drop", reason: "authentication" });
+      assertEquals(calls, [["warn", "KRAM refused message", {
+        said: body.said,
+        sender: body.pre,
+        ilk: "exn",
+        route: body.route,
+        reason: "authentication",
+        stamp: body.stamp,
+        deadline: undefined,
+      }]]);
+      // A cached copy at least as new as this stamp makes the next delivery a duplicate.
+      calls.length = 0;
+      const xid = String(body.ked?.x);
+      const values = { mdt: body.stamp!, d: 1000, ml: 5000, pml: 5000, xl: 300000, pxl: 300000 };
+      db.tmsc.pin(
+        [body.pre!, xid, body.said!],
+        new TxnMsgCacheRecord({ ...values, xdt: body.stamp!, rdt: body.stamp! }),
+      );
+      assertEquals(kramer.intake(envelope), { kind: "drop", reason: "replay" });
+      assertEquals(calls.map(([level, , fields]) => [level, fields.reason]), [["debug", "replay"]]);
+    } finally {
+      yield* db.close(true);
+    }
+  });
+});
+
+Deno.test("Kramer prune warns when it expires an incomplete multi-signature message", async () => {
+  await run(function*() {
+    const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
+    try {
+      const { logger, calls } = recordingLogger();
+      const body = new SerderKERI({ raw: b(timeReference.bodies.transaction) });
+      const values = { mdt: body.stamp!, d: 1000, ml: 60000, pml: 60000, xl: 300000, pxl: 300000 };
+      const kramer = new Kramer(db, {
+        config: { enabled: true, caches: { "~": initial } },
+        now: () => Date.parse(body.stamp!) + 400_000,
+      }, logger);
+      // One expired message still waiting for proof, and one completed message whose cache merely expired.
+      db.msgc.pin([body.pre!, body.said!], new MsgCacheRecord(values));
+      db.pmkm.pin([body.pre!, body.said!], body);
+      db.msgc.pin([body.pre!, "ECompletedMessage"], new MsgCacheRecord(values));
+      const result = kramer.prune();
+      assertEquals([result.removed, result.partials], [2, 1]);
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0].slice(0, 2), ["warn", "KRAM expired incomplete multi-signature message"]);
+      assertEquals(calls[0][2], { sender: body.pre, said: body.said });
+    } finally {
       yield* db.close(true);
     }
   });
