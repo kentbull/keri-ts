@@ -890,7 +890,7 @@ export function* runAgentRuntime(
       yield* cueDo(runtime, options);
     }),
     yield* spawn(function*() {
-      yield* runtime.protocol.escrowDo();
+      yield* runtime.protocol.escrowDo(runtime.clock);
     }),
     yield* spawn(function*() {
       yield* runtime.oobiery.oobiDo();

@@ -1,6 +1,6 @@
 /** Shared protocol mutations and publication, independent of byte-input and network lifetimes. */
 import type { CesrFrame } from "cesr-ts";
-import { call, type Operation, sleep } from "npm:effection@^3.6.0";
+import { call, type Operation } from "npm:effection@^3.6.0";
 import type { RegistryObserver } from "../../acdc/observing.ts";
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
@@ -13,7 +13,8 @@ import type { Verifier } from "../credentials/verifying.ts";
 import { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { QueryReplies } from "../queries/query-replies.ts";
-import { runtimeTurn } from "../runtime/runtime-turn.ts";
+import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
+import { waitOnClock } from "../runtime/workflow-contract.ts";
 import {
   type AuxiliaryQueryProcessor,
   dispatchEnvelope,
@@ -22,11 +23,11 @@ import {
   queryEnvelopeFromDispatch,
 } from "./parsering.ts";
 
-/** Escrow passes cheaper than this go straight to the next turn. */
-const ESCROW_PASS_FREE_MS = 5;
-/** A costly pass is followed by this multiple of its own duration at rest, capped by the maximum. */
-const ESCROW_PASS_REST = 4;
-const ESCROW_PASS_REST_MAX_MS = 250;
+/**
+ * Wait after every escrow pass, as KERIpy's Doist cycle (`tock` 0.03125 s, app/directing.py) paces its `escrowDo`,
+ * which runs one full pass per cycle. A pass is never skipped or shortened; this is the time others get between passes.
+ */
+export const ESCROW_TOCK_MS = 31.25;
 
 /** Protocol choices for a frame; input owners separately own cancellation and parsing. */
 export interface DispatchOptions {
@@ -250,15 +251,10 @@ export class ProtocolProcessor {
    * - mirrors the dedicated `escrowDo` loop rather than folding escrow
    *   processing into parser ingress
    */
-  *escrowDo(): Operation<never> {
+  *escrowDo(clock: RuntimeClock = systemClock): Operation<never> {
     while (true) {
-      const started = performance.now();
       yield* this.processEscrowsOnce();
-      // A pass is synchronous work: a Grant still waiting for its openings is re-verified in full on every pass.
-      // Idle for a multiple of what the pass cost so a long wait cannot starve the runtime's delivery and I/O.
-      const spent = performance.now() - started;
-      if (spent < ESCROW_PASS_FREE_MS) yield* runtimeTurn();
-      else yield* sleep(Math.min(spent * ESCROW_PASS_REST, ESCROW_PASS_REST_MAX_MS));
+      yield* waitOnClock(clock, ESCROW_TOCK_MS);
     }
   }
 }

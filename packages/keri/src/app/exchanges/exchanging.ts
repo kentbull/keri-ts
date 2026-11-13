@@ -44,6 +44,7 @@ import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../ti
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { groupMemberHasKey } from "../multisig/group-members.ts";
 import { abortable } from "../runtime/abortable.ts";
+import { runtimeTurn } from "../runtime/runtime-turn.ts";
 
 const textDecoder = new TextDecoder();
 const EXCHANGE_ESCROW_TIMEOUT_MS = 10_000;
@@ -416,6 +417,7 @@ export class Exchanger {
     const nests = args.nests?.length
       ? yield* abortable((signal) => prepareNests(args.nests!, signal))
       : undefined;
+    const written = this.hby.db.writeVersion;
     const result = this.hby.db.transaction((): ExchangeAdmission | undefined => {
       if (selectedGrant) {
         const db = this.hby.db;
@@ -474,8 +476,8 @@ export class Exchanger {
       }
       return admission;
     });
-    // Durable completion joins the actual LMDB flush; no external file lifetime remains.
-    yield* this.hby.db.flushed();
+    // Durable completion joins the actual LMDB flush; a transaction that wrote nothing has nothing to wait for.
+    if (this.hby.db.writeVersion !== written) yield* this.hby.db.flushed();
     if (!result) return undefined;
     for (const cue of result.cues) this.cues.push(cue);
     if (result.handling && handler) yield* call(() => handler.handle(result.handling!));
@@ -611,11 +613,18 @@ export class Exchanger {
     }
     // False means an existing qualified member, not a failed write. Exceptions abort the writer.
     for (const texter of args.essrs ?? []) this.hby.db.essrs.add([said], texter);
-    this.hby.db.exchangeMeta.pin([said], {
+    const meta = {
       mailboxAid,
       ...(receiverTime !== undefined ? { receiverTime } : {}),
       gvrsn: previous?.gvrsn ?? args.gvrsn ?? args.serder.gvrsn ?? args.serder.pvrsn,
-    });
+    };
+    // A retry that learns nothing new leaves the stored record as it is rather than committing it again.
+    if (
+      !previous || previous.mailboxAid !== meta.mailboxAid || previous.receiverTime !== meta.receiverTime
+      || JSON.stringify(previous.gvrsn) !== JSON.stringify(meta.gvrsn)
+    ) {
+      this.hby.db.exchangeMeta.pin([said], meta);
+    }
     if (pending) {
       if (newEscrow) {
         if (senderQuery) cues.push(...this.missingStateCues([senderQuery]));
@@ -692,6 +701,8 @@ export class Exchanger {
           ...attempt.ejection,
         });
       }
+      // Deliveries and I/O take a slot between escrowed messages; none is skipped.
+      yield* runtimeTurn();
     }
   }
   /**

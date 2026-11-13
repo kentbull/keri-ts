@@ -112,6 +112,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/queries/querying.test.ts",
       "test/unit/app/protocol/reactor.test.ts",
       "test/unit/app/protocol/reactor-turn.test.ts",
+      "test/unit/app/protocol/escrow-tock.test.ts",
       "test/unit/app/runtime/runtime-responder.test.ts",
       "test/unit/app/runtime/runtime-store-ownership.test.ts",
       "test/unit/app/cli/sign-verify.test.ts",
