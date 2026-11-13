@@ -640,6 +640,9 @@ class PeerControl:
                 rep.media = self.peer.snapshot(**command)
             else:
                 raise ValueError(f"Unknown peer command: {action}")
+            if rep.media is None:
+                # Falcon renders media None as an empty body; the caller parses every answer as JSON.
+                rep.text, rep.content_type = "null", falcon.MEDIA_JSON
         except Exception:
             rep.status = falcon.HTTP_500
             rep.text = traceback.format_exc()
