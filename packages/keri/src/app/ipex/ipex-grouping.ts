@@ -31,10 +31,11 @@ import { type AcdcWalkPolicy, type ChainVerdict, evaluateChain } from "../../acd
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { resolveAttachmentGvrsn } from "../../core/attachment-countering.ts";
 import { TransIdxSigGroup } from "../../core/dispatch.ts";
-import { ValidationError } from "../../core/errors.ts";
+import { KramRefusedError, ValidationError } from "../../core/errors.ts";
 import { verifyExchangeProofs } from "../../core/exchange/exchange-proofing.ts";
 import { exchange, serializeMessage } from "../../core/exchange/protocol-exchanging.ts";
 import { Kever } from "../../core/kel/kever.ts";
+import type { KramRefusalReason, KramTimeRefusal } from "../../core/mailbox/kram-time.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { messageAttachmentGroups } from "../../core/protocol-serialization.ts";
 import type { Baser } from "../../db/basing.ts";
@@ -62,7 +63,7 @@ import {
   type SignedGroupMessage,
   storedGroupMessage,
 } from "../multisig/multisig-messaging.ts";
-import { envelopeFromFrame } from "../protocol/parsering.ts";
+import { type DispatchDecision, envelopeFromFrame } from "../protocol/parsering.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { Reactor } from "../protocol/reactor.ts";
 import { abortable } from "../runtime/abortable.ts";
@@ -133,7 +134,23 @@ export function requireAcdcV2GroupUse(hby: Habery, protocol: ProtocolProcessor, 
     throw new ValidationError("ACDC v2 group graph is unavailable for completed use.");
   }
 }
-/** Approve exactly one ACDC v2 IPEX stream before adding this member's signature; no new acceptance rows are manufactured. */
+/** KRAM refusals after which the message can no longer be accepted; a `replay` is routine, not one of them. */
+const KRAM_EXPIRY_REASONS: ReadonlySet<string> = new Set(
+  ["timestamp", "timeliness", "unknownThread", "lifetime"] satisfies KramRefusalReason[],
+);
+
+/** Whether `decision` is this receiver's KRAM refusing a message for its time, its thread or its lifetime. */
+function isKramExpiry(decision: DispatchDecision): decision is KramTimeRefusal {
+  return !!decision && decision.kind === "drop" && "reason" in decision && KRAM_EXPIRY_REASONS.has(decision.reason);
+}
+
+/**
+ * Approve exactly one ACDC v2 IPEX stream before adding this member's signature; no new acceptance rows are manufactured.
+ *
+ * @returns This member's accepted wire, or null while its evidence or dependencies are missing.
+ * @throws KramRefusedError when this member's own KRAM refuses the contribution for its time, thread or exchange
+ * lifetime: the message can no longer be accepted here. A `replay` refusal is routine and is not thrown.
+ */
 export function* prepareAcdcV2GroupIpex(
   hby: Habery,
   protocol: ProtocolProcessor,
@@ -210,7 +227,10 @@ export function* prepareAcdcV2GroupIpex(
   };
   const attachments = yield* call(() => collectPayload(attachmentPayload(approved, { gvrsn: Vrsn_2_0 })));
   const wire = concatBytes(embedded.raw, attachments);
-  yield* new Reactor(protocol).processBytes(wire, { local: true });
+  // Dispatch the frame itself, not its bytes, so this member's own KRAM decision is visible. A refusal here is
+  // not a remote outcome to skip: the contribution was never accepted and nothing else will complete the message.
+  const { decision } = yield* protocol.dispatch(parseBytes(wire)[0], { local: true }, new Reactor(protocol).kvy);
+  if (isKramExpiry(decision)) throw new KramRefusedError(embedded.said!, decision);
   yield* protocol.processEscrowsOnce();
   return wire;
 }

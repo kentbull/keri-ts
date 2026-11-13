@@ -18,13 +18,13 @@
  * Status is derived from the protocol stores: an accepted message reads `done`; a stored proposal without a live
  * operation reads `awaitingConsent` (a member that reloaded consents again with the same call and reuses its
  * recorded signature). Lost on reload, by design: whether the lead had already delivered the completed message,
- * the `failed` and `abandoned` reasons, and the publication results. The runtime never writes wallet inventory; the
+ * the `failed`, `expired` and `abandoned` reasons, and the publication results. The runtime never writes wallet inventory; the
  * embedder reacts to the pushed `{kind: "ipex", id: <message>}` change.
  */
 import { concatBytes, Counter, type SerderKERI, type Versionage, Vrsn_2_0 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import type { Regery } from "../../acdc/registraring.ts";
-import { ValidationError } from "../../core/errors.ts";
+import { KramRefusedError, ValidationError } from "../../core/errors.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
 import { type RegistryEventRef, registryEventStatus, settleRegistryEvent } from "../credentials/registry-settling.ts";
 import type { Poster } from "../delivery/forwarding.ts";
@@ -59,8 +59,12 @@ export const GROUP_IPEX_COLLECT_MS = 250;
 /** How long delivery failures may last before an operation ends `failed`; a group IPEX message has no deadline. */
 export const GROUP_IPEX_RETRY_BOUND_MS = 600_000;
 
-/** Terminal states that are not completion; each carries a reason. */
-export type GroupIpexEndState = "abandoned" | "failed";
+/**
+ * Terminal states that are not completion; each carries a reason. `expired` means this member's own KRAM refused the
+ * contribution for its time, thread or exchange lifetime (the reason names the KRAM reason and, when it has one, the
+ * deadline); no retry can change that.
+ */
+export type GroupIpexEndState = "abandoned" | "expired" | "failed";
 
 /** Where an active group IPEX message is. */
 export type GroupIpexPhase =
@@ -179,7 +183,7 @@ export class GroupIpexOperations {
       try {
         yield* this.step(op);
       } catch (error) {
-        this.end(op, "failed", message(error));
+        this.end(op, error instanceof KramRefusedError ? "expired" : "failed", message(error));
       } finally {
         op.busy = false;
       }
@@ -322,7 +326,8 @@ export interface GroupIpexProposalInput {
  * `processOnce`.
  *
  * @throws ValidationError for a body the group did not author, a non-group identifier, a message awaiting
- * authenticating dependencies, or one already begun.
+ * authenticating dependencies, or one already begun; KramRefusedError (a ValidationError) when this member's own
+ * KRAM refuses the message, as an Offer past its exchange lifetime.
  */
 export function* proposeGroupIpex(
   ops: GroupIpexOperations,
@@ -447,7 +452,8 @@ export interface GroupIpexApproveOptions {
  * completed message, which a lead that learned of the acceptance from another member's wrapper has not yet done.
  *
  * @throws ValidationError when no v2 proposal is stored for `said`, an operation is already live for it, or this
- * member still lacks the evidence to approve it.
+ * member still lacks the evidence to approve it; KramRefusedError (a ValidationError) when this member's own KRAM
+ * refuses the contribution.
  */
 export function* approveGroupIpex(
   ops: GroupIpexOperations,

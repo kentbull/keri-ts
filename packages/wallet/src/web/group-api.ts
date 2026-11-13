@@ -33,6 +33,7 @@ import {
   type GroupDelivery,
   type GroupEventRef,
   type GroupEventStatus,
+  type GroupIpexEndState,
   groupIpexProposals,
   type GroupIpexStatus,
   groupIpexStatus,
@@ -759,7 +760,7 @@ export type GroupReceiveOutcome =
 export type DoneGroupIpex = Extract<GroupIpexStatus, { state: "done" }>;
 
 /** A group IPEX message that stopped without being accepted. */
-export type EndedGroupIpex = Extract<GroupIpexStatus, { state: "abandoned" | "failed" }>;
+export type EndedGroupIpex = Extract<GroupIpexStatus, { state: GroupIpexEndState }>;
 
 /** Inputs of the group form of `credentials.receive`. */
 export interface GroupReceiveOptions extends TimeoutOptions {
@@ -868,7 +869,7 @@ export class GroupCredentials {
         return {
           outcome: "ended",
           grant,
-          status: done.status as Extract<GroupIpexStatus, { state: "abandoned" | "failed" }>,
+          status: done.status as EndedGroupIpex,
         };
       }
       const held = wallet.db.admitted.get([grant])
