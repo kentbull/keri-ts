@@ -3069,7 +3069,10 @@ function queryRequester(envelope: QueryEnvelope): string | null {
  * unless the sender used ESSR, so this check is the read protection. KERIpy hosts are open: they do no read
  * authorization of `mbx` queries, so a poll KERIpy accepts can be refused here.
  *
- * Two refusals are by design. The host must hold the member's KEL: the keri-ts poller and `KelPublisher` submit it
+ * A non-transferable member needs nothing but the group's KEL on the host: its key is its identifier, so a valid
+ * signature by a key in the group's current list proves it (see {@link provesNonTransferableMember}).
+ *
+ * Two refusals are by design. The host must hold a transferable member's KEL: the keri-ts poller and `KelPublisher` submit it
  * (see `collectKelSubmission`), but a KERIpy member's poller does not, so its KEL has to reach the host by OOBI or
  * a mailbox add, and until then its poll is refused as unauthorized. And a rotation-only member (named in the
  * group's `rmids` but not its `smids`) holds no current group key, so it is refused until a rotation makes it a
@@ -3084,7 +3087,8 @@ function authenticatesMailboxQuery(envelope: QueryEnvelope, recipient: Kever, db
     );
   }
   const requester = envelope.source?.qb64;
-  if (!requester) return false;
+  // A non-transferable member signs with a non-indexed signature (a cigar) and has no source seal.
+  if (!requester) return provesNonTransferableMember(envelope, recipient);
   if (requester === recipient.pre) return satisfiesThreshold(envelope, recipient);
   // A group's poll is signed by one of its local members (the poller cannot sign for the group alone). Accept a
   // member whose own key state this host holds when its signatures meet its own current threshold and it provably
@@ -3092,6 +3096,23 @@ function authenticatesMailboxQuery(envelope: QueryEnvelope, recipient: Kever, db
   const member = db.getKever(requester, { refresh: true });
   if (!member?.transferable || !satisfiesThreshold(envelope, member)) return false;
   return provesGroupKeyControl(envelope, member, recipient, db);
+}
+
+/**
+ * Whether a non-transferable member is reading its group's mailbox: some cigar on the poll is a valid signature
+ * over it by a non-transferable key (the key is the member's whole identifier, so its prefix is the public key
+ * and the host needs no KEL for it), and that same key is in the group's current key list. The signature is the
+ * proof of control; merely naming the key, or signing with a different one while claiming the member's prefix,
+ * proves nothing and is refused, as is a member whose key has left the group's current list.
+ */
+function provesNonTransferableMember(envelope: QueryEnvelope, group: Kever): boolean {
+  const groupKeys = new Set(group.verfers.map((verfer) => verfer.qb64));
+  return (envelope.cigars ?? []).some((cigar) =>
+    !!cigar.verfer
+    && !cigar.verfer.transferable
+    && groupKeys.has(cigar.verfer.qb64)
+    && cigar.verfer.verify(cigar.raw, envelope.serder.raw)
+  );
 }
 
 /**
