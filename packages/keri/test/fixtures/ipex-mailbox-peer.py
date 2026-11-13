@@ -23,6 +23,7 @@ import falcon
 from hio.base import doing
 from keri import Kinds, Roles, Vrsn_2_0
 from keri.acdc import Registrar, acdcmap, admit, grant
+from keri.acdc import agree, apply, offer, spurn
 from keri.app.agenting import Receiptor
 from keri.app.forwarding import StreamPoster
 from keri.app.indirecting import Poller
@@ -259,6 +260,72 @@ class RelayControl:
                     exchanges=exchanges, registries=heads, received=self.peer.received)
 
 
+class ChainControl:
+    """Choose the negotiation steps of a full IPEX conversation against a keri-ts relay (`/_chain`).
+
+    Each step builds the message with the candidate's own IPEX builders, takes it into this peer's own
+    Exchanger, and sends it by StreamPoster to the remote's published mailbox end role. A step whose message this
+    peer's own Exchanger refuses still sends it when the caller asks (`refused`), so the test can see the remote
+    refuse it too; the reply reports whether this peer accepted it. The Admit is `/_relay`'s `admit`.
+    """
+    def __init__(self, peer):
+        self.peer = peer
+
+    def on_post(self, req, rep):
+        try:
+            self.peer.receive()
+            command = req.media
+            action = command.pop("action")
+            if action not in ("apply", "agree", "spurn", "offer"):
+                raise ValueError(f"Unknown chain command: {action}")
+            rep.media = getattr(self, action)(**command)
+        except Exception:
+            rep.status = falcon.HTTP_500
+            rep.text = traceback.format_exc()
+
+    def prior(self, said):
+        prior = self.peer.hby.db.exns.get(keys=(said,))
+        assert prior is not None, f"the prior exchange {said} is not accepted"
+        return prior
+
+    def send(self, body, attachments, recipient, refused=False):
+        """Take the message in locally, then deliver it; only a `refused` step may be refused by this peer."""
+        Parser(version=Vrsn_2_0).parse(ims=bytearray(body.raw + attachments), kvy=self.peer.kvy,
+                                       exc=self.peer.exc, rvy=self.peer.hab.rvy)
+        accepted = self.peer.hby.db.exns.get(keys=(body.said,)) is not None
+        assert accepted or refused, f"this peer refused its own {body.ked['r']}"
+        poster = StreamPoster(hby=self.peer.hby, hab=self.peer.hab, recp=recipient, topic="credential",
+                              version=Vrsn_2_0, kind=Kinds.json)
+        poster.send(body, attachment=attachments, gvrsn=Vrsn_2_0)
+        doers = poster.deliver()
+        assert doers, "StreamPoster must select one of the recipient's published end roles"
+        self.peer.doist.extend(doers)
+        return dict(said=body.said, accepted=accepted)
+
+    def apply(self, recipient, schema):
+        """Open by asking `recipient` for a credential of `schema`; the plan requires only the root and schema."""
+        body, attachments = apply(self.peer.hab, recipient, "relay apply", modifiers=dict(dp=[[[schema, "/", []]]]))
+        return self.send(body, attachments, recipient)
+
+    def agree(self, offer):
+        """Accept the remote's accepted Offer."""
+        prior = self.prior(offer)
+        body, attachments = agree(self.peer.hab, "relay agree", prior)
+        return self.send(body, attachments, prior.pre)
+
+    def spurn(self, prior):
+        """Refuse the remote's accepted Apply or Offer."""
+        prior = self.prior(prior)
+        body, attachments = spurn(self.peer.hab, "relay spurn", prior)
+        return self.send(body, attachments, prior.pre)
+
+    def offer(self, apply):
+        """Answer the remote's accepted Apply with an Offer that discloses nothing; sent even if refused here."""
+        prior = self.prior(apply)
+        body, attachments = offer(self.peer.hab, "relay offer", origin=None, apply=prior)
+        return self.send(body, attachments, prior.pre, refused=True)
+
+
 def relay(port, root):
     """Serve one v2 KERIpy peer that discovers and reaches a keri-ts relay only through published end roles.
 
@@ -275,6 +342,7 @@ def relay(port, root):
         assert peer.hab.fetchEndAllowed(peer.hab.pre, Roles.controller, peer.hab.pre)
         loadEnds(peer.server.app, hby=peer.hby)
         peer.server.app.add_route("/_relay", RelayControl(peer))
+        peer.server.app.add_route("/_chain", ChainControl(peer))
         peer.server.app.add_route("/health", Health())
         resolver = Oobiery(hby=peer.hby, version=Vrsn_2_0)
         peer.doist.extend(resolver.doers)
