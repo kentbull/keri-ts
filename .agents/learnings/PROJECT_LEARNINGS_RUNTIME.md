@@ -427,6 +427,12 @@ replay (`collectKelSubmission`: delegation chain, KEL, stored receipts) to the e
 separately from the poll, once per KEL head, and polls again at once. A keri-ts mailbox host authorizes
 a group's poll when it is signed by a member whose own threshold is met and whose key is in the group's
 current key list.
+A completed rotation tells the mailboxes first, so the 403 repair is only the safety net: `completeEvent`
+(`rot`/`drt`, fully witnessed and, for `drt`, anchored) posts the KEL to every authorized mailbox role through
+the same `postKelToMailbox` and returns `mailboxes` (`told` or `failed` with a reason; a failure never fails
+the rotation). A group rotation does the same from the Counselor's `finish`, in every member runtime that has
+the group's mailbox role. An interaction event changes no keys, which is all a mailbox checks, so it is not
+published.
 Remote SSE consumer completion precedes durable cursor advancement and the next
 read. Stored positions are last-consumed; requests send next-wanted. MailboxPoller
 retrieves only endpoint streams: batches carry pre/eid/messages, and eid is required.

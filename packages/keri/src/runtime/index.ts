@@ -304,6 +304,7 @@ export {
   type IpexRoute,
   ipexSpurnExn,
 } from "../app/ipex/ipexing.ts";
+export { type KelPublishingDeps, type MailboxPublication, tellMailboxes } from "../app/mailbox/kel-publishing.ts";
 export {
   addMailbox,
   completeGroupMailbox,
