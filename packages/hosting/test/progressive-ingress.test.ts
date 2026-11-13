@@ -23,7 +23,7 @@ import {
   type Versionage,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run, sleep, spawn, suspend } from "effection";
+import { call, type Operation, run, sleep, spawn, suspend } from "effection";
 import {
   assert,
   assertEquals,
@@ -52,10 +52,11 @@ import { collectKelSubmission } from "../../keri/src/app/mailbox/kel-submission.
 import type { ProtocolProcessor } from "../../keri/src/app/protocol/protocol-processing.ts";
 import { abortable } from "../../keri/src/app/runtime/abortable.ts";
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
-import { incept as inceptKel } from "../../keri/src/core/protocol-eventing.ts";
+import { exchange as stampedExchange, incept as inceptKel } from "../../keri/src/core/protocol-eventing.ts";
 import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue } from "../../keri/src/core/protocol-vdr-eventing.ts";
 import type { Reger } from "../../keri/src/db/reger.ts";
+import { makeNowIso8601 } from "../../keri/src/time/mod.ts";
 import { Tevery } from "../../keri/src/vdr/eventing.ts";
 import { createProtocolHandler } from "../src/http/protocol-handler.ts";
 import { buildProtocolRequestContext } from "../src/http/protocol/context.ts";
@@ -999,5 +1000,81 @@ Deno.test("HTTP TSN queries publish both independently verifiable replies throug
       yield* runtime.close();
       yield* hby.close(true);
     }
+  });
+});
+
+/** Ingress harness: one KRAM-enabled runtime with an ordinary single-key sender and a POST helper. */
+function* kramIngress(
+  then: (h: {
+    sender: Hab;
+    post: (...wires: Uint8Array[]) => Promise<Response>;
+    exn: (stamp: string, signed: boolean) => Uint8Array;
+  }) => Operation<void>,
+): Operation<void> {
+  const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+  const sender = hby.makeHab("sender");
+  const runtime = yield* createAgentRuntime(
+    hby,
+    httpClient(() => Promise.resolve(new Response(null, { status: 204 }))),
+    systemClock,
+    { kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } },
+  );
+  try {
+    const handler = createProtocolHandler(runtime, { serviceHab: sender });
+    const post = (...wires: Uint8Array[]) =>
+      handler(
+        new Request("http://localhost/", {
+          method: "POST",
+          headers: { "content-type": "application/cesr" },
+          body: new Uint8Array(concatBytes(...wires)),
+        }),
+      );
+    // Unique routes keep each message's SAID distinct; the stamp alone decides timeliness.
+    const exn = (stamp: string, signed: boolean) => {
+      const body = stampedExchange(`/ingress/${crypto.randomUUID()}`, { sender: sender.pre, stamp });
+      return signed ? messagize(body, { sigers: sender.sign(body.raw, true), gvrsn: Vrsn_2_0 }) : body.raw;
+    };
+    yield* then({ sender, post, exn });
+  } finally {
+    yield* runtime.close();
+    yield* hby.close(true);
+  }
+}
+
+/** Stamp far outside the one-second drift and five-second lag window of the test policy. */
+const lateStamp = () => makeNowIso8601(new Date(Date.now() - 3_600_000));
+
+Deno.test("ingress answers 422 to a KRAM-late authenticated message", async () => {
+  await run(function*() {
+    yield* kramIngress(function*({ post, exn }) {
+      const response = yield* call(() => post(exn(lateStamp(), true)));
+      assertEquals(response.status, 422);
+      assertEquals(response.headers.get("content-type"), "text/plain");
+      assertEquals(yield* call(() => response.text()), "KRAM refused message: timeliness");
+    });
+  });
+});
+
+Deno.test("ingress answers 204 to a replayed or unauthenticated message", async () => {
+  await run(function*() {
+    yield* kramIngress(function*({ post, exn }) {
+      const fresh = exn(makeNowIso8601(), true);
+      assertEquals((yield* call(() => post(fresh))).status, 204, "accepted");
+      assertEquals((yield* call(() => post(fresh))).status, 204, "replayed");
+      const unsigned = yield* call(() => post(exn(lateStamp(), false)));
+      assertEquals(unsigned.status, 204, "an unauthenticated late message is not distinguishable from any other");
+    });
+  });
+});
+
+Deno.test("ingress status follows the final frame", async () => {
+  await run(function*() {
+    yield* kramIngress(function*({ post, exn }) {
+      const late = exn(lateStamp(), true), fresh = exn(makeNowIso8601(), true);
+      assertEquals((yield* call(() => post(late, fresh))).status, 204, "a later accepted frame wins");
+      const last = yield* call(() => post(exn(makeNowIso8601(), true), exn(lateStamp(), true)));
+      assertEquals(last.status, 422, "a later refused frame wins");
+      yield* call(() => last.text());
+    });
   });
 });
