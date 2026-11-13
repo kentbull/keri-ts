@@ -419,23 +419,25 @@ witness polling. A shared provider AID has one worker and cursor even if authori
 as both mailbox and witness; locally controlled providers use ordinary HTTP intake.
 Polling timeout overrides floor finite positive values with a 1 ms minimum;
 missing/nonfinite/nonpositive values retain the header/poll defaults.
-A provider that refuses the query (any non-success status) is retried on a doubling backoff
-(`MailboxPoller.RefusalBackoff`, 1 s to 30 s, reset by an accepted poll) on the host clock, never in a
-tight loop. A 403 means the provider cannot authenticate the requester against the key state it holds
-(for example after a rotation it has not seen): for a fully witnessed KEL the worker posts the KEL
-replay (`collectKelSubmission`: delegation chain, KEL, stored receipts) to the endpoint's CESR ingress,
-separately from the poll, once per KEL head, and polls again at once. A keri-ts mailbox host authorizes
-a group's poll when it is signed by a member whose own threshold is met and whose key is in the group's
-current key list.
+Each endpoint worker is a small state machine (`PollOutcome`: `served`, `no-response`, `unreachable`,
+`unauthorized`, `refused`; `nextPoll(state, outcome)` -> state and `PollAction`). Only `served` resets the
+backoff and polls again at once; the others wait on the host clock, 1 s doubling to 30 s
+(`MailboxPoller.RefusalBackoff`), never in a tight loop. A `TransportError` from opening the connection or
+reading the body (refused, DNS, reset) is `unreachable`, not a runtime failure; consumer errors, cancellation
+and cleanup failures still propagate. A 403 means the provider cannot authenticate the requester against the
+key state it holds: the poller does not post the KEL; it calls `onUnauthorized` (the runtime's
+`kelPublisher.repair`, which forgets what the mailbox was given so the publisher posts the KEL again) and
+backs off. A keri-ts mailbox host authorizes a group's poll when it is signed by a member whose own threshold
+is met and whose key is in the group's current key list.
 A completed rotation is announced with a `RotatedCue` (from `completeEvent` and the Counselor's `finish`) to the
 runtime's `KelPublisher`, which tells the mailboxes on its own fiber. The durable state is `Baser.kpub.`
 (identifier, mailbox) -> last establishment SAID answered 2xx, plus `failed` when a publication used its budget;
 what is owed is derived by comparing it with `kever.lastEst.d`, so the cue only wakes the fiber and a crash, a bare
 `Hab.rotate` or a one-shot CLI (`completeEventOrThrow` runs a pass) are found by state. Gate: fully witnessed and,
 for a delegated identifier, `aess` stored. A failed post backs off 1 s doubling to 60 s and is given up after 300 s
-(`timed-out`, not retried alone); a new rotation, a successful poll of that mailbox, a successful 403 repair, a
-`prompt` or the next open re-arms it. A 400/406 (KERIpy takes one message per request) counts as told: KERIpy does
-not authenticate polls. The 403 repair in the poller remains the safety net. An interaction event changes no keys,
+(`timed-out`, not retried alone); a new rotation, a successful poll of that mailbox, a
+`prompt` or the next open re-arms it; a 403 repair forgets the record and starts a fresh budget. A 400/406 (KERIpy takes one message per request) counts as told: KERIpy does
+not authenticate polls. The poller's 403 prompt (`repair`) remains the safety net. An interaction event changes no keys,
 which is all a mailbox checks, so it is not published. Wallets read `mailboxes.publication` /
 `waitForPublication`, and `health()` reports `mailbox-unreachable` for a timed-out entry.
 Remote SSE consumer completion precedes durable cursor advancement and the next

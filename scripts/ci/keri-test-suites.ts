@@ -185,6 +185,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/delivery/peer-version-selection.test.ts",
       "test/unit/app/mailbox/mailbox-director-lifecycle.test.ts",
       "test/unit/app/mailbox/mailbox-poller-runtime.test.ts",
+      "test/unit/app/mailbox/mailbox-poller-transitions.test.ts",
       "test/unit/app/mailbox/kel-publisher.test.ts",
       "test/unit/app/mailbox/mailbox-runtime.test.ts",
       "test/unit/app/bootstrap/schema-oobi.test.ts",
