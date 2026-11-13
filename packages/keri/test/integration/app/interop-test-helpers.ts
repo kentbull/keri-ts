@@ -123,8 +123,19 @@ const DEFAULT_HEALTH_TIMEOUT_MS = 15_000;
 /** Six cold demo Haberies perform sequential key derivation before serving. */
 const KERIPY_DEMO_START_TIMEOUT_MS = 60_000;
 const TUFA_WITNESS_START_TIMEOUT_MS = 45_000;
-const TEST_PORT_MIN = 20_000;
-const TEST_PORT_MAX_EXCLUSIVE = 32_768;
+const TEST_PORT_RANGE_MIN = 20_000;
+const TEST_PORT_RANGE_MAX_EXCLUSIVE = 32_768;
+/**
+ * Random-port range of this test process. When the runner executes several files at once it
+ * hands each child a slot (KERI_TEST_SLOT of KERI_TEST_SLOTS), and each slot owns a disjoint
+ * slice, so concurrent files cannot probe-then-bind the same port.
+ */
+const [TEST_PORT_MIN, TEST_PORT_MAX_EXCLUSIVE] = (() => {
+  const slots = Math.max(1, Number(Deno.env.get("KERI_TEST_SLOTS")) || 1);
+  const slot = Math.min(slots - 1, Math.max(0, Number(Deno.env.get("KERI_TEST_SLOT")) || 0));
+  const span = Math.floor((TEST_PORT_RANGE_MAX_EXCLUSIVE - TEST_PORT_RANGE_MIN) / slots);
+  return [TEST_PORT_RANGE_MIN + slot * span, TEST_PORT_RANGE_MIN + (slot + 1) * span];
+})();
 
 const KERIPY_DEMO_WITNESS_NODES: readonly KeriPyWitnessNode[] = [
   {
@@ -1141,6 +1152,13 @@ async function installKeripyIntoVenv(
   }
 }
 
+/** Publish a cache file whole so a concurrent test process never reads a partial download. */
+async function writeFileAtomically(target: string, bytes: Uint8Array): Promise<void> {
+  const partial = `${target}.${crypto.randomUUID()}.part`;
+  await Deno.writeFile(partial, bytes);
+  await Deno.rename(partial, target);
+}
+
 async function downloadPinnedKeripyFixture(
   relativePath: string,
 ): Promise<void> {
@@ -1158,7 +1176,7 @@ async function downloadPinnedKeripyFixture(
   await Deno.mkdir(target.slice(0, target.lastIndexOf("/")), {
     recursive: true,
   });
-  await Deno.writeFile(target, new Uint8Array(await response.arrayBuffer()));
+  await writeFileAtomically(target, new Uint8Array(await response.arrayBuffer()));
 }
 
 async function downloadPinnedInteropVerifierFixture(
@@ -1178,7 +1196,7 @@ async function downloadPinnedInteropVerifierFixture(
   await Deno.mkdir(target.slice(0, target.lastIndexOf("/")), {
     recursive: true,
   });
-  await Deno.writeFile(target, new Uint8Array(await response.arrayBuffer()));
+  await writeFileAtomically(target, new Uint8Array(await response.arrayBuffer()));
 }
 
 /** Resolve the pinned interop-verifier fixture root, downloading it if needed. */
