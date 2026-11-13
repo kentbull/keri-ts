@@ -12,7 +12,6 @@
 import { Ilks, type ThresholdSith, type Versionage } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { registryEventRef, registryEventStatus, settleRegistryEvent } from "../../app/credentials/registry-settling.ts";
-import { RootReplicator } from "../../app/credentials/root-replicator.ts";
 import {
   telEventStatus,
   waitForIssuedCredential,
@@ -105,13 +104,8 @@ function* resealAfterRotation(
   group: string,
   rotation: string,
 ): Operation<RootCopyOutcome[]> {
-  const ghab = hby.habs.get(group), root = runtime.registryRoot;
-  if (!ghab || !root) return [];
-  const replicating = new RootReplicator({
-    root,
-    postman: runtime.postman,
-    clock: runtime.clock,
-  });
+  const replicating = runtime.rootReplicator;
+  if (!hby.habs.get(group) || !replicating) return [];
   replicating.prompt(group);
   return (yield* replicating.processOnce()).map(rootCopyLine);
 }

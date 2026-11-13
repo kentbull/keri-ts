@@ -1,6 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
-import { type AgentRuntime, createAgentRuntime } from "../../app/runtime/agent-runtime.ts";
+import { type AgentRuntime, type AgentRuntimeOptions, createAgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -22,6 +22,8 @@ export interface CommandHaberyOptions {
   readonly?: boolean;
   skipConfig?: boolean;
   skipSignator?: boolean;
+  /** Runtime composition choices for commands whose runtime is shorter-lived than the default assumes. */
+  runtime?: Pick<AgentRuntimeOptions, "ipexQueries">;
   /**
    * Internal lifecycle seam for focused helper tests and specialized adapters.
    *
@@ -133,7 +135,7 @@ export function* withAgentRuntime<TResult>(
       hby,
       new NodeHttpClient(),
       systemClock,
-      { kram: hby.cf?.get<{ kram?: KramConfig }>().kram },
+      { kram: hby.cf?.get<{ kram?: KramConfig }>().kram, ...options.runtime },
     );
     let failure: { error: unknown } | undefined;
     try {
