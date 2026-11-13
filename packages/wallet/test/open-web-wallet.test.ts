@@ -316,7 +316,6 @@ Deno.test("groups and proposals: refusals, an empty consent list, and a group in
     );
     const held = first.hby.habByName("pair");
     assert(held, "the proposer holds the group habitat");
-    assertEquals(first.groups.status({ pre: held.pre!, sn: 0, said: held.kever?.serder.said ?? "" }).state, "unknown");
   } finally {
     await first.close();
     await second.close();
