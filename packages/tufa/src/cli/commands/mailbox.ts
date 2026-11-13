@@ -1,4 +1,4 @@
-import { parseBooleanOption, parseIntegerOption, parseStringOption } from "keri-ts/cli";
+import { parseBooleanOption, parseIntegerOption, parseKeriVersionOption, parseStringOption } from "keri-ts/cli";
 import { NodeHttpClient } from "keri-ts/runtime/node";
 import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
 /**
@@ -9,6 +9,7 @@ import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
  * seams over the runtime and databaser contracts documented elsewhere; the goal
  * here is to keep the operational flow obvious.
  */
+import type { Versionage } from "cesr-ts";
 import { call, type Operation, spawn } from "effection";
 import {
   addMailbox,
@@ -53,6 +54,7 @@ interface MailboxStartArgs extends MailboxBaseArgs {
   datetime?: string;
   port?: number;
   listenHost?: string;
+  version?: Versionage;
 }
 
 /** Shared mailbox add/remove CLI inputs. */
@@ -396,6 +398,7 @@ function parseMailboxStartArgs(
     datetime: parseStringOption(args.datetime, "datetime"),
     port: parseIntegerOption(args.port, "port"),
     listenHost: parseStringOption(args.listenHost, "listenHost"),
+    version: parseKeriVersionOption(args.version),
   };
   if (!parsed.name) {
     throw new ValidationError("Name is required and cannot be empty");
