@@ -30,8 +30,8 @@ import {
   runAgentRuntime,
   type RuntimeClock,
   signalerChangeSink,
-  type SignerCondition,
   systemClock,
+  type UnsignableHab,
 } from "keri-ts/runtime";
 import {
   barrierHttpClient,
@@ -132,17 +132,17 @@ export type OpenWebWalletOptions = WebWalletSecret & {
  * - `mailbox-unreachable`: the runtime gave up telling a mailbox an identifier's rotated KEL (five minutes of
  *   backed-off attempts), so the wallet cannot receive from it until it is told; a new rotation, a successful poll
  *   of that mailbox or reopening the wallet tries again.
- * - `signer-unavailable`: a background loop (the mailbox poller, a counselor or witness pass, ...) needs a signer the
- *   host has not held (`Manager.release()` without a later `hold()`); the loop waits and resumes by itself when a
- *   signer is held again, and `conditions` names each waiting loop and the public key it lacks.
- * Precedence: `closed`, `stopped`, `latched`, `faulted`, `signer-unavailable`, `mailbox-unreachable`, `ok`.
+ * - `signer-unavailable`: a local identifier cannot sign because the host has not held its signer (the wallet was
+ *   opened without it); `identifiers` names each with the public keys it lacks (`Habery.unsignable`, read now).
+ *   Background loops skip such an identifier and act for it on the next tock after `Manager.hold`.
+ * Precedence: `closed`, `stopped`, `latched`, `faulted`, `mailbox-unreachable`, `signer-unavailable`, `ok`.
  */
 export type WebWalletHealth =
   | { status: "ok" }
   | { status: "latched"; cause: unknown }
   | { status: "faulted"; faults: number; last: OwnerFault | null }
-  | { status: "signer-unavailable"; conditions: readonly SignerCondition[] }
   | { status: "mailbox-unreachable"; mailboxes: readonly { pre: string; mailbox: string; reason: string | null }[] }
+  | { status: "signer-unavailable"; identifiers: readonly UnsignableHab[] }
   | { status: "stopped"; cause: unknown }
   | { status: "closed" };
 
@@ -415,8 +415,6 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
       }
       const owners = parts.runtime.operations?.health;
       if (owners?.faults) return { status: "faulted", faults: owners.faults, last: owners.last };
-      const waiting = parts.runtime.signerConditions.list();
-      if (waiting.length) return { status: "signer-unavailable", conditions: waiting };
       const unreachable = parts.runtime.kelPublisher.status().entries.filter((entry) => entry.state === "timed-out");
       if (unreachable.length) {
         return {
@@ -428,6 +426,8 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
           })),
         };
       }
+      const unsignable = parts.runtime.hby.unsignable();
+      if (unsignable.length) return { status: "signer-unavailable", identifiers: unsignable };
       return { status: "ok" };
     },
     persistenceStatus: () => parts.opener.queue.status(),

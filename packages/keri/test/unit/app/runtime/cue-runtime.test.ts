@@ -1,6 +1,6 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { SerderKERI, Vrsn_1_0, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
+import { MtrDex, SerderKERI, type Siger, Signer, Vrsn_1_0, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Signaler } from "../../../../src/app/notifications/signaling.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
@@ -15,6 +15,7 @@ import { CesrHttpRefusal } from "../../../../src/app/transport/cesr-egress.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import type { AgentCue, KramRefusedCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
+import { incept, reply } from "../../../../src/core/protocol-eventing.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { UnsupportedTelReplayError } from "../../../../src/db/replay/tel-replay.ts";
 import { httpClient } from "../../../support/http-client.ts";
@@ -56,7 +57,7 @@ Deno.test("Respondant finishes local replay construction before publishing or re
       assertStrictEquals(cues.peekHead(), cue);
       assertEquals([runtime.postman.evts.length, closed], [0, 2], "batch copying also completes before publication");
       failCopy = false;
-      assertEquals(runtime.respondant.enqueueCue(hab, cues), true);
+      assertEquals(runtime.respondant.enqueueCue(hab, cues), "taken");
       assertEquals([cues.empty, runtime.postman.evts.length, closed], [true, 2, 3]);
       assertEquals([...runtime.postman.evts].map((evt) => evt.msg), [first, second]);
       assertEquals([...runtime.postman.evts].map(({ src, dest, topic }) => ({ src, dest, topic })), [
@@ -372,4 +373,42 @@ Deno.test("signalerChangeSink carries the refusal and collapses a resent message
   } finally {
     signaler.close();
   }
+});
+
+Deno.test("cue pass keeps an unsignable reply cue and routes the cues behind it", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const peer = hby.makeHab("peer");
+    // A keyless habitat opened without its signer, as a custodial host has before it calls `hold`.
+    const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+    const serder = incept([signer.verfer.qb64], { version: Vrsn_2_0, code: signer.verfer.code, nsith: "0", toad: 0 });
+    const keyless = hby.makeSignedHab("keyless", undefined, {
+      serder,
+      sigers: [signer.sign(serder.raw, { index: 0 }) as Siger],
+    });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    const body = reply("/ksn", { i: keyless.pre }, { pre: keyless.pre, pvrsn: Vrsn_2_0 });
+    const signed: AgentCue = { kin: "reply", serder: body, src: keyless.pre, dest: peer.pre };
+    const replay: AgentCue = {
+      kin: "replay",
+      msgs: [peer.query(peer.pre, peer.pre, { route: "logs", q: {} })],
+      src: keyless.pre,
+      dest: peer.pre,
+    };
+    try {
+      runtime.cues.append(signed);
+      runtime.cues.append(replay);
+      yield* processCuesOnce(runtime, { hab: keyless });
+      assertEquals([...runtime.cues], [signed], "the reply that needs a signature waits");
+      assertEquals([...runtime.postman.evts].map((evt) => evt.topic), ["/replay"], "the replay behind it went");
+
+      hby.mgr.hold([signer]);
+      yield* processCuesOnce(runtime, { hab: keyless });
+      assertEquals(runtime.cues.empty, true);
+      assertEquals([...runtime.postman.evts].map((evt) => evt.topic), ["/replay", "/reply"]);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
 });

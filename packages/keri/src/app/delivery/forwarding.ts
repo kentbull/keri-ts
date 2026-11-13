@@ -108,6 +108,12 @@ type PreparedCesrTarget =
     readonly kind: "stored";
   }
   | {
+    /** The habitat that signs the forwarding wrapper cannot sign now (its signer is not held); nothing was built. */
+    readonly kind: "unsignable";
+    /** The local habitat that would have signed. */
+    readonly signer: string;
+  }
+  | {
     /** Stored means the local mailbox transaction completed; tcp/http still require network execution. */
     readonly kind: "tcp";
     /** Selected transport endpoint URL for this attempt. */
@@ -474,6 +480,10 @@ export class Poster {
             failed.push(error);
             continue;
           }
+          if (target.kind === "unsignable") {
+            failed.push(new ValidationError(`Local signer ${target.signer} cannot sign now; its signer is not held.`));
+            continue;
+          }
           try {
             if (target.kind !== "stored") {
               const refusal = yield* this.sendPreparedTarget(target, evt, signal);
@@ -507,7 +517,7 @@ export class Poster {
 
   /** Execute one prepared target, adapting completed HTTP refusal to this owner's fanout outcome. */
   private *sendPreparedTarget(
-    target: Exclude<PreparedCesrTarget, { kind: "stored" }>,
+    target: Exclude<PreparedCesrTarget, { kind: "stored" | "unsignable" }>,
     evt: PosterEvent,
     signal: AbortSignal,
   ): Operation<CesrHttpRefusal | undefined> {
@@ -634,7 +644,8 @@ export class Poster {
    * @param topic Recipient mailbox topic used by the forwarding envelope.
    * @param evt Original signed source and operation; outer envelopes may be rebuilt.
    * @param endpoint Mailbox/witness endpoint selected for this attempt.
-   * @returns Stored for a local endpoint, or signed forwarding wire with its introduction.
+   * @returns Stored for a local endpoint, unsignable when the wrapper signer cannot sign now, or signed forwarding
+   * wire with its introduction.
    */
   private *prepareForwardedTarget(
     hab: Hab,
@@ -654,6 +665,8 @@ export class Poster {
     // A group cannot sign the wrapper alone: one member's signature does not meet a threshold above one, and the
     // host would escrow the wrapper. The local member wraps; the payload keeps whatever signatures it carries.
     const signer = this.hby.db.groups.has(hab.pre!) ? localGroupMember(this.hby, hab.pre!) : hab;
+    // Poster does not retry: an event whose wrapper cannot be signed now fails like any other undeliverable one.
+    if (!signer.canSign()) return { kind: "unsignable", signer: signer.pre! };
     const msgs: Uint8Array[] = [];
     if (evt.kin === "stream") {
       // Prepare every frame before opening the one selected relay attempt.

@@ -407,6 +407,8 @@ export class IssuanceOperations {
       try {
         const left = op.expires === null ? null : op.expires - BigInt(this.deps.clock.now()) * 1000n;
         if (left !== null && left <= 0n) this.end(op, "expired", EXPIRED);
+        // A habitat that cannot sign yet waits for its signer; only its Grant deadline ends the operation meanwhile.
+        else if (!op.hab.canSign()) continue;
         else if (
           (yield* race([this.advance(op), ...(left === null ? [] : [this.timer(Number(left) / 1000)])])) === "expired"
         ) this.end(op, "expired", EXPIRED);

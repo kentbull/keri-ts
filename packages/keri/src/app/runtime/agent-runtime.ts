@@ -36,7 +36,6 @@ import { Exchanger, RouteRefuser } from "../exchanges/exchanging.ts";
 import { loadChallengeHandlers } from "../identity/challenging.ts";
 import { Anchorer, loadDelegationHandlers } from "../identity/delegating.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
-import { SignerNotHeldError } from "../identity/keeping.ts";
 import { loadIpexHandlers } from "../ipex/ipexing.ts";
 import { ForwardHandler } from "../mailbox/forward-handler.ts";
 import { KEL_PUBLISHER_PACING, KelPublisher, kelPublisherDo } from "../mailbox/kel-publisher.ts";
@@ -72,7 +71,6 @@ import {
 } from "./operation-owners.ts";
 import type { RetryPolicy } from "./retry-backoff.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
-import { SignerConditions } from "./signer-conditions.ts";
 import { type ChangeSink, signalerChangeSink } from "./workflow-contract.ts";
 import { observeUntil } from "./workflow-contract.ts";
 
@@ -152,8 +150,6 @@ export interface AgentRuntime {
   counselor: Counselor;
   /** Tells an identifier's mailboxes its KEL after a rotation; `runAgentRuntime` runs its fiber. */
   kelPublisher: KelPublisher;
-  /** Loops waiting for a signer the host released; empty when nothing waits. */
-  signerConditions: SignerConditions;
   /** Pacing of the owners loop `runAgentRuntime` runs. */
   readonly ownerPacing: Readonly<DoerPacing>;
   /** Pacing of the KEL publisher loop `runAgentRuntime` runs. */
@@ -474,14 +470,12 @@ export function* createAgentRuntime(
     changes: signaler ? signalerChangeSink(signaler) : undefined,
     retry: options.kelPublishRetry,
   });
-  const signerConditions = new SignerConditions();
   const mailboxPoller = new MailboxPoller(
     hby,
     mailboxDirector,
     http,
     clock,
     {
-      signerConditions,
       onPolled: (pre, mailbox) => kelPublisher.prompt(pre, mailbox),
       onUnauthorized: (pre, mailbox) => kelPublisher.repair(pre, mailbox),
       timeouts: options.mailboxPolling,
@@ -580,7 +574,6 @@ export function* createAgentRuntime(
     delegating,
     counselor,
     kelPublisher,
-    signerConditions,
     ownerPacing: options.ownerPacing ?? OWNER_PACING,
     publisherPacing: options.publisherPacing ?? KEL_PUBLISHER_PACING,
     protocolPacing: options.protocolPacing ?? PROTOCOL_PACING,
@@ -923,6 +916,11 @@ export { runtimeTurn } from "./runtime-turn.ts";
  * delegation and ordinary query sending. The finalizer halts children in reverse
  * order; store ownership remains with the composition scope.
  *
+ * Each loop is a plain spawned fixed-tock doer. A loop that signs for a local habitat reads `Hab.canSign()` on its
+ * tock and skips a habitat that cannot sign yet (a store opened without its signer); a later `Manager.hold` lets
+ * that habitat act on the next tock. A `SignerNotHeldError` that still escapes a loop is a fault: the loop ends
+ * and the failure ends this operation.
+ *
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @param options Optional default query/cue signer, remote pollMailbox switch
  * (default true) and command-owned queryCues Deck. Wire queryCues before starting
@@ -940,15 +938,12 @@ export function* runAgentRuntime(
   runtime.querying.configure({ hab: options.hab });
   const pacing = runtime.protocolPacing;
   const telReceiptor = runtime.vdr ? new Receiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock) : null;
-  // A loop that needs a signer the host released waits for it; it never ends the runtime (see `surviving`).
-  const alive = <T>(loop: string, make: () => Operation<T>) => spawn(() => surviving(runtime, loop, make));
-  const stopHoldWatch = runtime.hby.mgr.onHold(() => runtime.signerConditions.held());
   const tasks = [
-    yield* alive("querying", () => runtime.querying.deliverDo(pacing.tockMs)),
-    yield* alive("postman", () => runtime.postman.deliverDo(pacing.tockMs)),
+    yield* spawn(() => runtime.querying.deliverDo(pacing.tockMs)),
+    yield* spawn(() => runtime.postman.deliverDo(pacing.tockMs)),
     ...(runtime.vdr && telReceiptor
       ? [
-        yield* alive("tel-publication", () =>
+        yield* spawn(() =>
           doEveryOnWrite(
             runtime.clock,
             pacing,
@@ -958,16 +953,17 @@ export function* runAgentRuntime(
               },
             },
             () => publishPendingTel(runtime.hby, runtime.vdr!.publication, telReceiptor, runtime.http, runtime.clock),
-          )),
+          )
+        ),
       ]
       : []),
-    yield* alive("cues", () => cueDo(runtime, options, pacing)),
-    yield* alive("escrows", () => runtime.protocol.escrowDo(runtime.clock, pacing)),
-    yield* alive("oobi", () => runtime.oobiery.oobiDo(runtime.clock, pacing)),
-    yield* alive("authentication", () => runtime.authenticator.authDo(runtime.clock, pacing)),
+    yield* spawn(() => cueDo(runtime, options, pacing)),
+    yield* spawn(() => runtime.protocol.escrowDo(runtime.clock, pacing)),
+    yield* spawn(() => runtime.oobiery.oobiDo(runtime.clock, pacing)),
+    yield* spawn(() => runtime.authenticator.authDo(runtime.clock, pacing)),
     ...(runtime.signaler
       ? [
-        yield* alive("signals", () => runtime.signaler!.signalDo(runtime.clock, pacing)),
+        yield* spawn(() => runtime.signaler!.signalDo(runtime.clock, pacing)),
       ]
       : []),
     ...(options.pollMailbox ?? true
@@ -977,57 +973,37 @@ export function* runAgentRuntime(
         }),
       ]
       : []),
-    yield* alive(
-      "delegation",
-      () => doEveryOnWrite(runtime.clock, pacing, runtime.hby.db, () => runtime.delegating.processAllOnce()),
+    yield* spawn(() =>
+      doEveryOnWrite(runtime.clock, pacing, runtime.hby.db, () => runtime.delegating.processAllOnce())
     ),
-    yield* alive("counselor", () =>
+    yield* spawn(() =>
       doEveryOnWrite(
         runtime.clock,
         pacing,
         runtime.hby.db,
         () => runtime.counselor.processOnce(),
         () => runtime.counselor.holdsForwards,
-      )),
-    yield* alive("kel-publisher", () => kelPublisherDo(runtime.kelPublisher, runtime.clock, runtime.publisherPacing)),
+      )
+    ),
+    yield* spawn(() => kelPublisherDo(runtime.kelPublisher, runtime.clock, runtime.publisherPacing)),
     ...(runtime.operations && runtime.ipex
       ? [
-        yield* alive("operation-owners", () =>
+        yield* spawn(() =>
           operationOwnersDo({
             operations: runtime.operations!,
             rootReplicator: runtime.rootReplicator,
             ipex: runtime.ipex!,
             clock: runtime.clock,
-          }, runtime.ownerPacing)),
+          }, runtime.ownerPacing)
+        ),
       ]
       : []),
   ];
   try {
     return yield* suspend();
   } finally {
-    stopHoldWatch();
     for (const task of tasks.reverse()) {
       yield* task.halt();
-    }
-  }
-}
-
-/** How long a loop waits for a held signer before trying again, in milliseconds. */
-const SIGNER_RETRY_MS = 1_000;
-
-/**
- * Run a background loop so that a signer the host released does not end the runtime: the loop's
- * `SignerNotHeldError` is recorded in `runtime.signerConditions`, the loop waits for a signer to be held (or a
- * second) and starts again. Every other failure still ends it.
- */
-function* surviving<T>(runtime: AgentRuntime, loop: string, make: () => Operation<T>): Operation<T> {
-  while (true) {
-    try {
-      return yield* make();
-    } catch (error) {
-      if (!(error instanceof SignerNotHeldError)) throw error;
-      runtime.signerConditions.report(`runtime:${loop}`, error.pub, runtime.clock.now());
-      yield* runtime.signerConditions.waitForHold(runtime.clock, SIGNER_RETRY_MS);
     }
   }
 }

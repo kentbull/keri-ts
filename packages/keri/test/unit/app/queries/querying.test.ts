@@ -1,6 +1,6 @@
 import { call, run, spawn, type Task } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { parseBytes, ParserError, SerderKERI } from "../../../../../cesr/mod.ts";
+import { MtrDex, parseBytes, ParserError, SerderKERI, type Siger, Signer, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
 import { queryCommand } from "../../../../../tufa/src/cli/commands/query.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
@@ -21,7 +21,7 @@ import { drainWitnessCues } from "../../../../src/app/witness/ingress.ts";
 import type { AgentCue, QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
-import { reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
+import { incept, reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
 import { EndpointRoles, Roles } from "../../../../src/core/roles.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
 import { httpClient } from "../../../support/http-client.ts";
@@ -146,6 +146,37 @@ Deno.test("queued and cue queries never substitute an ambient identity for an ex
       yield* inquisitor.deliverOnce();
       assertEquals([messages.length, inquisitor.pending.length], [2, 0]);
       for (const message of messages) yield* call(() => assertQuerySigner(message, selected));
+    } finally {
+      yield* inquisitor.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("query pass skips an unsignable signer and delivers the next request", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const stored = hby.makeHab("stored"), subject = hby.makeHab("subject");
+    // A keyless habitat opened without its signer.
+    const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+    const serder = incept([signer.verfer.qb64], { version: Vrsn_2_0, code: signer.verfer.code, nsith: "0", toad: 0 });
+    const keyless = hby.makeSignedHab("keyless", undefined, {
+      serder,
+      sigers: [signer.sign(serder.raw, { index: 0 }) as Siger],
+    });
+    const messages: Uint8Array[] = [];
+    seedControllerEndpoint(hby, subject.pre);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, stored);
+    try {
+      inquisitor.enqueue({ pre: subject.pre, signer: keyless.pre, src: subject.pre, route: "logs", q: {} });
+      inquisitor.enqueue({ pre: subject.pre, signer: stored.pre, src: subject.pre, route: "ksn", q: {} });
+      yield* inquisitor.deliverOnce();
+      assertEquals([messages.length, inquisitor.pending.length], [1, 1], "the unsignable request waits at the tail");
+      yield* call(() => assertQuerySigner(messages[0], stored));
+
+      hby.mgr.hold([signer]);
+      yield* inquisitor.deliverOnce();
+      assertEquals([messages.length, inquisitor.pending.length], [2, 0], "it goes once its signer is held");
     } finally {
       yield* inquisitor.close();
       yield* hby.close(true);

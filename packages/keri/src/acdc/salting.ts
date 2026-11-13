@@ -675,6 +675,10 @@ export class RegistryRoot implements ExchangeRouteHandler {
       if (error instanceof ValidationError) throw new RootUnverified(error.message, { cause: error });
       throw error;
     }
+    // The recipient's key opens the box; without its signer the copy stays pending until the host holds it.
+    if (!hab.mgr.hasSigner(hab.kever!.verfers[0].qb64)) {
+      throw new RootUnverified("the recipient's signer is not held; the copy stays pending until it is");
+    }
     let plain: unknown;
     try {
       const opened = hab.mgr.open(essr, hab.kever!.verfers[0]);

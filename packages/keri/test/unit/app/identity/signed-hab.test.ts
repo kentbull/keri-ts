@@ -96,7 +96,7 @@ function traceOf(hby: Habery, pre: string, name: string): unknown[] {
 
 const untouched = [false, null, null, null, false, 0, null, null];
 
-Deno.test("a pre-signed inception becomes a keyless hab that signs only while held", async () => {
+Deno.test("a pre-signed inception becomes a keyless hab that signs once held", async () => {
   await run(function*() {
     const { hby, stores } = yield* openFresh();
     try {
@@ -115,7 +115,9 @@ Deno.test("a pre-signed inception becomes a keyless hab that signs only while he
         assertEquals([...stores.ks.pris.getTopItemIter()].length, 0);
 
         assertThrows(() => hab.sign(message, true), Error, "Missing prikey in db for pubkey=");
+        assertEquals(hab.canSign(), false);
         hby.mgr.hold(input.signers);
+        assert(hab.canSign());
         const verfer = hab.kever!.verfers[0];
         if (transferable) {
           const [siger] = hab.sign(message, true);
@@ -126,10 +128,35 @@ Deno.test("a pre-signed inception becomes a keyless hab that signs only while he
           const [cigar] = hab.sign(message, false) as Cigar[];
           assert(verfer.verify(cigar.raw, message));
         }
-        hby.mgr.release();
-        assertThrows(() => hab.sign(message, false), Error, "Missing prikey in db for pubkey=");
         assertEquals([...stores.ks.pris.getTopItemIter()].length, 0);
       }
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+Deno.test("canSign reads held and stored keys without signing", async () => {
+  await run(function*() {
+    const { hby } = yield* openFresh();
+    try {
+      const stored = hby.makeHab("stored");
+      const input = preSigned();
+      const keyless = hby.makeSignedHab("keyless", undefined, input);
+      let signs = 0;
+      const sign = hby.mgr.sign;
+      hby.mgr.sign = ((...args: Parameters<typeof sign>) => {
+        signs++;
+        return sign.apply(hby.mgr, args);
+      }) as typeof sign;
+
+      assert(stored.canSign());
+      assertEquals(keyless.canSign(), false);
+      assertEquals(hby.unsignable(), [{ pre: keyless.pre, missing: [input.signers[0].verfer.qb64] }]);
+      hby.mgr.hold(input.signers);
+      assert(keyless.canSign());
+      assertEquals(hby.unsignable(), []);
+      assertEquals(signs, 0, "canSign and unsignable sign nothing");
     } finally {
       yield* hby.close();
     }
@@ -248,7 +275,7 @@ Deno.test("rotating a keyless hab is refused even while its signer is held", asy
 Deno.test("a held keyless member signs at index 3 of a five-member group", async () => {
   await run(function*() {
     const remote = (yield* openFresh()).hby;
-    const { hby: local } = yield* openFresh();
+    const { hby: local, stores } = yield* openFresh();
     try {
       const peers = [0, 1, 2, 4].map((i) => remote.makeHab(`peer${i}`));
       const input = preSigned();
@@ -300,9 +327,15 @@ Deno.test("a held keyless member signs at index 3 of a five-member group", async
       assertEquals(sigers.map((siger) => siger.index), [3]);
       assert(keys[3].verify(sigers[0].raw, forged.raw));
 
-      // Without the held signer the group cannot sign as this member.
-      local.mgr.release();
-      assertThrows(() => group.sign(message, true), Error, "Missing prikey in db for pubkey=");
+      // Without the held signer the group cannot sign as this member: a store that holds nothing says so.
+      assertEquals(group.canSign(), true);
+      const unheld = yield* openOn(stores);
+      try {
+        assertEquals(unheld.habs.get(group.pre)!.canSign(), false);
+        assertThrows(() => unheld.habs.get(group.pre)!.sign(message, true), Error, "Missing prikey in db for pubkey=");
+      } finally {
+        yield* unheld.close();
+      }
     } finally {
       yield* local.close();
       yield* remote.close();

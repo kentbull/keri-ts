@@ -13,8 +13,11 @@ import {
   concatBytes,
   Counter,
   framePayload,
+  MtrDex,
   parseBytes,
   SerderKERI,
+  type Siger,
+  Signer,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
@@ -47,6 +50,7 @@ import { Deck } from "../../../../src/core/deck.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC } from "../../../../src/core/mailbox/mailbox-topics.ts";
+import { incept } from "../../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
 import type { Mailboxer } from "../../../../src/db/mailbox/mailboxing.ts";
@@ -1355,6 +1359,49 @@ Deno.test("ordinary Poster traverses direct roles before one random mailbox and 
       );
     } finally {
       Math.random = random;
+      yield* postman.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("poster reports an unsignable forward as failed and delivers later events", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient"), mailbox = hby.makeHab("mailbox");
+    hby.db.ends.pin([recipient.pre, EndpointRoles.mailbox, mailbox.pre], { allowed: true });
+    hby.db.locs.pin([mailbox.pre, "http"], { url: "http://mailbox.test/" });
+    // A keyless habitat opened without its signer: it cannot sign the forwarding wrapper.
+    const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+    const serder = incept([signer.verfer.qb64], { version: Vrsn_2_0, code: signer.verfer.code, nsith: "0", toad: 0 });
+    const keyless = hby.makeSignedHab("keyless", undefined, {
+      serder,
+      sigers: [signer.sign(serder.raw, { index: 0 }) as Siger],
+    });
+    let posts = 0;
+    const postman = new Poster(
+      hby,
+      null,
+      null,
+      httpClient(() => {
+        posts++;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }),
+      systemClock,
+    );
+    try {
+      const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
+      const unsignable = postman.send({ src: keyless.pre, dest: recipient.pre, topic: "/replay", msg }, {
+        notify: true,
+      });
+      const later = postman.send({ src: sender.pre, dest: recipient.pre, topic: "/replay", msg }, { notify: true });
+      for (let pass = 0; pass < 4 && postman.hasPending; pass++) yield* postman.process();
+      const failed = yield* postman.wait(unsignable);
+      assertEquals(failed.kin, "failed");
+      assert(failed.kin === "failed" && String(failed.error).includes("cannot sign now"));
+      assertEquals((yield* postman.wait(later)).kin, "sent");
+      assertEquals(posts, 1, "only the signable event was sent");
+    } finally {
       yield* postman.close();
       yield* hby.close(true);
     }

@@ -5,6 +5,14 @@ import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { Poster } from "./forwarding.ts";
 
 /**
+ * What `Respondant.enqueueCue` did with the head cue:
+ * - `taken`: removed, after its signed output was admitted to Poster or because it had nowhere to go;
+ * - `unrouted`: left at the head, as it has no responder output (no recipient, topic or sender);
+ * - `unsignable`: left at the head, as the signing habitat cannot sign now (its signer is not held yet).
+ */
+export type CueOutcome = "taken" | "unrouted" | "unsignable";
+
+/**
  * Shared host-side responder for indirect and witness runtimes.
  *
  * KERIpy correspondence:
@@ -42,24 +50,26 @@ export class Respondant {
    * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
    * @param cues Source Deck; only its current head is interpreted, and removed after full publication.
    * @param hint Optional local sender hint used when cue provenance does not resolve a habitat.
-   * @returns True after complete admission/removal; false if the head has no routable responder output.
+   * @returns What became of the head; see {@link CueOutcome}. Only `taken` removes it.
    * @throws Construction/admission failures leave the source cue present.
    */
-  enqueueCue(hab: Hab, cues: Deck<AgentCue>, hint?: Hab | null): boolean {
+  enqueueCue(hab: Hab, cues: Deck<AgentCue>, hint?: Hab | null): CueOutcome {
     this.postman.ensureOpen();
     const cue = cues.peekHead();
-    if (!cue) return false;
+    if (!cue) return "unrouted";
     const dest = recipientForCue(cue), topic = topicForCue(cue);
     const src = senderHabForCue(this.hby, cue, hint);
     if (this.nothingToSend(cue, dest, topic, src)) {
       cues.pull();
-      return true;
+      return "taken";
     }
-    if (!dest || !topic || !src) return false;
+    if (!dest || !topic || !src) return "unrouted";
+    // A replay carries already-signed messages; receipts, witness receipts and replies are signed here.
+    if (cue.kin !== "replay" && !hab.canSign()) return "unsignable";
     const msgs = [...hab.processCuesIter([cue])];
     this.postman.sendAll(msgs.map((msg) => ({ src: src.pre, dest, topic, msg, replies: true })));
     cues.pull();
-    return true;
+    return "taken";
   }
 
   /**

@@ -123,11 +123,11 @@ Deno.test("a held key is matched only by the encoding it was held under", async 
         `Missing prikey in db for pubkey=${asNonTransferable.verfer.qb64}`,
       );
 
-      manager.release();
-      manager.hold([asNonTransferable]);
-      assertEquals(manager.sign(message, [asNonTransferable.verfer.qb64], true).length, 1);
+      const other = new Manager({ ks, salt });
+      other.hold([asNonTransferable]);
+      assertEquals(other.sign(message, [asNonTransferable.verfer.qb64], true).length, 1);
       assertThrows(
-        () => manager.sign(message, [asTransferable.verfer.qb64], true),
+        () => other.sign(message, [asTransferable.verfer.qb64], true),
         Error,
         `Missing prikey in db for pubkey=${asTransferable.verfer.qb64}`,
       );
@@ -156,9 +156,7 @@ Deno.test("held signer decrypts and opens ESSR ciphertext sealed to its key", as
         const stranger = signerOf(transferable);
         const foreign = new Encrypter({ verkey: stranger.verfer.qb64 }).encrypt({ ser: b("not for us") });
         assertEquals(manager.open(foreign.raw, signer.verfer), null);
-
-        manager.release([signer.verfer.qb64]);
-        assertThrows(() => manager.open(cipher.raw, signer.verfer), Error, "Missing prikey");
+        assertThrows(() => new Manager({ ks, salt }).open(cipher.raw, signer.verfer), Error, "Missing prikey");
       }
     } finally {
       yield* ks.close(true);
@@ -190,8 +188,8 @@ Deno.test("a held signer is consulted before the stored key with the same public
       assert(real.verfer.verify(manager.sign(message, [pub], false)[0].raw, message));
       assertEquals(reads, 0);
 
-      manager.release();
-      assert(!real.verfer.verify(manager.sign(message, [pub], false)[0].raw, message));
+      // A Manager that holds nothing answers from the stored row.
+      assert(!real.verfer.verify(new Manager({ ks, salt }).sign(message, [pub], false)[0].raw, message));
       assertEquals(reads, 1);
     } finally {
       yield* ks.close(true);
@@ -230,29 +228,51 @@ Deno.test("no Keeper row holds a held key's seed or public key, and the scan can
   });
 });
 
-Deno.test("release restores the missing-key failure exactly, in whole or in part", async () => {
+Deno.test("hasSigner reads held and stored keys without decrypting", async () => {
+  await run(function*() {
+    const ks = yield* openKeeper();
+    try {
+      const manager = new Manager({ ks, salt, ...first });
+      const [verfers] = manager.incept({ icount: 1, ncount: 1, transferable: true, temp: true });
+      const stored = verfers[0].qb64, held = signerOf(true);
+      assert(manager.hasSigner(stored), "a stored key the Manager can decrypt");
+      assertEquals(manager.hasSigner(held.verfer.qb64), false);
+      manager.hold([held]);
+      assert(manager.hasSigner(held.verfer.qb64));
+
+      let reads = 0;
+      const get = ks.pris.get;
+      ks.pris.get = function(...args) {
+        reads++;
+        return get.apply(this, args);
+      };
+      manager.hasSigner(stored);
+      assertEquals(reads, 0, "the existence read never decrypts");
+    } finally {
+      yield* ks.close(true);
+    }
+  });
+});
+
+Deno.test("forget drops the held signers of the current keys it is given and no others", async () => {
   await run(function*() {
     const ks = yield* openKeeper();
     try {
       const manager = new Manager({ ks, salt });
-      const [one, two, three] = [signerOf(true), signerOf(true), signerOf(false)];
+      const [one, two] = [signerOf(true), signerOf(true)];
       const never = new Manager({ ks, salt });
 
-      manager.hold([one, two, three]);
-      manager.release([one.verfer.qb64, "DUnheldKeyIgnored"]);
+      manager.hold([one, two]);
+      assertEquals(manager.forget(one.verfer.qb64, [one.verfer.qb64, "DUnheldKeyIgnored"]), {
+        deleted: 0,
+        released: [one.verfer.qb64],
+      });
       const expected = failureOf(() => never.sign(message, [one.verfer.qb64], true));
-      const released = failureOf(() => manager.sign(message, [one.verfer.qb64], true));
-      assertEquals(released.constructor, expected.constructor);
-      assertEquals(released.message, expected.message);
-      assertEquals(released.message, `Missing prikey in db for pubkey=${one.verfer.qb64}`);
-      assertEquals(manager.sign(message, [two.verfer.qb64, three.verfer.qb64], true).length, 2);
-
-      manager.release([]);
+      const forgotten = failureOf(() => manager.sign(message, [one.verfer.qb64], true));
+      assertEquals(forgotten.constructor, expected.constructor);
+      assertEquals(forgotten.message, `Missing prikey in db for pubkey=${one.verfer.qb64}`);
+      assertEquals(manager.hasSigner(one.verfer.qb64), false);
       assertEquals(manager.sign(message, [two.verfer.qb64], true).length, 1);
-      manager.release();
-      for (const signer of [two, three]) {
-        assertThrows(() => manager.sign(message, [signer.verfer.qb64], true), Error, "Missing prikey in db");
-      }
     } finally {
       yield* ks.close(true);
     }

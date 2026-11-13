@@ -434,7 +434,7 @@ Deno.test("app/runtime-responder - a receipt cue for the runtime's own group is 
       const mids = [member.pre!, peer.pre!];
       const created = hby.makeGroupHab("group", member, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
       const cues = new Deck<AgentCue>([{ kin: "receipt", serder: created.serder }]);
-      assertEquals(runtime.respondant.enqueueCue(member, cues), true);
+      assertEquals(runtime.respondant.enqueueCue(member, cues), "taken");
       assertEquals([cues.empty, runtime.postman.evts.length], [true, 0]);
     } finally {
       yield* runtime.close();
@@ -456,7 +456,7 @@ Deno.test("app/runtime-responder - a receipt with no end role to send to is cons
       }
       // The stranger is known but has declared no end role, so there is nowhere to send its receipt.
       const cues = new Deck<AgentCue>([{ kin: "receipt", serder: stranger.kever!.serder }]);
-      assertEquals(runtime.respondant.enqueueCue(sender, cues, sender), true);
+      assertEquals(runtime.respondant.enqueueCue(sender, cues, sender), "taken");
       assertEquals([cues.empty, runtime.postman.evts.length], [true, 0]);
       runtime.respondant.enqueueMsgs(sender, { kin: "receipt", serder: stranger.kever!.serder }, [
         Uint8Array.of(1),
