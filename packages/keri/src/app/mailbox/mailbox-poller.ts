@@ -13,7 +13,7 @@ import {
 } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { requestWithHeaderTimeout } from "../transport/httping.ts";
-import { kelHeads, pinKelPublished, postKelToMailbox } from "./kel-publishing.ts";
+import { TransportError } from "../transport/transport-error.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import { mailboxPollEndpoints } from "./mailboxing.ts";
@@ -26,8 +26,13 @@ interface MailboxPollerOptions {
    * Optional millisecond header and poll-window overrides.
    */
   timeouts?: Partial<MailboxPollingTimeoutPolicy>;
-  /** Told after each accepted poll of a mailbox; the runtime re-arms a timed-out KEL publication with it. */
+  /** Told after each poll a mailbox served; the runtime re-arms a timed-out KEL publication with it. */
   onPolled?: (pre: string, mailbox: string) => void;
+  /**
+   * Told when a mailbox answers 403 (it cannot authenticate the requester against the KEL it holds); the runtime
+   * has its KEL publisher post the KEL again. The worker then backs off.
+   */
+  onUnauthorized?: (pre: string, mailbox: string) => void;
 }
 
 /**
@@ -50,10 +55,10 @@ export class MailboxPoller {
    */
   static readonly ReadIdleTimeoutMs = 500;
   /**
-   * Wait after a mailbox refuses a query (any non-success status, such as 403 for a requester the mailbox cannot
-   * authenticate), in milliseconds: it starts at `initialMs`, doubles with each consecutive refusal up to `maxMs`
-   * and starts over after an accepted poll. A refusal returns at once, so without a wait the worker would repeat
-   * the same signed request as fast as the loop turns.
+   * Wait after a poll that was not served (a refused status, a 403, no response headers, or an unreachable
+   * host), in milliseconds: it starts at `initialMs`, doubles with each consecutive failure up to `maxMs` and
+   * starts over after a served poll. Without a wait the worker would repeat the same signed request as fast as
+   * the loop turns.
    */
   static readonly RefusalBackoff: Readonly<{ initialMs: number; maxMs: number }> = Object.freeze({
     initialMs: 1_000,
@@ -70,8 +75,10 @@ export class MailboxPoller {
   readonly http: HttpClient;
   /** Borrowed clock for this owner's actual network deadlines. */
   readonly clock: RuntimeClock;
-  /** Told after each accepted poll of a mailbox. */
+  /** Told after each poll a mailbox served. */
   readonly onPolled: ((pre: string, mailbox: string) => void) | undefined;
+  /** Told when a mailbox answers 403. */
+  readonly onUnauthorized: ((pre: string, mailbox: string) => void) | undefined;
 
   /**
    * Bind polling inputs and dependencies without starting workers or acquiring stores.
@@ -89,8 +96,9 @@ export class MailboxPoller {
     clock: RuntimeClock,
     options: MailboxPollerOptions = {},
   ) {
-    const { timeouts, onPolled } = options;
+    const { timeouts, onPolled, onUnauthorized } = options;
     this.onPolled = onPolled;
+    this.onUnauthorized = onUnauthorized;
     this.hby = hby;
     this.mailboxDirector = mailboxDirector;
     this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
@@ -141,7 +149,7 @@ export class MailboxPoller {
    * @param target Mailbox subject habitat plus the actual local signer (a member for groups).
    * @param endpoint Selected remote endpoint AID and HTTP(S) URL.
    * @param onBatch Awaited consumer; successful completion precedes durable cursor advancement.
-   * @returns How the mailbox answered: `settled`, `unauthorized` (403: it cannot authenticate the requester) or another `refused` status.
+   * @returns How the poll ended; see {@link PollOutcome}.
    */
   private *pollRemoteEndpointOnce(
     target: MailboxPollTarget,
@@ -211,8 +219,10 @@ export class MailboxPoller {
    * Poll one remote endpoint continuously in the long-lived runtime shape.
    *
    * This keeps KERIpy's "one poller per endpoint" behavior while preserving
-   * `keri-ts`'s split between mailbox transport and runtime parser ownership. A refused query is retried on
-   * {@link MailboxPoller.RefusalBackoff}, not in a tight loop.
+   * `keri-ts`'s split between mailbox transport and runtime parser ownership. Each poll ends in a
+   * {@link PollOutcome}; {@link nextPoll} maps it and the backoff state to the next action. A mailbox that is
+   * unreachable or refuses is retried on {@link MailboxPoller.RefusalBackoff}, never in a tight loop and never
+   * by failing the runtime. A 403 also prompts the KEL publisher, which owns posting the KEL.
    *
    * @param target Mailbox subject habitat plus the actual local signer (a member for groups).
    * @param endpoint Selected remote endpoint AID and HTTP(S) URL.
@@ -223,41 +233,25 @@ export class MailboxPoller {
     endpoint: { eid: string; url: string },
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
   ): Operation<never> {
-    const { initialMs, maxMs } = MailboxPoller.RefusalBackoff;
-    let refusedFor = 0;
-    // The last event of the KEL this worker posted to the mailbox, so one KEL state is posted once.
-    let posted: string | null = null;
+    let state: PollState = { backoffMs: 0 };
     while (true) {
-      let outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
-      if (outcome === "unauthorized") {
-        const head = this.unpostedHead(target, posted);
-        if (head && (yield* postKelToMailbox(this, target.targetPre, endpoint)).outcome === "told") {
-          posted = head;
-          // Same marker the publisher keeps, so it does not send what the repair just did.
-          const heads = kelHeads(this.hby, target.targetPre);
-          if (heads) pinKelPublished(this.hby.db, target.targetPre, endpoint.eid, heads, this.clock);
-          outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
-        }
-      }
-      if (outcome === "settled" || outcome === "silent") {
-        refusedFor = 0;
-        if (outcome === "settled") this.onPolled?.(target.targetPre, endpoint.eid);
-        yield* runtimeTurn();
-      } else {
-        refusedFor = Math.min(maxMs, refusedFor ? refusedFor * 2 : initialMs);
-        yield* waitOnClock(this.clock, refusedFor);
+      const outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
+      const step = nextPoll(state, outcome);
+      state = step.state;
+      switch (step.action.kind) {
+        case "poll":
+          this.onPolled?.(target.targetPre, endpoint.eid);
+          yield* runtimeTurn();
+          break;
+        case "prompt-publisher":
+          this.onUnauthorized?.(target.targetPre, endpoint.eid);
+          yield* waitOnClock(this.clock, step.action.ms);
+          break;
+        case "wait":
+          yield* waitOnClock(this.clock, step.action.ms);
+          break;
       }
     }
-  }
-
-  /**
-   * SAID of the subject's latest event when the mailbox may be missing it: the KEL is fully witnessed (an
-   * unwitnessed event is not yet something to publish) and this worker has not posted that state.
-   */
-  private unpostedHead(target: MailboxPollTarget, posted: string | null): string | null {
-    const kever = this.hby.db.getKever(target.targetPre);
-    const said = kever?.serder.said ?? null;
-    return said && said !== posted && this.hby.db.fullyWitnessed(kever!.serder) ? said : null;
   }
 
   /**
@@ -294,9 +288,6 @@ export class MailboxPoller {
     return this.hby.habs.get(mid) ?? null;
   }
 }
-
-/** How a mailbox answered one poll: a 403 is kept apart because a KEL it has not seen can cause it. */
-type PollOutcome = "settled" | "silent" | "unauthorized" | "refused";
 
 /**
  * Mailbox subject and signer selection; a group subject uses its local member for signing.
@@ -359,14 +350,82 @@ export interface MailboxFetchTimeoutPolicy {
 }
 
 /**
+ * How one poll ended. `served` is the only outcome that resets the backoff; every other one is a reason to wait.
+ * - `served`: the mailbox answered 2xx and its events were consumed (possibly none).
+ * - `no-response`: no response headers within the open window.
+ * - `unreachable`: the connection failed before or while the response was read (refused, DNS, reset).
+ * - `unauthorized`: 403, the mailbox cannot authenticate the requester against the KEL it holds.
+ * - `refused`: any other non-success status.
+ */
+export type PollOutcome = "served" | "no-response" | "unreachable" | "unauthorized" | "refused";
+
+/** One request: its outcome, or the exact pre-intake KERIpy media refusal that asks for a second request. */
+type PollAttempt = { kind: "outcome"; outcome: PollOutcome } | { kind: "legacy-media-required" };
+
+/** What the worker carries between polls: the current backoff, zero after a served poll. */
+export interface PollState {
+  readonly backoffMs: number;
+}
+
+/**
+ * What the worker does next: poll again after a scheduler turn, wait, or (for a 403) prompt the publisher and
+ * then wait.
+ */
+export type PollAction =
+  | { kind: "poll" }
+  | { kind: "wait"; ms: number }
+  | { kind: "prompt-publisher"; ms: number };
+
+/** Classify a non-success status: 403 is the mailbox not recognising the requester; anything else is a refusal. */
+export function classifyPollRefusal(status: number): "unauthorized" | "refused" {
+  switch (status) {
+    case 403:
+      return "unauthorized";
+    default:
+      return "refused";
+  }
+}
+
+/** Double the backoff (or start it) and wait that long. */
+export function backOff(
+  state: PollState,
+  backoff: { initialMs: number; maxMs: number } = MailboxPoller.RefusalBackoff,
+): { state: PollState; action: PollAction } {
+  const backoffMs = Math.min(backoff.maxMs, state.backoffMs ? state.backoffMs * 2 : backoff.initialMs);
+  return { state: { backoffMs }, action: { kind: "wait", ms: backoffMs } };
+}
+
+/** The transition: where a poll's outcome leaves the worker, and what it does about it. */
+export function nextPoll(
+  state: PollState,
+  outcome: PollOutcome,
+  backoff: { initialMs: number; maxMs: number } = MailboxPoller.RefusalBackoff,
+): { state: PollState; action: PollAction } {
+  switch (outcome) {
+    case "served":
+      return { state: { backoffMs: 0 }, action: { kind: "poll" } };
+    case "unauthorized": {
+      const step = backOff(state, backoff);
+      return { state: step.state, action: { kind: "prompt-publisher", ms: step.state.backoffMs } };
+    }
+    case "no-response":
+    case "unreachable":
+    case "refused":
+      return backOff(state, backoff);
+  }
+}
+
+/**
  * Query one endpoint and consume complete SSE events within one request scope.
- * Header timeout or non-success status ends this attempt without events. Successful
+ * A header timeout, a failed connection or a non-success status ends this attempt without events. Successful
  * body processing and its cleanup finish before the endpoint worker begins another poll.
- * The sole alternate submission is the exact pre-intake KERIpy media refusal:
+ * The sole second request is the exact pre-intake KERIpy media refusal:
  * drain/close that request, then reuse the same signed query and attachments with
  * legacy metadata. Authentication or protocol refusals do not take that branch.
  * consume runs inline and is awaited before the caller persists its cursor; this
  * callback is a scoped event-consumer boundary, not deferred workflow scheduling.
+ * A `TransportError` from the connection (opening it or reading its body) is an outcome; a failure of
+ * `consume`, cancellation and cleanup failures propagate.
  *
  * @param hab Local signing habitat; its state/store lifetime remains with the caller.
  * @param targetPre Mailbox subject AID; may be a group distinct from hab.
@@ -377,7 +436,7 @@ export interface MailboxFetchTimeoutPolicy {
  * @param http Borrowed HTTP implementation selected by composition.
  * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
  * @param consume Awaited complete-event consumer; false stops the poll and errors propagate before remote cursor advancement.
- * @returns `unauthorized` for a 403, `refused` for another non-success status that is not the legacy media refusal.
+ * @returns How the poll ended.
  */
 function* fetchMailboxMessages(
   hab: Hab,
@@ -392,34 +451,52 @@ function* fetchMailboxMessages(
 ): Operation<PollOutcome> {
   const query = hab.query(targetPre, src, { route: "mbx", q: { topics } });
   const prepared = buildCesrRequest(query, { destination: src });
-  for (const contentType of [CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE]) {
-    const attempt = yield* scoped(function*() {
-      const controller = new AbortController();
-      const request = {
-        method: "POST",
-        headers: { ...prepared.headers, "Content-Type": contentType },
-        body: prepared.body,
-        signal: controller.signal,
-      };
-      const response = yield* requestWithHeaderTimeout(http, clock, url, request, timeouts.requestOpenTimeoutMs);
-      // No headers within the open window: that wait was the pause, so the next attempt may start at once.
-      if (!response) return "silent" as const;
-      if (!response.ok) {
-        const detail = yield* abortable(signal => readResponseDetail(response, signal));
-        if (isLegacyCesrMediaRejection(request, response.status, detail)) return "alternate" as const;
-        return response.status === 403 ? "unauthorized" as const : "refused" as const;
-      }
-      yield* consumeMailboxSse(response, controller, consume, clock, {
-        idleTimeoutMs: timeouts.readIdleTimeoutMs,
-        maxDurationMs: timeouts.maxReadDurationMs,
+  // A consumer's own TransportError is the consumer's failure, not the mailbox's.
+  let consumerFailure: unknown;
+  const guarded = function*(message: MailboxSseMessage): Operation<boolean | void> {
+    try {
+      return yield* consume(message);
+    } catch (error) {
+      consumerFailure = error;
+      throw error;
+    }
+  };
+  const attempt = function*(contentType: string): Operation<PollAttempt> {
+    try {
+      // Closing a refused request is part of the scoped operation. A close failure escapes before another
+      // request can submit these same signed bytes.
+      return yield* scoped(function*(): Operation<PollAttempt> {
+        const controller = new AbortController();
+        const request = {
+          method: "POST",
+          headers: { ...prepared.headers, "Content-Type": contentType },
+          body: prepared.body,
+          signal: controller.signal,
+        };
+        const response = yield* requestWithHeaderTimeout(http, clock, url, request, timeouts.requestOpenTimeoutMs);
+        if (!response) return { kind: "outcome", outcome: "no-response" };
+        if (!response.ok) {
+          const detail = yield* abortable(signal => readResponseDetail(response, signal));
+          if (isLegacyCesrMediaRejection(request, response.status, detail)) return { kind: "legacy-media-required" };
+          return { kind: "outcome", outcome: classifyPollRefusal(response.status) };
+        }
+        yield* consumeMailboxSse(response, controller, guarded, clock, {
+          idleTimeoutMs: timeouts.readIdleTimeoutMs,
+          maxDurationMs: timeouts.maxReadDurationMs,
+        });
+        return { kind: "outcome", outcome: "served" };
       });
-      return "settled" as const;
-    });
-    // Closing the refused request is part of the scoped operation above. A close
-    // failure escapes before another request can submit these same signed bytes.
-    if (attempt !== "alternate") return attempt;
-  }
-  return "refused";
+    } catch (error) {
+      if (error instanceof TransportError && error !== consumerFailure) {
+        return { kind: "outcome", outcome: "unreachable" };
+      }
+      throw error;
+    }
+  };
+  const first = yield* attempt(CESR_CONTENT_TYPE);
+  if (first.kind === "outcome") return first.outcome;
+  const second = yield* attempt(KERIPY_CESR_JSON_CONTENT_TYPE);
+  return second.kind === "outcome" ? second.outcome : "refused";
 }
 
 /**
