@@ -22,6 +22,7 @@ import { dgKey } from "../../db/core/keys.ts";
 import { type Poster } from "../delivery/forwarding.ts";
 import { createExchangeMessage } from "../exchanges/exchange-messaging.ts";
 import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
+import { isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
@@ -134,11 +135,6 @@ function localHabByPre(hby: Habery, pre: string, context: string): Hab {
     throw new ValidationError(`${context}: missing local habitat ${pre}.`);
   }
   return hab;
-}
-
-function localGroupMember(hby: Habery, groupPre: string): Hab | null {
-  const record = hby.db.getHab(groupPre);
-  return record?.mid ? hby.habs.get(record.mid) ?? null : null;
 }
 
 function workflowSaid(serder: SerderKERI): string {
@@ -897,7 +893,7 @@ export class Anchorer {
         `Delegation workflow ${workflowId(serder)}`,
       );
     }
-    return localGroupMember(this.hby, hab.pre) ?? this.communicationHab(serder, hab);
+    return isLocalGroupHab(this.hby, hab) ? localGroupMember(this.hby, hab.pre!) : this.communicationHab(serder, hab);
   }
 
   /**

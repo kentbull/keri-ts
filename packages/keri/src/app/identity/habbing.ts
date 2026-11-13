@@ -1996,9 +1996,31 @@ export class Habery {
       this.markAcceptedGroupHab(pre);
     }
     this.habs.set(pre, hab);
-    // The stored lists must follow accepted state, which the old member's record kept from being committed.
-    if (replacing && !this.readonly) this.recoverAcceptedGroupMembers(pre);
+    if (replacing && !this.readonly) {
+      // The stored lists must follow accepted state, which the old member's record kept from being committed.
+      this.recoverAcceptedGroupMembers(pre);
+      this.retireGroupMemberState(pre, existingRecord!.mid!);
+    }
     return hab;
+  }
+
+  /**
+   * Drop the durable rows that address `group` to its former local member `old`: registry root copies
+   * escrowed for `old` (the holder check now refuses them, so a retry would only fail) and the markers
+   * of copies sent to `old` as a recipient. Rows keyed by the group itself stay. Live operations are
+   * owned by the runtime and are not reached from here.
+   */
+  private retireGroupMemberState(group: string, old: string): void {
+    for (const [keys] of [...this.db.rrpe.getTopItemIter()]) {
+      const serder = this.db.exns.get([keys.join(".")]);
+      const data = serder?.sad?.a as Record<string, unknown> | undefined;
+      if (serder?.route === "/registry/root" && serder.sad?.ri === old && data?.gid === group) {
+        this.db.rrpe.rem(keys);
+      }
+    }
+    for (const [keys] of [...this.db.rrsn.getTopItemIter([group])]) {
+      if (keys[2] === old) this.db.rrsn.rem(keys);
+    }
   }
 
   /** Commit accepted group member metadata after the corresponding group event is accepted. */

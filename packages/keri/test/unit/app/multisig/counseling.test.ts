@@ -7,7 +7,7 @@
  * nothing about HTTP/TCP delivery, witness-side authorization, receipt intake
  * through Kevery, or fan-out to other witnesses (`Receiptor` owns those).
  */
-import { Diger, GroupSizeError, NumberPrimitive, NumDex, type SerderKERI, Siger } from "cesr-ts";
+import { Dater, Diger, GroupSizeError, NumberPrimitive, NumDex, type SerderKERI, Siger } from "cesr-ts";
 import { ensure, type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { Anchorer } from "../../../../src/app/identity/delegating.ts";
@@ -22,6 +22,7 @@ import {
 } from "../../../../src/app/multisig/counseling.ts";
 import { groupElectedMember, groupWitnesser } from "../../../../src/app/multisig/group-members.ts";
 import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
+import { exchange } from "../../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
 import { MemStoreOpener } from "../../../../src/db/core/memstore.ts";
 
@@ -774,7 +775,21 @@ Deno.test("joinGroupHab replaces a local member that left the accepted key state
     assertEquals(a.hby.db.getKever(gid)!.sn, 1);
     assertEquals(a.hby.db.getHab(gid)!.mid, a.hab.pre, "the record is not changed by a rotation alone");
 
+    // Rows addressed to the old member: an escrowed root copy for it, and a marker of one sent to it.
+    const copy = exchange("/registry/root", {
+      sender: b.hab.pre!,
+      receiver: a.hab.pre!,
+      attributes: { essr: "E", gid, rd: "Eregistry" },
+    });
+    a.hby.db.exns.pin([copy.said!], copy);
+    a.hby.db.rrpe.pin([copy.said!], new Dater({ dts: "2026-01-01T00:00:00.000000+00:00" }));
+    a.hby.db.rrsn.pin([gid, "Eregistry", a.hab.pre!], { key: "K", dt: "2026-01-01T00:00:00.000000+00:00" });
+    a.hby.db.rrsn.pin([gid, "Eregistry", b.hab.pre!], { key: "K", dt: "2026-01-01T00:00:00.000000+00:00" });
+
     const group = a.hby.joinGroupHab(gid, "g", fresh, next, next);
+    assertEquals(a.hby.db.rrpe.get([copy.said!]), null, "no escrowed copy stays addressed to the old member");
+    assertEquals(a.hby.db.rrsn.get([gid, "Eregistry", a.hab.pre!]), null);
+    assert(a.hby.db.rrsn.get([gid, "Eregistry", b.hab.pre!]), "rows for other members stay");
     const record = a.hby.db.getHab(gid)!;
     assertEquals(record.mid, fresh.pre);
     assertEquals(record.name, "g");

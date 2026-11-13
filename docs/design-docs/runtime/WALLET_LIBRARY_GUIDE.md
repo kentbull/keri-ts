@@ -334,10 +334,13 @@ Group work is a set of explicit library calls plus the `Counselor`.
   name, domain and other fields, and its stored member lists are brought in line with accepted state.
   What is keyed by the group stays: registry roots (`rroots`), mailbox cursors, held DH and Unblind
   queries, and the credentials the group holds, so the new member needs no root copy from a peer when
-  the Habery already holds the group's roots. `kpub` re-posts the new member's KEL. Work bound to the old
-  member does not move: a DH operation whose frozen custodian is the old member, and an exchange led by
-  it, can no longer be completed by this Habery and need a new proposal. The wallet's approval
-  workflow joins a group only the first time; replacing the member is this explicit library call.
+  the Habery already holds the group's roots. `kpub` re-posts the new member's KEL. The call drops the
+  durable rows that address the group to the old member: root copies escrowed for it and the markers of
+  copies sent to it. Operations bound to the old member are not carried over: a DH operation whose frozen
+  custodian is the old member, an exchange it led, and a live issuance or Unblind holding its habitat are
+  refused by their existing checks and need a new proposal. This call does not reach them, because the
+  runtime owns them. The wallet's approval workflow joins a group only the first time; replacing the
+  member is this explicit library call.
 
 ## Mailboxes and rotation
 
