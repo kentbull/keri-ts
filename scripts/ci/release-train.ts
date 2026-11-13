@@ -6,6 +6,7 @@
  *   plan     resolve each package's tag, drop what npm already has, order the rest by dependency stage
  *   qualify  run the stage gate for commits that have no recorded green run, and wait for it
  *   visible  wait until `name@version` entries (env WAIT_FOR, a JSON array) are visible on the registry
+ *   dispatch dispatch a package's own release workflow for a tag and wait for that run to finish
  *   verify   check a built package's internal dependencies against the planned graph (argument: package)
  *
  * The dependency graph is read from each package's `scripts/build_npm.ts`, whose `dependencies` object
@@ -29,6 +30,14 @@ export const packages = {
 } as const;
 export type Package = keyof typeof packages;
 const order = Object.keys(packages) as Package[];
+/**
+ * The per-package release workflow file for a package. npm trusted publishing matches the top-level
+ * workflow file, so the train dispatches these and never publishes from its own file.
+ */
+export function workflowFile(id: Package): string {
+  return `${id === "keri" ? "keri-ts" : id}-npm-release.yml`;
+}
+
 /** Stage jobs `release-train.yml` defines; a deeper graph must add a stage there. */
 export const maxStages = 6;
 
@@ -349,6 +358,97 @@ async function runQualify(): Promise<void> {
   }));
 }
 
+/** What dispatching a workflow and waiting for its run needs from the GitHub API. */
+export interface DispatchApi {
+  /** POST a workflow dispatch; resolves the HTTP status. */
+  dispatch(path: string, body: unknown): Promise<number>;
+  get(path: string): Promise<unknown>;
+}
+
+/** Inputs for one dispatch-and-wait. */
+export interface DispatchRequest {
+  repo: string;
+  workflow: string;
+  ref: string;
+  inputs: Record<string, string>;
+  /** The run title the dispatched workflow sets from `train_id`, which identifies this run among others. */
+  title: string;
+  timeoutMs: number;
+  pollMs: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Dispatch a workflow and wait for the one run it started: found by its title, which carries a unique
+ * train id, so concurrent runs of the same workflow are never mistaken for it. Throws unless that run
+ * completes successfully (fail closed on a missing run, a timeout or any other conclusion).
+ */
+export async function dispatchAndWait(api: DispatchApi, request: DispatchRequest): Promise<string> {
+  const now = request.now ?? Date.now;
+  const sleep = request.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const status = await api.dispatch(`repos/${request.repo}/actions/workflows/${request.workflow}/dispatches`, {
+    ref: request.ref,
+    inputs: request.inputs,
+  });
+  if (status !== 204) throw new Error(`Cannot dispatch ${request.workflow}: HTTP ${status}`);
+  const deadline = now() + request.timeoutMs;
+  while (now() < deadline) {
+    await sleep(request.pollMs);
+    const list = await api.get(
+      `repos/${request.repo}/actions/workflows/${request.workflow}/runs?event=workflow_dispatch&per_page=30`,
+    ) as {
+      workflow_runs: {
+        id: number;
+        display_title: string;
+        status: string;
+        conclusion: string | null;
+        html_url: string;
+      }[];
+    };
+    const run = list.workflow_runs.find((item) => item.display_title === request.title);
+    if (run?.status === "completed") {
+      if (run.conclusion !== "success") {
+        throw new Error(`${request.workflow} run ${run.html_url} ended ${run.conclusion}.`);
+      }
+      return run.html_url;
+    }
+  }
+  throw new Error(`Timed out waiting for ${request.workflow} (${request.title}).`);
+}
+
+async function runDispatch(): Promise<void> {
+  const repo = Deno.env.get("GITHUB_REPOSITORY")!, token = Deno.env.get("GH_TOKEN")!;
+  const id = Deno.env.get("PACKAGE") as Package;
+  if (!order.includes(id)) throw new Error(`Unknown package ${id}.`);
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const reader = githubApi(token);
+  const trainId = `${Deno.env.get("TRAIN_ID")}-${id}`;
+  const url = await dispatchAndWait({
+    get: (path) => reader.get(path),
+    dispatch: async (path, body) =>
+      (await fetch(`https://api.github.com/${path}`, { method: "POST", headers, body: JSON.stringify(body) })).status,
+  }, {
+    repo,
+    workflow: workflowFile(id),
+    ref: Deno.env.get("DISPATCH_REF")!,
+    inputs: {
+      publish: Deno.env.get("PUBLISH") === "true" ? "true" : "false",
+      tag: Deno.env.get("TAG")!,
+      wait_for: Deno.env.get("WAIT_FOR") || "[]",
+      train_id: trainId,
+    },
+    title: `train ${trainId}`,
+    timeoutMs: 100 * 60_000,
+    pollMs: 15_000,
+  });
+  await summarize(`${id} ${Deno.env.get("TAG")}: ${workflowFile(id)} succeeded, ${url}`);
+}
+
 async function runVisible(): Promise<void> {
   const wanted = JSON.parse(Deno.env.get("WAIT_FOR") || "[]") as string[];
   for (const entry of wanted) {
@@ -381,6 +481,7 @@ if (import.meta.main) {
   if (mode === "plan") await runPlan();
   else if (mode === "qualify") await runQualify();
   else if (mode === "visible") await runVisible();
+  else if (mode === "dispatch") await runDispatch();
   else if (mode === "verify") await runVerify(argument);
   else throw new Error("Usage: release-train.ts plan|qualify|visible|verify <package>");
 }

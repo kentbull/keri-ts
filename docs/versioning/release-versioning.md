@@ -110,9 +110,19 @@ workflows, which are unchanged and still release one package when its tag is pus
 - **Qualify once.** For each distinct tag commit with no recorded green stage-gate run
   (the rule above) the train dispatches the stage gate itself and waits; every package's
   release check is then skipped on that evidence, so nothing is tested twice.
-- **Per package.** Each release is a call of `npm-release.yml` with `tag` set, so
-  provenance, the publish environment and the artifact smoke tests are the same, and
-  the GitHub release is created for the package tag also when the run is not a tag push.
+- **Per package.** Each stage job dispatches that package's own `<package>-npm-release.yml`
+  (`keri-ts-npm-release.yml` for keri) on the train's ref with `publish`, the tag, the
+  registry-visibility list and a correlation id, then waits for that run, found by its
+  title, and fails unless it succeeded. The train never publishes directly: npm trusted
+  publishing matches the top-level workflow file, so a run whose top-level workflow is
+  `release-train.yml` is not a trusted publisher for any package, while the package workflows
+  are. Provenance, the `publishing` environment, the artifact smoke tests and the GitHub
+  release for the tag therefore come from the package workflow, as for a single release.
+  A failed package run fails its stage and no later stage starts.
+
+The same inputs let one package be released from an existing tag by dispatching its
+workflow directly: `gh workflow run <package>-npm-release.yml --ref master -f tag=<tag> -f publish=true`
+(the tooling runs from the dispatched ref, the tag's content is what is released).
 
 Old tags. The release tooling (`release-plan.ts`, `release-train.ts`, and the shard
 definitions in `pr-test-scope.ts`) runs from the workflow's own commit, which the
