@@ -71,6 +71,34 @@ it again. The host re-adopts the member with `wallet.hby.makeSignedHab(alias, un
 and exchanges then come back by ordinary KERI replay from a co-member, which `recoverWebWallet` does
 not request.
 
+### Keeper salt at open
+
+`openWebWallet({ name, bran, salt })` takes the keeper's root salt as the qb64 of a 128-bit salt and hands it to
+`openHabery`. A fresh store stores it as its root salt; a store that already has one keeps it, so a supplied salt that
+differs rejects the open with `KeeperSaltMismatchError`, after the wallet closed everything it had opened and released the
+lock (neither salt is in the message). A salt that is not a 128-bit salt rejects with `ValidationError` before any store
+opens. Without `salt`, a fresh store makes a random one and an existing store keeps its own.
+
+What the passcode and salt re-derive on a **fresh** store:
+
+- the AEID and seed (from the passcode alone);
+- the signator (`hby.signator`);
+- every salty habitat, by name: `makeHab(name)` or `identifiers.incept({ alias })` on the same salt, the same
+  namespace and the same inception options derive the same keys, hence the same identifier. Its KEL is not stored, so the
+  inception is recreated, and the rest of the KEL (rotations, anchors) comes back by KERI replay from a peer or witness.
+
+What they do not re-derive, because nothing in the salt determines it:
+
+- held signers (`makeSignedHab`, `heldSigners`): the host keeps those keys, and the identifier is not derived from the salt;
+- randy keys, which are random per identifier;
+- registry roots, which are random 128-bit salts stored encrypted in the keeper and sent to a group member as a root copy;
+- the group record (members, thresholds, the proposals), which is wallet state, rebuilt by `groups.rejoin`;
+- the wallet inventory (`issued.` and `admitted.` rows) and the exchanges and credentials behind it.
+
+Retirement markers (the keeper's `pres.` rows) belong to the store and do not outlive it. A fresh store with the same
+salt derives a retired identifier's keys again and accepts the alias; the guard against reusing a retired name protects
+only the store that retired it.
+
 ### Held signers at open
 
 A host that keeps an identifier's keys itself (`Habery.makeSignedHab`, ADR-0016) lends them to the Manager with
