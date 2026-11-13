@@ -518,23 +518,16 @@ export function* createAgentRuntime(
     }
   });
   const delegating = new Anchorer(hby, postman, querying, protocol, http, clock);
-  // Group receipting reaches TCP-only witnesses as `WitnessReceiptor` does, as KERIpy's Counselor does.
-  const groupReceiptor = new Receiptor(hby, protocol, http, clock);
+  // Only a runtime with operations owners and a registry root has a root replicator to drain this deck.
+  const groupChanges = registryRoot && ipex ? new Deck<string>() : undefined;
   const counselor = new Counselor(
     hby,
-    {
-      receipt: (pre, options) => groupReceiptor.receipt(pre, { ...options, allowTcp: true }),
-      get: (pre, options) => groupReceiptor.get(pre, options),
-    },
+    new Receiptor(hby, protocol, http, clock),
     clock,
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
-    {
-      rotated: (cue) => {
-        kelPublisher.rotated.push(cue);
-        owned?.rootReplicator?.prompt(cue.pre);
-      },
-    },
+    kelPublisher.rotated,
+    groupChanges,
     options.counselorReceiptRetry,
     groupEventForwarding(hby, postman),
   );
@@ -552,6 +545,7 @@ export function* createAgentRuntime(
       registryRoot,
       mux,
       counselor,
+      groupChanges,
       retry: options.operationRetry,
       queryResendMs: options.issuanceQueryResendMs,
       changes: signaler ? signalerChangeSink(signaler) : undefined,
