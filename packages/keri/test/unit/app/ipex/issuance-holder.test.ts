@@ -109,7 +109,7 @@ Deno.test("pending Grants are listed for the holder before consent, with no stat
       grant,
       holder: holderHab.pre!,
       issuer: issuerHab.pre!,
-      credential: reg.credential().said!,
+      credential: s.holder.runtime.exc.retainedInput(grant, { pending: true })!.nests![0].body.said!,
       registry: reg.regid,
       deadline: deadlineOf(s.holder, grant),
     }]);
