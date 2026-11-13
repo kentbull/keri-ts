@@ -25,7 +25,7 @@ import { acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { publicOpeningAttachment } from "../../../../src/acdc/registering.ts";
 import { Unblind } from "../../../../src/acdc/unblinding.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
-import { pendingPresentations } from "../../../../src/app/ipex/pending-presentations.ts";
+import { agreeFor, exchangeAnswer, pendingPresentations } from "../../../../src/app/ipex/pending-presentations.ts";
 import {
   abandonUnblinding,
   requestUnblind,
@@ -35,6 +35,7 @@ import {
 } from "../../../../src/app/ipex/unblinding-workflow.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import type { KramConfig } from "../../../../src/core/mailbox/kraming.ts";
 import { query } from "../../../../src/core/protocol-eventing.ts";
 import { makeNowIso8601, timestampMicros } from "../../../../src/time/mod.ts";
@@ -436,5 +437,35 @@ Deno.test("a discloser that lacks the KEL event anchoring a registry update hold
     yield* drive(requester, responder, g);
     assertEquals(unblindingStatus(requester, g), { state: "done", role: "requester" });
     assertEquals(unblindingStatus(responder, g), { state: "done", role: "responder" });
+  });
+});
+
+Deno.test("agreeFor reads the Agree that answers an Offer, and nothing else", async () => {
+  await run(function*() {
+    const f = yield* fixture();
+    const deps = { hby: f.presenter.hby, exc: f.presenter.runtime.exc };
+    const offer = exchange("/ipex/offer", { m: "" }, { sender: f.sender.pre!, recipient: f.verifier.pre! })[0];
+    const agree = exchange("/ipex/agree", { m: "" }, {
+      sender: f.verifier.pre!,
+      recipient: f.sender.pre!,
+      dig: offer.said!,
+    })[0];
+    const spurn = exchange("/ipex/spurn", { m: "" }, {
+      sender: f.verifier.pre!,
+      recipient: f.sender.pre!,
+      dig: offer.said!,
+    })[0];
+    for (const exn of [offer, agree, spurn]) deps.hby.db.exns.pin([exn.said!], exn);
+    assertEquals(agreeFor(deps, offer.said!), null, "nothing has answered yet");
+    deps.hby.db.erpy.pin([offer.said!], new Saider({ qb64: spurn.said! }));
+    assertEquals(agreeFor(deps, offer.said!), null, "a Spurn is an answer but not an Agree");
+    assertEquals(exchangeAnswer(deps, offer.said!)?.route, "/ipex/spurn");
+    deps.hby.db.erpy.pin([offer.said!], new Saider({ qb64: agree.said! }));
+    assertEquals(agreeFor(deps, offer.said!), {
+      answer: agree.said!,
+      route: "/ipex/agree",
+      sender: f.verifier.pre!,
+      accepted: true,
+    });
   });
 });

@@ -191,9 +191,9 @@ type SettledUnblinding =
 /** The live operations table and its driver. One per host runtime; every identifier may unblind through it. */
 export class UnblindingOperations {
   /** Operations whose approval is live in this process, by {@link unblindingKey}. Read them through {@link liveOf}. */
-  readonly live = new Map<string, LiveUnblinding>();
+  private readonly live = new Map<string, LiveUnblinding>();
   /** Operations that finished or ended in this process, by {@link unblindingKey}; not durable, see the module doc. */
-  readonly settled = new Map<string, SettledUnblinding>();
+  private readonly settled = new Map<string, SettledUnblinding>();
   /** The Unblind child handlers registered on the multiplexor, once a group operation began. */
   groupRoutes: Array<[string, ExchangeRouteHandler]> | null = null;
 
@@ -211,6 +211,22 @@ export class UnblindingOperations {
     return role
       ? this.settled.get(unblindingKey(grant, role))
       : this.settled.get(unblindingKey(grant, "requester")) ?? this.settled.get(unblindingKey(grant, "responder"));
+  }
+
+  /** Every live operation, for the module functions that look across parties. */
+  liveOps(): LiveUnblinding[] {
+    return [...this.live.values()];
+  }
+
+  /** Record a consented operation as live, replacing what an earlier one of the same party left behind. */
+  begin(op: LiveUnblinding): void {
+    this.settled.delete(unblindingKey(op.grant, op.role));
+    this.live.set(unblindingKey(op.grant, op.role), op);
+  }
+
+  /** Remember how a party's operation on `grant` finished or ended without a live operation to end. */
+  remember(grant: string, settled: SettledUnblinding): void {
+    this.settled.set(unblindingKey(grant, settled.role), settled);
   }
 
   /** Whether a live operation for `grant` (or only its party `role`) still holds a message the transport has not taken. */
@@ -524,7 +540,7 @@ export class UnblindingOperations {
 /** The exact live Grant the local party may consent to, with its deadline and role. */
 function selectGrant(ops: UnblindingOperations, grant: string, role: UnblindingRole, proposer?: string) {
   const { deps } = ops;
-  if (ops.live.has(unblindingKey(grant, role))) throw new ValidationError("Unblind was already begun for this Grant");
+  if (ops.liveOf(grant, role)) throw new ValidationError("Unblind was already begun for this Grant");
   const input = deps.exc.retainedInput(grant);
   if (!input) throw new ValidationError("Unblind requires an authenticated retained Grant");
   const sender = input.serder.pre, recipient = input.serder.sad?.ri;
@@ -565,7 +581,7 @@ function consent(
     // The verifier already answered the presentation, so no query will come: nothing to approve or answer.
     const closed = selected.input.serder;
     const xid = closed.ilk === "xip" ? closed.said! : String(closed.sad!.x);
-    ops.settled.set(unblindingKey(grant, "responder"), { role: "responder", state: "unneeded", reason: UNNEEDED });
+    ops.remember(grant, { role: "responder", state: "unneeded", reason: UNNEEDED });
     deps.changes?.push({ kind: "unblinding", id: grant });
     return { op: null, begun: { grant, xid, role } };
   }
@@ -576,7 +592,7 @@ function consent(
     const current = deps.exc.verifyGrantProofs(grant, selected.input.nests ?? []);
     if (current === true || typeof current === "object" && current.kind === "accept") {
       owner.abandon(xid);
-      ops.settled.set(unblindingKey(grant, "requester"), { role: "requester", state: "done" });
+      ops.remember(grant, { role: "requester", state: "done" });
       deps.changes?.push({ kind: "unblinding", id: grant });
       return { op: null, begun };
     }
@@ -623,8 +639,7 @@ export function requestUnblind(
       // Only the proposer authors the threshold query; the other members contribute to it when it arrives.
       if (op.group.member.pre === options.proposer) op.owner.start(grant);
     } else op.query = op.owner.start(grant);
-    ops.settled.delete(unblindingKey(grant, "requester"));
-    ops.live.set(unblindingKey(grant, "requester"), op);
+    ops.begin(op);
     ops.deps.changes?.push({ kind: "unblinding", id: grant });
   }
   return begun;
@@ -648,8 +663,7 @@ export function answerUnblind(
   const { op, begun } = consent(ops, grant, "responder", options);
   if (!op) return begun;
   registerUnblindRoutes(ops);
-  ops.settled.delete(unblindingKey(grant, "responder"));
-  ops.live.set(unblindingKey(grant, "responder"), op);
+  ops.begin(op);
   deps.changes?.push({ kind: "unblinding", id: grant });
   return begun;
 }
@@ -705,7 +719,7 @@ function registerUnblindRoutes(ops: UnblindingOperations): void {
     verify: (args) =>
       structural(deps.hby, args.serder, args.nests ?? []) && !args.attachments.length && !args.essrs?.length,
     handle: (args) => {
-      for (const op of ops.live.values()) {
+      for (const op of ops.liveOps()) {
         if (op.group && groupAccepts(deps.hby, op, args.serder, args.nests!)) {
           op.group.pending.set(args.serder.said!, { parent: args.serder, child: args.nests![0] });
         }
@@ -829,7 +843,7 @@ export function abandonUnblinding(
   const live = ops.liveOf(grant, status.role);
   if (live) ops.end(live, "abandoned", reason);
   else {
-    ops.settled.set(unblindingKey(grant, status.role), { role: status.role, state: "abandoned", reason });
+    ops.remember(grant, { role: status.role, state: "abandoned", reason });
     ops.deps.changes?.push({ kind: "unblinding", id: grant });
   }
 }

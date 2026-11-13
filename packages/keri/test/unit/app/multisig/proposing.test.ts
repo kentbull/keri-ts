@@ -114,7 +114,9 @@ Deno.test("a proposed rotation commits its newcomer only once it is accepted", a
         assertEquals(s.left.db.getKever(s.group)?.said, result.event.said);
         assertEquals(settleProposedRotation(deps, result), true);
         assertEquals(s.left.db.getHab(s.group)?.rmids, next);
-        assertEquals(settleProposedRotation(deps, result), true);
+        // It reads only the route, the event and the named members, so those alone are enough to settle again.
+        const { route, event, smids, rmids } = result;
+        assertEquals(settleProposedRotation(deps, { route, event, smids, rmids }), true);
       } finally {
         yield* third.close(true);
       }

@@ -439,6 +439,7 @@ export {
   proposeCredentialIssue,
   proposeCredentialRegistry,
   proposeCredentialRevocation,
+  type ProposedRotation,
   proposeGroupInception,
   proposeGroupInteraction,
   proposeGroupRotation,
@@ -1001,6 +1002,11 @@ export {
 } from "../app/ipex/presenting.ts";
 
 export {
+  agreeFor,
+  type ApplyListOptions,
+  type ApplyState,
+  type ExchangeAnswer,
+  exchangeAnswer,
   pendingApplies,
   type PendingApply,
   type PendingPresentation,

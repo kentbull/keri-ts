@@ -1,5 +1,5 @@
 /** `openWebWallet` composes lock, IndexedDB stores, runtime and barrier; fakes stand in for the browser. */
-import { concatBytes, Counter, MtrDex, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
+import { concatBytes, Counter, MtrDex, Saider, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import { Schemer } from "keri-ts/runtime";
@@ -290,6 +290,14 @@ Deno.test("presentation, Unblind, Admit resend and mailbox removal are wired and
     assertEquals(w.credentials.presentationStatus(applied.said).verb, "apply");
     assertEquals(w.credentials.applies(b.pre).map((item) => item.apply), [applied.said], "the Apply waits for b");
     assertEquals(w.credentials.applies(a.pre), [], "and for nobody else");
+    // Once an exchange answers the Apply it leaves the default list, and the holder's UI can still list it.
+    w.hby.db.erpy.pin([applied.said], new Saider({ qb64: applied.said }));
+    assertEquals(w.credentials.applies(b.pre), []);
+    assertEquals(
+      w.credentials.applies(b.pre, { includeAnswered: true }).map((item) => [item.apply, item.state, item.answer]),
+      [[applied.said, "answered", applied.said]],
+    );
+    assertEquals(w.credentials.agreeFor(applied.said), null, "nothing here is an Agree");
     await assertRejects(() => w.credentials.unblind("Eunknown"), Error, "not addressed to a local identifier");
     await assertRejects(() => w.credentials.resendAdmit("Eunknown"), Error, "has not admitted");
     await assertRejects(() => w.mailboxes.remove(a.pre, "Emailbox"), Error, "No endpoint URL");
