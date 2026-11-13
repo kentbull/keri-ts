@@ -75,7 +75,6 @@ import {
 import { multisigPayloadSaid, signGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
 import {
   approveAcdcV2Registry,
-  commitAcceptedGroupMembers,
   publishProposal,
 } from "../../../../src/app/multisig/multisig-workflows.ts";
 import {
@@ -449,7 +448,7 @@ Deno.test("multisig join skips an accepted rotation that only names the local me
   });
 });
 
-Deno.test("a proposer commits accepted rotation members that add a newcomer", async () => {
+Deno.test("a proposer's stored members follow an accepted rotation that adds a newcomer", async () => {
   await participants(async (left, right, alice, bob) => {
     await run(function*() {
       const third = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -476,13 +475,11 @@ Deno.test("a proposer commits accepted rotation members that add a newcomer", as
         yield* dispatchEnvelope(envelopeFromFrame(rot, true), left.rvy, left.kevery);
         assertEquals(left.db.getKever(local.hab.pre)?.said, own.serder.said);
         assertEquals(left.db.getHab(local.hab.pre)?.rmids, mids);
-        assertEquals(commitAcceptedGroupMembers(left, own.serder, mids, next), true);
+        assertEquals(left.alignGroupMembers(local.hab.pre), "aligned");
         assertEquals(left.db.getHab(local.hab.pre)?.smids, mids);
         assertEquals(left.db.getHab(local.hab.pre)?.rmids, next);
         assertEquals(left.ks.getRmids(local.hab.pre).map(tuple => tuple[0].qb64), next);
-        // An earlier establishment event never restores historical membership.
-        assertEquals(commitAcceptedGroupMembers(left, local.serder, mids, mids), false);
-        assertEquals(left.db.getHab(local.hab.pre)?.rmids, next);
+        assertEquals(left.alignGroupMembers(local.hab.pre), "unchanged");
       } finally {
         yield* third.close(true);
       }

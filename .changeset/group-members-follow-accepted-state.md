@@ -1,0 +1,6 @@
+---
+"keri-ts": patch
+"@keri-ts/wallet": patch
+---
+
+A local group's stored members now follow every accepted establishment event, whoever proposed it and however late its last signature arrives. A proposer whose own signature cannot complete a rotation (a weight-0 member) used to keep naming the old members until the store reopened, so group messages, IPEX traffic, credential copies and registry root copies went to the old member and not the new one. The runtime's Counselor now aligns each local group's members with its latest accepted establishment event on its pass (`Habery.alignGroupMembers`, the one writer of a group's member lists after its record is created), waits without writing anything while a member's KEL is missing, and the root replicator's sweep re-derives a group whose stored members changed, so new members are owed their registry root copies even when the establishment event did not change. The recorded local member is never changed by this; `replaceGroupMember` stays the explicit call. `settleProposedRotation` and `ProposedRotation` are removed, `Habery.recoverAcceptedGroupMembers` becomes `alignGroupMembers`, and `commitAcceptedGroupMembers` and the public `commitGroupHabMembers` are gone: members come from accepted state only. The wallet's `groups.rotate` no longer settles members itself.

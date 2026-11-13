@@ -934,7 +934,7 @@ class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
   rotateGroup(order: string[]): Uint8Array {
     return this.hby.rotateGroupHab("holder-group", order, order, { isith: "2", nsith: "2" }).message;
   }
-  /** Distributed approval finishes after authoring; bind membership only to its accepted rotation. */
+  /** Distributed approval finishes after authoring; the stored members follow the accepted rotation. */
   commitRotation(wire: Uint8Array, order: string[]): void {
     const rotation = parseBytes(wire)[0].body;
     assertInstanceOf(rotation, SerderKERI);
@@ -948,7 +948,8 @@ class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
         return state.verfers[0].qb64;
       }),
     );
-    this.hby.commitGroupHabMembers(this.hab.pre, order, order);
+    this.hby.alignGroupMembers(this.hab.pre);
+    assertEquals(this.hby.db.getHab(this.hab.pre)?.smids, order);
   }
 
   private start(phase: string, operation: () => Operation<unknown>): void {

@@ -1,4 +1,4 @@
-/** propose* group events, settling proposed rotation members and the inapplicable proposal state. */
+/** propose* group events, stored rotation members following acceptance and the inapplicable proposal state. */
 import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { Poster } from "../../../../src/app/delivery/forwarding.ts";
@@ -11,7 +11,6 @@ import {
   proposeGroupInception,
   proposeGroupInteraction,
   proposeGroupRotation,
-  settleProposedRotation,
 } from "../../../../src/app/multisig/proposing.ts";
 import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
@@ -87,7 +86,7 @@ Deno.test("proposeGroupInteraction counsels and publishes an interaction", async
   });
 });
 
-Deno.test("a proposed rotation commits its newcomer only once it is accepted", async () => {
+Deno.test("a proposed rotation's newcomer enters the stored members only once the rotation is accepted", async () => {
   await run(function*() {
     yield* scenario(function*(s) {
       const third = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -105,18 +104,16 @@ Deno.test("a proposed rotation commits its newcomer only once it is accepted", a
         const result = yield* proposeGroupRotation(deps, s.left.habs.get(s.group)!, spec);
         assertEquals(started, [result.event]);
         assertEquals(sent.map(m => m.route), ["/multisig/rot", "/multisig/rot"]);
-        assertEquals(settleProposedRotation(deps, result), false);
+        yield* s.runtime.counselor.processOnce();
         assertEquals(s.left.db.getHab(s.group)?.rmids, s.mids);
         const peer = s.right.rotateGroupHab("group", s.mids, next, { isith: "2", nsith: "3" });
         const own = s.left.db.getEvtSerder(s.group, result.event.said)!;
         yield* receive(s, messagize(own, { sigers: peer.sigers }));
         yield* s.runtime.protocol.processEscrowsOnce();
         assertEquals(s.left.db.getKever(s.group)?.said, result.event.said);
-        assertEquals(settleProposedRotation(deps, result), true);
+        // The runtime's Counselor pass follows the accepted rotation; nothing settles the proposal.
+        yield* s.runtime.counselor.processOnce();
         assertEquals(s.left.db.getHab(s.group)?.rmids, next);
-        // It reads only the route, the event and the named members, so those alone are enough to settle again.
-        const { route, event, smids, rmids } = result;
-        assertEquals(settleProposedRotation(deps, { route, event, smids, rmids }), true);
       } finally {
         yield* third.close(true);
       }
