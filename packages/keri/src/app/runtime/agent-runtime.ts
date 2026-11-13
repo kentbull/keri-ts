@@ -37,7 +37,7 @@ import { Anchorer, loadDelegationHandlers } from "../identity/delegating.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { loadIpexHandlers } from "../ipex/ipexing.ts";
 import { ForwardHandler } from "../mailbox/forward-handler.ts";
-import { KelPublisher, kelPublisherDo } from "../mailbox/kel-publisher.ts";
+import { KEL_PUBLISHER_PACING, KelPublisher, kelPublisherDo } from "../mailbox/kel-publisher.ts";
 import { MailboxDirector } from "../mailbox/mailbox-director.ts";
 import { type MailboxPollBatch, MailboxPoller, type MailboxPollingTimeoutPolicy } from "../mailbox/mailbox-poller.ts";
 import { mailboxerOptionsForHabery } from "../mailbox/mailboxing.ts";
@@ -56,10 +56,12 @@ import { cueDo } from "./cue-runtime.ts";
 import { IpexAuxiliaries } from "./ipex-auxiliaries.ts";
 import {
   composeOwners,
+  OWNER_PACING,
   operationOwnersDo,
   type OperationStores,
   type RuntimeOperations,
 } from "./operation-owners.ts";
+import type { DoerPacing } from "./doing.ts";
 import type { RetryPolicy } from "./retry-backoff.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -140,6 +142,10 @@ export interface AgentRuntime {
   counselor: Counselor;
   /** Tells an identifier's mailboxes its KEL after a rotation; `runAgentRuntime` runs its fiber. */
   kelPublisher: KelPublisher;
+  /** Pacing of the owners loop `runAgentRuntime` runs. */
+  readonly ownerPacing: Readonly<DoerPacing>;
+  /** Pacing of the KEL publisher loop `runAgentRuntime` runs. */
+  readonly publisherPacing: Readonly<DoerPacing>;
   /**
    * Background unsigned-request sender, run independently of reply intake.
    * Pending sender work excludes semantic query waits; their invoking operations
@@ -203,6 +209,10 @@ export interface AgentRuntimeOptions {
   counselorReceiptRetry?: Readonly<RetryPolicy>;
   /** Retry delays and budget of KEL posts to mailboxes; the production policy when absent. */
   kelPublishRetry?: Readonly<RetryPolicy>;
+  /** Tock and sweep interval of the operation owners loop; {@link OWNER_PACING} when absent. A host that must be gentler (a background tab, a battery) slows it. */
+  ownerPacing?: Readonly<DoerPacing>;
+  /** Tock and sweep interval of the KEL publisher loop; {@link KEL_PUBLISHER_PACING} when absent. */
+  publisherPacing?: Readonly<DoerPacing>;
   /** Borrowed legacy registry store; the runtime creates its processors and never closes this store. */
   reger?: Reger;
   /** An injected v2 manager and its backing store remain caller-owned. */
@@ -490,7 +500,12 @@ export function* createAgentRuntime(
     clock,
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
-    { rotated: (cue) => kelPublisher.rotated.push(cue) },
+    {
+      rotated: (cue) => {
+        kelPublisher.rotated.push(cue);
+        owned?.rootReplicator?.prompt(cue.pre);
+      },
+    },
     options.counselorReceiptRetry,
   );
   const owned = acdc && ipex
@@ -539,6 +554,8 @@ export function* createAgentRuntime(
     delegating,
     counselor,
     kelPublisher,
+    ownerPacing: options.ownerPacing ?? OWNER_PACING,
+    publisherPacing: options.publisherPacing ?? KEL_PUBLISHER_PACING,
     querying,
     replyStreams,
     vdr,
@@ -944,7 +961,7 @@ export function* runAgentRuntime(
         yield* runtimeTurn();
       }
     }),
-    yield* spawn(() => kelPublisherDo(runtime.kelPublisher, runtime.clock)),
+    yield* spawn(() => kelPublisherDo(runtime.kelPublisher, runtime.clock, runtime.publisherPacing)),
     ...(runtime.operations && runtime.ipex
       ? [
         yield* spawn(() =>
@@ -953,7 +970,7 @@ export function* runAgentRuntime(
             rootReplicator: runtime.rootReplicator,
             ipex: runtime.ipex!,
             clock: runtime.clock,
-          })
+          }, runtime.ownerPacing)
         ),
       ]
       : []),

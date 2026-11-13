@@ -84,8 +84,6 @@ export interface UnblindingDeps {
   /** Delivery retry delays; the production policy when absent. */
   readonly retry?: Readonly<RetryPolicy>;
   readonly changes?: ChangeSink;
-  /** Called when an operation becomes live, so the owner loop leaves its idle cadence at once. */
-  readonly wake?: () => void;
 }
 
 /** One operation the user consented to or the discloser owes; exists only while its approval is live in memory. */
@@ -544,7 +542,6 @@ export function requestUnblind(ops: UnblindingOperations, request: UnblindingReq
     ops.settled.delete(request.grant);
     ops.live.set(request.grant, op);
     ops.deps.changes?.push({ kind: "unblinding", id: request.grant });
-    ops.deps.wake?.();
   }
   return begun;
 }
@@ -568,7 +565,6 @@ export function answerUnblind(ops: UnblindingOperations, request: UnblindingRequ
   ops.settled.delete(request.grant);
   ops.live.set(request.grant, op!);
   deps.changes?.push({ kind: "unblinding", id: request.grant });
-  deps.wake?.();
   return begun;
 }
 

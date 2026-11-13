@@ -85,8 +85,6 @@ export interface GroupIpexDeps {
   readonly postman: Poster;
   readonly clock: RuntimeClock;
   readonly changes?: ChangeSink;
-  /** Called when an operation becomes live, so the owner loop leaves its idle cadence at once. */
-  readonly wake?: () => void;
   /** Collaborators of a group registry update; a Grant that carries a presentation proof needs them. */
   readonly registry?: RegistryProposeDeps;
 }
@@ -215,7 +213,6 @@ export class GroupIpexOperations {
       busy: false,
     });
     this.deps.changes?.push({ kind: "ipex", id: said });
-    this.deps.wake?.();
     return { said };
   }
 

@@ -30,15 +30,18 @@ import type { Multiplexor } from "../multisig/grouping.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import type { Receiptor } from "../witness/receipting.ts";
+import { type DoerPacing, doEvery } from "./doing.ts";
 import type { IpexAuxiliaries } from "./ipex-auxiliaries.ts";
 import type { RetryPolicy } from "./retry-backoff.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import type { ChangeSink } from "./workflow-contract.ts";
 
-/** Milliseconds between passes while an owner has live work or the replicator has copies owed, the cadence of the CLI drivers these replace. */
-export const OWNER_BUSY_MS = 50;
-/** Milliseconds between passes when nothing is live or owed; a user beginning work wakes the loop at once. */
-export const OWNER_IDLE_MS = 1000;
+/** Milliseconds between owner passes; the cadence of the CLI drivers the loop replaced. */
+export const OWNER_TOCK_MS = 50;
+/** Tocks between the replicator's full rotation checks: 1200 tocks of 50 ms is a minute. */
+export const OWNER_SWEEP_TOCKS = 1200;
+/** The production pacing of the owner loop. */
+export const OWNER_PACING: Readonly<DoerPacing> = Object.freeze({ tockMs: OWNER_TOCK_MS, sweepTocks: OWNER_SWEEP_TOCKS });
 
 /**
  * What an embedder may supply; every field is optional. The operation tables are in memory and their status is
@@ -64,8 +67,6 @@ export interface RuntimeOperations {
   readonly groupIpex: GroupIpexOperations;
   readonly presentation: PresentationOperations;
   readonly unblinding: UnblindingOperations;
-  /** Wakes the owner loop ({@link operationOwnersDo}) from its idle sleep; the owners call it themselves. */
-  readonly wake: OwnerWake;
   /** What the owner loop could not do; read by a host that reports runtime health. */
   readonly health: OwnerHealth;
 }
@@ -122,7 +123,6 @@ export interface OwnerParts {
 export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): ComposedOwners {
   const { hby, acdc, exc, protocol, reactor, postman, receiptor, ipex, clock, registryRoot, mux, counselor } = parts;
   const changes = stores.changes ?? parts.changes, delivery = posterDelivery(postman);
-  const wake = new OwnerWake();
   const issuance: IssuanceDeps = {
     hby,
     rgy: acdc,
@@ -135,7 +135,6 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
     derived: stores.derived ?? new BaserDerivedUpdateStore(acdc.store.baser),
     clock,
     changes,
-    wake: wake.notify,
     retry: parts.retry,
     queryResendMs: parts.queryResendMs,
     group: { mux, registry: { hby, protocol, postman, counselor, registryStore: acdc.store } },
@@ -151,7 +150,6 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       clock,
       registry: { hby, protocol, postman, counselor, registryStore: acdc.store },
       changes,
-      wake: wake.notify,
     }),
     presentation: new PresentationOperations({
       hby,
@@ -166,9 +164,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       views: stores.views,
       retry: parts.retry,
       changes,
-      wake: wake.notify,
     }),
-    wake,
     health: new OwnerHealth(),
     unblinding: new UnblindingOperations({
       hby,
@@ -179,74 +175,38 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       clock,
       retry: parts.retry,
       changes,
-      wake: wake.notify,
     }),
   };
   const rootReplicator = registryRoot ? new RootReplicator({ root: registryRoot, postman, clock, changes }) : null;
   return { operations, rootReplicator };
 }
 
-/**
- * Lets the owner loop sleep long while idle and still react at once when a user begins work: the owners call
- * {@link OwnerWake.notify} as an operation becomes live, which ends the current sleep. A notification that
- * arrives while a pass is running makes the next sleep return immediately, so none is lost.
- */
-export class OwnerWake {
-  #resolve: (() => void) | null = null;
-  #pending = false;
-
-  /** End the current sleep, or the next one if none is running. */
-  readonly notify = (): void => {
-    if (this.#resolve) this.#resolve();
-    else this.#pending = true;
-  };
-
-  /** Sleep on the host clock for at most `ms`; cancellation releases the timer. */
-  *sleep(clock: RuntimeClock, ms: number): Operation<void> {
-    if (this.#pending) {
-      this.#pending = false;
-      return;
-    }
-    try {
-      yield* action<void>((resolve) => {
-        this.#resolve = resolve;
-        const timer = clock.setTimeout(resolve, ms);
-        return () => clock.clearTimeout(timer);
-      });
-    } finally {
-      this.#resolve = null;
-    }
-  }
-}
-
-/** Whether any owner has live work or the replicator has copies still owed. */
-function working({ operations, rootReplicator }: Pick<ComposedOwners, "operations" | "rootReplicator">): boolean {
-  return operations.issuance.active() || operations.groupIpex.active() || operations.presentation.active()
-    || operations.unblinding.active()
-    || !!rootReplicator?.pending();
+/** What the owner loop runs: the owners, the replicator, the DH owners whose completion cues prompt it, the clock. */
+export interface OwnerLoopParts extends ComposedOwners {
+  ipex: IpexAuxiliaries;
+  clock: RuntimeClock;
 }
 
 /**
- * Run every owner on one fiber until halted. A pass runs an owner only if it has live work, then the
- * replicator (after prompting it with the live DH owners' `replicated` cues), and the loop sleeps
- * {@link OWNER_BUSY_MS} while anything is working and {@link OWNER_IDLE_MS} otherwise, or less when an owner
- * wakes it.
+ * Run every owner on one fiber until halted, as a fixed-tock doer (`./doing.ts`): each tock runs an owner that
+ * has live work, then the replicator (after prompting it with the live DH owners' `replicated` cues), and then
+ * the loop waits one tock. Work begun between tocks is seen on the next one; nothing wakes the loop early.
  *
- * Idle cost, per {@link OWNER_IDLE_MS}: three constant-time table checks, one in-memory walk of the Unblind
- * owners for an owed reply, one drain of each DH owner's cue deck, and the replicator's rotation check
- * (the establishment SAID of each local group, one keyed read per local identifier to tell groups apart).
- * No owner reads a protocol store. Only the first pass, once, scans the pending exchange escrow for
- * resumable Grants.
+ * Idle cost, per tock: four constant-time table checks, one in-memory walk of the Unblind owners for an owed
+ * reply, one drain of each DH owner's cue deck, and the replicator's emptiness checks. The replicator's
+ * rotation check (the establishment SAID of each local group, one keyed read per local identifier) runs on
+ * tock 0 and every `pacing.sweepTocks`. No owner reads a protocol store. Only the first pass, once, scans the
+ * pending exchange escrow for resumable Grants.
  *
  * A failure that escapes an owner pass is recorded in `operations.health` and the loop keeps running, so
  * one owner's fault never stops the others. The owners run one after another, so a delivery that does not return holds the others up until it fails or
  * its Grant deadline passes; operations already bound each delivery by that deadline.
  */
 export function* operationOwnersDo(
-  owners: ComposedOwners & { ipex: IpexAuxiliaries; clock: RuntimeClock },
-  { busyMs = OWNER_BUSY_MS, idleMs = OWNER_IDLE_MS }: { busyMs?: number; idleMs?: number } = {},
-): Operation<void> {
-  const { operations, rootReplicator, ipex, clock } = owners, { wake, health } = operations;
+  owners: OwnerLoopParts,
+  pacing: Readonly<DoerPacing> = OWNER_PACING,
+): Operation<never> {
+  const { operations, rootReplicator, ipex, clock } = owners, { health } = operations;
   const guarded = function*(owner: OwnerFault["owner"], pass: () => Operation<unknown>): Operation<void> {
     try {
       yield* pass();
@@ -259,7 +219,7 @@ export function* operationOwnersDo(
       };
     }
   };
-  while (true) {
+  return yield* doEvery(clock, pacing.tockMs, function*(tock) {
     if (operations.issuance.active()) yield* guarded("issuance", () => operations.issuance.processOnce());
     if (operations.groupIpex.active()) yield* guarded("groupIpex", () => operations.groupIpex.processOnce());
     if (operations.presentation.active()) yield* guarded("presentation", () => operations.presentation.processOnce());
@@ -269,9 +229,9 @@ export function* operationOwnersDo(
         for (const dh of ipex.dhkeOwners()) {
           while (dh.replicated.length) rootReplicator.replicate(dh.replicated.pull()!);
         }
-        yield* rootReplicator.processOnce();
+        if (tock % pacing.sweepTocks === 0) rootReplicator.sweep();
+        yield* rootReplicator.processDue();
       });
     }
-    yield* wake.sleep(clock, working(owners) ? busyMs : idleMs);
-  }
+  });
 }

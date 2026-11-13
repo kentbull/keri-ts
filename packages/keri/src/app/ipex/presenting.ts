@@ -138,8 +138,6 @@ export interface PresentationDeps {
   /** Derivation coordinates, needed only for a selection with `derive`. */
   readonly derived?: DerivedUpdateStore;
   readonly changes?: ChangeSink;
-  /** Called when a delivery is queued, so the owner loop leaves its idle cadence at once. */
-  readonly wake?: () => void;
 }
 
 /** Body options of a selecting message, plus the presentation registry that carries a Grant's proof. */

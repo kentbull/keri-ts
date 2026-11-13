@@ -7,7 +7,8 @@ import { type Operation, run, sleep, spawn } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { beginIssuance, issuanceStatus } from "../../../../src/app/ipex/issuance.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
-import { operationOwnersDo, OWNER_BUSY_MS } from "../../../../src/app/runtime/operation-owners.ts";
+import type { DoerPacing } from "../../../../src/app/runtime/doing.ts";
+import { operationOwnersDo, OWNER_TOCK_MS } from "../../../../src/app/runtime/operation-owners.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { httpClient } from "../../../support/http-client.ts";
@@ -19,7 +20,7 @@ function* until(condition: () => boolean, ms = 4000): Operation<void> {
 }
 
 /** Run one side's postman and owners loops, as `runAgentRuntime` does; a shorter idle sleep keeps the tests quick. */
-function* running(side: Side, cadence = { idleMs: 100 }): Operation<void> {
+function* running(side: Side, pacing: DoerPacing = { tockMs: OWNER_TOCK_MS, sweepTocks: 1 }): Operation<void> {
   const { runtime } = side;
   yield* spawn(() => runtime.postman.deliverDo());
   yield* spawn(() =>
@@ -28,7 +29,7 @@ function* running(side: Side, cadence = { idleMs: 100 }): Operation<void> {
       rootReplicator: runtime.rootReplicator,
       ipex: runtime.ipex!,
       clock: runtime.clock,
-    }, cadence)
+    }, pacing)
   );
 }
 
@@ -90,7 +91,7 @@ Deno.test("runtime loop: a Dhke completion cue sends the owed copy with no expli
     w.alice.runtime.ipex!.dhke(w.alice.group!).replicated.push({ gid: w.gid, registries: [w.registry] });
     yield* until(() => posted.length > 0);
     assertEquals(posted.length, 1);
-    yield* sleep(3 * OWNER_BUSY_MS);
+    yield* sleep(3 * OWNER_TOCK_MS);
     assertEquals(posted.length, 1, "a settled copy is not sent again");
   });
 });
@@ -109,12 +110,12 @@ Deno.test("runtime loop: an accepted rotation that adds a member re-seals the he
     const current = [w.alice, w.bob, w.outsider];
     yield* rotate(w, current, current, "2");
     yield* until(() => posted.length >= 3);
-    yield* sleep(3 * OWNER_BUSY_MS);
+    yield* sleep(3 * OWNER_TOCK_MS);
     assertEquals(posted.length, 3, "one copy for the newcomer and one for the rekeyed member, once");
   });
 });
 
-Deno.test("an idle runtime passes at the idle cadence and reads no protocol store; the first pass scans once", async () => {
+Deno.test("an idle runtime passes every tock and reads no protocol store; the first pass scans once", async () => {
   await run(function*() {
     const posted: Uint8Array[] = [];
     const w = yield* posting(posted, OWNERS);
@@ -138,7 +139,7 @@ Deno.test("an idle runtime passes at the idle cadence and reads no protocol stor
       retained++;
       return retain(...args);
     };
-    yield* running(w.bob, { idleMs: 20 });
+    yield* running(w.bob, { tockMs: 20, sweepTocks: 1_000_000 });
     yield* sleep(400);
     assertEquals(passes, { issuance: 1, presentation: 0, unblinding: 0 }, "only the one-time sweep of issuance ran");
     assertEquals([scans, retained], [1, 0], "one scan of the pending escrow, then no store reads by the owners");
@@ -146,7 +147,7 @@ Deno.test("an idle runtime passes at the idle cadence and reads no protocol stor
   });
 });
 
-Deno.test("an operation begun while the loop idles is picked up at once, not at the next idle pass", async () => {
+Deno.test("an operation begun between tocks is picked up on the next tock, with no wake", async () => {
   await run(function*() {
     const s = yield* scenario();
     const { issuance } = s.issuer.runtime.operations!;
@@ -162,10 +163,10 @@ Deno.test("an operation begun while the loop idles is picked up at once, not at 
         rootReplicator: null,
         ipex: s.issuer.runtime.ipex!,
         clock: s.clock,
-      }, { idleMs: 60_000 })
+      }, { tockMs: 20, sweepTocks: 1_000_000 })
     );
     yield* sleep(50);
-    assertEquals(passes, 1, "the sweep, then idle");
+    assertEquals(passes, 1, "the one-time sweep, then idle");
     const reg = yield* s.registry(0);
     yield* beginIssuance(issuance, {
       hab: s.issuer.habs[0],
@@ -173,7 +174,7 @@ Deno.test("an operation begun while the loop idles is picked up at once, not at 
       options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
     });
     yield* until(() => passes > 1, 1000);
-    assert(passes > 1, "begin woke the idle loop");
+    assert(passes > 1, "the next tock found the operation");
   });
 });
 
@@ -187,8 +188,8 @@ Deno.test("a delivery that throws is retried, not failed, and the loop keeps ser
     };
     yield* spawn(() =>
       operationOwnersDo({ operations: operations!, rootReplicator: null, ipex: ipex!, clock: s.clock }, {
-        busyMs: 10,
-        idleMs: 20,
+        tockMs: 10,
+        sweepTocks: 1_000_000,
       })
     );
     const reg = yield* s.registry(0);
@@ -210,7 +211,6 @@ Deno.test("a delivery that throws is retried, not failed, and the loop keeps ser
       faulted = true;
       throw new Error("unreadable state");
     };
-    operations!.wake.notify();
     yield* until(() => operations!.health.faults > 0, 1500);
     assertEquals(operations!.health.last?.owner, "presentation");
     assertEquals(operations!.health.last?.error, "unreadable state");
