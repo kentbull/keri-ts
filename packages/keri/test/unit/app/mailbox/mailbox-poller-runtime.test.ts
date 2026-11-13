@@ -1,6 +1,14 @@
 import { call, type Operation, run, scoped, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { MtrDex, ParserError, type Siger, Signer, Vrsn_2_0, WireParseError } from "../../../../../cesr/mod.ts";
+import {
+  MtrDex,
+  ParserError,
+  SerderKERI,
+  type Siger,
+  Signer,
+  Vrsn_2_0,
+  WireParseError,
+} from "../../../../../cesr/mod.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { SignerNotHeldError } from "../../../../src/app/identity/keeping.ts";
@@ -27,6 +35,7 @@ import { FakeRuntimeHttpClient } from "../../../support/runtime-fakes.ts";
 import { runtimeTurn } from "../../../../src/app/runtime/runtime-turn.ts";
 import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { incept } from "../../../../src/core/protocol-eventing.ts";
+import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../../effection-http.ts";
 import { httpClient } from "../../../support/http-client.ts";
@@ -117,6 +126,53 @@ Deno.test("continuous mailbox consumer settles complete body-only mailbox record
       } finally {
         yield* waitForTaskHalt(worker);
       }
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a receipt with a non-hex sequence number is dropped and the poll continues", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = makeTransferableHab(hby, "bob"), endpoint = seedMailboxEndpoint(hby, hab.pre, "hostile");
+    // SAID-valid and well-formed, but "zz" is not a hex sequence number.
+    const rct = new SerderKERI({
+      sad: { v: "KERI10JSON000000_", t: "rct", d: hab.kever!.serder.said, i: hab.pre, s: "zz" },
+      makify: true,
+    });
+    const poison = messagize(rct, { sigers: hab.sign(rct.raw, true) as Siger[] });
+    const valid = hab.makeEndRole(hab.pre, Roles.mailbox, true);
+    const text = (msg: Uint8Array) => new TextDecoder().decode(msg);
+    const http = new FakeRuntimeHttpClient();
+    let available = true;
+    http.registerOrigin(endpoint.url, () => {
+      if (!available) return new Response(null, { status: 204 });
+      available = false;
+      return new Response(
+        `id: 0\nevent: /reply\ndata: ${text(poison)}\n\nid: 1\nevent: /reply\ndata: ${text(valid)}\n\n`,
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    });
+    const runtime = yield* createAgentRuntime(hby, http, systemClock);
+    try {
+      const worker = yield* spawn(() =>
+        runtime.mailboxPoller.pollDo((batch) => settleMailboxPollBatch(runtime, batch))
+      );
+      try {
+        yield* waitForCondition(
+          () => hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"] === 1,
+          "Expected the poll to pass the malformed receipt and consume the next message.",
+        );
+        assertEquals(hby.db.ends.get([hab.pre, Roles.mailbox, hab.pre])?.allowed, true);
+      } finally {
+        yield* waitForTaskHalt(worker);
+      }
+      // After a restart the poller asks for the message after the valid one: the malformed receipt is not re-read.
+      const restarted = new MailboxDirector(hby);
+      restarted.registerTopic("/reply");
+      assertEquals(restarted.remoteQueryCursor(hab.pre, endpoint.eid)["/reply"], 2);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

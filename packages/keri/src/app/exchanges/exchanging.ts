@@ -39,6 +39,7 @@ import { Kever } from "../../core/kel/kever.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import { exchangeWindow } from "../../core/mailbox/kram-policy.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../core/protocol-serialization.ts";
+import { readPrefixer } from "../../core/wire-fields.ts";
 import { hasNests, loadNests, prepareNests, publishNests } from "../../db/exchange/exchange-nests.ts";
 import type { ExchangeRegistryStateShape } from "../../db/exchange/exchange-records.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../time/mod.ts";
@@ -426,6 +427,8 @@ export class Exchanger {
       return reject(`Unsupported exchange ilk ${args.serder.ilk}.`);
     }
     if (!args.serder.pre || !args.serder.said) return reject("Exchange message is missing sender or SAID.");
+    // Proof resolution and every later sender read decode this prefix; a remote value is decided here.
+    if (!readPrefixer(args.serder.pre)) return reject(`Exchange sender ${args.serder.pre} is not a valid prefix.`);
     if (args.receiverTime !== undefined && timestampMicros(args.receiverTime) === null) {
       throw new Error("Invalid exchange receiver time");
     }

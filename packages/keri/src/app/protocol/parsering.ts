@@ -48,6 +48,7 @@ import type { KeverDecision, QueryProcessDecision } from "../../core/kel/kever-d
 import { type KramRefusal } from "../../core/mailbox/kraming.ts";
 import { serializeMessage } from "../../core/protocol-serialization.ts";
 import { type ReplyProcessDecision, Revery } from "../../core/routing.ts";
+import { readPrefixer } from "../../core/wire-fields.ts";
 import type { TelProcessDecision, Tevery } from "../../vdr/eventing.ts";
 import type { Verifier, VerifierDecision } from "../credentials/verifying.ts";
 import type { ExchangeDecision } from "../exchanges/exchanging.ts";
@@ -658,22 +659,30 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
   }
 }
 
+/**
+ * Whether a frame carries nested messages that no completed consumer owns.
+ *
+ * Only supported exchange routes, IPEX disclosure `xip`s and the v2 Unblind query retain parent-owned children; any
+ * other frame with children is unsupported input. A remote frame is refused as one invalid message
+ * (`ProtocolProcessor.dispatch`); {@link envelopeFromFrame} throws for it.
+ */
+export function hasUnsupportedNests(message: CesrFrame): boolean {
+  if (!message.nests?.length) return false;
+  const route = String(message.body.ked?.r ?? "");
+  const unblindQuery = message.body.ilk === "qry" && message.body.pvrsn.major === 2 && route === "/ipex/unblind";
+  return !unblindQuery && (
+    (message.body.ilk !== "exn" && !(message.body.ilk === "xip" && nestedIpexRoute(route)))
+    || !supportsNestedExchange(route, message.body.pvrsn.major)
+  );
+}
+
 /** Project one complete frame for message routing without an intermediate event array. */
 export function envelopeFromFrame(
   message: CesrFrame,
   local = false,
 ): KeriDispatchEnvelope {
   // Only completed consumers may retain parent-owned children through normalization.
-  const route = String(message.body.ked?.r ?? "");
-  const unblindQuery = message.body.ilk === "qry" && message.body.pvrsn.major === 2 && route === "/ipex/unblind";
-  if (
-    !unblindQuery && (
-      (message.body.ilk !== "exn" && !(message.body.ilk === "xip" && nestedIpexRoute(route)))
-      || !supportsNestedExchange(route, message.body.pvrsn.major)
-    )
-  ) {
-    requireFlatFrame(message, "KERI runtime normalization");
-  }
+  if (hasUnsupportedNests(message)) requireFlatFrame(message, "KERI runtime normalization");
   const serder = (message.body instanceof SerderKERI || message.body instanceof SerderACDC)
     ? message.body as SerderKERI
     : parseSerder(message.body.raw, smellageFromMessage(message)) as SerderKERI;
@@ -773,8 +782,9 @@ export function queryEnvelopeFromDispatch(
 ): QueryEnvelope {
   const lastSsg = envelope.ssgs.at(-1);
   // V2 processMsg falls back to the claimed sender only when raw sigers exist.
-  const rawSource = !lastSsg && envelope.serder.pvrsn.major >= 2 && envelope.sigers.length && envelope.serder.pre
-    ? new Prefixer({ qb64: envelope.serder.pre })
+  // A claimed sender that is not a prefix authenticates nothing; the query is then refused as unauthenticated.
+  const rawSource = !lastSsg && envelope.serder.pvrsn.major >= 2 && envelope.sigers.length
+    ? readPrefixer(envelope.serder.pre) ?? undefined
     : undefined;
   return {
     serder: envelope.serder,
