@@ -256,7 +256,15 @@ export class ProtocolProcessor {
    * windows). Data-driven work waits at most one tock.
    */
   *escrowDo(clock: RuntimeClock = systemClock, pacing: Readonly<DoerPacing> = PROTOCOL_PACING): Operation<never> {
-    return yield* doEveryOnWrite(clock, pacing, this.kvy.db, () => this.processEscrowsOnce());
+    // Escrows live in the KEL store and, for TEL and registry work, in the registry stores; a write to any of them
+    // runs the next tock's pass.
+    const stores = [this.kvy.db, this.tvy?.reger, this.registry?.store.baser].filter((store) => !!store);
+    const written = {
+      get writeActivity() {
+        return stores.reduce((sum, store) => sum + store.writeActivity, 0);
+      },
+    };
+    return yield* doEveryOnWrite(clock, pacing, written, () => this.processEscrowsOnce());
   }
 }
 
