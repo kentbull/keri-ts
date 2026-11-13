@@ -73,8 +73,6 @@ Deno.test("an offer is signed and accepted locally at present; processOnce deliv
       verb: "offer",
       phase: "delivering",
       deadline: s.issuer.runtime.exc.exchangeDeadline(s.issuer.hby.db.exns.get([begun.said])!) ?? undefined,
-      attempts: 0,
-      blocked: undefined,
     });
     yield* ops.processOnce();
     assertEquals(s.log.length, 1);
@@ -99,13 +97,16 @@ Deno.test("a failing transport is retried with a doubling delay and ends the ope
     const { said } = yield* offer(ops);
     yield* ops.processOnce();
     let status = presentationStatus(ops, said);
-    assertEquals(status.state === "active" && [status.attempts, status.blocked], [1, "transport failed"]);
+    assertEquals(status.state === "active" && [status.failure?.attempts, status.failure?.reason], [
+      1,
+      "transport failed",
+    ]);
     yield* ops.processOnce();
     assertEquals(s.log.length, 1, "no retry before the delay has passed");
     s.clock.skew += 1100;
     yield* ops.processOnce();
     status = presentationStatus(ops, said);
-    assertEquals(status.state === "active" && status.attempts, 2, "a second failure does not end it");
+    assertEquals(status.state === "active" && status.failure?.attempts, 2, "a second failure does not end it");
     s.clock.skew += 1500;
     yield* ops.processOnce();
     assertEquals(s.log.length, 2, "the delay doubled, so one more second is not enough");

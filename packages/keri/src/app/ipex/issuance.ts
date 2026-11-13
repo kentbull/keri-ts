@@ -85,7 +85,12 @@ import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
-import { type DeliveryMessage, DeliveryOutbox, type Outbound } from "../runtime/delivery-outbox.ts";
+import {
+  type DeliveryFailure,
+  type DeliveryMessage,
+  DeliveryOutbox,
+  type Outbound,
+} from "../runtime/delivery-outbox.ts";
 import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
@@ -146,6 +151,8 @@ export type IssuanceStatus =
     needs?: IssuanceNeed;
     /** The Grant's exchange deadline (ISO 8601), while the exchange is still open. */
     deadline?: string;
+    /** Present while a delivery is failing and being retried with a doubling delay. */
+    failure?: DeliveryFailure;
   }
   | { state: "done"; role: IssuanceRole; phase: "issued" | "admitted" }
   | { state: IssuanceEndState; role: IssuanceRole; reason: string };
@@ -815,7 +822,13 @@ export function issuanceStatus(
   const { deps } = ops, ended = ops.ended.get(grant), live = ops.live.get(grant);
   if (ended) return { state: ended.state, role: ended.role, reason: ended.reason };
   if (live && !reached(deps.clock, live.expires)) {
-    return { state: "active", role: live.role, phase: live.phase, deadline: live.deadline ?? undefined };
+    return {
+      state: "active",
+      role: live.role,
+      phase: live.phase,
+      deadline: live.deadline ?? undefined,
+      ...(live.outbox.failure && { failure: live.outbox.failure }),
+    };
   }
   const parties = grantParties(deps.hby, grant);
   if (!parties) throw new ValidationError("No issuance was begun for this Grant");

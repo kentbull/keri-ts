@@ -306,12 +306,12 @@ export {
   ipexSpurnExn,
 } from "../app/ipex/ipexing.ts";
 export {
-  type KelPublicationStatus,
-  KelPublisher,
-  type KelPublisherDeps,
   KEL_PUBLISHER_PACING,
   KEL_PUBLISHER_SWEEP_TOCKS,
   KEL_PUBLISHER_TOCK_MS,
+  type KelPublicationStatus,
+  KelPublisher,
+  type KelPublisherDeps,
   kelPublisherDo,
   type KelPublisherStatus,
 } from "../app/mailbox/kel-publisher.ts";
@@ -997,7 +997,12 @@ export {
   type ResumedPresentationFile,
   resumePresentationFile,
 } from "../app/ipex/presentation-files.ts";
-export { DeliveryOutbox, type Outbound, type OutboxDelivery } from "../app/runtime/delivery-outbox.ts";
+export {
+  type DeliveryFailure,
+  DeliveryOutbox,
+  type Outbound,
+  type OutboxDelivery,
+} from "../app/runtime/delivery-outbox.ts";
 
 // Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
 export {

@@ -33,6 +33,26 @@ export interface OutboxDelivery {
   deliver(message: DeliveryMessage): Operation<string[]>;
 }
 
+/** Why the head delivery is being retried; part of an active operation's status. */
+export interface DeliveryFailure {
+  /** Consecutive failures of the head message. */
+  attempts: number;
+  /** The error's message followed by its `cause` chain, joined with " <- ". */
+  reason: string;
+  /** When the next attempt is due (ISO 8601). */
+  retryAt: string;
+}
+
+/** Flatten an error and its `cause` chain to one line of text, so a reader sees the transport's own reason. */
+export function describeFailure(error: unknown): string {
+  const parts: string[] = [];
+  for (let e = error, depth = 0; e !== undefined && e !== null && depth < 8; depth++) {
+    parts.push(e instanceof Error ? (e.message || e.name) : String(e));
+    e = e instanceof Error ? e.cause : undefined;
+  }
+  return parts.join(" <- ");
+}
+
 /** The queue and its retry state for one live operation. */
 export class DeliveryOutbox {
   private readonly queue: Outbound[] = [];
@@ -57,6 +77,17 @@ export class DeliveryOutbox {
   /** The latest delivery error, or null. */
   get lastError(): unknown {
     return this.backoff.last;
+  }
+
+  /** The retry state of the head message, or null while nothing is failing. */
+  get failure(): DeliveryFailure | null {
+    return this.backoff.attempts === 0
+      ? null
+      : {
+        attempts: this.backoff.attempts,
+        reason: describeFailure(this.backoff.last),
+        retryAt: new Date(this.backoff.next).toISOString(),
+      };
   }
 
   /** Queue a message behind the others. */

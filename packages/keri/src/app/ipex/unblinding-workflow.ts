@@ -38,7 +38,7 @@ import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../multi
 import { type Multiplexor, MULTISIG_QRY_ROUTE, MULTISIG_RPY_ROUTE, multisigExnBody } from "../multisig/grouping.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
-import { DeliveryOutbox } from "../runtime/delivery-outbox.ts";
+import { type DeliveryFailure, DeliveryOutbox } from "../runtime/delivery-outbox.ts";
 import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
@@ -58,7 +58,7 @@ export type UnblindingPhase = "awaitingReply" | "proving";
 
 /** Status of one Unblind, discriminated on `state`. A pure read. */
 export type UnblindingStatus =
-  | { state: "active"; role: UnblindingRole; phase: UnblindingPhase; deadline: string }
+  | { state: "active"; role: UnblindingRole; phase: UnblindingPhase; deadline: string; failure?: DeliveryFailure }
   | { state: "done"; role: UnblindingRole }
   | { state: UnblindingEndState; role: UnblindingRole; reason: string };
 
@@ -649,7 +649,13 @@ export function unblindingStatus(
       : { state: settled.state, role: settled.role, reason: settled.reason };
   }
   if (live && !lapsed(deps.clock, live.deadline)) {
-    return { state: "active", role: live.role, phase: live.phase, deadline: live.deadline };
+    return {
+      state: "active",
+      role: live.role,
+      phase: live.phase,
+      deadline: live.deadline,
+      ...(live.outbox.failure && { failure: live.outbox.failure }),
+    };
   }
   const input = deps.exc.retainedInput(grant), recipient = input?.serder.sad?.ri;
   if (!input || typeof recipient !== "string" || !deps.hby.habs.has(recipient)) {

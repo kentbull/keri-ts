@@ -58,7 +58,7 @@ import { isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts"
 import { proposeRegistryEvent } from "../multisig/proposing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
-import { DeliveryOutbox } from "../runtime/delivery-outbox.ts";
+import { type DeliveryFailure, DeliveryOutbox } from "../runtime/delivery-outbox.ts";
 import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
@@ -102,10 +102,8 @@ export type PresentationStatus =
     verb: PresentationVerb;
     phase: "delivering";
     deadline?: string;
-    /** Consecutive delivery failures; the delivery is retried with a doubling delay. */
-    attempts: number;
-    /** The last transport failure. */
-    blocked?: string;
+    /** Present while a delivery is failing and being retried with a doubling delay. */
+    failure?: DeliveryFailure;
   }
   | {
     state: "done";
@@ -517,8 +515,7 @@ export function presentationStatus(
       verb: live.verb,
       phase: "delivering",
       deadline: live.deadline,
-      attempts: live.outbox.attempts,
-      blocked: live.outbox.lastError === null ? undefined : message(live.outbox.lastError),
+      ...(live.outbox.failure && { failure: live.outbox.failure }),
     };
   }
   const { serder, verb } = signed(deps, said);

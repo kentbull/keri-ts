@@ -57,10 +57,12 @@ function* libraryUnblind(
   runtime: AgentRuntime,
   hab: Hab,
   grant: string,
-  { timeoutMs, proposer, listen, states }: {
+  { timeoutMs, proposer, listen, states, parties }: {
     timeoutMs: number;
     proposer?: string;
     listen?: number;
+    /** Parties of one Unblind that have not settled; a host stays up until every one has, as real hosts do. */
+    parties?: { unsettled: number };
     states?: readonly string[];
   },
 ) {
@@ -78,6 +80,7 @@ function* libraryUnblind(
   try {
     const begun = requester ? requestUnblind(ops, grant, options) : group ? answerUnblind(ops, grant, options) : null;
     const host = yield* spawn(() => runAgentRuntime(runtime, { hab: member, pollMailbox: true }));
+    let counted = false;
     try {
       const stop = Date.now() + timeoutMs;
       while (!begun && !ops.live.has(grant) && !ops.settled.has(grant)) {
@@ -86,8 +89,14 @@ function* libraryUnblind(
       }
       const { status } = yield* waitForUnblinding(ops, grant, { timeoutMs: Math.max(1, stop - Date.now()) });
       if (status.state !== "done") throw new ValidationError(`Unblind did not complete: ${JSON.stringify(status)}`);
+      if (parties) {
+        parties.unsettled--;
+        counted = true;
+        while (parties.unsettled > 0 && Date.now() < stop) yield* sleep(20);
+      }
       return { grant, completed: true, admitted: false };
     } finally {
+      if (parties && !counted) parties.unsettled--;
       yield* host.halt();
     }
   } finally {
@@ -627,9 +636,11 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       ValidationError,
       "current signing member proposer",
     );
+    const parties = { unsettled: 4 };
     const peerRequest = yield* spawn(() =>
       libraryUnblind(verifiers[1].runtime, verifiers[1].hab, grant.said!, {
         timeoutMs: 15000,
+        parties,
         proposer: verifier.member.pre,
         listen: finiteListener.port,
       })
@@ -639,6 +650,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     const request = yield* spawn(() =>
       libraryUnblind(verifier.runtime, verifier.hab, grant.said!, {
         timeoutMs: 15000,
+        parties,
         proposer: verifier.member.pre,
       })
     );
@@ -656,6 +668,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     const peerRelease = yield* spawn(() =>
       libraryUnblind(sender.runtime, sender.hab, grant.said!, {
         timeoutMs: 15000,
+        parties,
         proposer: presenters[1].member.pre,
       })
     );
@@ -664,6 +677,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     const release = yield* spawn(() =>
       libraryUnblind(presenters[1].runtime, presenters[1].hab, grant.said!, {
         timeoutMs: 15000,
+        parties,
         proposer: presenters[1].member.pre,
       })
     );
