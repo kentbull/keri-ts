@@ -25,7 +25,9 @@ export type WorkflowKind =
   | "issuance"
   | "ipex"
   | "presentation"
-  | "unblinding";
+  | "unblinding"
+  /** A registry root copy was retained; `id` is the registry. */
+  | "root";
 
 /** Identity of a workflow whose status may have changed; consumers re-read status. */
 export interface WorkflowChange {

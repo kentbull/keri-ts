@@ -49,6 +49,7 @@ import type { ExchangeRouteHandler } from "../app/exchanges/exchanging.ts";
 import type { Hab, Habery } from "../app/identity/habbing.ts";
 import { groupWitnesserSelection, isLocalGroupHab, localGroupMember } from "../app/multisig/group-members.ts";
 import type { Notifier } from "../app/notifications/notifying.ts";
+import type { ChangeSink } from "../app/runtime/workflow-contract.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kever } from "../core/kel/kever.ts";
 import { exchange } from "../core/protocol-eventing.ts";
@@ -246,12 +247,15 @@ export class RegistryRoot implements ExchangeRouteHandler {
   readonly hby: Habery;
   readonly rgy: Regery;
   readonly notifier: Notifier | null;
+  /** Told `{kind: "root", id: registry}` after a copy is retained, so an embedder that waited for the root can act. */
+  readonly changes: ChangeSink | undefined;
 
-  constructor(hby: Habery, rgy: Regery, notifier: Notifier | null = null) {
+  constructor(hby: Habery, rgy: Regery, notifier: Notifier | null = null, changes?: ChangeSink) {
     if (rgy.hby !== hby) throw new ValidationError("registry root replication requires the Habery's registry owner");
     this.hby = hby;
     this.rgy = rgy;
     this.notifier = notifier;
+    this.changes = changes;
     if (!hby.readonly) this.reconcile();
   }
 
@@ -745,6 +749,7 @@ export class RegistryRoot implements ExchangeRouteHandler {
         rd: registry,
       });
     }
+    if (added) this.changes?.push({ kind: "root", id: registry });
     return added;
   }
 
