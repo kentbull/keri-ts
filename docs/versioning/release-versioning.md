@@ -41,6 +41,10 @@ release builds explicitly add `build.<run>.<sha>` metadata.
    after runtime checks so they cannot mask missing runtime dependencies.
 5. Commit only explicit release paths, with an explanatory body, and merge after
    exact-head checks pass. Never stage unrelated work or publish from a dirty tree.
+   Then record the green run the release check looks for: dispatch the PR Stage Gate
+   on the release commit (`gh workflow run pr-stage-gate.yml --ref master`, after
+   the version PR merged) and wait for it to pass
+   ([release check](#release-check-and-recorded-green-runs)).
 6. With publication authorization, create annotated `<package>-v<VERSION>` tags
    (`cesr`, `keri`, `hosting`, `registrar`, `wallet`, `verifier`, `observer`,
    `tufa`) at the verified release commit. Push each selected tag explicitly in
@@ -56,11 +60,34 @@ release builds explicitly add `build.<run>.<sha>` metadata.
    whose CI build metadata differs; replace that GitHub release asset with
    `npm pack <name>@<version>` registry bytes so all copies match.
 
+## Release check and recorded green runs
+
+CI has usually tested a release commit already, so the shared workflow's first job
+(`plan`, `scripts/ci/release-plan.ts`) looks for a recorded green run before any
+runner builds. The package's release check is skipped, as a whole job, when a
+`PR Stage Gate` run exists that
+
+- ran on `push` or `workflow_dispatch` (these check out exactly the run's
+  `head_sha`; a `pull_request` run tests a synthetic merge commit and never counts),
+- ran on the release commit, or on a commit whose git tree is identical, and
+- finished green, with its `stage-gate` job and every `unit (<shard>)` job that
+  covers the package successful. The scope a run covered is read from those job
+  names, which the gate's plan job fixes from the selected scope; a dispatch of the
+  gate always covers every unit shard.
+
+The package-to-shard mapping comes from the same unit shards the PR gate uses
+(`unitShards` in `scripts/ci/pr-test-scope.ts`; multisync maps to the suite owning
+its one test). Any API error or ambiguity runs the check. When the check runs it
+is sharded the same way (`release check (<shard>)` jobs) and the artifact job
+waits for all shards. A merged PR, or a run for a different tree, is not
+evidence. To get the evidence for a release commit, dispatch the gate on it
+(`gh workflow run pr-stage-gate.yml --ref master`); the run takes about ten minutes.
+
 ## Workflow and artifact ownership
 
 The three package tag workflows call
-[shared npm release](../../.github/workflows/npm-release.yml). It performs
-package-owned checks, builds and smokes the primary artifact, publishes that
+[shared npm release](../../.github/workflows/npm-release.yml). After the plan job
+(skip or shard the package-owned check, see above) it builds and smokes the primary artifact, publishes that
 uploaded tarball to npm, then creates the GitHub release using registry bytes.
 Tufa builds supporting dependency artifacts for smoke and verifies its declared
 CESR/KERI versions are already published. The shared workflow does not itself
