@@ -1,6 +1,6 @@
 import { SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import {
   endpointRoleAccepted,
   isLocalGroupHab,
@@ -91,18 +91,18 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       runtime.postman.wait = function*(evt) {
         return { kin: "failed", evt, deliveries: [], error: failure };
       };
-      const caught = yield* call(() =>
-        assertRejects(() =>
-          run(() =>
-            proposeGroupEndpointRole(hby, runtime.protocol, runtime.postman, group, {
-              eid: remote.pre,
-              role: Roles.mailbox,
-              allow: true,
-            })
-          )
-        )
+      const refused = yield* proposeGroupEndpointRole(hby, runtime.protocol, runtime.postman, group, {
+        eid: remote.pre,
+        role: Roles.mailbox,
+        allow: true,
+      });
+      assertEquals(refused.messages, [], "a refused wrapper is not reported as delivered");
+      assertEquals(
+        refused.members.map(({ outcome, reason }) => [outcome, reason]),
+        refused.members.map(() => ["failed", failure.message]),
+        "queue admission cannot report successful proposal delivery",
       );
-      assertStrictEquals(caught, failure, "queue admission cannot report successful proposal delivery");
+      assert(refused.members.length > 0);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

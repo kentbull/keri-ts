@@ -33,6 +33,7 @@ function printEvent(result: GroupEventResult): void {
     accepted: result.accepted,
     messages: result.messages,
     deliveries: result.deliveries,
+    members: result.members,
   });
   printRootCopies(result.rootCopies);
 }

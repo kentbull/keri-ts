@@ -18,6 +18,7 @@ export function writeGroupEndpointRoleProposal(result: GroupRoleResult): void {
     group: result.group,
     accepted: result.accepted,
     deliveries: result.deliveries,
+    members: result.members,
   });
 }
 

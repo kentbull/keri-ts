@@ -620,6 +620,7 @@ function groupEventResult(hby: Habery, sent: ProposedGroupEvent, accepted: boole
     accepted,
     messages: sent.messages,
     deliveries: sent.deliveries,
+    members: sent.members,
     state: hby.db.getState(sent.group),
     delegationPhase: null,
   };
@@ -670,6 +671,7 @@ function* completeLocalGroupEvent(
     accepted,
     deliveries: [],
     messages: [],
+    members: [],
   };
   return yield* finishJoinedEvent(hby, runtime, result, event, args, since);
 }
