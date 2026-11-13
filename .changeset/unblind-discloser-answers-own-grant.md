@@ -1,5 +1,0 @@
----
-"keri-ts": minor
----
-
-Remove the Unblind discloser's separate approval. The discloser consented by signing the presentation Grant, so an authenticated Unblind query for a live Grant that identifier sent is now answered automatically, bounded by that Grant's registry scope and original deadline. The decision comes from stored Grants, so a restarted process answers a repeated query with no approve call. Removed without wrappers (2.1.0 compatibility is not kept): `approveUnblind` from `keri-ts/runtime`, the owner's held-query cache, the `Unblind` constructor `now` option, and the `awaitingQuery` phase. `requestUnblind` stays the disclosee's explicit step. `UnblindingOperations.processOnce` adopts the replies owners owe (`Unblind.awaitingReply`, `IpexAuxiliaries.unblindOwners`) and delivers them; `tufa ipex unblind --grant` run as the discloser now only listens and delivers the reply, and group Unblind still goes through `Unblind.approve` for its member contributions. KERIpy keeps its own local approve gate; that is local policy and the wire is unchanged.
