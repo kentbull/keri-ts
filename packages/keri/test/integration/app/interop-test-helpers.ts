@@ -712,6 +712,9 @@ export function extractLastNonEmptyLine(output: string): string {
   return line;
 }
 
+/** Pause between readiness probes; hosts answer within tens of milliseconds once listening. */
+const HTTP_PROBE_INTERVAL_MS = 50;
+
 /** Wait until one long-lived host reports healthy on `/health`. */
 export async function waitForHealth(
   port: number,
@@ -733,7 +736,7 @@ export async function waitForHealth(
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, HTTP_PROBE_INTERVAL_MS));
   }
   throw new Error(lastError);
 }
@@ -795,7 +798,7 @@ export async function waitForHttpOk(url: string, timeoutMs = DEFAULT_HEALTH_TIME
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, HTTP_PROBE_INTERVAL_MS));
   }
   throw new Error(lastError);
 }
@@ -1667,11 +1670,12 @@ export async function startKeriPyWitnessDemoHarness(
   );
 
   try {
-    for (const node of KERIPY_DEMO_WITNESS_NODES) {
+    // Nodes start together, so probe them together; each node's own probes stay in order.
+    await Promise.all(KERIPY_DEMO_WITNESS_NODES.map(async (node) => {
       await waitForHttpOk(`${node.httpOrigin}/oobi/${node.pre}`, KERIPY_DEMO_START_TIMEOUT_MS);
       await waitForHttpOk(node.controllerOobi);
       await waitForHttpOk(node.witnessOobi);
-    }
+    }));
   } catch (error) {
     const details = await stopChild(child);
     throw new Error(
