@@ -614,6 +614,8 @@ export {
   InvalidPathNameError,
   KramRefusedError,
   PathError,
+  PersistenceLatchedError,
+  PersistenceReadError,
   PresentationClosedError,
   ValidationError,
 } from "../core/errors.ts";

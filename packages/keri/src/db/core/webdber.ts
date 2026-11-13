@@ -12,7 +12,7 @@
 
 import { bytesEqual, bytesHex } from "cesr-ts";
 import { call, ensure, type Operation } from "npm:effection@^3.6.0";
-import { DatabaseOperationError } from "../../core/errors.ts";
+import { PersistenceLatchedError, PersistenceReadError } from "../../core/errors.ts";
 import type { StoreIdentity, Table, TableEntry } from "./dber.ts";
 import { MemStore, type StoreChange } from "./memstore.ts";
 import type { StoreFamily, StoreOpener } from "./store-owner.ts";
@@ -76,51 +76,122 @@ export interface Persistence {
 }
 
 /**
+ * Where a composition's persistence stands:
+ * - `healthy`: every task so far succeeded;
+ * - `retrying`: the task at the head failed and is being retried in place, so nothing behind it runs yet;
+ * - `latched`: a task failed through all its retries, and the composition accepts no more commits.
+ */
+export type PersistenceStatus = "healthy" | "retrying" | "latched";
+
+/** Delays in milliseconds before each retry of a failed task: four attempts in about half a second. */
+export const PERSISTENCE_RETRY_DELAYS: readonly number[] = Object.freeze([25, 100, 400]);
+
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
  * The persistence order of one composition. Tasks run strictly one at a time,
  * outside any Effection scope, so cancelling a waiter never cancels a write.
  *
- * The first failure latches: every later task is skipped, because applying a
- * later batch over a lost earlier one would break prefix durability.
+ * A failed task is retried in place on a fixed short schedule while it holds
+ * the head of the queue, so no later task runs ahead of it. Every task the
+ * library enqueues is safe to re-run: an adapter `write` applies one batch
+ * atomically and idempotently, `clear` deletes what may already be gone, and
+ * `close` releases what may already be released. A task that fails through its
+ * retries latches the queue for good: every later task is skipped, because
+ * applying a later batch over a lost earlier one would break prefix
+ * durability. Recovery is a new composition with a new queue.
  */
 export class PersistenceQueue {
   #tail: Promise<void> = Promise.resolve();
   #failure: { readonly error: unknown } | null = null;
+  #retrying = false;
+  readonly #retryDelays: readonly number[];
 
-  /** Append a task, which is skipped if an earlier one failed. */
+  /** @param retryDelays Delays before each retry; its length is the number of retries. */
+  constructor(retryDelays: readonly number[] = PERSISTENCE_RETRY_DELAYS) {
+    this.#retryDelays = [...retryDelays];
+  }
+
+  /** Append a task, retried on failure; skipped once the queue has latched. Run only re-runnable tasks here. */
   enqueue(task: () => Promise<void>): void {
     this.#append(task, false);
   }
 
-  /** Append connection teardown, which still runs after a failure so a handle is not left open. */
+  /** Append connection teardown, which still runs, once, after a latch so a handle is not left open. */
   release(task: () => Promise<void>): void {
     this.#append(task, true);
   }
 
+  /**
+   * Run `task` after everything enqueued before this call, and resolve with its result. It sees every earlier
+   * commit durable, except after a latch, when it runs anyway and sees only the durable prefix; check `status()`.
+   * Nothing enqueued after it runs until it settles. A throwing `task` rejects only this caller, with
+   * `PersistenceReadError`; it is not retried and never latches the queue.
+   */
+  read<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.#tail.then(async () => {
+      try {
+        return await task();
+      } catch (error) {
+        throw new PersistenceReadError("Persistence read failed", { cause: error });
+      }
+    });
+    this.#tail = result.then(() => {}, () => {});
+    return result;
+  }
+
+  /** The queue's state now; `retrying` lasts only while the head task is between attempts. */
+  status(): PersistenceStatus {
+    if (this.#failure) return "latched";
+    return this.#retrying ? "retrying" : "healthy";
+  }
+
   #append(task: () => Promise<void>, always: boolean): void {
     this.#tail = this.#tail.then(async () => {
-      if (this.#failure && !always) return;
+      if (!this.#failure) return await this.#attempt(task);
+      if (!always) return;
       try {
         await task();
-      } catch (error) {
-        this.#failure ??= { error };
+      } catch {
+        // Already latched; the recorded failure is the one reported.
       }
     });
   }
 
-  /** Refuse new work once latched. The original failure is the cause. */
-  assertHealthy(): void {
-    if (this.#failure) {
-      throw new DatabaseOperationError("Persistence failed; this composition accepts no more commits", {
-        cause: this.#failure.error,
-      });
+  /** Run `task`, retrying it in place on the schedule, and latch with its first failure when every attempt fails. */
+  async #attempt(task: () => Promise<void>): Promise<void> {
+    let first: { readonly error: unknown } | null = null;
+    try {
+      for (let attempt = 0;; attempt++) {
+        try {
+          return await task();
+        } catch (error) {
+          first ??= { error };
+          if (attempt >= this.#retryDelays.length) {
+            this.#failure = first;
+            return;
+          }
+        }
+        this.#retrying = true;
+        await pause(this.#retryDelays[attempt]);
+      }
+    } finally {
+      this.#retrying = false;
     }
   }
 
-  /** The outcome of everything enqueued so far, rejecting with the recorded failure. */
+  /** Refuse new work once latched, with `PersistenceLatchedError` whose cause is the original failure. */
+  assertHealthy(): void {
+    if (this.#failure) throw this.#latched(this.#failure.error);
+  }
+
+  #latched(cause: unknown): PersistenceLatchedError {
+    return new PersistenceLatchedError("Persistence failed; this composition accepts no more commits", { cause });
+  }
+
+  /** The outcome of everything enqueued so far, rejecting with `PersistenceLatchedError` once latched. */
   #settled(): Promise<void> {
-    return this.#tail.then(() => {
-      if (this.#failure) throw this.#failure.error;
-    });
+    return this.#tail.then(() => this.assertHealthy());
   }
 
   /** Wait until everything enqueued before this call is durable. Halting cancels only the wait. */
@@ -184,7 +255,7 @@ function netVersion(changes: readonly StoreChange[]): string | undefined {
  * readable even though it was never persisted, and every later transaction
  * throws before touching the mirror, so the mirror stops changing. The durable
  * state is a prefix of the commit sequence. Recovery is a new composition, with
- * a new queue, loading that prefix; there is no retry.
+ * a new queue, loading that prefix; the queue's own retries happen before it latches.
  */
 export class WebDBer extends MemStore {
   readonly #persistence: Persistence;

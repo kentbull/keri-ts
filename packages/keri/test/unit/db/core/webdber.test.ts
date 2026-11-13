@@ -1,7 +1,7 @@
 import { b, bytesHex, t } from "cesr-ts";
 import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
-import { DatabaseOperationError } from "../../../../src/core/errors.ts";
+import { DatabaseOperationError, PersistenceLatchedError, PersistenceReadError } from "../../../../src/core/errors.ts";
 import type { Table, TableEntry } from "../../../../src/db/core/dber.ts";
 import {
   type PersistedMeta,
@@ -26,11 +26,18 @@ class FakePersistence implements Persistence {
   batches: PersistenceBatch[] = [];
   closes = 0;
   clears = 0;
-  /** Thrown by the next `write`, which then applies nothing. */
-  failNext: unknown = undefined;
+  /** Thrown by the next `failures` writes, each of which then applies nothing. */
+  #failure: unknown = undefined;
+  #failures = 0;
   #hold: Promise<void> | null = null;
 
   constructor(readonly starts: string[] = [], readonly label = "store") {}
+
+  /** Make the next `times` writes throw `error`; by default every later write does. */
+  fail(error: unknown, times = Number.POSITIVE_INFINITY): void {
+    this.#failure = error;
+    this.#failures = times;
+  }
 
   /** Make writes wait until the returned function is called. */
   hold(): () => void {
@@ -59,10 +66,9 @@ class FakePersistence implements Persistence {
     this.starts.push(`${this.label}:${this.batches.length}`);
     const held = this.#hold;
     if (held) await held;
-    if (this.failNext !== undefined) {
-      const error = this.failNext;
-      this.failNext = undefined;
-      throw error;
+    if (this.#failures > 0) {
+      this.#failures -= 1;
+      throw this.#failure;
     }
     for (const { name, dupsort } of batch.tables) this.tables.set(name, { dupsort, rows: new Map() });
     if (batch.version !== undefined) this.version = batch.version;
@@ -90,16 +96,25 @@ class FakePersistence implements Persistence {
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Three immediate retries, so a test that latches does not wait out the real schedule. */
+const QUICK = [0, 0, 0];
+const quickQueue = () => new PersistenceQueue(QUICK);
+
+/** `error` is the latch report, carrying `failure` as its cause. */
+function assertLatched(error: unknown, failure: unknown): void {
+  assertInstanceOf(error, PersistenceLatchedError);
+  assertStrictEquals(error.cause, failure);
+}
 const flush = (store: WebDBer) => run(() => store.flushed());
 
-async function open(persistence = new FakePersistence(), queue = new PersistenceQueue()): Promise<WebDBer> {
+async function open(persistence = new FakePersistence(), queue = quickQueue()): Promise<WebDBer> {
   const store = new WebDBer({ name: "web" }, persistence, queue);
   assertEquals(await run(() => store.reopen()), true);
   return store;
 }
 
 /** A store whose opening version batch has already been persisted and forgotten. */
-async function settled(persistence = new FakePersistence(), queue = new PersistenceQueue()): Promise<WebDBer> {
+async function settled(persistence = new FakePersistence(), queue = quickQueue()): Promise<WebDBer> {
   const store = await open(persistence, queue);
   await flush(store);
   persistence.batches.length = 0;
@@ -406,9 +421,9 @@ Deno.test("WebDBer applies batches of every store on one queue in global commit 
   assertEquals(starts, ["keeper:2", "baser:2", "keeper:3"]);
 });
 
-Deno.test("WebDBer latches the first failure so no later batch is written", async () => {
+Deno.test("the queue latches after the retry budget and refuses new commits with PersistenceLatchedError", async () => {
   const starts: string[] = [];
-  const queue = new PersistenceQueue();
+  const queue = quickQueue();
   const first = new FakePersistence(starts, "keeper");
   const second = new FakePersistence(starts, "baser");
   const keeper = await settled(first, queue);
@@ -419,42 +434,156 @@ Deno.test("WebDBer latches the first failure so no later batch is written", asyn
   starts.length = 0;
 
   const failure = new Error("quota exceeded");
-  first.failNext = failure;
+  first.fail(failure);
   keeper.setVal(keys, b("k"), b("lost"));
   baser.setVal(events, b("e"), b("after the gap"));
   for (const store of [keeper, baser]) {
-    assertStrictEquals(await assertRejects(() => flush(store)), failure, "the composition reports the original");
+    assertLatched(await assertRejects(() => flush(store)), failure);
   }
-  assertEquals(starts, ["keeper:2"], "the batch after the failure never reached persistence");
-  assertEquals(second.tables.get("events.")!.rows.size, 0);
+  assertEquals(queue.status(), "latched");
+  assertEquals(starts, ["keeper:2", "keeper:3", "keeper:4", "keeper:5"], "one attempt plus three retries");
+  assertEquals(
+    first.batches.slice(1).every((batch) => batch === first.batches[1]),
+    true,
+    "every attempt is that batch",
+  );
+  assertEquals(second.tables.get("events.")!.rows.size, 0, "the batch after the failure never reached persistence");
 
   assertEquals(t(keeper.getVal(keys, b("k"))!), "lost", "the unpersisted commit stays readable");
   assertEquals(t(baser.getVal(events, b("e"))!), "after the gap", "reads continue on every store");
-  const refused = assertThrows(() => keeper.setVal(keys, b("k"), b("refused")));
-  assertInstanceOf(refused, DatabaseOperationError);
-  assertStrictEquals(refused.cause, failure);
-  assertThrows(() => baser.transaction(() => 1), DatabaseOperationError);
-  assertThrows(() => keeper.openTable("new."), DatabaseOperationError);
+  assertLatched(assertThrows(() => keeper.setVal(keys, b("k"), b("refused"))), failure);
+  assertThrows(() => baser.transaction(() => 1), PersistenceLatchedError);
+  assertThrows(() => keeper.openTable("new."), PersistenceLatchedError);
+  assertThrows(() => queue.assertHealthy(), PersistenceLatchedError);
   assertEquals(t(keeper.getVal(keys, b("k"))!), "lost", "a refused write leaves the mirror unchanged");
   assertEquals(keeper.openTable("keys.") === keys, true, "an existing table still binds for reads");
-  assertEquals(starts, ["keeper:2"]);
+  assertEquals(await queue.read(() => Promise.resolve("durable prefix")), "durable prefix", "a read still runs");
+  assertEquals(starts.length, 4);
+});
+
+Deno.test("a failed batch is retried in place and later batches wait", async () => {
+  const starts: string[] = [];
+  const queue = quickQueue();
+  const first = new FakePersistence(starts, "keeper");
+  const second = new FakePersistence(starts, "baser");
+  const keeper = await settled(first, queue);
+  const baser = await settled(second, queue);
+  const [keys, events] = [keeper.openTable("keys."), baser.openTable("events.")];
+  await flush(keeper);
+  await flush(baser);
+  starts.length = 0;
+
+  first.fail(new Error("transaction aborted"), 2);
+  keeper.setVal(keys, b("k"), b("1"));
+  baser.setVal(events, b("e"), b("1"));
+  await run(() => queue.flushed());
+  assertEquals(starts, ["keeper:2", "keeper:3", "keeper:4", "baser:2"], "the baser batch waits behind every retry");
+  assertEquals(pairs(first.tables.get("keys.")!.rows.values()), ["k=1"]);
+  assertEquals(pairs(second.tables.get("events.")!.rows.values()), ["e=1"]);
+});
+
+Deno.test("a batch that succeeds on retry leaves the queue healthy", async () => {
+  const { store, persistence, plain } = await withTables();
+  persistence.fail(new Error("transaction aborted"), 1);
+  store.setVal(plain, b("k"), b("v"));
+  await flush(store);
+  assertEquals(store.getVal(plain, b("k")) !== null, true);
+  assertEquals(persistence.batches.length, 2, "the failed attempt and its successful retry");
+  assertEquals(pairs(persistence.tables.get("plain.")!.rows.values()), ["k=v"]);
+  store.setVal(plain, b("next"), b("v"));
+  await flush(store);
+  assertEquals(persistence.tables.get("plain.")!.rows.size, 2, "later commits persist as usual");
+  await run(() => store.close());
+});
+
+Deno.test("read runs after earlier commits and returns its value", async () => {
+  const queue = quickQueue();
+  const persistence = new FakePersistence();
+  const store = await settled(persistence, queue);
+  const table = store.openTable("t.");
+  const release = persistence.hold();
+  store.setVal(table, b("k"), b("v"));
+  const log: string[] = [];
+  const reading = queue.read(() => {
+    log.push("read");
+    return Promise.resolve(pairs(persistence.tables.get("t.")!.rows.values()));
+  });
+  queue.enqueue(() => Promise.resolve(void log.push("later")));
+  await tick();
+  assertEquals(log, [], "the read waits for the earlier commit");
+  release();
+  assertEquals(await reading, ["k=v"], "the read sees the earlier commit durable");
+  await run(() => queue.flushed());
+  assertEquals(log, ["read", "later"], "a task enqueued after the read runs after it");
+  await run(() => store.close());
+});
+
+Deno.test("a throwing read rejects its caller and does not latch", async () => {
+  const queue = quickQueue();
+  const cause = new Error("read failed");
+  let calls = 0;
+  const error = await assertRejects(() =>
+    queue.read(() => {
+      calls += 1;
+      return Promise.reject(cause);
+    }), PersistenceReadError);
+  assertStrictEquals(error.cause, cause);
+  assertEquals(calls, 1, "a read is not retried");
+  assertEquals(queue.status(), "healthy");
+  queue.assertHealthy();
+  let ran = false;
+  queue.enqueue(() => Promise.resolve(void (ran = true)));
+  await run(() => queue.flushed());
+  assertEquals(ran, true);
+});
+
+Deno.test("status reports healthy, retrying and latched", async () => {
+  const queue = quickQueue();
+  assertEquals(queue.status(), "healthy");
+  let attempts = 0;
+  let release!: () => void;
+  const retried = new Promise<void>((resolve) => release = resolve);
+  queue.enqueue(() => ++attempts === 1 ? Promise.reject(new Error("aborted")) : retried);
+  while (attempts < 2) await tick();
+  assertEquals(queue.status(), "retrying");
+  queue.assertHealthy();
+  release();
+  await run(() => queue.flushed());
+  assertEquals(queue.status(), "healthy");
+
+  const failure = new Error("gone");
+  queue.enqueue(() => Promise.reject(failure));
+  assertLatched(await assertRejects(() => run(() => queue.flushed())), failure);
+  assertEquals(queue.status(), "latched");
+});
+
+Deno.test("release still runs after a latch", async () => {
+  const queue = quickQueue();
+  const failure = new Error("gone");
+  const log: string[] = [];
+  queue.enqueue(() => Promise.reject(failure));
+  queue.enqueue(() => Promise.resolve(void log.push("skipped")));
+  queue.release(() => Promise.resolve(void log.push("released")));
+  queue.release(() => Promise.reject(new Error("close failed too")));
+  assertLatched(await assertRejects(() => run(() => queue.flushed())), failure);
+  assertEquals(log, ["released"]);
 });
 
 Deno.test("WebDBer close reports a latched failure, does not clear, and refuses reuse", async () => {
-  const queue = new PersistenceQueue();
+  const queue = quickQueue();
   const persistence = new FakePersistence();
   const store = await settled(persistence, queue);
   const failure = new Error("write failed");
-  persistence.failNext = failure;
+  persistence.fail(failure);
   const table = store.openTable("t.");
   store.setVal(table, b("k"), b("v"));
 
-  assertStrictEquals(await assertRejects(() => run(() => store.close(true))), failure);
+  assertLatched(await assertRejects(() => run(() => store.close(true))), failure);
   assertEquals(persistence.clears, 0, "a failed store is not deleted");
   assertEquals(persistence.closes, 1, "its connection is still released");
   assertEquals(store.opened, false);
-  assertStrictEquals(await assertRejects(() => run(() => store.close())), failure, "a repeated close still reports");
-  assertStrictEquals(await assertRejects(() => run(() => store.reopen())), failure);
+  assertLatched(await assertRejects(() => run(() => store.close())), failure);
+  assertLatched(await assertRejects(() => run(() => store.reopen())), failure);
   assertEquals(store.opened, false);
 });
 
@@ -464,7 +593,7 @@ Deno.test("WebDBer recovers its durable prefix through a new queue", async () =>
   const table = store.openTable("t.");
   store.setVal(table, b("durable"), b("1"));
   await flush(store);
-  persistence.failNext = new Error("write failed");
+  persistence.fail(new Error("write failed"));
   store.setVal(table, b("lost"), b("1"));
   store.setVal(table, b("skipped"), b("1"));
   await assertRejects(() => flush(store));
@@ -492,7 +621,6 @@ Deno.test("WebDBer flushed covers only commits made before the call", async () =
   const release = persistence.hold();
   store.setVal(plain, b("first"), b("v"));
   const waiting = flush(store);
-  persistence.failNext = undefined;
   store.setVal(plain, b("second"), b("v"));
   await tick();
   assertEquals(persistence.batches.length, 1, "the write behind it has not started");
@@ -549,14 +677,14 @@ Deno.test("WebDBer close reports a failure even when cancelled", async () => {
   const { store, persistence, plain } = await withTables();
   const failure = new Error("write failed");
   const release = persistence.hold();
-  persistence.failNext = failure;
+  persistence.fail(failure);
   store.setVal(plain, b("k"), b("v"));
   const closing = run(() => store.close());
   await tick();
   const halting = Promise.resolve(closing.halt());
   await tick();
   release();
-  assertStrictEquals(await assertRejects(() => halting), failure);
+  assertLatched(await assertRejects(() => halting), failure);
 });
 
 Deno.test("WebDBer close(true) drains, then deletes what was persisted", async () => {
@@ -640,10 +768,10 @@ Deno.test("WebStoreOpener binds one queue to every store it creates", async () =
   assertEquals([keeper.name, baser.name], ["wallet", "wallet"]);
 
   const failure = new Error("write failed");
-  adapters.get("ks")!.failNext = failure;
+  adapters.get("ks")!.fail(failure);
   keeper.setVal(keeper.openTable("k."), b("k"), b("v"));
-  assertStrictEquals(await assertRejects(() => run(() => opener.queue.flushed())), failure);
-  assertThrows(() => baser.transaction(() => 1), DatabaseOperationError);
+  assertLatched(await assertRejects(() => run(() => opener.queue.flushed())), failure);
+  assertThrows(() => baser.transaction(() => 1), PersistenceLatchedError);
   await assertRejects(() => run(() => baser.close()));
   await assertRejects(() => run(() => keeper.close()));
 });
