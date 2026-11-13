@@ -250,6 +250,13 @@ Deno.test("a mailbox poll for a group is authorized when signed by a current mem
       assertEquals(authorized(alice), true, "a member signs the group's poll with its own keys");
       assertEquals(authorized(bob), true);
       assertEquals(authorized(outsider), false, "a key outside the group's key list cannot read its mailbox");
+
+      alice.rotate();
+      assertEquals(authorized(alice), true, "a member that rotated ahead of the group is still the group's member");
+      assertEquals(authorized(bob), true);
+      assertEquals(authorized(outsider), false);
+      outsider.rotate();
+      assertEquals(authorized(outsider), false, "rotating does not bring an outsider's keys into the group");
     } finally {
       yield* hby.close(true);
     }
