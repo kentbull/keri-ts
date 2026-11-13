@@ -956,7 +956,11 @@ Deno.test("nested multisig publication failure preserves rows and cannot record 
       };
       try {
         await assertRejects(
-          () => run(() => exchanger.processEvent({ ...input, nests: [{ ...child, attachments: [] }] })),
+          // The metadata write is skipped when nothing about it changed, so this replacement also moves the mailbox.
+          () =>
+            run(() =>
+              exchanger.processEvent({ ...input, nests: [{ ...child, attachments: [] }], mailboxAid: alice.pre })
+            ),
           Error,
           "publication fault",
         );
