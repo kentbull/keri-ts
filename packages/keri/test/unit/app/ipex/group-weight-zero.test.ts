@@ -34,6 +34,11 @@ import { Regery } from "../../../../src/acdc/registraring.ts";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
+  type DisclosureRole,
+  exportDisclosureStream,
+  listGroupDisclosures,
+} from "../../../../src/app/ipex/disclosure-replaying.ts";
+import {
   approveGroupIpex,
   groupIpexProposals,
   proposeGroupAdmit,
@@ -385,20 +390,130 @@ function assertCustodianHolds(g: WeightZeroGroup, granted: Granted): void {
   );
 }
 
+/**
+ * As for any member (KERIpy Multiplexor.add replays a child only after local approval), the weight-0 member accepts
+ * the group's completed Admit through its own approval; its signature adds no weight.
+ */
+function* custodianAccepts(g: WeightZeroGroup, admit: string): Operation<void> {
+  const { custodian } = g;
+  assert(!custodian.runtime.exc.complete(admit), "holding a proposal is not accepting it");
+  yield* approveGroupIpex(custodian.runtime.operations!.groupIpex, admit);
+  assertEquals(
+    (yield* waitForGroupIpex(custodian.runtime.operations!.groupIpex, admit, { timeoutMs: BUDGET_MS })).status,
+    { state: "done", phase: "accepted" },
+  );
+}
+
+/** A receiver with an empty store and no KRAM processes `stream` front to back in one pass and holds the disclosure. */
+function* receives(g: WeightZeroGroup, granted: Granted, stream: Uint8Array): Operation<void> {
+  const { edge, group } = g, { grant, admit, regk } = granted;
+  const hby = yield* createHabery({
+    name: `receiver-${crypto.randomUUID()}`,
+    bran: "receiverWeightZeroPasscodeAB",
+    temp: true,
+    skipConfig: true,
+    skipSignator: true,
+  });
+  const baser = yield* openLmdbRegistry({ name: `receiver-${crypto.randomUUID()}`, temp: true });
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { acdc: new Regery(hby, baser) });
+  yield* ensure(function*() {
+    yield* runtime.close();
+    yield* hby.close(true);
+    yield* baser.close(true);
+  });
+  yield* runtime.reactor.processBytes(stream);
+  assertEquals(hby.db.getKever(group)?.said, edge.hby.db.getKever(group)?.said, "the receiver accepts the group KEL");
+  assertEquals(runtime.acdc!.store.headEvent(regk)?.said, edge.runtime.acdc!.store.headEvent(regk)?.said);
+  assert(runtime.exc.complete(grant), "the receiver accepts the Grant");
+  assert(runtime.exc.complete(admit), "the receiver accepts the Admit");
+}
+
+/** The exported replay of `grant` from `side`'s store, as `hab`. */
+function* exported(side: Side, hab: Hab, grant: string): Operation<Uint8Array> {
+  return yield* exportDisclosureStream(side.runtime.operations!.issuance.discloser, hab, grant);
+}
+
 Deno.test("a weight-0 group member receives the group's Grant and holds the credential", async () => {
   await run(function*() {
     const g = yield* weightZeroGroup(false);
-    const { custodian } = g;
     const { admit } = yield* grantToGroup(g);
+    yield* custodianAccepts(g, admit);
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
 
-    // As for any member (KERIpy Multiplexor.add replays a child only after local approval), the weight-0 member
-    // accepts the group's completed Admit through its own approval; its signature adds no weight.
-    assert(!custodian.runtime.exc.complete(admit), "holding a proposal is not accepting it");
-    yield* approveGroupIpex(custodian.runtime.operations!.groupIpex, admit);
+Deno.test("lists a group's held and issued disclosures", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { issuer, edge, custodian, group } = g;
+    const granted = yield* grantToGroup(g);
+    const row = (role: DisclosureRole) => ({
+      grant: granted.grant,
+      admit: granted.admit,
+      credential: granted.credential.said!,
+      registry: granted.regk,
+      role,
+    });
+    // Until the weight-0 member accepts the group's Admit, the disclosure is not complete in its store.
+    assertEquals(listGroupDisclosures(custodian.hby, custodian.runtime.exc, group), []);
+    yield* custodianAccepts(g, granted.admit);
+    for (const side of [custodian, edge]) {
+      assertEquals(listGroupDisclosures(side.hby, side.runtime.exc, group), [row("holder")], side.name);
+    }
+    // The issuer's store lists the same disclosure as issued by it, and nothing for the group.
+    assertEquals(listGroupDisclosures(issuer.hby, issuer.runtime.exc, issuer.hab.pre!), [row("issuer")]);
+    assertEquals(listGroupDisclosures(issuer.hby, issuer.runtime.exc, group), [row("holder")]);
+    assertEquals(listGroupDisclosures(custodian.hby, custodian.runtime.exc, custodian.member.pre!), []);
+    // The registry the group's credential names, read from the store's accepted heads, by issuer.
+    const store = custodian.runtime.acdc!.store;
+    assertEquals(store.registries(issuer.hab.pre!), [granted.regk]);
+    assertEquals(store.registries(group), []);
+    assert(store.registries().includes(granted.regk));
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("exported stream carries KELs, registry TEL, Grant and Admit in order", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { issuer, edge, group } = g;
+    const { grant, admit, credential, regk } = yield* grantToGroup(g);
+    const stream = yield* exported(edge, edge.hab, grant);
+    const frames = parseBytes(stream);
+    const kel = (pre: string) => [...edge.hby.db.fels.getAllItemIter(pre)].map(([, , said]) => said);
+    const tel = [...edge.runtime.acdc!.store.baser.tels.getAllItemIter(regk)].map(([, , said]) => said.qb64);
     assertEquals(
-      (yield* waitForGroupIpex(custodian.runtime.operations!.groupIpex, admit, { timeoutMs: BUDGET_MS })).status,
-      { state: "done", phase: "accepted" },
+      frames.map((frame) => frame.body.said),
+      [...kel(group), ...kel(issuer.hab.pre!), ...tel, grant, admit],
+      "the group's and the issuer's KELs, the registry TEL, then the Grant, then its Admit",
     );
+    assertEquals(tel.length, 2, "the registry inception and its issuance update");
+    assert(
+      frames.at(-2)!.nests!.some((nest) => nest.body.said === credential.said),
+      "the credential travels inside its Grant",
+    );
+    yield* receives(g, { grant, admit, credential, regk }, stream);
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("a weight-0 member exports the same stream", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { edge, custodian } = g;
+    const granted = yield* grantToGroup(g), { grant, admit } = granted;
+    yield* custodianAccepts(g, admit);
+    // Exporting reads stored evidence only: the weight-0 member's group habitat is never asked to sign.
+    const refuse = () => {
+      throw new Error("export must not sign");
+    };
+    const unsigned = Object.assign(Object.create(custodian.hab), { sign: refuse, endorse: refuse }) as Hab;
+    const stream = yield* exported(custodian, unsigned, grant);
+    // The same events and exchanges in the same order. Attachments are each store's own retained proofs, so the
+    // bytes can differ: the custodian also keeps its own signature on the group's inception, for example.
+    const saids = (wire: Uint8Array) => parseBytes(wire).map((frame) => frame.body.said);
+    assertEquals(saids(stream), saids(yield* exported(edge, edge.hab, grant)));
+    yield* receives(g, granted, stream);
     for (const task of g.hosts) yield* task.halt();
   });
 });

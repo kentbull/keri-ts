@@ -219,6 +219,24 @@ export class RegistryStore {
     const said = this.seqSaider(regk, sn);
     return said ? this.event(said.qb64) : null;
   }
+  /**
+   * Registry identifiers with an accepted head, in key order: a scan of `heds.`. With `issuer`, only those whose
+   * accepted inception (`rip` at ordinal 0) names that issuer. Local aliases (`regs.`) play no part, so this also
+   * lists registries a store learned from others, such as a group registry a co-member incepted.
+   */
+  registries(issuer?: string): string[] {
+    const found: string[] = [];
+    for (const [keys] of this.baser.heads.getTopItemIter()) {
+      const regk = String(keys[0]);
+      if (issuer === undefined) {
+        found.push(regk);
+        continue;
+      }
+      const rip = this.seqEvent(regk, 0);
+      if (rip?.ilk === Ilks.rip && rip.issuer === issuer) found.push(regk);
+    }
+    return found;
+  }
   /** Publish caller-approved storage markers; validation and duplicate/head policy belong to the engine. */
   accept(regk: string, sn: number, serder: SerderACDC): void {
     sn = registryOrdinal(sn);
