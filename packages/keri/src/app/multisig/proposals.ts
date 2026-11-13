@@ -222,7 +222,7 @@ function decode(deps: GroupProposalReadDeps, exn: SerderKERI, route: string, kin
       smids,
       rmids: rmids ?? [],
       event: eventRef(approval.event, approval.group),
-      inapplicable: eventAccepted(hby, approval.event),
+      inapplicable: eventAccepted(hby, approval.event) && (kind !== "icp" || !smids.some(mid => hby.habs.has(mid))),
     };
   }
   if (isV2RegistryRoute(route)) {
