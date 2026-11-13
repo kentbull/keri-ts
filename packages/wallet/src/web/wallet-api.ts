@@ -83,11 +83,15 @@ import {
   type AdmitDelivery,
   delivered,
   Surface,
+  type TimeoutOptions,
   type TrackedIssuances,
   WALLET_TIMEOUTS,
   type WalletApiParts,
   within,
 } from "./surface.ts";
+
+/** Where the wallet's sink forwards: the host's sink, the runtime's Signaler sink, or nothing yet. */
+export type ChangeSinkSource = () => ChangeSink | undefined;
 
 /**
  * The sink the runtime's owners publish to. It forwards every change to `forward` (the host's sink, or the
@@ -96,7 +100,7 @@ import {
  * failing reaction is dropped here (a sink must not throw into a workflow); the next `issue` call for it
  * records again and reports the failure.
  */
-export function walletChangeSink(tracked: TrackedIssuances, forward: () => ChangeSink | undefined): ChangeSink {
+export function walletChangeSink(tracked: TrackedIssuances, forward: ChangeSinkSource): ChangeSink {
   return {
     push(change: WorkflowChange) {
       forward()?.push(change);
@@ -167,6 +171,20 @@ export type IdentifierEvent =
     | { outcome: "timed-out"; timeoutMs: number }
   );
 
+/** How a completion treats a delegated event. */
+export interface EventFinish {
+  /** Alias of the local identifier that carries the delegation request. */
+  proxy?: string;
+  /** Budget of the delegator's approval wait. Default 120 s. */
+  timeoutMs?: number;
+}
+
+/** Inputs of {@link Identifiers.complete}. */
+export interface CompleteOptions extends EventFinish {
+  /** The event to complete; default the latest. */
+  sn?: number;
+}
+
 /** Single-signature identifiers: inception and rotation, each through witness receipts and delegation. */
 export class Identifiers extends Surface {
   /**
@@ -228,7 +246,8 @@ export class Identifiers extends Surface {
    * wait again for the delegator. Use it after an `incomplete` or `timed-out` result. `sn` defaults to the
    * latest event.
    */
-  async complete(pre: string, { sn, proxy, timeoutMs }: { sn?: number; proxy?: string; timeoutMs?: number } = {}) {
+  async complete(pre: string, options: CompleteOptions = {}) {
+    const { sn, proxy, timeoutMs } = options;
     const hab = this.individual(pre);
     if (proxy) this.proxy(proxy);
     return await this.go(() => this.finish(hab, sn ?? hab.kever!.sn, { proxy, timeoutMs }));
@@ -242,7 +261,8 @@ export class Identifiers extends Surface {
   }
 
   /** Receipts, then delegation when the event is delegated, as one typed result. */
-  private *finish(hab: Hab, sn: number, { proxy, timeoutMs }: { proxy?: string; timeoutMs?: number }) {
+  private *finish(hab: Hab, sn: number, options: EventFinish) {
+    const { proxy, timeoutMs } = options;
     const { hby, runtime, changes } = this.parts;
     const deps: EventCompletionDeps = {
       hby,
@@ -308,13 +328,20 @@ export type OobiOutcome =
   | { outcome: "failed"; reason: string; record: ResolvedRecord }
   | { outcome: "timed-out"; timeoutMs: number };
 
+/** Inputs of {@link Oobis.resolve}. */
+export interface ResolveOobiOptions extends TimeoutOptions {
+  /** Contact alias recorded when the OOBI resolves. */
+  alias?: string;
+}
+
 /** Out-of-band introductions. */
 export class Oobis extends Surface {
   /**
    * Queue `url` with the running Oobiery and wait for it to resolve. The learned key state, endpoints and
    * contact alias are then in the wallet's stores.
    */
-  async resolve(url: string, { alias, timeoutMs = WALLET_TIMEOUTS.oobi }: { alias?: string; timeoutMs?: number } = {}) {
+  async resolve(url: string, options: ResolveOobiOptions = {}) {
+    const { alias, timeoutMs = WALLET_TIMEOUTS.oobi } = options;
     const { hby, runtime, changes } = this.parts;
     return await this.go(function*(): Operation<OobiOutcome> {
       beginOobi({ oobiery: runtime.oobiery, changes }, url, { alias });
@@ -338,6 +365,12 @@ export type MailboxOutcome<Done extends "authorized" | "revoked" = "authorized">
   | { outcome: "rejected"; reason: string; status: MailboxStatus }
   | { outcome: "timed-out"; timeoutMs: number; status: MailboxStatus };
 
+/** Result of {@link Mailboxes.waitForPublication}: every mailbox of the identifier settled, or the budget expired. */
+export interface PublicationWait {
+  outcome: "settled" | "timed-out";
+  entries: readonly KelPublicationStatus[];
+}
+
 /** Mailbox providers an identifier receives through. The runtime polls an authorized mailbox by itself. */
 export class Mailboxes extends Surface {
   /**
@@ -347,12 +380,8 @@ export class Mailboxes extends Surface {
    * @throws ValidationError when `pre` is not a local identifier or the mailbox's endpoint is unknown
    * (resolve its OOBI first).
    */
-  async add(
-    pre: string,
-    mailbox: string,
-    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
-  ): Promise<MailboxOutcome<"authorized">> {
-    return await this.change(pre, mailbox, timeoutMs, "authorized", addMailbox);
+  async add(pre: string, mailbox: string, options: TimeoutOptions = {}): Promise<MailboxOutcome<"authorized">> {
+    return await this.change(pre, mailbox, options.timeoutMs ?? WALLET_TIMEOUTS.mailbox, "authorized", addMailbox);
   }
 
   /**
@@ -361,12 +390,8 @@ export class Mailboxes extends Surface {
    *
    * @throws ValidationError as for {@link Mailboxes.add}.
    */
-  async remove(
-    pre: string,
-    mailbox: string,
-    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
-  ): Promise<MailboxOutcome<"revoked">> {
-    return await this.change(pre, mailbox, timeoutMs, "revoked", removeMailbox);
+  async remove(pre: string, mailbox: string, options: TimeoutOptions = {}): Promise<MailboxOutcome<"revoked">> {
+    return await this.change(pre, mailbox, options.timeoutMs ?? WALLET_TIMEOUTS.mailbox, "revoked", removeMailbox);
   }
 
   /** Pure read of the accepted end-role state. */
@@ -414,10 +439,8 @@ export class Mailboxes extends Surface {
    * Wait until every mailbox of `pre` is `published` or `timed-out`, or `timeoutMs` passes (`timed-out` result).
    * Only observes: the runtime's publisher does the posting.
    */
-  async waitForPublication(
-    pre: string,
-    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
-  ): Promise<{ outcome: "settled" | "timed-out"; entries: readonly KelPublicationStatus[] }> {
+  async waitForPublication(pre: string, options: TimeoutOptions = {}): Promise<PublicationWait> {
+    const timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.mailbox;
     const publisher = this.parts.runtime.kelPublisher;
     return await this.go(function*() {
       const waited = yield* publisher.waitForPublication(pre, { timeoutMs });
@@ -519,6 +542,45 @@ export type IssueOutcome =
     status?: IssuanceStatus;
   };
 
+/** The credentials held and issued, as the inventory records them. */
+export interface CredentialList {
+  issued: IssuedCredential[];
+  held: AdmittedCredential[];
+}
+
+/** Inputs of {@link Credentials.receive}. */
+export interface ReceiveOptions extends TimeoutOptions {
+  /** Message carried by the Admit. */
+  message?: string;
+  /** Budget of the Admit's delivery. Default 30 s. */
+  deliveryTimeoutMs?: number;
+}
+
+/** What {@link Credentials.receive} returns: the individual or the group result. */
+export type ReceiveResult = ReceiveOutcome | GroupReceiveOutcome;
+
+/** What {@link Credentials.issue} returns: the individual or the group result. */
+export type IssueResult = IssueOutcome | GroupIssueOutcome;
+
+/** What {@link Credentials.present} returns: the individual or the group result. */
+export type PresentResult = PresentOutcome | GroupPresentOutcome;
+
+/** How long {@link Credentials.present} waits for delivery, and how many attempts delivery gets. */
+export interface PresentWaitOptions extends TimeoutOptions {
+  maxAttempts?: number;
+}
+
+/** The body options of an `apply` request. */
+export type ApplyOptions = Extract<PresentInput, { verb: "apply" }>["options"];
+
+/** Inputs of {@link Credentials.unblind}. */
+export interface UnblindOptions extends TimeoutOptions {
+  /** The credential-state vocabulary to freeze; default {@link DEFAULT_UNBLIND_STATES}. */
+  states?: readonly string[];
+  /** Group parties only: the signing member that authors the query or reply; default is the elected one. */
+  proposer?: string;
+}
+
 /** Credentials this wallet holds and issues, over the runtime's IPEX issuance owner. */
 export class Credentials extends Surface {
   /** The Grants waiting for consent, newest state of the stores; a pure read. */
@@ -532,7 +594,7 @@ export class Credentials extends Surface {
   }
 
   /** The credentials held and issued, as the inventory records them. */
-  list(): { issued: IssuedCredential[]; held: AdmittedCredential[] } {
+  list(): CredentialList {
     return this.parts.wallet.inventory();
   }
 
@@ -543,14 +605,8 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError when `grant` is not a Grant addressed to a local identifier, or was issued here.
    */
-  async receive(
-    grant: string,
-    { timeoutMs = WALLET_TIMEOUTS.receive, message = "", deliveryTimeoutMs = WALLET_TIMEOUTS.delivery }: {
-      timeoutMs?: number;
-      message?: string;
-      deliveryTimeoutMs?: number;
-    } = {},
-  ): Promise<ReceiveOutcome | GroupReceiveOutcome> {
+  async receive(grant: string, options: ReceiveOptions = {}): Promise<ReceiveResult> {
+    const { timeoutMs = WALLET_TIMEOUTS.receive, message = "", deliveryTimeoutMs = WALLET_TIMEOUTS.delivery } = options;
     const { hby, wallet, runtime } = this.parts;
     const ops = this.owner();
     const hab = this.holder(grant);
@@ -602,7 +658,7 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError for an unknown or group identifier, or a credential the registry refuses.
    */
-  async issue(options: IssueOptions): Promise<IssueOutcome | GroupIssueOutcome> {
+  async issue(options: IssueOptions): Promise<IssueResult> {
     const { hby, runtime, wallet, inventory } = this.parts;
     const { pre, registry: name = `credential-${crypto.randomUUID()}`, timeoutMs = WALLET_TIMEOUTS.issue } = options;
     if (isLocalGroupHab(hby, this.hab(pre))) {
@@ -679,10 +735,8 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError when this wallet signed no Admit for `grant`.
    */
-  async resendAdmit(
-    grant: string,
-    { timeoutMs = WALLET_TIMEOUTS.delivery }: { timeoutMs?: number } = {},
-  ): Promise<AdmitDelivery> {
+  async resendAdmit(grant: string, options: TimeoutOptions = {}): Promise<AdmitDelivery> {
+    const timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.delivery;
     const { hby, runtime } = this.parts;
     const ops = this.owner();
     const admit = hby.db.erpy.get([grant])?.qb64;
@@ -702,10 +756,8 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError for an unknown or group identifier or a selection the discloser refuses.
    */
-  async present(
-    input: PresentInput,
-    { timeoutMs = WALLET_TIMEOUTS.present, maxAttempts }: { timeoutMs?: number; maxAttempts?: number } = {},
-  ): Promise<PresentOutcome | GroupPresentOutcome> {
+  async present(input: PresentInput, options: PresentWaitOptions = {}): Promise<PresentResult> {
+    const { timeoutMs = WALLET_TIMEOUTS.present, maxAttempts } = options;
     const { pre, ...rest } = input;
     if (isLocalGroupHab(this.parts.hby, this.hab(pre))) {
       if (rest.verb !== "grant" && rest.verb !== "offer") {
@@ -729,11 +781,7 @@ export class Credentials extends Surface {
    * Ask a holder for a presentation (the verifier's `apply`). A thin form of {@link Credentials.present}.
    * The holder's answer arrives as an exchange the runtime stores.
    */
-  requestProof(
-    pre: string,
-    options: Extract<PresentInput, { verb: "apply" }>["options"],
-    wait?: { timeoutMs?: number; maxAttempts?: number },
-  ): Promise<PresentOutcome> {
+  requestProof(pre: string, options: ApplyOptions, wait?: PresentWaitOptions): Promise<PresentOutcome> {
     return this.present({ verb: "apply", pre, options }, wait) as Promise<PresentOutcome>;
   }
 
@@ -761,15 +809,8 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError when `grant` is not a Grant addressed to a local identifier.
    */
-  async unblind(
-    grant: string,
-    { states = DEFAULT_UNBLIND_STATES, timeoutMs = WALLET_TIMEOUTS.unblind, proposer }: {
-      states?: readonly string[];
-      timeoutMs?: number;
-      /** Group parties only: the signing member that authors the query or reply; default is the elected one. */
-      proposer?: string;
-    } = {},
-  ): Promise<UnblindOutcome> {
+  async unblind(grant: string, options: UnblindOptions = {}): Promise<UnblindOutcome> {
+    const { states = DEFAULT_UNBLIND_STATES, timeoutMs = WALLET_TIMEOUTS.unblind, proposer } = options;
     const { runtime } = this.parts;
     const ops = this.unblinder();
     const serder = runtime.exc.retainedInput(grant)?.serder;

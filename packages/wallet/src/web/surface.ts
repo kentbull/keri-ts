@@ -50,10 +50,19 @@ export interface WalletApiParts {
 /** Recorders of issuances in flight: a recorder returns true once the issuance is over and recorded. */
 export type TrackedIssuances = Map<string, () => boolean>;
 
+/** A workflow an app-level call runs: no arguments, one result. */
+export type Work<T> = () => Operation<T>;
+
+/** What {@link within} returns: the work's value, or the news that the budget expired first. */
+export type TimedResult<T> = { done: true; value: T } | { done: false };
+
+/** The only choice many calls offer: how long to wait, in milliseconds, before returning `timed-out`. */
+export interface TimeoutOptions {
+  timeoutMs?: number;
+}
+
 /** The result of racing `op` against `ms` on the host clock; the loser is cancelled. */
-export function* within<T>(clock: RuntimeClock, ms: number, op: () => Operation<T>): Operation<
-  { done: true; value: T } | { done: false }
-> {
+export function* within<T>(clock: RuntimeClock, ms: number, op: Work<T>): Operation<TimedResult<T>> {
   const timer = function*() {
     yield* action<void>((resolve) => {
       const handle = clock.setTimeout(resolve, ms);
@@ -68,7 +77,7 @@ export function* within<T>(clock: RuntimeClock, ms: number, op: () => Operation<
 }
 
 /** Run a delivery within `ms`; a failure or an expired budget reads `undelivered` with its reason. */
-export function* delivered(clock: RuntimeClock, ms: number, send: () => Operation<string[]>): Operation<AdmitDelivery> {
+export function* delivered(clock: RuntimeClock, ms: number, send: Work<string[]>): Operation<AdmitDelivery> {
   try {
     const sent = yield* within(clock, ms, send);
     return sent.done
@@ -85,7 +94,7 @@ export abstract class Surface {
   constructor(protected readonly parts: WalletApiParts) {}
 
   /** Run one workflow to its result in its own Effection root. */
-  protected go<T>(op: () => Operation<T>): Promise<T> {
+  protected go<T>(op: Work<T>): Promise<T> {
     this.parts.assertRunning();
     return run(op);
   }

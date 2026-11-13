@@ -5,6 +5,7 @@ import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
 import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
+import { walletChangeSink } from "../src/web/wallet-api.ts";
 import {
   openWebWallet,
   type OpenWebWalletOptions,
@@ -284,7 +285,7 @@ Deno.test("presentation, Unblind, Admit resend and mailbox removal are wired and
   }
 });
 
-Deno.test("groups and proposals: refusals, an empty consent list, and a group inception that needs its co-members' endpoints", async () => {
+Deno.test("groups and proposals: refusals, an empty consent list, and a group inception refused for a co-member it cannot reach leaves nothing behind", async () => {
   const first = await page().open({ name: "member-a" }), second = await page().open({ name: "member-b" });
   try {
     const a = await first.identifiers.incept({ alias: "a" }), b = await second.identifiers.incept({ alias: "b" });
@@ -307,17 +308,36 @@ Deno.test("groups and proposals: refusals, an empty consent list, and a group in
         yield* first.runtime.reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire));
       });
     }
-    // The library signs this member's contribution, then needs a route to every co-member to publish the proposal.
-    // A co-member whose endpoint roles are unknown is a refusal, not a wait; the group stays held locally.
-    await assertRejects(
-      () => first.groups.incept({ alias: "pair", member: a.pre, smids: [a.pre, b.pre], timeoutMs: 200 }),
-      Error,
-      "No end roles",
-    );
-    const held = first.hby.habByName("pair");
-    assert(held, "the proposer holds the group habitat");
+    // Publishing needs a route to every co-member. A co-member whose endpoint roles are unknown is a refusal made
+    // before anything is created, so the alias stays free and the call can be retried once the OOBI is resolved.
+    const attempt = () => first.groups.incept({ alias: "pair", member: a.pre, smids: [a.pre, b.pre], timeoutMs: 200 });
+    await assertRejects(attempt, Error, "cannot be reached");
+    assertEquals(first.hby.habByName("pair"), null, "a refused inception leaves no group habitat");
+    await assertRejects(attempt, Error, "cannot be reached");
   } finally {
     await first.close();
     await second.close();
   }
+});
+
+Deno.test("a tracked issuance is recorded on its issuance change, and one that cannot be recorded yet is tried again on the next", () => {
+  // A group member may not hold the registry root copy when the issuance completes; the same sink reaction that
+  // records a single-signature issuance keeps the recorder until it succeeds.
+  const tracked = new Map<string, () => boolean>(), forwarded: string[] = [];
+  const sink = walletChangeSink(
+    tracked,
+    () => ({ push: (change) => void forwarded.push(`${change.kind}:${change.id}`) }),
+  );
+  let attempts = 0;
+  tracked.set("grant", () => {
+    if (++attempts < 2) throw new Error("the root copy has not arrived");
+    return true;
+  });
+  sink.push({ kind: "event", id: "grant" });
+  assertEquals(attempts, 0, "only issuance changes trigger a recorder");
+  sink.push({ kind: "issuance", id: "grant" });
+  assertEquals([attempts, tracked.has("grant")], [1, true], "a failed recording stays tracked");
+  sink.push({ kind: "issuance", id: "grant" });
+  assertEquals([attempts, tracked.has("grant")], [2, false], "a recorded issuance is untracked");
+  assertEquals(forwarded, ["event:grant", "issuance:grant", "issuance:grant"], "every change is forwarded");
 });
