@@ -3,7 +3,7 @@ import type { OobiRecord } from "../../core/records.ts";
 import type { Baser } from "../../db/basing.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { persistResolvedContact } from "../identity/organizing.ts";
-import { type DoerPacing, doEvery, PROTOCOL_PACING } from "../runtime/doing.ts";
+import { type DoerPacing, doEveryOnWrite, PROTOCOL_PACING } from "../runtime/doing.ts";
 import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
@@ -74,7 +74,7 @@ export class Authenticator {
 
   /** Continuous auth doer for long-lived runtime hosts. */
   *authDo(clock: RuntimeClock = systemClock, pacing: Readonly<DoerPacing> = PROTOCOL_PACING): Operation<never> {
-    return yield* doEvery(clock, pacing.tockMs, () => this.processOnce());
+    return yield* doEveryOnWrite(clock, pacing, this.hby.db, () => this.processOnce());
   }
 
   /** Promote one eligible `woobi.` record into the fetchable `mfa.` queue. */

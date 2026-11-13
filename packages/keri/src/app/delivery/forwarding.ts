@@ -21,8 +21,10 @@ import { transportMailboxTopic } from "../mailbox/topic-routing.ts";
 import { localGroupMember } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { abortable } from "../runtime/abortable.ts";
+import { PROTOCOL_TOCK_MS } from "../runtime/doing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { runtimeTurn } from "../runtime/runtime-turn.ts";
+import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { CesrHttpRefusal } from "../transport/cesr-egress.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../transport/messengering.ts";
@@ -336,11 +338,15 @@ export class Poster {
     return found;
   }
 
-  /** Run queued delivery independently of query response intake and producer lifetimes. */
-  *deliverDo(): Operation<void> {
+  /**
+   * Run queued delivery independently of query response intake and producer lifetimes, as a fixed-tock doer:
+   * a pass only when something is queued (an emptiness check, no store read), then one tock. A message queued
+   * between tocks waits at most `tockMs` before its delivery starts.
+   */
+  *deliverDo(tockMs: number = PROTOCOL_TOCK_MS): Operation<void> {
     while (!this.closed) {
-      yield* this.process();
-      yield* runtimeTurn();
+      if (!this.evts.empty) yield* this.process();
+      yield* waitOnClock(this.clock, tockMs);
     }
   }
 

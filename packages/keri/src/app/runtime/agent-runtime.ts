@@ -61,7 +61,7 @@ import { WitnessInquisitor } from "../queries/witness-inquisitor.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { Receiptor } from "../witness/receipting.ts";
 import { cueDo } from "./cue-runtime.ts";
-import { type DoerPacing, doEvery, PROTOCOL_PACING } from "./doing.ts";
+import { type DoerPacing, doEvery, doEveryOnWrite, PROTOCOL_PACING } from "./doing.ts";
 import { IpexAuxiliaries } from "./ipex-auxiliaries.ts";
 import {
   composeOwners,
@@ -945,8 +945,8 @@ export function* runAgentRuntime(
   const alive = <T>(loop: string, make: () => Operation<T>) => spawn(() => surviving(runtime, loop, make));
   const stopHoldWatch = runtime.hby.mgr.onHold(() => runtime.signerConditions.held());
   const tasks = [
-    yield* alive("querying", () => runtime.querying.deliverDo()),
-    yield* alive("postman", () => runtime.postman.deliverDo()),
+    yield* alive("querying", () => runtime.querying.deliverDo(pacing.tockMs)),
+    yield* alive("postman", () => runtime.postman.deliverDo(pacing.tockMs)),
     ...(runtime.vdr && telReceiptor
       ? [
         yield* alive("tel-publication", () =>
@@ -958,7 +958,7 @@ export function* runAgentRuntime(
       ]
       : []),
     yield* alive("cues", () => cueDo(runtime, options, pacing)),
-    yield* alive("escrows", () => runtime.protocol.escrowDo(runtime.clock)),
+    yield* alive("escrows", () => runtime.protocol.escrowDo(runtime.clock, pacing)),
     yield* alive("oobi", () => runtime.oobiery.oobiDo(runtime.clock, pacing)),
     yield* alive("authentication", () => runtime.authenticator.authDo(runtime.clock, pacing)),
     ...(runtime.signaler
@@ -973,8 +973,18 @@ export function* runAgentRuntime(
         }),
       ]
       : []),
-    yield* alive("delegation", () => doEvery(runtime.clock, pacing.tockMs, () => runtime.delegating.processAllOnce())),
-    yield* alive("counselor", () => doEvery(runtime.clock, pacing.tockMs, () => runtime.counselor.processOnce())),
+    yield* alive(
+      "delegation",
+      () => doEveryOnWrite(runtime.clock, pacing, runtime.hby.db, () => runtime.delegating.processAllOnce()),
+    ),
+    yield* alive("counselor", () =>
+      doEveryOnWrite(
+        runtime.clock,
+        pacing,
+        runtime.hby.db,
+        () => runtime.counselor.processOnce(),
+        () => runtime.counselor.holdsForwards,
+      )),
     yield* alive("kel-publisher", () => kelPublisherDo(runtime.kelPublisher, runtime.clock, runtime.publisherPacing)),
     ...(runtime.operations && runtime.ipex
       ? [

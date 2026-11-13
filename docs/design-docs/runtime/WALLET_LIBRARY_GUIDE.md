@@ -202,20 +202,25 @@ that holds both the requester and the responder of one Grant; that is the same r
 
 Background loops are fixed-tock doers (`doEvery` in `app/runtime/doing.ts`): a pass, then a wait of one tock on the
 runtime clock, as a HIO `Doer` re-runs every `tock`. Nothing wakes a loop early, and work that arrives between tocks is
-seen on the next one (`OwnerWake` and `operations.wake` do not exist). A `DoerPacing` is `{ tockMs, sweepTocks }`: a
-loop that has a full sweep does it on tock 0 and every `sweepTocks`, and does lighter work on the tocks between.
+seen on the next one (`OwnerWake` and `operations.wake` do not exist). A `DoerPacing` is `{ tockMs, sweepTocks, idleTocks? }`: a loop that has a full sweep does it on tock 0 and every `sweepTocks`, and does lighter work on the tocks
+between.
 
 | Loop                                                                                                 | Tock                          | Sweep                 | Runtime option    |
 | ---------------------------------------------------------------------------------------------------- | ----------------------------- | --------------------- | ----------------- |
 | Operation owners (and the root replicator's rotation check)                                          | 50 ms (`OWNER_TOCK_MS`)       | 1200 tocks (a minute) | `ownerPacing`     |
 | `KelPublisher`                                                                                       | 250 ms                        | 240 tocks (a minute)  | `publisherPacing` |
 | Cue routing, OOBI resolution, authentication, signals, TEL publication, delegation, group counseling | 31.25 ms (`PROTOCOL_TOCK_MS`) | 1920 tocks (a minute) | `protocolPacing`  |
+| Delivery workers (`Poster.deliverDo`, the query sender) and the escrow loop                          | 31.25 ms                      | none                  | `protocolPacing`  |
 | Mailbox poller worker selection                                                                      | 31.25 ms                      | 1920 tocks            | `pollerPacing`    |
-| Escrow loop (`ProtocolProcessor.escrowDo`)                                                           | 31.25 ms (`ESCROW_TOCK_MS`)   | none                  | none (fixed)      |
 
 A host that must be gentler (a browser wallet in a background tab, a mobile wallet on battery) passes longer
-`DoerPacing` values; a test passes small ones. The escrow loop waits a fixed `ESCROW_TOCK_MS` after every pass and never
-skips or shortens one. The outgoing delivery workers (`Poster.deliverDo`, the query sender) keep their per-turn loop.
+`DoerPacing` values; a test passes small ones. `protocolPacing.tockMs` governs the escrow loop, the delivery workers
+and every other protocol-facing loop. A loop whose work lives in store rows runs on tock 0, on the tock after this
+handle wrote the store (`Dber.writeActivity`, an in-process counter that touches no store), when it holds work in
+memory, and every `idleTocks` tocks (default `PROTOCOL_IDLE_TOCKS`, 32, one second at the default tock) for what only
+time releases or another process wrote: the escrow loop, OOBI resolution, authentication, delegation and group
+counseling. A delivery worker looks only at its in-memory queue. So an idle runtime reads no store between sweeps and a
+row written by this process is seen on the next tock. A queued message waits at most one tock before delivery starts.
 The mailbox poller no longer walks every identifier each turn: it re-selects workers on tock 0 and every sweep, when the
 topics or the number of identifiers change, and for identifiers given to `MailboxPoller.prompt`; an accepted
 `/end/role` reply tells the runtime (`Revery.onEndRole`), so a new mailbox role prompts the KEL publisher and the poller

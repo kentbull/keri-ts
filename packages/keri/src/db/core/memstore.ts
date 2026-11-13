@@ -199,6 +199,11 @@ export class MemStore extends BaseDBer {
     return this.#writeVersion;
   }
 
+  /** Same count as {@link writeVersion}; in memory, so reading it is free. */
+  get writeActivity(): number {
+    return this.#writeVersion;
+  }
+
   /** Open or reopen the contents. A readonly open of never-created contents reports `false`. */
   *reopen(options: StoreIdentity = {}): Operation<boolean> {
     this.readonly = options.readonly ?? this.readonly;
