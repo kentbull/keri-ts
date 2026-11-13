@@ -231,6 +231,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/acdc/messaging.test.ts",
       "test/unit/acdc/regeventing.test.ts",
       "test/unit/core/deck.test.ts",
+      "test/unit/core/error-names.test.ts",
       "test/unit/core/kel/eventing.test.ts",
       "test/unit/core/kel/kevery-receipt.test.ts",
       "test/unit/core/mailbox/kram-policy.test.ts",

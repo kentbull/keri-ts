@@ -61,10 +61,14 @@ import { type RegistryDisclosure, validateRip, validateUpdate, verifyRegistryAnc
 import type { Regery } from "./registraring.ts";
 
 /** A stored registry-root copy that can never be retained as received. */
-export class RootRefused extends ValidationError {}
+export class RootRefused extends ValidationError {
+  override readonly name: string = "RootRefused";
+}
 
 /** A stored registry-root copy whose root cannot yet be verified locally. */
-export class RootUnverified extends ValidationError {}
+export class RootUnverified extends ValidationError {
+  override readonly name: string = "RootUnverified";
+}
 
 /** A registry-root copy whose authorization needs KEL, TEL or group state not yet local. */
 export class RootDeferred extends RootUnverified {}

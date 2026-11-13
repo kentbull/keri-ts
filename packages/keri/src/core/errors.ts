@@ -6,32 +6,44 @@
  * opaque; domain processing never inspects them for instructions.
  */
 export class AppError extends Error {
-  constructor(
-    message: string,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-    this.name = new.target.name;
-  }
+  /**
+   * Every class names itself with a literal. `new.target.name` and `constructor.name` are not used: they are
+   * mangled by a minifier, and the dnt transform of `new.target` needs a polyfill the browser entries do not load.
+   */
+  override readonly name: string = "AppError";
 }
 
 /** Invalid caller input or state transition at an application boundary. */
-export class ValidationError extends AppError {}
+export class ValidationError extends AppError {
+  override readonly name: string = "ValidationError";
+}
 
 /** Filesystem or path-resolution failure from path-managed resources. */
-export class PathError extends AppError {}
+export class PathError extends AppError {
+  override readonly name: string = "PathError";
+}
 
 /** Rejected path name because it violates relative-name constraints. */
-export class InvalidPathNameError extends ValidationError {}
+export class InvalidPathNameError extends ValidationError {
+  override readonly name: string = "InvalidPathNameError";
+}
 
 /** Base error for LMDB or higher-level database operations. */
-export class DatabaseError extends AppError {}
+export class DatabaseError extends AppError {
+  override readonly name: string = "DatabaseError";
+}
 
 /** Database-dependent operation attempted before the resource was opened. */
-export class DatabaseNotOpenError extends DatabaseError {}
+export class DatabaseNotOpenError extends DatabaseError {
+  override readonly name: string = "DatabaseNotOpenError";
+}
 
 /** Key encoding/shape failure while reading or writing database state. */
-export class DatabaseKeyError extends DatabaseError {}
+export class DatabaseKeyError extends DatabaseError {
+  override readonly name: string = "DatabaseKeyError";
+}
 
 /** Operational LMDB/path failure during a database lifecycle step. */
-export class DatabaseOperationError extends DatabaseError {}
+export class DatabaseOperationError extends DatabaseError {
+  override readonly name: string = "DatabaseOperationError";
+}

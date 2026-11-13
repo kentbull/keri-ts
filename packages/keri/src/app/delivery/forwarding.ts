@@ -136,7 +136,9 @@ type PreparedCesrTarget =
  * A v1 parser treats a v2 version string as an extraction failure and discards the rest of
  * its stream, so sending would lose more than this one message.
  */
-export class PeerVersionError extends ValidationError {}
+export class PeerVersionError extends ValidationError {
+  override readonly name: string = "PeerVersionError";
+}
 
 /**
  * Whether an AID's own accepted KEL ends in a v1 event, which is the only evidence of a v1 reader.

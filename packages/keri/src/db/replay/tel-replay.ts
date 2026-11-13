@@ -5,6 +5,7 @@ import type { Reger } from "../reger.ts";
 
 /** Requested replay cannot represent this stored body/proof; its signed bytes are never rewritten. */
 export class UnsupportedTelReplayError extends ValidationError {
+  override readonly name: string = "UnsupportedTelReplayError";
   readonly requested: Readonly<Versionage>;
   readonly required: Readonly<Versionage>;
 

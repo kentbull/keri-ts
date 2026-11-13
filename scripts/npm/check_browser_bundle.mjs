@@ -37,8 +37,19 @@ export const surface = {
 };
 `;
 
+/**
+ * Text that must not appear in any module a browser entry reaches. dnt rewrites `import.meta` (and `new.target.name`
+ * through it) into a call that needs `_dnt.polyfills.js`, which the browser entries never load, so the first
+ * construction of an error class threw a TypeError in a browser. Every error names itself with a literal instead.
+ */
+const FORBIDDEN_TEXT = [[/import-meta-ponyfill/, "dnt import.meta ponyfill call (needs the polyfills a browser entry does not load)"]];
+
 /** Seeded regressions: Node-only subpaths a browser consumer must never reach. */
 const REGRESSIONS = [
+  {
+    name: "a dnt import.meta ponyfill call",
+    source: `export const name = globalThis[Symbol.for("import-meta-ponyfill-esmodule")](import.meta).name;`,
+  },
   { name: "keri-ts/db/lmdb", source: `export * from "keri-ts/db/lmdb";` },
   { name: "keri-ts/runtime/node", source: `export * from "keri-ts/runtime/node";` },
   { name: "@keri-ts/wallet/lmdb", source: `export * from "@keri-ts/wallet/lmdb";` },
@@ -91,7 +102,9 @@ async function bundle(source, { platform = "browser", conditions = ["browser"], 
       mainFields,
       plugins: [stubEffectionMain],
     });
-    return { problems: inspect(result.metafile), metafile: result.metafile };
+    const text = result.outputFiles.map((file) => file.text).join("\n");
+    const reached = FORBIDDEN_TEXT.filter(([pattern]) => pattern.test(text)).map(([, label]) => `forbidden text in bundle: ${label}`);
+    return { problems: [...inspect(result.metafile), ...reached], metafile: result.metafile };
   } catch (error) {
     return { problems: summarize(error.errors ?? [{ text: String(error) }]) };
   } finally {

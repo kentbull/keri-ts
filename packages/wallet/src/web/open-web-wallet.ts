@@ -64,7 +64,9 @@ export const WALLET_KRAM_CACHES: NonNullable<KramConfig["caches"]> = Object.free
 });
 
 /** The keeper would hold plaintext seeds in IndexedDB, so the wallet refuses to open it. */
-export class UnencryptedKeeperError extends AppError {}
+export class UnencryptedKeeperError extends AppError {
+  override readonly name: string = "UnencryptedKeeperError";
+}
 
 /** Page events that ask for a best-effort flush. */
 export interface PageLifecycleTargets {

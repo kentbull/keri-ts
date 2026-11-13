@@ -13,6 +13,7 @@ import type { StoreIdentity } from "./core/dber.ts";
 
 /** Another tab, worker or window holds the store; `key`, `storeName` and `storeBase` support a UI message. */
 export class StoreLockHeldError extends AppError {
+  override readonly name: string = "StoreLockHeldError";
   constructor(readonly key: string, readonly storeName: string | undefined, readonly storeBase: string | undefined) {
     super(`Store ${JSON.stringify(storeName ?? "")} is already open in another tab or window`);
   }
@@ -20,6 +21,7 @@ export class StoreLockHeldError extends AppError {
 
 /** `navigator.locks` is absent (insecure context or old engine), so single-writer cannot be enforced. */
 export class StoreLockUnsupportedError extends AppError {
+  override readonly name: string = "StoreLockUnsupportedError";
   constructor() {
     super("Web Locks API unavailable; refusing to open the store without a single-writer lock");
   }

@@ -38,6 +38,7 @@ import type { HttpClient, HttpRequestInit, HttpStreamResponse } from "./http-cli
 
 /** Positive remote HTTP refusal, distinct from source, transport, storage and cleanup failure. */
 export class CesrHttpRefusal extends ValidationError {
+  override readonly name: string = "CesrHttpRefusal";
   /**
    * Describe a completed HTTP refusal without classifying it as a network failure.
    *

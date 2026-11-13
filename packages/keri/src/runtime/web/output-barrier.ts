@@ -12,7 +12,9 @@ import type { HttpClient, HttpRequestInit, HttpResponse, HttpStreamResponse } fr
 import { AppError } from "../../core/errors.ts";
 
 /** The persistence queue failed, so the request was not sent. The queue's failure is the cause. */
-export class OutputBarrierError extends AppError {}
+export class OutputBarrierError extends AppError {
+  override readonly name: string = "OutputBarrierError";
+}
 
 /**
  * Wrap `inner` so no request, finite or streaming, reaches it before `flushed` resolves.
