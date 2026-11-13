@@ -985,7 +985,7 @@ class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
         grant,
         coordinator,
         custodian,
-      }, { timeoutMs: 120000, witnessGvrsn: Vrsn_2_0 }));
+      }, { timeoutMs: 120000 }));
     return Promise.resolve();
   }
   override async finishDh(_grant: string): Promise<void> {
