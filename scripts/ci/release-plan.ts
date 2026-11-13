@@ -13,9 +13,14 @@
  *   - finished green: its `stage-gate` job and every `unit (<shard>)` job covering this package succeeded.
  * The scope the run covered is read from its job names, which the plan job fixes from the selected scope.
  * Any API error or ambiguity runs the check.
+ *
+ * This file runs from the workflow's own commit (the shared workflow checks it out beside the tag), while the
+ * package being tested is the tag's content in the working directory. A tag older than the current shard
+ * definitions may lack a suite or deno task the shards call; the check then runs the package's historical
+ * command list serially with what the tag has ("legacy"), and a tag lacking even that fails the plan.
  */
 import { suites } from "./keri-test-suites.ts";
-import { selectUnitShards, type UnitShard, type UnitTarget } from "./pr-test-scope.ts";
+import { multisyncTest, selectUnitShards, type UnitShard, type UnitTarget } from "./pr-test-scope.ts";
 
 /** The unit targets each package's release check runs. */
 export const releaseTargets: Record<string, readonly UnitTarget[]> = {
@@ -49,6 +54,102 @@ export function checkShards(pkg: string): UnitShard[] {
   const targets = releaseTargets[pkg];
   if (!targets) throw new Error(`Unknown package ${pkg}.`);
   return selectUnitShards(targets);
+}
+
+/** Reads files of the tag's checkout (the working directory); null when the file does not exist. */
+export interface Tree {
+  read(path: string): Promise<string | null>;
+}
+
+/** The checkout in the working directory. */
+export const workingTree: Tree = {
+  async read(path) {
+    try {
+      return await Deno.readTextFile(path);
+    } catch {
+      return null;
+    }
+  },
+};
+
+/** The package's release check as the shared workflow ran it before sharding, as argv lists run in order. */
+export function legacyCommands(pkg: string): string[][] {
+  const task = (name: string) => ["deno", "task", name];
+  const commands: Record<string, string[][]> = {
+    cesr: [task("test:cesr")],
+    keri: [task("test:quality:keri:fast")],
+    tufa: [task("test:quality:tufa"), task("test:verifier"), task("test:hosting")],
+    verifier: [task("test:verifier")],
+    hosting: [task("test:hosting")],
+    wallet: [task("test:wallet")],
+    registrar: [task("test:registrar")],
+    observer: [task("test:observer")],
+    multisync: [[
+      "deno",
+      "test",
+      "-A",
+      "--filter",
+      multisyncTest.name,
+      multisyncTest.file,
+    ]],
+  };
+  const found = commands[pkg];
+  if (!found) throw new Error(`Unknown package ${pkg}.`);
+  return found;
+}
+
+/** Deno tasks the root deno.json of the tag must define for the given argv lists. */
+function tasksOf(commands: readonly string[][]): string[] {
+  return commands.filter((argv) => argv[1] === "task").map((argv) => argv[2]);
+}
+
+/** What the tag's tree lacks for the current shards: suites, runner, or tasks. Empty means shards are supported. */
+export async function missingForShards(pkg: string, tree: Tree): Promise<string[]> {
+  const missing: string[] = [];
+  const suiteFile = await tree.read("scripts/ci/keri-test-suites.ts");
+  const denoJson = await tree.read("deno.json");
+  const needs = checkShards(pkg).flatMap((shard) => JSON.parse(shard.targets) as string[]);
+  const taskFor: Record<string, string> = {
+    tufa: "test:quality:tufa",
+    verifier: "test:verifier",
+    hosting: "test:hosting",
+    wallet: "test:wallet",
+    registrar: "test:registrar",
+    observer: "test:observer",
+    cesr: "test:cesr",
+  };
+  for (const target of needs) {
+    if (target === "multisync") {
+      if ((await tree.read(multisyncTest.file)) === null) missing.push(multisyncTest.file);
+    } else if (taskFor[target]) {
+      if (!denoJson?.includes(`"${taskFor[target]}":`)) missing.push(`deno task ${taskFor[target]}`);
+    } else if (!suiteFile?.includes(`"${target}": {`)) {
+      missing.push(`suite ${target}`);
+    }
+  }
+  if (needs.some((target) => !taskFor[target] && target !== "multisync")) {
+    if ((await tree.read("scripts/ci/run-keri-test-group.ts")) === null) {
+      missing.push("scripts/ci/run-keri-test-group.ts");
+    }
+  }
+  return missing;
+}
+
+/** The shards to run, or the one serial legacy check when the tag's tree cannot run the current shards. */
+export async function shardsFor(pkg: string, tree: Tree): Promise<{ shards: UnitShard[]; note: string }> {
+  const missing = await missingForShards(pkg, tree);
+  if (missing.length === 0) return { shards: checkShards(pkg), note: "" };
+  const denoJson = await tree.read("deno.json");
+  const absent = tasksOf(legacyCommands(pkg)).filter((name) => !denoJson?.includes(`"${name}":`));
+  if (absent.length) {
+    throw new Error(
+      `The tag lacks ${missing.join(", ")} for sharding and the task(s) ${absent.join(", ")} for the serial check.`,
+    );
+  }
+  return {
+    shards: [{ name: "legacy", targets: "[]" }],
+    note: ` The tag's tree lacks ${missing.join(", ")}, so the check runs serially with the tag's own tasks.`,
+  };
 }
 
 /** One finished stage-gate run and the conclusion of each of its latest-attempt jobs. */
@@ -153,17 +254,21 @@ export async function matchingRuns(api: Api, repo: string, sha: string, tree: st
 }
 
 /** Look the content up and decide; any failure runs the full sharded check. */
-export async function plan(pkg: string, repo: string, sha: string, tree: string, api: Api): Promise<Decision> {
+export async function plan(
+  pkg: string,
+  repo: string,
+  sha: string,
+  tree: string,
+  api: Api,
+  files: Tree = workingTree,
+): Promise<Decision> {
+  const { shards, note } = await shardsFor(pkg, files);
   try {
-    return decide(pkg, await matchingRuns(api, repo, sha, tree));
+    const decision = decide(pkg, await matchingRuns(api, repo, sha, tree));
+    return decision.runCheck ? { ...decision, reason: decision.reason + note, shards } : decision;
   } catch (error) {
-    return {
-      runCheck: true,
-      reason: `could not read recorded runs (${
-        error instanceof Error ? error.message : String(error)
-      }); running the check`,
-      shards: checkShards(pkg),
-    };
+    const cause = error instanceof Error ? error.message : String(error);
+    return { runCheck: true, reason: `could not read recorded runs (${cause}); running the check${note}`, shards };
   }
 }
 
@@ -184,7 +289,11 @@ async function main(): Promise<void> {
   const tree = await git("rev-parse", "HEAD^{tree}");
   const decision = repo && token
     ? await plan(pkg, repo, sha, tree, githubApi(token))
-    : { runCheck: true, reason: "no GitHub credentials; running the check", shards: checkShards(pkg) };
+    : {
+      runCheck: true,
+      reason: "no GitHub credentials; running the check",
+      shards: (await shardsFor(pkg, workingTree)).shards,
+    };
   const summary = `## Release check for ${pkg}\n\nCommit ${sha} (tree ${tree}): ${
     decision.runCheck ? "run the sharded check" : "skip the check"
   } because ${decision.reason}.\n`;
@@ -201,4 +310,35 @@ async function main(): Promise<void> {
   if (stepSummary) await Deno.writeTextFile(stepSummary, summary, { append: true });
 }
 
-if (import.meta.main) await main();
+/** Run one check shard in the tag's checkout: the current shard targets, or the tag's own serial commands. */
+async function runCheck(): Promise<void> {
+  const pkg = Deno.env.get("PACKAGE");
+  if (!pkg) throw new Error("PACKAGE is required.");
+  if (Deno.env.get("SHARD_NAME") === "legacy") {
+    for (const [command, ...args] of legacyCommands(pkg)) {
+      const status = await new Deno.Command(command, { args, stdin: "inherit", stdout: "inherit", stderr: "inherit" })
+        .spawn().status;
+      if (!status.success) Deno.exit(status.code);
+    }
+    return;
+  }
+  const status = await new Deno.Command(Deno.execPath(), {
+    args: [
+      "run",
+      "-A",
+      "--no-config",
+      "--no-lock",
+      new URL("./pr-test-scope.ts", import.meta.url).pathname,
+      "run-unit",
+    ],
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  }).spawn().status;
+  if (!status.success) Deno.exit(status.code);
+}
+
+if (import.meta.main) {
+  if (Deno.args[0] === "run-check") await runCheck();
+  else await main();
+}
