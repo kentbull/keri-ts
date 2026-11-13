@@ -53,7 +53,7 @@ an AEID. A pub that is neither held nor stored fails with the unchanged
 decrypting, and `Hab.canSign()` applies it to the keys `Hab.sign` would use.
 Held signers only grow while the Manager lives: there is no public release.
 Retirement (`Manager.forget`, from `Habery.retireHab`) drops the retired
-identifier's own; closing drops the rest with the Manager.
+identifier's own; the rest go when the host drops the closed Habery and its Manager.
 
 Paths that resolve a private key, all through `getSignerByPub`: `Manager.sign`
 with `pubs` or `verfers`, `Manager.decrypt`, `Manager.open` (ESSR), the randy
@@ -66,7 +66,7 @@ bypasses the lookup; no Hab caller uses it.
 
 Held signers are borrowed. The host owns each `Signer` and its seed bytes,
 including zeroing them. The Manager keeps a reference and nothing else: it copies
-no seed bytes, and dropping a reference (retirement, close) erases nothing.
+no seed bytes, and dropping a reference erases nothing.
 
 Encoding matters. The same raw Ed25519 key is `D...` when transferable and
 `B...` when not, and the table is keyed by the qualified form. The host must hold

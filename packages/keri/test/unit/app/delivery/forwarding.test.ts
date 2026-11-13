@@ -1378,14 +1378,14 @@ Deno.test("poster reports an unsignable forward as failed and delivers later eve
       serder,
       sigers: [signer.sign(serder.raw, { index: 0 }) as Siger],
     });
-    let posts = 0;
+    const bodies: string[] = [];
     const postman = new Poster(
       hby,
       null,
       null,
-      httpClient(() => {
-        posts++;
-        return Promise.resolve(new Response(null, { status: 204 }));
+      httpClient(async (url, init) => {
+        bodies.push(new TextDecoder().decode(await readCesrRequestBytes(new Request(url, init))));
+        return new Response(null, { status: 204 });
       }),
       systemClock,
     );
@@ -1400,7 +1400,12 @@ Deno.test("poster reports an unsignable forward as failed and delivers later eve
       assertEquals(failed.kin, "failed");
       assert(failed.kin === "failed" && String(failed.error).includes("cannot sign now"));
       assertEquals((yield* postman.wait(later)).kin, "sent");
-      assertEquals(posts, 1, "only the signable event was sent");
+      assert(bodies.length > 0, "the signable event was posted");
+      assertEquals(
+        bodies.filter((body) => body.includes(keyless.pre)),
+        [],
+        "nothing was posted for the unsignable one",
+      );
     } finally {
       yield* postman.close();
       yield* hby.close(true);
