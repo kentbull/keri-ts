@@ -583,10 +583,8 @@ export type IssueResult = IssueOutcome | GroupIssueOutcome;
 /** What {@link Credentials.present} returns: the individual or the group result. */
 export type PresentResult = PresentOutcome | GroupPresentOutcome;
 
-/** How long {@link Credentials.present} waits for delivery, and how many attempts delivery gets. */
-export interface PresentWaitOptions extends TimeoutOptions {
-  maxAttempts?: number;
-}
+/** How long {@link Credentials.present} waits for delivery; delivery itself retries until the exchange's deadline. */
+export type PresentWaitOptions = TimeoutOptions;
 
 /** The body options of an `apply` request. */
 export type ApplyOptions = Extract<PresentInput, { verb: "apply" }>["options"];
@@ -783,7 +781,7 @@ export class Credentials {
    * @throws ValidationError for an unknown or group identifier or a selection the discloser refuses.
    */
   async present(input: PresentInput, options: PresentWaitOptions = {}): Promise<PresentResult> {
-    const { timeoutMs = WALLET_TIMEOUTS.present, maxAttempts } = options;
+    const { timeoutMs = WALLET_TIMEOUTS.present } = options;
     const { pre, ...rest } = input;
     if (isLocalGroupHab(this.#scope.parts.hby, this.#scope.hab(pre))) {
       if (rest.verb !== "grant" && rest.verb !== "offer") {
@@ -793,7 +791,7 @@ export class Credentials {
     }
     const hab = this.#scope.individual(pre), ops = this.presenter();
     return await this.#scope.go(function*(): Operation<PresentOutcome> {
-      const begun = yield* present(ops, { ...rest, hab } as PresentationInput, { maxAttempts });
+      const begun = yield* present(ops, { ...rest, hab } as PresentationInput);
       const { said, recipient } = begun;
       const waited = yield* waitForPresentation(ops, said, { timeoutMs });
       const { status } = waited;

@@ -5,10 +5,8 @@ import {
   BoundState,
   concatBytes,
   Matter,
-  parseBytes,
-  type SerderACDC,
 } from "cesr-ts";
-import { call, type Operation, race, scoped, sleep, spawn } from "effection";
+import { call, type Operation, scoped, sleep, spawn } from "effection";
 import {
   ipexAdmitCommand as admit,
   ipexAgreeCommand as agree,
@@ -55,7 +53,6 @@ import { withAgentRuntime, withHabAndAgentRuntime } from "../support/context.ts"
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
 import { authoringWitnessAuths } from "../support/witness-auth.ts";
-import { approveAcdcV2RegistryEvent } from "./acdc-v2-authoring.ts";
 
 /** Completed transport destinations do not establish peer protocol acceptance. */
 function printSend({ exn, deliveries, group }: IpexSendResult): void {
@@ -349,51 +346,19 @@ function* acdcV2Disclosure(
           derived: custody?.options.store,
         };
         if (isLocalGroupHab(hby, hab) && verb === "grant") {
-          if (!registryName) {
-            // A group presents through the runtime: the Grant is frozen once and approved by the other members.
-            return yield* acdcV2GroupDisclosure(
-              runtime,
-              hab,
-              (ops, deliver) => proposeGroupPresentation(deps, ops, { hab, selection, options, deliver }),
-              args,
-            );
-          }
-          let selected = yield* discloser.prepareGrantBody(hab.pre, selection, options);
-          if (registryName) {
-            const reg = runtime.acdc.registryByName(registryName)!;
-            const node = parseBytes(selected.raw)[0].body as SerderACDC;
-            if (
-              reg.hab.pre !== hab.pre || node.issuee !== hab.pre || (node.sad!.a as { rd?: unknown }).rd !== reg.regk
-            ) {
-              throw new ValidationError(
-                "Presentation registry must match the selected disclosed local Issuee declaration.",
-              );
-            }
-            const timeout = parseNumberOption(args.approvalTimeoutSeconds, "approval-timeout") ?? 60;
-            if (!Number.isFinite(timeout) || timeout < 0) {
-              throw new ValidationError("--approval-timeout must be nonnegative.");
-            }
-            const [proof, update] = reg.present(selected.exn, "presented");
-            yield* race([
-              (function*() {
-                yield* scoped(function*() {
-                  yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
-                  yield* approveAcdcV2RegistryEvent(hby, runtime, hab, discloser.receiptor, update, proof, auths);
-                });
-              })(),
-              (function*() {
-                yield* sleep(timeout * 1000);
-                throw new ValidationError("Group presentation approval remains pending.");
-              })(),
-            ]);
-            const seal = runtime.acdc.store.anchor(update.said!)!;
-            selected = yield* discloser.attachPresentationProof(selected, proof, { s: seal[0], d: seal[1] });
-          }
+          // A group presents through the runtime: the Grant is frozen once, a presentation registry's update is
+          // proposed and awaited by the owner, and the other members approve before the lead delivers.
           return yield* acdcV2GroupDisclosure(
             runtime,
             hab,
             (ops, deliver) =>
-              proposeGroupIpex(ops, { hab, exn: selected.exn, nests: selected.nests, gvrsn: options.gvrsn, deliver }),
+              proposeGroupPresentation(deps, ops, {
+                hab,
+                selection,
+                options: { ...options, presentationRegistry: registryName },
+                deliver,
+                counsel: { auths, fallbackAfterMs: 0 },
+              }),
             args,
           );
         }
@@ -408,7 +373,7 @@ function* acdcV2Disclosure(
           return { said: prepared.exn.said, accepted: true, deliveries: [] as string[] };
         }
         const ops = new PresentationOperations(deps);
-        const { said } = yield* present(ops, request, { maxAttempts: 1 });
+        const { said } = yield* present(ops, request);
         // Delivery has no CLI deadline of its own: the transport outcome or the Grant's original deadline ends it.
         const { status } = yield* withRuntimeWorkers(runtime, { hab, pollMailbox: false }, function*() {
           const driver = yield* spawn(function*() {

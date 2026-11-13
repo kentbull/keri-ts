@@ -38,6 +38,7 @@ import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../multi
 import { type Multiplexor, MULTISIG_QRY_ROUTE, MULTISIG_RPY_ROUTE, multisigExnBody } from "../multisig/grouping.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
+import { DeliveryOutbox } from "../runtime/delivery-outbox.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { IssuanceDelivery } from "./issuance.ts";
@@ -106,6 +107,10 @@ interface LiveUnblinding {
   /** Group party state; such an operation never re-dates its threshold query. */
   group?: GroupUnblind;
   phase: UnblindingPhase;
+  /** Signed bytes the steps decided to send; a peer briefly offline is retried until the Grant deadline. */
+  readonly outbox: DeliveryOutbox;
+  /** The steps are done; the operation ends once the outbox is empty. */
+  finished: boolean;
   /** A step is running; overlapping `processOnce` calls skip it. */
   busy: boolean;
 }
@@ -192,7 +197,7 @@ export class UnblindingOperations {
       try {
         const left = op.expires - BigInt(deps.clock.now()) * 1000n;
         if (left <= 0n) this.end(op, "expired", EXPIRED);
-        else if ((yield* race([this.step(op), this.timer(Number(left) / 1000)])) === "expired") {
+        else if ((yield* race([this.advance(op), this.timer(Number(left) / 1000)])) === "expired") {
           this.end(op, "expired", EXPIRED);
         }
       } catch (error) {
@@ -240,6 +245,8 @@ export class UnblindingOperations {
           queryAt: 0,
           nextQuery: 0,
           phase: "proving",
+          outbox: new DeliveryOutbox(),
+          finished: false,
           busy: false,
         });
         deps.changes?.push({ kind: "unblinding", id: grant });
@@ -291,15 +298,17 @@ export class UnblindingOperations {
     if (!input || deps.exc.exchangeDeadline(input.serder) !== op.deadline) throw new ValidationError(CHANGED);
     owner.complete(xid);
     const requester = op.role === "requester", group = deps.group!;
-    const send = (dest: string, msg: Uint8Array, topic = "credential") =>
-      deps.delivery.deliver({ src: member.pre!, dest, msg, topic });
+    const send = function*(dest: string, msg: Uint8Array, topic = "credential") {
+      op.outbox.enqueue({ src: member.pre!, dest, msg, topic });
+    };
     if (!g.started) {
       g.started = true;
       // Accepted wrappers can precede the consent; intake alone never contributed.
       for (const [, parent] of deps.hby.db.exns.getTopItemIter()) {
         const retained = parent.route === groupRoute(op) ? deps.exc.retainedInput(parent.said!) : null;
         if (
-          retained?.nests && structural(deps, parent, retained.nests) && groupAccepts(deps, op, parent, retained.nests)
+          retained?.nests && structural(deps.hby, parent, retained.nests)
+          && groupAccepts(deps.hby, op, parent, retained.nests)
         ) {
           g.pending.set(parent.said!, { parent, child: retained.nests[0] });
         }
@@ -331,7 +340,7 @@ export class UnblindingOperations {
         continue;
       }
       if ((!g.frozen && item.parent.pre !== proposer) || (!requester && !owner.hasPeerQuery(xid))) continue;
-      if (!groupAccepts(deps, op, item.parent, [item.child])) {
+      if (!groupAccepts(deps.hby, op, item.parent, [item.child])) {
         g.pending.delete(said);
         g.seen.add(said);
         continue;
@@ -375,7 +384,9 @@ export class UnblindingOperations {
   private *step(op: LiveUnblinding): Operation<"stepped"> {
     if (op.group) return yield* this.stepGroup(op);
     const { deps } = this, { owner, xid, grant } = op;
-    const send = (dest: string, msg: Uint8Array) => deps.delivery.deliver({ src: op.hab.pre!, dest, msg });
+    const send = function*(dest: string, msg: Uint8Array | (() => Uint8Array)) {
+      op.outbox.enqueue({ src: op.hab.pre!, dest, msg });
+    };
     const input = deps.exc.retainedInput(grant);
     if (!input || deps.exc.exchangeDeadline(input.serder) !== op.deadline) throw new ValidationError(CHANGED);
     owner.complete(xid); // Rechecks exact live scope and accepted current state; readiness is separate.
@@ -398,7 +409,7 @@ export class UnblindingOperations {
       return this.finishedStep(op);
     }
     if (op.query && deps.clock.now() >= op.nextQuery) {
-      yield* send(op.peer, this.current(op));
+      yield* send(op.peer, () => this.current(op));
       op.nextQuery = deps.clock.now() + UNBLIND_QUERY_RESEND_MS;
     }
     return "stepped";
@@ -421,7 +432,16 @@ export class UnblindingOperations {
   }
 
   private finishedStep(op: LiveUnblinding): "stepped" {
-    this.finished(op);
+    op.finished = true;
+    return "stepped";
+  }
+
+  /** One pass: send what is queued, step only once the queue is empty, send what the step queued. */
+  private *advance(op: LiveUnblinding): Operation<"stepped"> {
+    const drain = () => op.outbox.drain(this.deps.delivery, this.deps.clock);
+    if (!(yield* drain())) return "stepped";
+    if (!op.finished) yield* this.step(op);
+    if ((yield* drain()) && op.finished) this.finished(op);
     return "stepped";
   }
 }
@@ -495,6 +515,8 @@ function consent(
       nextQuery: 0,
       group: request.proposer ? new GroupUnblind(localGroupMember(deps.hby, hab.pre!), request.proposer) : undefined,
       phase: role === "requester" ? "awaitingReply" : "proving",
+      outbox: new DeliveryOutbox(),
+      finished: false,
       busy: false,
     },
   };
@@ -553,11 +575,7 @@ function groupRoute(op: LiveUnblinding): typeof MULTISIG_QRY_ROUTE | typeof MULT
 }
 
 /** The structure every Unblind child wrapper has, whichever operation it is for. */
-function structural(
-  deps: Pick<UnblindingDeps, "hby">,
-  parent: SerderKERI,
-  children: readonly CesrFrame[],
-): boolean {
+function structural(hby: Habery, parent: SerderKERI, children: readonly CesrFrame[]): boolean {
   const child = children[0], body = child?.body, route = parent.route;
   if (
     children.length !== 1 || !(body instanceof SerderKERI) || parent.pvrsn.major !== 2 || parent.pvrsn.minor !== 0
@@ -566,7 +584,7 @@ function structural(
   const requester = route === MULTISIG_QRY_ROUTE, field = requester ? "qry" : "rpy", gid = body.pre;
   const attrs = parent.sad!.a as Record<string, unknown>;
   if (
-    !gid || !deps.hby.habs.has(gid) || !groupSigningMembers(deps.hby, gid).includes(parent.pre!) || !attrs
+    !gid || !hby.habs.has(gid) || !groupSigningMembers(hby, gid).includes(parent.pre!) || !attrs
     || Object.keys(attrs).length !== 2 || attrs.gid !== gid || attrs[field] !== body.said
   ) return false;
   const data = body.sad![requester ? "q" : "a"] as { x?: unknown };
@@ -582,13 +600,8 @@ function structural(
 }
 
 /** Operation-specific acceptance: the group's own transaction, in the direction this party consumes. */
-function groupAccepts(
-  deps: Pick<UnblindingDeps, "hby">,
-  op: LiveUnblinding,
-  parent: SerderKERI,
-  children: readonly CesrFrame[],
-): boolean {
-  if (parent.route !== groupRoute(op) || !structural(deps, parent, children)) return false;
+function groupAccepts(hby: Habery, op: LiveUnblinding, parent: SerderKERI, children: readonly CesrFrame[]): boolean {
+  if (parent.route !== groupRoute(op) || !structural(hby, parent, children)) return false;
   const body = children[0].body as SerderKERI, requester = op.role === "requester";
   const data = body.sad![requester ? "q" : "a"] as { x?: string };
   return body.pre === op.hab.pre && data?.x === op.xid && (!op.group?.frozen || bytesEqual(op.group.frozen, body.raw));
@@ -605,10 +618,10 @@ function registerUnblindRoutes(ops: UnblindingOperations): void {
     resource: route,
     acceptsNests: true,
     verify: (args) =>
-      structural(deps, args.serder, args.nests ?? []) && !args.attachments.length && !args.essrs?.length,
+      structural(deps.hby, args.serder, args.nests ?? []) && !args.attachments.length && !args.essrs?.length,
     handle: (args) => {
       for (const op of ops.live.values()) {
-        if (op.group && groupAccepts(deps, op, args.serder, args.nests!)) {
+        if (op.group && groupAccepts(deps.hby, op, args.serder, args.nests!)) {
           op.group.pending.set(args.serder.said!, { parent: args.serder, child: args.nests![0] });
         }
       }

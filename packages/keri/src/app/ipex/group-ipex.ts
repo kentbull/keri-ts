@@ -25,12 +25,14 @@ import { concatBytes, Counter, type SerderKERI, type Versionage, Vrsn_2_0 } from
 import type { Operation } from "npm:effection@^3.6.0";
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
+import { type RegistryEventRef, registryEventStatus, settleRegistryEvent } from "../credentials/registry-settling.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
 import { MULTISIG_EXN_ROUTE } from "../multisig/grouping.ts";
 import type { GroupSendResult } from "../multisig/multisig-messaging.ts";
+import { type RegistryProposeDeps } from "../multisig/proposing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { RetryBackoff } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
@@ -58,7 +60,13 @@ export const GROUP_IPEX_RETRY_BOUND_MS = 600_000;
 export type GroupIpexEndState = "abandoned" | "failed";
 
 /** Where an active group IPEX message is. */
-export type GroupIpexPhase = "awaitingConsent" | "publishing" | "awaitingMembers" | "delivering";
+export type GroupIpexPhase =
+  | "awaitingConsent"
+  /** A presentation Grant waits for the group to accept the registry update that carries its proof. */
+  | "awaitingRegistryUpdate"
+  | "publishing"
+  | "awaitingMembers"
+  | "delivering";
 
 /** Status of one group IPEX message, discriminated on `state`. A pure read. */
 export type GroupIpexStatus =
@@ -79,6 +87,16 @@ export interface GroupIpexDeps {
   readonly changes?: ChangeSink;
   /** Called when an operation becomes live, so the owner loop leaves its idle cadence at once. */
   readonly wake?: () => void;
+  /** Collaborators of a group registry update; a Grant that carries a presentation proof needs them. */
+  readonly registry?: RegistryProposeDeps;
+}
+
+/** A group registry update an operation waits for before its own message can be signed. */
+export interface GroupIpexPrerequisite {
+  /** The TEL event and the group anchor that seals it. */
+  readonly anchor: RegistryEventRef;
+  /** Signs this member's contribution to the message once the update is accepted; returns its accepted wire. */
+  readonly proceed: () => Operation<Uint8Array>;
 }
 
 interface LiveGroupIpex {
@@ -89,6 +107,8 @@ interface LiveGroupIpex {
   phase: GroupIpexPhase;
   /** This member's wire still to publish: the proposer's initial message, or an approver's accepted contribution. */
   outbound: { kind: "initial" | "proposal"; wire: Uint8Array } | null;
+  /** A registry update the message waits for; the consent that began the operation covers signing it afterwards. */
+  prerequisite: GroupIpexPrerequisite | null;
   publication: GroupSendResult | null;
   /** The completed message has been sent to its recipient (or this member is not the lead). */
   delivered: boolean;
@@ -177,14 +197,16 @@ export class GroupIpexOperations {
     genus: Versionage,
     outbound: LiveGroupIpex["outbound"],
     deliver = true,
+    prerequisite: GroupIpexPrerequisite | null = null,
   ): GroupIpexBegun {
     this.ended.delete(said);
     this.live.set(said, {
       said,
       group,
       genus,
-      phase: outbound ? "publishing" : "awaitingMembers",
+      phase: prerequisite ? "awaitingRegistryUpdate" : outbound ? "publishing" : "awaitingMembers",
       outbound,
+      prerequisite,
       publication: null,
       delivered: !deliver,
       deliveries: [],
@@ -222,6 +244,16 @@ export class GroupIpexOperations {
 
   private *step(op: LiveGroupIpex): Operation<void> {
     const { hby, protocol, postman, exc, rgy, clock } = this.deps;
+    if (op.prerequisite) {
+      const read = { db: hby.db, store: rgy.store, protocol };
+      const { anchor, proceed } = op.prerequisite;
+      if (registryEventStatus(read, anchor).state !== "accepted") {
+        if ((yield* settleRegistryEvent(read, anchor)).state !== "accepted") return;
+      }
+      op.outbound = { kind: "initial", wire: yield* proceed() };
+      op.prerequisite = null;
+      this.setPhase(op, "publishing");
+    }
     if (op.outbound) {
       const { kind, wire } = op.outbound;
       const sent = yield* this.attempt(op, function*() {
@@ -302,6 +334,32 @@ export function* proposeGroupIpex(
   const own = yield* prepareAcdcV2GroupIpex(hby, protocol, hab, candidate);
   if (!own) throw new ValidationError("ACDC v2 group disclosure awaits authenticating dependencies.");
   return ops.begin(exn.said, hab, gvrsn, { kind: "initial", wire: own }, deliver);
+}
+
+/** A group-authored message and the registry update it waits for. */
+export interface GroupIpexAfterInput {
+  hab: Hab;
+  exn: SerderKERI;
+  gvrsn?: Versionage;
+  /** False when the caller takes the completed message itself and the lead must not send it. */
+  deliver?: boolean;
+  prerequisite: GroupIpexPrerequisite;
+}
+
+/**
+ * The proposer's consent to a group-authored message that waits for a registry update, as a Grant carrying a
+ * presentation proof does: the caller has proposed the update (this member's contribution is its approval) and
+ * passes the anchor to wait for. The owner signs the message's contribution, through `prerequisite.proceed`, once
+ * the group has accepted the update, under this same consent. Returns after local commit.
+ */
+export function proposeGroupIpexAfter(
+  ops: GroupIpexOperations,
+  { hab, exn, gvrsn = Vrsn_2_0, deliver = true, prerequisite }: GroupIpexAfterInput,
+): GroupIpexBegun {
+  if (!isLocalGroupHab(ops.deps.hby, hab)) throw new ValidationError("Group IPEX requires a local group identifier");
+  if (exn.pre !== hab.pre || !exn.said) throw new ValidationError("The IPEX message must be authored by the group");
+  if (ops.live.has(exn.said)) throw new ValidationError("A group IPEX message was already begun for this SAID");
+  return ops.begin(exn.said, hab, gvrsn, null, deliver, prerequisite);
 }
 
 /**
