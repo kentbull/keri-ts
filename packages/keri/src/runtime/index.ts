@@ -162,6 +162,14 @@ export {
   type PosterStream,
 } from "../app/delivery/forwarding.ts";
 export {
+  type Relay,
+  type RelayEndpoint,
+  relayEndpoint,
+  RelayOnlyError,
+  relayOnlyHttpClient,
+  RelayUnresolvedError,
+} from "../app/delivery/relaying.ts";
+export {
   type EssrDecision,
   type EssrMessage,
   EssrRecipient,
@@ -251,6 +259,12 @@ export {
   type ContactRecord,
   Organizer,
 } from "../app/identity/organizing.ts";
+export {
+  type DisclosureRole,
+  exportDisclosureStream,
+  type GroupDisclosure,
+  listGroupDisclosures,
+} from "../app/ipex/disclosure-replaying.ts";
 export { IpexAdmitter, type PreparedAdmit } from "../app/ipex/ipex-admitting.ts";
 export { ipexExnBody, type IpexV2BodyOptions, prepareIpexExn } from "../app/ipex/ipex-building.ts";
 export {

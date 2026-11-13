@@ -326,7 +326,16 @@ export class IpexDiscloser {
 
   /** Carry selected public evidence and root-first delegation ancestry; receiver intake still verifies every approval. */
   proofSupport(raw: Uint8Array, hab: Hab): Uint8Array {
-    const aids = new Set([hab.pre]), registries = new Set<string>();
+    return this.proofSupportFor(raw, [hab.pre]);
+  }
+
+  /**
+   * `proofSupport` for explicitly named parties instead of one habitat: the KELs of `parties` and of every identifier
+   * the ACDC frames in `raw` name, each after its delegation ancestry, then the accepted TEL of every registry they
+   * name. Reads accepted state only and signs nothing, so it needs no keys.
+   */
+  proofSupportFor(raw: Uint8Array, parties: readonly string[]): Uint8Array {
+    const aids = new Set(parties), registries = new Set<string>();
     for (const frame of parseBytes(raw)) {
       if (!(frame.body instanceof SerderACDC)) continue;
       const node = frame.body, envelope = envelopeFromFrame(frame);

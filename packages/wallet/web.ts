@@ -50,6 +50,7 @@ export {
   type WalletProposal,
 } from "./src/web/group-api.ts";
 export {
+  KeeperSaltMismatchError,
   openWebWallet,
   type OpenWebWalletOptions,
   type PageLifecycleTargets,

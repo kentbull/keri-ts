@@ -443,7 +443,7 @@ Deno.test("Queued exchanges carries embedded CESR attachments for delegation-sty
           throw new Error("Sender first-seen ordinal is missing.");
         }
         const evt = hby.db.cloneEvtMsg(sender.pre, fn, said);
-        const postman = new Poster(hby, runtime.mailboxer, null, runtime.http, runtime.clock);
+        const postman = new Poster(hby, runtime.mailboxer, null, runtime.http, runtime.clock, null);
 
         const { serder } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
@@ -538,7 +538,7 @@ Deno.test("Queued exchanges defaults IPEX delivery to /credential", async () => 
           recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true),
         ]);
 
-        const postman = new Poster(hby, runtime.mailboxer, null, runtime.http, runtime.clock);
+        const postman = new Poster(hby, runtime.mailboxer, null, runtime.http, runtime.clock, null);
         const { serder } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
           route: "/ipex/grant",
@@ -675,7 +675,7 @@ Deno.test("Queued exchanges falls back to local witness mailbox storage", async 
       try {
         yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9124", witness.pre, "http")]);
 
-        const postman = new Poster(hby, runtime.mailboxer, null, runtime.http, runtime.clock);
+        const postman = new Poster(hby, runtime.mailboxer, null, runtime.http, runtime.clock, null);
         const { serder, deliveries } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
           route: DELEGATE_REQUEST_ROUTE,
@@ -795,7 +795,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           const introduction = yield* call(() => parseBytes(expectedIntro));
           const frameCount = introduction.length;
 
-          const postman = new Poster(hby, null, runtime.protocol, runtime.http, runtime.clock);
+          const postman = new Poster(hby, null, runtime.protocol, runtime.http, runtime.clock, null);
           const result = yield* deliverMessage(postman, sender, {
             recipient: recipient.pre,
             message,
@@ -1241,7 +1241,7 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
           if (frame.body instanceof SerderKERI && frame.body.route === "/fwd") forwardedFrames.push(frame);
           return new Response(null, { status: 204 });
         });
-        const postman = new Poster(hby, null, null, http, systemClock);
+        const postman = new Poster(hby, null, null, http, systemClock, null);
         hby.db.ends.pin([recipient.pre, EndpointRoles.mailbox, provider.pre], { allowed: true });
         hby.db.locs.pin([provider.pre, "https"], { url: "https://mailbox.test/" });
         // A v2 member nests every child after its v2 introduction; only a v1 member's v1 child keeps the embed.
@@ -1321,6 +1321,7 @@ Deno.test("ordinary Poster traverses direct roles before one random mailbox and 
         return new Response(null, { status: 204 });
       }),
       systemClock,
+      null,
     );
     const random = Math.random;
     try {
@@ -1388,6 +1389,7 @@ Deno.test("poster reports an unsignable forward as failed and delivers later eve
         return new Response(null, { status: 204 });
       }),
       systemClock,
+      null,
     );
     try {
       const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
@@ -1473,6 +1475,7 @@ Deno.test("queued streams keep all source messages ordered at one randomly selec
         return new Response(null, { status: 204 });
       }),
       systemClock,
+      null,
     );
     const msgs = ["0", "1"].map((s) => sender.query(sender.pre, sender.pre, { route: "logs", q: { s } }));
     const original = concatBytes(...msgs);

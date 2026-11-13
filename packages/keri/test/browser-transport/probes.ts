@@ -121,7 +121,7 @@ function inception(s: Session, hab: Hab): Uint8Array {
 
 /** Deliver one signed message A -> B through `Poster` on `topic`; resolves to the delivery outcome. */
 function* post(s: Session, topic: string, msg: Uint8Array, dest = s.recipient.pre): Operation<Outcome> {
-  const poster = new Poster(s.hby, null, null, http, systemClock);
+  const poster = new Poster(s.hby, null, null, http, systemClock, null);
   const worker = yield* spawn(() => poster.deliverDo());
   try {
     const outcome = yield* poster.wait(

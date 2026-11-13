@@ -52,7 +52,14 @@ function* authorize(fixture: Fixture, recipient: Hab, endpoint: Hab, role: strin
 
 /** Send through the real Poster worker and return its terminal outcome. */
 function* send(fixture: Fixture, sender: Hab, recipient: Hab) {
-  const postman = new Poster(fixture.hby, null, fixture.runtime.protocol, fixture.runtime.http, fixture.runtime.clock);
+  const postman = new Poster(
+    fixture.hby,
+    null,
+    fixture.runtime.protocol,
+    fixture.runtime.http,
+    fixture.runtime.clock,
+    null,
+  );
   const worker = yield* spawn(() => postman.deliverDo());
   try {
     const message = sender.query(recipient.pre, sender.pre, { route: "logs", q: { s: "0" } });

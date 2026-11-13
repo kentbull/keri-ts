@@ -29,6 +29,7 @@ import { loadOobiHandlers, Oobiery, type OobiJob, oobiTerminalState } from "../b
 import type { RootReplicator } from "../credentials/root-replicator.ts";
 import { publishPendingTel } from "../credentials/tel-publishing.ts";
 import { Poster } from "../delivery/forwarding.ts";
+import { type Relay, relayEndpoint, relayOnlyHttpClient } from "../delivery/relaying.ts";
 import { ReplyStreams } from "../delivery/reply-streams.ts";
 import { Respondant } from "../delivery/respondant.ts";
 import { Exchanger, RouteRefuser } from "../exchanges/exchanging.ts";
@@ -264,6 +265,13 @@ export interface AgentRuntimeOptions {
    * `"closed"` refuses any Grant missing a far node. Neither mode escrows.
    */
   grantWalk?: AcdcWalkPolicy;
+  /**
+   * The agent this runtime sends, queries and polls through, which makes it an edge. Every HTTP and TCP request
+   * is refused unless it goes to the relay's OOBI origin or an accepted relay location, and Poster forwards every
+   * message to the relay. The relay's OOBI is queued when its location is not yet accepted. Omitted, the runtime
+   * is a forwarder and delivers directly.
+   */
+  relay?: Relay;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -330,6 +338,8 @@ export function* createAgentRuntime(
   clock: RuntimeClock,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
+  // An edge reaches only its relay: every component below, and `runtime.http`, gets the guarded client.
+  if (options.relay) http = relayOnlyHttpClient(http, hby, options.relay);
   const injectedSignaler = options.signaler ?? options.notifier?.signaler;
   if (
     (options.notifier && options.notifier.signator !== hby.signator)
@@ -449,7 +459,7 @@ export function* createAgentRuntime(
     }
   });
   const postman = yield* resource<Poster>(function*(provide) {
-    const postman = new Poster(hby, mailboxer, protocol, http, clock);
+    const postman = new Poster(hby, mailboxer, protocol, http, clock, options.relay ?? null);
     try {
       yield* provide(postman);
     } finally {
@@ -546,6 +556,7 @@ export function* createAgentRuntime(
     : null;
   const oobiery = new Oobiery(hby, protocol, revery, http, cues);
   oobiery.registerReplyRoutes(revery.rtr);
+  if (options.relay && !relayEndpoint(hby, options.relay)) oobiery.resolve(options.relay.oobi);
   const authenticator = new Authenticator(hby, http);
   return {
     hby,
