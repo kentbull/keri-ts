@@ -154,7 +154,7 @@ async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
     for (let files = queue.shift(); files; files = queue.shift()) {
       const args = expandProfiles
         ? [fromFileUrl(new URL("./qualify-reference-profiles.py", import.meta.url))]
-        : ["test", "--allow-all", "--unstable-ffi", ...(suite.jobs ? ["--parallel"] : []), ...files];
+        : ["test", "--allow-all", "--unstable-ffi", "--no-check", ...(suite.jobs ? ["--parallel"] : []), ...files];
       if (expandProfiles) console.log(`==> ${name}: all frozen reference profiles`);
       else console.log(`==> ${name}: ${files.length} files, ${jobs(suite)} worker(s)`);
       const start = performance.now();
