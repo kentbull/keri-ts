@@ -162,3 +162,33 @@ Deno.test("an unreachable mailbox is retried with doubling delays and given up a
     }
   });
 });
+
+Deno.test("a group's mailbox is told again when the local signing member's key state changes", async () => {
+  await run(function*() {
+    const hby = yield* open();
+    try {
+      const { http, posts } = hosts(["alpha"]);
+      const [alice, bob] = ["alice", "bob"].map((name) =>
+        hby.makeHab(name, undefined, { transferable: true, toad: 0 })
+      );
+      const group = hby.makeGroupHab("team", alice, [alice.pre, bob.pre], undefined, undefined, {
+        isith: "2",
+        nsith: "2",
+        toad: 0,
+      }).hab;
+      hby.db.ends.pin([group.pre, "mailbox", "alpha"], { allowed: true });
+      hby.db.locs.pin(["alpha", "http"], { url: "http://alpha.test/" });
+      const publisher = new KelPublisher({ hby, http, clock: new ManualRuntimeClock(1_000) });
+      assertEquals((yield* publisher.processOnce()).map((result) => result.outcome), ["told"]);
+      assertEquals(hby.db.kpub.get([group.pre, "alpha"])?.m, alice.kever!.lastEst.d, "the member's head is recorded");
+      assertEquals(yield* publisher.processOnce(), []);
+      // The member rotates; the group's own KEL is unchanged, but the mailbox needs the member's new key state.
+      alice.rotate({});
+      assertEquals((yield* publisher.processOnce()).map((result) => result.outcome), ["told"]);
+      assertEquals(posts.length, 2);
+      assertEquals(hby.db.kpub.get([group.pre, "alpha"])?.m, alice.kever!.lastEst.d);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});

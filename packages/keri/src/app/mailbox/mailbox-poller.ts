@@ -13,7 +13,7 @@ import {
 } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { requestWithHeaderTimeout } from "../transport/httping.ts";
-import { pinKelPublished, postKelToMailbox } from "./kel-publishing.ts";
+import { kelHeads, pinKelPublished, postKelToMailbox } from "./kel-publishing.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import { mailboxPollEndpoints } from "./mailboxing.ts";
@@ -234,8 +234,8 @@ export class MailboxPoller {
         if (head && (yield* postKelToMailbox(this, target.targetPre, endpoint)).outcome === "told") {
           posted = head;
           // Same marker the publisher keeps, so it does not send what the repair just did.
-          const kever = this.hby.db.getKever(target.targetPre);
-          if (kever) pinKelPublished(this.hby.db, target.targetPre, endpoint.eid, kever.lastEst.d, this.clock);
+          const heads = kelHeads(this.hby, target.targetPre);
+          if (heads) pinKelPublished(this.hby.db, target.targetPre, endpoint.eid, heads, this.clock);
           outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
         }
       }

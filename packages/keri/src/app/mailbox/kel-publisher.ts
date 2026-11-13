@@ -31,7 +31,9 @@ import { OwnerWake } from "../runtime/operation-owners.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import {
+  holdsHeads,
   KEL_PUBLISH_HEADER_TIMEOUT_MS,
+  kelHeads,
   type KelPublishingDeps,
   type MailboxPublication,
   pinKelPublished,
@@ -83,6 +85,8 @@ interface Derived {
   mailbox: string;
   url: string | null;
   said: string;
+  /** For a local group, the signing member's establishment SAID the mailbox must also hold. */
+  member?: string;
   sn: number;
   published: boolean;
   hold: "unwitnessed" | "unanchored" | "no-url" | null;
@@ -245,7 +249,7 @@ export class KelPublisher {
     const result = yield* postKelToMailbox(this.#deps, entry.pre, { eid: entry.mailbox, url }, { timeoutMs });
     const unsupported = result.outcome === "failed" && (result.status === 400 || result.status === 406);
     if (result.outcome === "told" || unsupported) {
-      pinKelPublished(hby.db, entry.pre, entry.mailbox, entry.said, clock);
+      pinKelPublished(hby.db, entry.pre, entry.mailbox, { d: entry.said, m: entry.member }, clock);
       this.#budgets.delete(id);
     } else {
       budget.attempts += 1;
@@ -257,6 +261,7 @@ export class KelPublisher {
         const record = hby.db.kpub.get([entry.pre, entry.mailbox]);
         hby.db.kpub.pin([entry.pre, entry.mailbox], {
           d: record?.d ?? null,
+          ...(record?.m ? { m: record.m } : {}),
           dt: record?.dt ?? new Date(clock.now()).toISOString(),
           failed: {
             d: entry.said,
@@ -277,7 +282,9 @@ export class KelPublisher {
     for (const hab of hby.habs.values()) {
       const kever = hab.kever;
       if (!kever || !hab.pre) continue;
-      const said = kever.lastEst.d;
+      const heads = kelHeads(hby, hab.pre);
+      if (!heads) continue;
+      const said = heads.d;
       for (const mailbox of authorizedMailboxes(db, hab.pre)) {
         const url = preferredUrl(fetchEndpointUrls(hby, mailbox)) ?? null;
         const established = db.getEvtSerder(hab.pre, said);
@@ -290,8 +297,9 @@ export class KelPublisher {
           mailbox,
           url,
           said,
+          member: heads.m,
           sn: kever.sn,
-          published: db.kpub.get([hab.pre, mailbox])?.d === said,
+          published: holdsHeads(db.kpub.get([hab.pre, mailbox]), heads),
           hold,
         });
       }

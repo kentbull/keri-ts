@@ -730,6 +730,8 @@ export class RootSentRecord extends RawRecord<RootSentRecordShape> implements Ro
 export interface KelPublishedRecordShape {
   /** Establishment event SAID (`lastEst.d`) of the KEL this mailbox was last given and answered 2xx for; null if never. */
   d: string | null;
+  /** For a local group: establishment SAID of the signing member whose KEL went with it (the host needs it to authenticate the member's polls). */
+  m?: string;
   /** ISO-8601 time of that answer (or of the record's creation when `d` is null). */
   dt: string;
   /** Written when publishing the KEL up to establishment event `failed.d` used its whole budget; cleared by the next success. */
@@ -744,6 +746,7 @@ export interface KelPublishedRecordShape {
  */
 export class KelPublishedRecord extends RawRecord<KelPublishedRecordShape> implements KelPublishedRecordShape {
   declare d: string | null;
+  declare m?: string;
   declare dt: string;
   declare failed?: KelPublishedRecordShape["failed"];
 }

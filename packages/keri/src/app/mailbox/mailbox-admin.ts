@@ -37,7 +37,7 @@ import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
 import type { WaitResult } from "../runtime/workflow-contract.ts";
 import { buildCesrStreamRequest } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
-import { pinKelPublished } from "./kel-publishing.ts";
+import { kelHeads, pinKelPublished } from "./kel-publishing.ts";
 import { collectKelSubmission, type KelSubmission } from "./kel-submission.ts";
 import { fetchEndpointUrls, preferredUrl } from "./mailboxing.ts";
 
@@ -158,7 +158,7 @@ export function* completeMailboxAdmin(
     throw new ValidationError(`No accepted mailbox role reply is available for ${hab.pre}.`);
   }
   // The request carries the KEL up to this establishment event, which the mailbox then holds.
-  const established = deps.hby.db.getKever(hab.pre)?.lastEst.d;
+  const established = kelHeads(deps.hby, hab.pre);
   const response = yield* postMailboxAdmin(
     deps.http,
     endpointUrl,

@@ -7,6 +7,7 @@
 import { type Operation, scoped } from "npm:effection@^3.6.0";
 import type { Baser } from "../../db/basing.ts";
 import type { Habery } from "../identity/habbing.ts";
+import { localGroupMember } from "../multisig/group-members.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { buildCesrStreamRequest } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
@@ -64,16 +65,38 @@ export function* postKelToMailbox(
 }
 
 /**
- * Record that `mailbox` was given the KEL of `pre` up to establishment event `d`, and clear any earlier give-up.
- * The record holds coordinates only; the publisher derives what is owed by comparing it with the identifier's
- * latest establishment event.
+ * The establishment events a mailbox must hold to authenticate `pre`: the identifier's own latest one and, for
+ * a local group, the local signing member's, because the member signs the group's polls and the host needs its
+ * key state to verify them. `collectKelSubmission` is the one place that decides what the post carries; these
+ * heads are what the record is compared with.
+ */
+export function kelHeads(hby: Habery, pre: string): { d: string; m?: string } | null {
+  const kever = hby.db.getKever(pre);
+  if (!kever) return null;
+  if (!hby.db.getHab(pre)?.mid) return { d: kever.lastEst.d };
+  const member = localGroupMember(hby, pre).kever;
+  return member ? { d: kever.lastEst.d, m: member.lastEst.d } : { d: kever.lastEst.d };
+}
+
+/**
+ * Record that `mailbox` was given the KEL of `pre` up to `heads`, and clear any earlier give-up. The record holds
+ * coordinates only; the publisher derives what is owed by comparing it with the identifier's current heads.
  */
 export function pinKelPublished(
   db: Baser,
   pre: string,
   mailbox: string,
-  d: string,
+  heads: { d: string; m?: string },
   clock: Pick<RuntimeClock, "now">,
 ): void {
-  db.kpub.pin([pre, mailbox], { d, dt: new Date(clock.now()).toISOString() });
+  db.kpub.pin([pre, mailbox], {
+    d: heads.d,
+    ...(heads.m ? { m: heads.m } : {}),
+    dt: new Date(clock.now()).toISOString(),
+  });
+}
+
+/** Whether `record` shows the mailbox holds `heads`. */
+export function holdsHeads(record: { d: string | null; m?: string } | null, heads: { d: string; m?: string }): boolean {
+  return record?.d === heads.d && (heads.m === undefined || record.m === heads.m);
 }

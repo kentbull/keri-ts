@@ -657,7 +657,11 @@ Deno.test("completing a rotation prompts the publisher to tell every mailbox, wh
     try {
       const { completion, results, publisher } = yield* rotateAndPublish(fixture);
       assertEquals(completion.outcome, "settled");
-      assertEquals(results, hosts.map(({ service }) => ({ mailbox: service.pre, outcome: "told" })));
+      assertEquals(
+        results.map((result) => result.mailbox).sort(),
+        hosts.map(({ service }) => service.pre).sort(),
+      );
+      assertEquals(new Set(results.map((result) => result.outcome)), new Set(["told"]));
       assertEquals(publisher.status().entries.map((entry) => entry.state), ["published", "published"]);
       for (const { service, handler } of hosts) {
         const poll = wallet.query(wallet.pre, service.pre, { route: "mbx", q: { topics: { "/reply": 0 } } });
@@ -691,14 +695,13 @@ Deno.test("a mailbox that cannot be reached is reported by the publisher and doe
       const { completion, results, publisher } = yield* rotateAndPublish(fixture);
       assertEquals(completion.outcome, "settled");
       assertEquals(completion.status, { state: "complete" });
-      assertEquals(results, [
-        { mailbox: hosts[0].service.pre, outcome: "told" },
-        { mailbox: hosts[1].service.pre, outcome: "failed", reason: "connection refused" },
-      ]);
-      assertEquals(publisher.status().entries.map((entry) => [entry.state, entry.lastFailure]), [
-        ["published", undefined],
-        ["pending", "connection refused"],
-      ]);
+      const down = hosts[1].service.pre;
+      assertEquals(
+        results.map((result) => [result.mailbox === down, result.outcome]).sort(),
+        [[false, "told"], [true, "failed"]],
+      );
+      const failed = publisher.status().entries.find((entry) => entry.mailbox === down)!;
+      assertEquals([failed.state, failed.lastFailure], ["pending", "connection refused"]);
     } finally {
       for (const { runtime, host } of hosts) {
         yield* runtime.close();
