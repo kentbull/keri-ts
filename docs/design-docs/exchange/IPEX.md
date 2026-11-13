@@ -296,17 +296,19 @@ Group commands send copies without being asked, on a fire-and-forget happy path
   current key, so a rotated member needs a copy sealed to its new key. No
   sender is elected.
 
-`replicateRegistryRoots` and `resealRegistryRoots` (`keri-ts/runtime`) prepare
-each copy with `hinted` and deliver it through Poster, the path
-`tufa vc registry root send` uses. Each outcome is printed as a `root_copy`
-JSON line after the command's own result. Limits: there is no acknowledgement,
-sent-copies record or retry. A copy that cannot be sent, because the mailbox is
+`RootReplicator` (`keri-ts/runtime`, `runtime.rootReplicator`) derives the copies owed from state,
+prepares each with `hinted` and delivers it through Poster, the path
+`tufa vc registry root send` uses; `replicateRootCopies` and `resealRootCopies` return typed
+`RootCopyResult` values that the CLI maps to a `root_copy` JSON line after the command's own
+result. Each copy the Poster reports sent is recorded in `rrsn.`, so a restart or second process
+does not repeat it. Limits: there is no acknowledgement or retry of a failed send beyond the next pass. A copy that cannot be sent, because the mailbox is
 unreachable, the budget (the remaining issuance `--timeout`, or 30 seconds after
 a rotation) runs out, or no held opening or stored Grant yields a hint, is
 reported with `tufa vc registry root send` as the recovery and never fails the
 issuance or rotation. Several signers may send the same root; receiving is
-idempotent, so duplicates are harmless. A crash between retention and sending
-leaves the root unreplicated until someone sends it by hand.
+idempotent, so duplicates are harmless. Because what is owed is derived from
+state and each sent copy is recorded, a crash between retention and sending is repaired by the
+next pass.
 
 Disclosure plans select every disclosed node in exactly the graph's BFS order.
 The DAG path is `/` for the origin or a rooted literal SAD path ending in `_/`.

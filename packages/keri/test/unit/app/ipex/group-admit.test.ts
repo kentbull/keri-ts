@@ -7,6 +7,8 @@
  * runtime publishes, collects, accepts and lets the elected lead deliver the completed Admit to the issuer.
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
+import { Wallet } from "@keri-ts/wallet";
+import { createWalletBaser } from "@keri-ts/wallet/lmdb";
 import { Diger, NumberPrimitive, parseBytes, Prefixer, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, ensure, type Operation, run, sleep, spawn } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
@@ -23,12 +25,13 @@ import {
   waitForGroupIpex,
 } from "../../../../src/app/ipex/group-ipex.ts";
 import { approveGroupIssuanceExchange } from "../../../../src/app/ipex/group-issuance.ts";
-import { beginIssuance, issuanceStatus, waitForIssuance } from "../../../../src/app/ipex/issuance.ts";
+import { beginIssuance, issuanceStatus, posterDelivery, waitForIssuance } from "../../../../src/app/ipex/issuance.ts";
+import { type PresentationDeps, proposeGroupPresentation } from "../../../../src/app/ipex/presenting.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
-import type { Receiptor } from "../../../../src/app/witness/receipting.ts";
+import { Receiptor } from "../../../../src/app/witness/receipting.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { interact, reply } from "../../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../../src/core/protocol-serialization.ts";
@@ -221,6 +224,42 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       1,
       "exactly the elected lead delivered the completed Admit",
     );
+
+    // --- the group presents the accepted Grant: one member proposes, the other approves, the lead delivers ---
+    // The presenter's inventory is the embedder's: it records the admission, and the runtime selects from it.
+    const walletDb = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
+    yield* ensure(() => walletDb.close(true));
+    const wallet = new Wallet({ hby: h1.hby, registry: h1.runtime.acdc!.store, exc: h1.runtime.exc, db: walletDb });
+    yield* call(() => wallet.recordAdmission(grant, admit, { consent: true }));
+    const presenting = (side: Side): PresentationDeps => ({
+      hby: side.hby,
+      rgy: side.runtime.acdc!,
+      exc: side.runtime.exc,
+      receiptor: new Receiptor(side.hby, side.runtime.protocol, side.runtime.http, side.runtime.clock),
+      reactor: side.runtime.reactor,
+      protocol: side.runtime.protocol,
+      delivery: posterDelivery(side.runtime.postman),
+      clock: side.runtime.clock,
+      views: wallet,
+    });
+    const presented = yield* proposeGroupPresentation(presenting(h1), ops1, {
+      hab: h1.hab,
+      selection: { fromGrant: grant, presenterAuthorized: true },
+      options: { recipient: issuer.hab.pre!, message: "Group presentation" },
+    });
+    yield* until(
+      () => groupIpexProposals(ops2, h2.hab).some((proposal) => proposal.said === presented.said),
+      "the second member to hold the presentation proposal",
+    );
+    assert(!h2.runtime.exc.complete(presented.said), "the Grant needs the second member's consent");
+    yield* approveGroupIpex(ops2, { said: presented.said });
+    for (const ops of [ops1, ops2]) {
+      assertEquals((yield* waitForGroupIpex(ops, presented.said, { timeoutMs: BUDGET_MS })).status, {
+        state: "done",
+        phase: "accepted",
+      });
+    }
+    yield* until(() => issuer.runtime.exc.complete(presented.said), "the issuer to accept the presented Grant");
     for (const task of hosts) yield* task.halt();
   });
 });

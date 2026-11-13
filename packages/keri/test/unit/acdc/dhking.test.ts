@@ -6,6 +6,7 @@ import { selectNewcomerCopies } from "@keri-ts/multisync/v2";
 import { Wallet, WalletAuthor } from "@keri-ts/wallet";
 import { createWalletBaser } from "@keri-ts/wallet/lmdb";
 import {
+  bytesEqual,
   type CesrFrame,
   collectPayload,
   concatBytes,
@@ -1145,6 +1146,30 @@ for (const keys of [1, 2]) {
       right.runtime.ipex!.release(issuee.pre);
       const reopened = right.runtime.ipex!.dhke(issuee);
       assert(reopened !== right.dh);
+      if (keys === 1) {
+        // A successor is judged against the persisted query as it would be against the held one.
+        const held = right.hby.db.heldq.get([grant.said!])!;
+        const sealed = (pk: Record<string, string>) =>
+          parseBytes(issuer.endorse(
+            queryEvent(Dhke.Route, { x: grant.said!, pk }, {
+              pre: issuer.pre,
+              replyRoute: Dhke.Route,
+              pvrsn: Vrsn_2_0,
+              kind: envelope.serder.kind,
+            }),
+            { gvrsn: Vrsn_2_0 },
+          ))[0];
+        const registries = Object.keys((envelope.serder.sad!.q as { pk: Record<string, string> }).pk);
+        const other = Object.fromEntries(registries.map(regid => [regid, generateKeyPair().publicKey]));
+        yield* sleep(2);
+        const conflict = yield* right.runtime.protocol.dispatch(sealed(other));
+        assertEquals(conflict.decision, { kind: "drop", reason: "invalidQuery" }, "different keys conflict");
+        assert(bytesEqual(right.hby.db.heldq.get([grant.said!])!, held), "the persisted query is untouched");
+        yield* sleep(2);
+        const successor = yield* right.runtime.protocol.dispatch(parseBytes(left.dh.requery(grant.said!))[0]);
+        assertEquals(successor.decision, { kind: "accept" }, "a re-dated successor with the same keys is taken");
+        assert(!bytesEqual(right.hby.db.heldq.get([grant.said!])!, held), "and replaces the persisted query");
+      }
       assertEquals(reopened.approve(grant.said!), grant.said!);
       const response = reopened.outgoing.pull();
       assertExists(response, "consent alone produces the reply from the persisted query");

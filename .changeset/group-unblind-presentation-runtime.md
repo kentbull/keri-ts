@@ -1,0 +1,6 @@
+---
+"keri-ts": minor
+"@keri-ts/tufa": minor
+---
+
+A group presents and proves through the library. `runtime.operations.unblinding` now serves a local group on both sides of an Unblind: `requestUnblind` takes a `proposer` for a group disclosee (the proposer authors the threshold query, the other members contribute to it) and the new `answerUnblind` is a group discloser member's consent to contribute to the one threshold reply. The owner's `processOnce` runs the group steps (taking in the members' wrappers, the contribution, publication to the other members, finish); status and wait are unchanged. `UnblindingDeps` gains an optional `group` (the multiplexor and protocol collaborators; the runtime composes it) and `UnblindingRequest.states` is optional. `proposeGroupPresentation` freezes a group's Grant body from a credential view and proposes it through `runtime.operations.groupIpex`, so the other members approve it with `approveGroupIpex` and the elected lead delivers it; a group presentation registry is still a separate group proposal. `tufa ipex unblind` is one caller for individuals and groups: `runGroupUnblind` and `runIndividualUnblind` are replaced by `runUnblind`, and the CLI-owned member loop is removed with no replacement. `tufa ipex grant` for a group without a presentation registry proposes through the library.
