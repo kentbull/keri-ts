@@ -324,7 +324,9 @@ Group work is a set of explicit library calls plus the `Counselor`.
   a member may consent to and `pendingGroupGrants` the Grants addressed to a group. `deriveGroupCustody(deps, hab, grant)`
   returns null when a `/registry/root` copy was sent to the local member for a disclosed registry, so a member holding a
   copy of a still-pending Grant is never adopted as the custodian. A group's Admit or other v2 IPEX message goes through
-  `runtime.operations.groupIpex` (`approveGroupIpex(ops, said, options?)`). A group presents through
+  `runtime.operations.groupIpex` (`approveGroupIpex(ops, said, options?)`). A consent whose message this member's own
+  KRAM refuses (an Offer past its exchange lifetime) throws `KramRefusedError`; an operation whose later collection is
+  refused ends `expired`, with the KRAM reason and deadline, instead of retrying until its wait times out. A group presents through
   `proposeGroupPresentation`, with a presentation registry too (the registry update is proposed first and the member's
   Grant contribution waits for it, phase `awaitingRegistryUpdate`), and proves with `requestUnblind` / `answerUnblind`
   naming a `proposer`. Root copies for the other members come from the runtime's `RootReplicator`, which derives what is
