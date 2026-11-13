@@ -61,6 +61,8 @@ import {
   removeMailbox,
   requestUnblind,
   requireMailboxEndpointUrl,
+  type RetiredIdentifier,
+  retireIdentifier,
   type RuntimeClock,
   type UnblindingEndState,
   type UnblindingStatus,
@@ -330,6 +332,20 @@ export class Identifiers {
   /** Pure read of an event's completion. */
   status(pre: string, sn: number): EventStatus {
     return eventStatus(this.#scope.parts.hby, pre, sn);
+  }
+
+  /**
+   * Retire a single-signature identifier: it stops being local, its stored private keys are deleted and its held
+   * signers released, and its mailbox polling stops. Its KEL and every accepted reply about it stay. One-way: the
+   * name cannot be reused with the same salt and namespace. Creates no event and signs nothing.
+   *
+   * @throws ValidationError for an unknown or group identifier, or with the runtime's reason when it still needs
+   * the identifier (a group member, a delegator, a registry issuer, or live work).
+   */
+  retire(pre: string): RetiredIdentifier {
+    this.#scope.parts.assertRunning();
+    this.#scope.individual(pre);
+    return retireIdentifier(this.#scope.parts.runtime, pre);
   }
 }
 

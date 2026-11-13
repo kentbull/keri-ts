@@ -1,12 +1,14 @@
 /** `openWebWallet` composes lock, IndexedDB stores, runtime and barrier; fakes stand in for the browser. */
-import { concatBytes, Counter, MtrDex, Saider, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
+import { concatBytes, Counter, MtrDex, Saider, type SerderKERI, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
-import { PersistenceLatchedError, PersistenceReadError, Schemer } from "keri-ts/runtime";
+import { type Habery, openHabery, PersistenceLatchedError, PersistenceReadError, Schemer } from "keri-ts/runtime";
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
 import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
 import { incept } from "../../keri/src/core/protocol-eventing.ts";
+import { dgKey } from "../../keri/src/db/core/keys.ts";
+import { MemStoreOpener } from "../../keri/src/db/core/memstore.ts";
 import { walletChangeSink } from "../src/web/wallet-api.ts";
 import {
   openWebWallet,
@@ -507,5 +509,90 @@ Deno.test("held signers: an open without them stays up and waits; an open with t
     assertEquals(withSigners.health(), { status: "ok" });
   } finally {
     await withSigners.close();
+  }
+});
+
+Deno.test("wallet identifiers.retire", async () => {
+  const w = await page().open();
+  try {
+    const a = await w.identifiers.incept({ alias: "a" }), b = await w.identifiers.incept({ alias: "b" });
+    assertEquals(w.identifiers.retire(a.pre), { pre: a.pre, name: "a", released: [], mailboxes: [] });
+    assertEquals(w.hby.habs.has(a.pre), false);
+    assertEquals(w.hby.habByName("a"), null);
+    assert(w.hby.db.getKever(a.pre), "the KEL stays");
+    assertThrows(() => w.identifiers.retire(a.pre), Error, "not a local identifier");
+    // The retired name derives the retired keys again, so it cannot be reused with the same salt and namespace.
+    await assertRejects(() => w.identifiers.incept({ alias: "a" }), Error, "retired identifier");
+    // An identifier the runtime still needs is refused with the reason, and stays.
+    w.runtime.querying.enqueue({ pre: "Esubject", signer: b.pre, route: "logs", q: {} });
+    assertThrows(() => w.identifiers.retire(b.pre), Error, "signs queued queries");
+    assert(w.hby.habs.has(b.pre));
+  } finally {
+    await w.close();
+  }
+});
+
+/** Accept `serder` at `hby` as group coordination does: local intake, then escrows. */
+function deliverEvent(hby: Habery, serder: SerderKERI, sigers: Siger[]) {
+  hby.kevery.processEvent({ serder, sigers, wigers: [], frcs: [], sscs: [], ssts: [], local: true });
+  hby.kevery.processEscrows();
+}
+
+/** Replay every accepted event of `pre` from `from` into each `to`. */
+function shareKel(from: Habery, pre: string, to: Habery[]) {
+  for (const [, said] of [...from.db.getKelItemIter(pre)]) {
+    const serder = from.db.getEvtSerder(pre, said)!;
+    for (const hby of to) deliverEvent(hby, serder, from.db.sigs.get(dgKey(pre, said)));
+  }
+}
+
+Deno.test("wallet health is ok after replacing and retiring a member", async () => {
+  const w = await page().open();
+  const others: Habery[] = [];
+  try {
+    for (const name of ["member-b", "member-c"]) {
+      others.push(
+        await run(() => openHabery({ name, temp: true, skipConfig: true, opener: new MemStoreOpener() })),
+      );
+    }
+    const a = (await w.identifiers.incept({ alias: "a" })).hab;
+    const fresh = (await w.identifiers.incept({ alias: "replacement" })).hab;
+    const [b, c] = others.map((hby) => ({ hby, hab: hby.makeHab("member") }));
+    // The old member polls a mailbox, so retiring it must stop that worker too.
+    w.hby.db.locs.pin(["Emailbox", "http"], { url: "http://retire-mailbox.test/" });
+    w.hby.db.ends.pin([a.pre, "mailbox", "Emailbox"], { allowed: true });
+    w.runtime.mailboxPoller.prompt(a.pre);
+    const sides = [{ hby: w.hby, hab: a }, b, c];
+    for (const from of sides) shareKel(from.hby, from.hab.pre, sides.filter((s) => s !== from).map((s) => s.hby));
+    shareKel(w.hby, fresh.pre, [b.hby, c.hby]);
+    const args = { isith: "2", nsith: "2", toad: 0 }, smids = sides.map((s) => s.hab.pre);
+    const created = sides.map((s) => s.hby.makeGroupHab("g", s.hab, smids, [...smids, fresh.pre], undefined, args));
+    sides.forEach((s, i) => created.forEach((g, j) => i !== j && deliverEvent(s.hby, g.serder, g.sigers)));
+    const gid = created[0].serder.pre!;
+    b.hab.rotate();
+    c.hab.rotate();
+    fresh.rotate();
+    shareKel(b.hby, b.hab.pre, [w.hby, c.hby]);
+    shareKel(c.hby, c.hab.pre, [w.hby, b.hby]);
+    shareKel(w.hby, fresh.pre, [b.hby, c.hby]);
+    const next = [b.hab.pre, c.hab.pre, fresh.pre];
+    const rots = [b, c].map((s) => s.hby.rotateGroupHab("g", next, next, args));
+    rots.forEach((r) => deliverEvent(w.hby, r.serder, r.sigers));
+    assertEquals(w.hby.db.getKever(gid)!.sn, 1);
+
+    const replaced = w.groups.replaceMember(gid, { member: fresh.pre, smids: next });
+    assertEquals(replaced.previousMember, {
+      kind: "retired",
+      retired: { pre: a.pre, name: "a", released: [], mailboxes: ["Emailbox"] },
+    });
+    assertEquals(w.hby.habs.has(a.pre), false);
+    // Let the poller and publisher take their next tocks, then read health with no special case.
+    await sleep(1_500);
+    assertEquals(w.runtime.signerConditions.list(), []);
+    assertEquals(w.runtime.kelPublisher.statusOf(a.pre), []);
+    assertEquals(w.health(), { status: "ok" });
+  } finally {
+    await w.close();
+    for (const hby of others) await run(() => hby.close(true));
   }
 });

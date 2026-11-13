@@ -186,6 +186,17 @@ export class WitnessInquisitor {
     this.hab = hab;
   }
 
+  /** The explicitly configured default signer, or null when the sole local habitat is used. */
+  get defaultSigner(): string | null {
+    return this.hab?.pre ?? null;
+  }
+
+  /** Whether a queued request names `signer` as its explicit signer. */
+  hasRequestsSignedBy(signer: string): boolean {
+    for (const request of this.requests) if (request.signer === signer) return true;
+    return false;
+  }
+
   /** Deferred instructions and active sends are this sender's only pending work. */
   hasPendingWork(): boolean {
     return !this.requests.empty || this.hasPendingDelivery;

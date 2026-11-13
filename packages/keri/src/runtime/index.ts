@@ -449,6 +449,7 @@ export {
   settleProposedRotation,
 } from "../app/multisig/proposing.ts";
 export {
+  type PreviousMemberOutcome,
   type ReplacedGroupMember,
   replaceGroupMember,
   type ReplaceGroupMemberInput,
@@ -1140,6 +1141,12 @@ export {
 
 // Pre-signed hab adoption (Habery.makeSignedHab) and store-level retirement (Habery.retireHab).
 export type { RetiredHab, SignedHabArgs } from "../app/identity/habbing.ts";
+// Runtime-level retirement: retireHab plus held signers, mailbox workers, cursors and KEL publisher rows.
+export {
+  type RetiredIdentifier,
+  retireIdentifier,
+  retireIdentifierRefusal,
+} from "../app/identity/retire-identifier.ts";
 
 // Library legacy IPEX conversation (apply, offer, agree, spurn; status and wait).
 export {

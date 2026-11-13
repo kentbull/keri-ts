@@ -518,6 +518,21 @@ export class Anchorer {
     this.clock = clock;
   }
 
+  /** Workflow ids (`pre:snh`) of `pre`'s delegated events still in the `dpwe.`, `dune.` or `dpub.` phase. */
+  pendingOf(pre: string): string[] {
+    const ids = new Set<string>();
+    const { dpwe, dune, dpub } = this.hby.db;
+    for (const phase of [dpwe, dune, dpub]) {
+      for (const [, serder] of phase.getTopItemIter([pre], { topive: true })) ids.add(workflowId(serder));
+    }
+    return [...ids];
+  }
+
+  /** Workflow ids whose pinned communication habitat (the proxy that sends the request) is `pre`. */
+  proxiedBy(pre: string): string[] {
+    return [...this.communicationHabPins].filter(([, pinned]) => pinned === pre).map(([id]) => id);
+  }
+
   /**
    * Start one delegated event in witness-receipt escrow and replace any previous local proxy pin.
    *
