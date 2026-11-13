@@ -138,8 +138,17 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
    * owner (its own threshold query) and the recipient's (the query received), and each decides by its own role.
    */
   processQuery(envelope: KeriDispatchEnvelope): DispatchDecision {
-    const decisions = this.select(envelope.serder).map((owner) => owner.processQuery(envelope));
-    return decisions.find((decision) => decision.kind === "accept") ?? decisions[0]
+    const owners = this.select(envelope.serder);
+    const decisions = owners.map((owner): DispatchDecision => {
+      try {
+        return owner.processQuery(envelope);
+      } catch (error) {
+        // With two parties, the one that is not the query's audience may refuse it; the other still decides.
+        if (owners.length > 1 && error instanceof ValidationError) return { kind: "drop", reason: "missingProcessor" };
+        throw error;
+      }
+    });
+    return decisions.find((decision) => decision && decision.kind === "accept") ?? decisions[0]
       ?? { kind: "drop", reason: "missingProcessor" };
   }
 
@@ -186,8 +195,8 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
     }
     const group = habs.get(sender);
     if (group && isLocalGroupHab(this.exc.hby, group)) parties.add(sender);
-    // Two parties are one transaction only when the sender is itself a local group: its owner and the recipient's.
-    if (parties.size < 1 || (parties.size > 1 && !(kind === "dhke" && parties.size === 2 && parties.has(sender)))) {
+    // Two parties are one transaction only when the sender is itself local: its owner and the recipient's.
+    if (parties.size < 1 || (parties.size > 1 && !(parties.size === 2 && parties.has(sender)))) {
       return [];
     }
     const owned: Owner[] = [];

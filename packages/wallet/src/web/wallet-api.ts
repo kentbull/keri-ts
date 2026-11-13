@@ -836,11 +836,11 @@ export class Credentials {
     }
     if (!hab) throw new ValidationError("The Grant is not addressed to a local identifier of this wallet.");
     return await this.#scope.go(function*(): Operation<UnblindOutcome> {
-      const before = unblindingStatus(ops, grant);
+      const before = unblindingStatus(ops, grant, { role: "requester" });
       if (before.state !== "active" && before.state !== "done" && before.state !== "expired") {
         requestUnblind(ops, grant, { states });
       }
-      const waited = yield* waitForUnblinding(ops, grant, { timeoutMs });
+      const waited = yield* waitForUnblinding(ops, grant, { timeoutMs, role: "requester" });
       const { status } = waited;
       if (waited.outcome === "timed-out") return { outcome: "timed-out", grant, timeoutMs, status };
       if (status.state === "done") return { outcome: "unblinded", grant, status };
