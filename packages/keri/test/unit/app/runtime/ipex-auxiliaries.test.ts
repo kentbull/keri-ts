@@ -116,18 +116,20 @@ Deno.test("each identifier receives only its own DH queries, and both kinds coex
   });
 });
 
-Deno.test("a runtime that refuses peer queries drops them unrecorded, so a resend reaches the consenting runtime", async () => {
+Deno.test("a runtime that refuses Unblind queries drops them unrecorded and still takes DH queries", async () => {
   await run(function*() {
     const { a, remote, runtime } = yield* wallet(() => ({ kram: KRAM, ipexQueries: "refuse" }));
     const seen: string[] = [];
+    spyQueries(runtime.ipex!.unblind(a), "unblind-a", seen);
     spyQueries(runtime.ipex!.dhke(a), "dhke-a", seen);
-    yield* approve(runtime.ipex!.dhke(a), "xid-a");
-    const wire = frame(remote, Dhke.Route, "xid-a");
-    const result = yield* runtime.protocol.dispatch(wire);
+    yield* approve(runtime.ipex!.unblind(a), "xid-u");
+    yield* approve(runtime.ipex!.dhke(a), "xid-d");
+    const result = yield* runtime.protocol.dispatch(frame(remote, Unblind.Route, "xid-u"));
     assertEquals(result.decision, { kind: "drop", reason: "missingProcessor" });
     assertEquals(seen, []);
     // Dropped before KRAM intake: nothing is recorded, so the identical resend is not a replay later.
     assertEquals([...runtime.hby.db.msgc.getTopItemIter()].length, 0);
+    assert(runtime.protocol.qvy!.claims!(envelopeFromFrame(frame(remote, Dhke.Route, "xid-d")).serder));
   });
 });
 

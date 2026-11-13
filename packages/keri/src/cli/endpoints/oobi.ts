@@ -2,7 +2,6 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { resolveOobi } from "../../app/bootstrap/oobi-resolving.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../../app/bootstrap/oobiery.ts";
 import { sendExchangeMessage } from "../../app/exchanges/exchange-messaging.ts";
-import { runtimeOobiConverged } from "../../app/runtime/agent-runtime.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -169,7 +168,9 @@ export function* oobiGenerateCommand(
  *
  * The command queues one OOBI job, runs the shared workers, and succeeds only if
  * the URL lands in `roobi.`. Any reply/event material fetched from the OOBI is
- * forced through the same parser/routing path used by the long-lived host.
+ * forced through the same parser/routing path used by the long-lived host. It
+ * waits on that URL's own record, never on unrelated pending runtime work such
+ * as group proposals or delegation escrows.
  */
 export function* oobiResolveCommand(
   args: Record<string, unknown>,
@@ -206,13 +207,13 @@ export function* oobiResolveCommand(
         { pollMailbox: false },
         () =>
           resolveOobi(
-            { oobiery: runtime.oobiery, db: runtime.hby.db, settled: () => runtimeOobiConverged(runtime, url) },
+            { oobiery: runtime.oobiery, db: runtime.hby.db },
             url,
             { alias: commandArgs.oobiAlias, timeoutMs: 30_000 },
           ),
       );
       if (result.outcome === "timed-out") {
-        throw new Error(`Runtime did not converge within ${result.timeoutMs}ms.`);
+        throw new Error(`OOBI ${url} did not resolve within ${result.timeoutMs}ms.`);
       }
       if (result.status.state === "failed") {
         throw new ValidationError(`OOBI ${url} failed: ${result.status.reason}`);

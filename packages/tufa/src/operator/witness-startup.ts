@@ -6,6 +6,7 @@
  * This module keeps that startup policy named and testable while leaving CLI
  * config loading, console output, and long-lived listener execution at the edge.
  */
+import type { Versionage } from "cesr-ts";
 import type { Operation } from "effection";
 import { systemClock } from "keri-ts/runtime";
 import {
@@ -44,6 +45,8 @@ export interface WitnessStartupArgs {
   http?: number;
   tcp?: number;
   listenHost?: string;
+  /** KERI version of a newly created host AID (1.0 or 2.0); ignored when the alias already exists. */
+  version?: Versionage;
 }
 
 /** Resolved startup material and its authority source for one witness host. */
@@ -192,6 +195,7 @@ export function resolveWitnessHostStartup(
       icount: 1,
       isith: "1",
       toad: 0,
+      version: args.version,
     });
     aidCreated = true;
   }

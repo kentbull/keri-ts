@@ -909,6 +909,8 @@ export {
   type IssuanceStatus,
   issuanceStatus,
   type IssuanceWaitOptions,
+  type PendingGrant,
+  pendingIssuanceGrants,
   posterDelivery,
   prepareIssuanceGrant,
   waitForIssuance,
@@ -983,11 +985,14 @@ export {
   listPendingDelegations,
   type PendingDelegation,
   type PendingDelegationFilter,
+  type PendingDelegationWaitResult,
   proposeGroupDelegationApproval,
   requestDelegatedEvent,
   settleDelegationApproval,
+  waitForDelegationAnchor,
   waitForDelegationApproval,
   type WaitForDelegationApprovalOptions,
+  waitForPendingDelegation,
 } from "../app/identity/delegation-approval.ts";
 
 // Library TEL completion status/waits and challenge respond/status/wait.

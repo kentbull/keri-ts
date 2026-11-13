@@ -82,6 +82,15 @@ not report a failing finalizer, so the composition returns its outcome through a
 `health()`; recovery is `close()` (rejects with the cause) then `openWebWallet()`, which loads the durable prefix.
 `pagehide` flushes are best effort; the barrier protects. Real Web Locks and IndexedDB run in the browser lane.
 
+The wallet also owns the app surface (`src/web/wallet-api.ts`): `identifiers`, `oobis`, `mailboxes`, `credentials` run
+the library workflows through `run(...)` so an app never does. A call that waits has a default `timeoutMs` and returns
+a typed `outcome` (remote and clock results are values); only caller-contract and infrastructure failures reject, and
+every method is `async` so none throws synchronously. `health()` adds `faulted` (owner-loop faults), `stopped` (the
+composition ended without `close()`: a runtime crash) and `closed`. The owners' `ChangeSink` is the wallet's own
+(`walletChangeSink`): it forwards to the host or Signaler and records a tracked issuance when it finishes, which is
+sync; the holder's `recordAdmission` is async and consent-bearing, so `receive` records it inline, before delivery.
+Presentation needs `PresentationDeps.views` (the wallet) from the runtime composition and is not exposed yet.
+
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
 do not cast the native environment or infer commit completion from a nested return.

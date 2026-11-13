@@ -10,6 +10,7 @@ import {
   type OpenWebWalletOptions,
   UnencryptedKeeperError,
   WALLET_KRAM_CACHES,
+  WalletStoppedError,
   type WebWallet,
 } from "../web.ts";
 
@@ -216,4 +217,46 @@ Deno.test("a new web wallet installs the loose mailbox KRAM windows: 5 minute dr
   } finally {
     await wallet.close();
   }
+});
+
+Deno.test("identifiers: inception and rotation complete as typed results and the alias is not reused", async () => {
+  const w = await page().open();
+  try {
+    const incepted = await w.identifiers.incept({ alias: "main" });
+    assertEquals([incepted.outcome, incepted.sn, incepted.status], ["complete", 0, { state: "complete" }]);
+    const rotated = await w.identifiers.rotate(incepted.pre);
+    assertEquals([rotated.outcome, rotated.sn, rotated.pre], ["complete", 1, incepted.pre]);
+    assertEquals(w.identifiers.status(incepted.pre, 1), { state: "complete" });
+    await assertRejects(() => w.identifiers.incept({ alias: "main" }), Error, "already exists");
+    await assertRejects(() => w.identifiers.incept({ alias: "w", witnesses: [incepted.pre] }), Error, "toad");
+    await assertRejects(() => w.identifiers.rotate("Eunknown"), Error, "not a local identifier");
+  } finally {
+    await w.close();
+  }
+});
+
+Deno.test("an OOBI the network cannot serve is not reported resolved, and mailboxes need a resolved endpoint", async () => {
+  const w = await page().open();
+  try {
+    const result = await w.oobis.resolve("http://127.0.0.1:1/oobi/Eabc/controller", { timeoutMs: 300 });
+    assert(result.outcome === "failed" || result.outcome === "timed-out", JSON.stringify(result));
+    const { pre } = await w.identifiers.incept({ alias: "main" });
+    await assertRejects(() => w.mailboxes.add(pre, "Emailbox"), Error, "No endpoint URL");
+    assertEquals(w.credentials.pending(), []);
+    assertEquals(w.credentials.list(), { issued: [], held: [] });
+  } finally {
+    await w.close();
+  }
+});
+
+Deno.test("health reports owner faults, and calls on a closed wallet are refused", async () => {
+  const w = await page().open();
+  assertEquals(w.health(), { status: "ok" });
+  const health = w.runtime.operations!.health;
+  health.faults = 1;
+  health.last = { owner: "issuance", error: "boom", at: "2026-01-01T00:00:00.000Z" };
+  assertEquals(w.health(), { status: "faulted", faults: 1, last: health.last });
+  await w.close();
+  assertEquals(w.health(), { status: "closed" });
+  await assertRejects(() => w.identifiers.incept({ alias: "late" }), WalletStoppedError);
 });

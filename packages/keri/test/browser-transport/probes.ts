@@ -10,11 +10,8 @@ import { concatBytes, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run, sleep, spawn } from "npm:effection@^3.6.0";
 import { Poster } from "../../src/app/delivery/forwarding.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery, openHabery } from "../../src/app/identity/habbing.ts";
-import {
-  collectMailboxAdminSubmission,
-  postMailboxAdminCesr,
-  postMailboxAdminMultipart,
-} from "../../src/app/mailbox/mailbox-admin.ts";
+import { collectKelSubmission } from "../../src/app/mailbox/kel-submission.ts";
+import { postMailboxAdminCesr, postMailboxAdminMultipart } from "../../src/app/mailbox/mailbox-admin.ts";
 import { MailboxDirector } from "../../src/app/mailbox/mailbox-director.ts";
 import { MailboxPoller } from "../../src/app/mailbox/mailbox-poller.ts";
 import { systemClock } from "../../src/app/runtime/runtime-clock.ts";
@@ -171,7 +168,7 @@ function message(s: Session, topic: string): Uint8Array {
 
 /** Mailbox administration through the library's two request builders: CESR body, or multipart form. */
 function* admin(s: Session, hab: Hab, form: "cesr" | "multipart"): Operation<Outcome> {
-  const submission = collectMailboxAdminSubmission(s.hby, hab.pre);
+  const submission = collectKelSubmission(s.hby, hab.pre);
   const rpy = hab.makeEndRole(s.server.pre, Roles.mailbox, true);
   const { origin, pre } = s.server;
   const response = form === "cesr"

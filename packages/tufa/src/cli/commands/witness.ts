@@ -6,8 +6,15 @@
  * replies before serving, so later OOBI and receipt flows see durable state
  * rather than process-local defaults.
  */
+import type { Versionage } from "cesr-ts";
 import type { Operation } from "effection";
-import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
+import {
+  parseBooleanOption,
+  parseIntegerOption,
+  parseKeriVersionOption,
+  parseStringListOption,
+  parseStringOption,
+} from "keri-ts/cli";
 import { systemClock } from "keri-ts/runtime";
 import { createProtocolProcessor, receiptEvent, ValidationError } from "keri-ts/runtime";
 import { type Configer, createConfiger, NodeHttpClient } from "keri-ts/runtime/node";
@@ -37,6 +44,7 @@ interface WitnessStartArgs extends WitnessBaseArgs {
   http?: number;
   tcp?: number;
   listenHost?: string;
+  version?: Versionage;
 }
 
 interface WitnessSubmitArgs extends WitnessBaseArgs {
@@ -173,6 +181,7 @@ function parseWitnessStartArgs(
     http: parseIntegerOption(args.http, "http"),
     tcp: parseIntegerOption(args.tcp, "tcp"),
     listenHost: parseStringOption(args.listenHost, "listenHost"),
+    version: parseKeriVersionOption(args.version),
   };
   if (!parsed.name) {
     throw new ValidationError("Name is required and cannot be empty");

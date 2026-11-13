@@ -1056,3 +1056,99 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     assertEquals(recipient.wallet.inventory().held.map(record => record.grant), [prepared.grant]);
   });
 });
+
+// A query KRAM accepted before consent is the issuer's only copy: a resend of the same bytes is a replay, and a
+// group issuer cannot re-date it. One key is the individual issuer; two keys deliver the way a group's pooled
+// threshold query reaches the Issuee, and neither is ever re-dated here.
+for (const keys of [1, 2]) {
+  Deno.test(`a DH query received before consent survives a restart of the receiving owner (${keys} signing key(s))`, async () => {
+    await run(function*() {
+      let skew = 0;
+      const hbys = [];
+      for (const bran of ["IssuerPasscodeSecretAB", "IssueePasscodeSecretAB"]) {
+        const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, bran });
+        yield* ensure(() => hby.close(true));
+        hbys.push(hby);
+      }
+      const [issuerHby, issueeHby] = hbys;
+      const config = { icount: keys, isith: `${keys}`, ncount: keys, nsith: `${keys}` };
+      const issuer = issuerHby.makeHab("issuer", undefined, config);
+      const issuee = issueeHby.makeHab("issuee", undefined, config);
+      const parties = [];
+      for (const [hby, hab] of [[issuerHby, issuer], [issueeHby, issuee]] as const) {
+        const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
+        yield* ensure(() => baser.close(true));
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), {
+          now: () => Date.now() + skew,
+          setTimeout,
+          clearTimeout: timer => clearTimeout(timer as number),
+        }, {
+          acdc: new Regery(hby, baser),
+          kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+        });
+        yield* ensure(() => runtime.close());
+        parties.push({ hby, hab, runtime, dh: runtime.ipex!.dhke(hab) });
+      }
+      const [left, right] = parties;
+      for (const wire of issuerHby.db.clonePreIter(issuer.pre, 0)) yield* right.runtime.reactor.processBytes(wire);
+      for (const wire of issueeHby.db.clonePreIter(issuee.pre, 0)) yield* left.runtime.reactor.processBytes(wire);
+      const stamp = makeNowIso8601(new Date(Date.now() + skew));
+      const rip = regcept(issuer.pre, { stamp });
+      yield* right.runtime.reactor.processBytes(issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] }));
+      for (const party of parties) yield* party.runtime.reactor.processBytes(rip.raw);
+      const credential = acdcmap(issuer.pre, { regid: rip.said!, attribute: { d: "", i: issuee.pre, name: "Ada" } });
+      const grant = ipexExnBody(issuer.pre, "/ipex/grant", [credential], {
+        recipient: issuee.pre,
+        message: "Derived registry root",
+        date: stamp,
+      });
+      const wire = yield* call(() =>
+        collectPayload(framePayload({
+          body: grant,
+          gvrsn: Vrsn_2_0,
+          attachments: parseBytes(issuer.endorse(grant, { pipelined: false }))[0].attachments,
+          nests: [{ body: credential, gvrsn: Vrsn_2_0, attachments: [] }],
+        }))
+      );
+      for (const party of parties) yield* party.runtime.reactor.processBytes(wire);
+      // The receiver's clock may only run ahead of the habitats' stamps, and a single key's window is short.
+      skew += keys === 1 ? 50 : 11000;
+      left.dh.approve(grant.said!);
+      const query = left.dh.start(grant.said!);
+
+      // The Issuee's runtime takes the query, one key's signature at a time, with no consent given.
+      const frame = parseBytes(query)[0], envelope = envelopeFromFrame(frame);
+      const proof = envelope.tsgs[0], last = envelope.ssgs[0];
+      if (keys === 1) yield* right.runtime.reactor.processBytes(query);
+      else for (let index = 0; index < keys; index++) {
+        const fragment: CesrFrame = {
+          ...frame,
+          attachments: envelope.tsgs.length
+            ? messageAttachmentGroups({
+              tsgs: [new TransIdxSigGroup(proof.prefixer, proof.seqner, proof.diger, [proof.sigers[index]])],
+            }, Vrsn_2_0)
+            : parseBytes(messagize(envelope.serder, {
+              sigers: [last.sigers[index]],
+              seal: SealLast.fromTuple([last.prefixer]),
+              gvrsn: Vrsn_2_0,
+            }))[0].attachments,
+        };
+        yield* right.runtime.reactor.processBytes(yield* call(() => collectPayload(framePayload(fragment))));
+      }
+      assertEquals(right.dh.outgoing.length, 0, "no consent, no reply");
+      assertExists(right.hby.db.heldq.get([grant.said!]), "the accepted query is persisted");
+      const resend = yield* right.runtime.protocol.dispatch(parseBytes(query)[0]);
+      assertEquals(resend.decision, { kind: "drop", reason: "replay" }, "the issuer's identical resend cannot help");
+
+      // The owner is lost with its memory; the next one consents and still answers.
+      right.runtime.ipex!.release(issuee.pre);
+      const reopened = right.runtime.ipex!.dhke(issuee);
+      assert(reopened !== right.dh);
+      assertEquals(reopened.approve(grant.said!), grant.said!);
+      const response = reopened.outgoing.pull();
+      assertExists(response, "consent alone produces the reply from the persisted query");
+      assertEquals(response.dest, issuer.pre);
+      assertEquals(right.hby.db.heldq.get([grant.said!]), null, "consumed once");
+    });
+  });
+}

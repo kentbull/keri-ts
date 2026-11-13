@@ -1,13 +1,14 @@
 /** Universal Resolver compatible DID route. */
 import { run } from "effection";
 import {
+  beginOobi,
   didResolutionError,
+  oobiStatus,
   parseDidKeriIdentifier,
   resolveDidKeri,
   type ResolveDidKeriResult,
   resolveDidWebs,
   type ResolveDidWebsResult,
-  runtimeOobiConverged,
 } from "keri-ts/runtime";
 import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";
 
@@ -63,11 +64,12 @@ export async function handleDidResolutionRoute(
       const rgy = context.runtime.vdr;
       if (!rgy) throw new Error("Legacy credential registry is unavailable in this runtime.");
       // The host owns workers. This request only queues introductions and observes state.
-      for (const oobi of oobis) context.runtime.oobiery.resolve(oobi);
+      for (const oobi of oobis) beginOobi({ oobiery: context.runtime.oobiery }, oobi);
       const deadline = Date.now() + 30_000;
-      while (!oobis.every((url) => runtimeOobiConverged(context.runtime!, url))) {
+      // Wait on these URLs' own records, not on unrelated pending runtime work.
+      while (!oobis.every((url) => oobiStatus(context.runtime!.hby, url).state !== "pending")) {
         context.req.signal.throwIfAborted();
-        if (Date.now() >= deadline) throw new Error("DID introductions did not converge within 30000ms.");
+        if (Date.now() >= deadline) throw new Error("DID introductions did not resolve within 30000ms.");
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       result = resolveDidKeri(context.runtime.hby, rgy, canonical);
