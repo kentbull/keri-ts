@@ -32,10 +32,6 @@ import {
   runGroupDerivedIssuance,
 } from "../../../../tufa/src/cli/commands/ipex-group-issuance.ts";
 import { prepareDerivedIssuance, runDerivedIssuance } from "../../../../tufa/src/cli/commands/ipex-issuance.ts";
-import {
-  preparePresentationGrant,
-  resumePresentationGrant,
-} from "../../../../tufa/src/cli/commands/ipex-presentation.ts";
 import { joinWalletIpex } from "../../../../tufa/src/cli/commands/ipex.ts";
 import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
@@ -49,6 +45,11 @@ import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { prepareAcdcV2GroupIpex, publishInitialGroupIpex } from "../../../src/app/ipex/ipex-grouping.ts";
 import { waitForIssuance } from "../../../src/app/ipex/issuance.ts";
+import {
+  preparePresentationFile,
+  type PresentationFileDeps,
+  resumePresentationFile,
+} from "../../../src/app/ipex/presentation-files.ts";
 import { acdcV2RegistryProposal } from "../../../src/app/multisig/grouping.ts";
 import { findGroupProposal } from "../../../src/app/multisig/proposals.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
@@ -488,14 +489,23 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     }
 
     // The same held view becomes one exact group presentation file, with ordinary sender contributions.
+    const fileDeps = (side: (typeof actors)[number]): PresentationFileDeps => ({
+      hby: side.hby,
+      rgy: side.runtime.acdc!,
+      exc: side.runtime.exc,
+      receiptor: new Receiptor(side.hby, side.runtime.protocol, side.runtime.http, side.runtime.clock),
+      reactor: side.runtime.reactor,
+      protocol: side.runtime.protocol,
+      clock: side.runtime.clock,
+      views: side.wallet,
+    });
     const presentationHistory = actors.map(side => side.hby.db.enst.get(grant.said!));
     const heldBeforePresentation = actors.map((side) => side.wallet.inventory().held);
     const transferredView = yield* call(() => collectPayload(framePayload(loadNests(holder.hby.db, grant.said!)[0])));
     const viewSelection = { transferred: transferredView, presenterAuthorized: true };
     const presentationOptions = { recipient: issuerPeer.member.pre, message: "Exact group presentation file" };
-    const firstPresentation = yield* preparePresentationGrant(
-      holder.runtime,
-      holder.wallet,
+    const firstPresentation = yield* preparePresentationFile(
+      fileDeps(holder),
       holder.hab,
       viewSelection,
       presentationOptions,
@@ -505,9 +515,8 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       assertRejects(
         () =>
           run(() =>
-            resumePresentationGrant(
-              holder.runtime,
-              holder.wallet,
+            resumePresentationFile(
+              fileDeps(holder),
               holder.hab,
               firstPresentation.grant,
               firstPresentation.wire,
@@ -516,18 +525,16 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         ValidationError,
       )
     );
-    const peerPresentation = yield* preparePresentationGrant(
-      issuees[1].runtime,
-      issuees[1].wallet,
+    const peerPresentation = yield* preparePresentationFile(
+      fileDeps(issuees[1]),
       issuees[1].hab,
       viewSelection,
       presentationOptions,
       firstPresentation.wire,
     );
     assertEquals(peerPresentation.prepared, true);
-    yield* preparePresentationGrant(
-      holder.runtime,
-      holder.wallet,
+    yield* preparePresentationFile(
+      fileDeps(holder),
       holder.hab,
       viewSelection,
       presentationOptions,

@@ -579,6 +579,16 @@ export class Poster {
   }
 
   /**
+   * Whether `src` has any eligible role (controller, agent, mailbox or witness) from which to reach `dest`, as
+   * delivery would find it now. A pure read of accepted endpoint state: it says nothing about whether the
+   * endpoint answers. A proposer uses it to refuse before it creates anything it could not publish.
+   */
+  canReach(src: string, dest: string, topic = "multisig"): boolean {
+    const hab = this.hby.habs.get(src);
+    return !!hab && this.findBytesRoutes(hab, dest, topic).length > 0;
+  }
+
+  /**
    * Prepare a target using the supplied wire and selected endpoint.
    *
    * @param hab Local habitat used to construct/sign this output; stores remain borrowed.

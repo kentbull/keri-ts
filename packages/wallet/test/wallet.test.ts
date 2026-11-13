@@ -28,6 +28,7 @@ import { createHabery } from "keri-ts/db/lmdb";
 import {
   acdcmap,
   AcdcV2Regery,
+  type AgentRuntime,
   blindate,
   type ChainVerdict,
   createAgentRuntime,
@@ -36,9 +37,12 @@ import {
   FetchHttpClient,
   type Hab,
   type Habery,
+  preparePresentationFile,
+  type PresentationFileDeps,
   Receiptor,
   regcept,
   RegistryObserver,
+  resumePresentationFile,
   systemClock,
   ValidationError,
   walkIpexGraph,
@@ -49,7 +53,6 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../keri/src/app/protocol
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messageAttachmentGroups } from "../../keri/src/core/protocol-serialization.ts";
 import { graphDisclosures } from "../../keri/test/integration/app/ipex/disclosures.ts";
-import { preparePresentationGrant, resumePresentationGrant } from "../../tufa/src/cli/commands/ipex-presentation.ts";
 import { createWalletBaser } from "../lmdb.ts";
 import { Wallet } from "../mod.ts";
 import { anchorExchange, WalletDiscloser } from "../src/disclosing.ts";
@@ -125,6 +128,20 @@ function* grant(
   assertEquals(p.receiving.complete(grant.said!), accepted);
   return grant;
 }
+/** The exact-file collaborators of one runtime over the wallet that holds the view. */
+function fileDeps(runtime: AgentRuntime, wallet: Wallet): PresentationFileDeps {
+  return {
+    hby: runtime.hby,
+    rgy: runtime.acdc!,
+    exc: runtime.exc,
+    receiptor: new Receiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock),
+    reactor: runtime.reactor,
+    protocol: runtime.protocol,
+    clock: runtime.clock,
+    views: wallet,
+  };
+}
+
 Deno.test("wallet keeps distinct partial/full consent and exact retained proofs across all-owner reopen", async () => {
   await withPeers(function*(p) {
     const nonce = () => new Diger({ raw: crypto.getRandomValues(new Uint8Array(32)), code: "E" }).qb64;
@@ -471,7 +488,7 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
         exc: verifierRuntime.exc,
         db: verifierDb,
       });
-      const preparedFile = yield* preparePresentationGrant(receiverRuntime, presenterWallet, p.holder, {
+      const preparedFile = yield* preparePresentationFile(fileDeps(receiverRuntime, presenterWallet), p.holder, {
         fromGrant: grant.exn.said!,
       }, { recipient: verifier.pre, message: "Designated exact view", plan });
       const frozenFile = parseBytes(preparedFile.wire)[0];
@@ -489,7 +506,12 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
         assertRejects(
           () =>
             run(() =>
-              resumePresentationGrant(receiverRuntime, presenterWallet, p.holder, preparedFile.grant, preparedFile.wire)
+              resumePresentationFile(
+                fileDeps(receiverRuntime, presenterWallet),
+                p.holder,
+                preparedFile.grant,
+                preparedFile.wire,
+              )
             ),
           ValidationError,
         )

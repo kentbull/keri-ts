@@ -142,6 +142,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       protocol,
       postman,
       clock,
+      registry: { hby, protocol, postman, counselor, registryStore: acdc.store },
       changes,
       wake: wake.notify,
     }),

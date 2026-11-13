@@ -18,6 +18,7 @@ import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   approveGroupIssuanceExchange,
   beginGroupIssuance,
+  deriveGroupCustody,
   followGroupIssuanceProof,
   groupIssuanceProof,
   groupIssuanceProposals,
@@ -298,24 +299,18 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       }, "the registry update proposal to reach the member");
       assertEquals(lead.runtime.acdc!.store.headEvent(rip.said!)!.said, rip.said!, "DH does not approve the update");
       assert(!lead.runtime.exc.complete(grant), "the issuance waits for the member's approval of the update");
-      // The custodian's host stops while the member approves: its stores take the update in, nothing finishes.
+      // --- the custodian reloads while the registry update still awaits the member: it cannot resume yet ---
       yield* leadHost.halt();
-      assertExists(yield* approvePending(peer.hby, peer.runtime, { said: bup!.said!, registryName: "group-derived" }));
-      for (let polls = 0; lead.runtime.acdc!.store.headEvent(rip.said!)?.ilk !== "bup"; polls++) {
-        if (polls > 1000) throw new Error("timed out waiting for the custodian's registry to accept the update");
-        yield* lead.runtime.protocol.processEscrowsOnce();
-        yield* sleep(20);
-      }
-      assert(!lead.runtime.exc.complete(grant), "the Grant is not finished while the custodian's host is down");
-
-      // --- the custodian reloads with its root retained and the update accepted: it adopts the exchange ---
       yield* reload(lead);
       assertEquals(
-        (issuanceStatus(ops(lead), grant) as { phase?: string }).phase,
-        "rootRetained",
-        "the coordinator and custodian are derived from the stores, so the exchange resumes",
+        issuanceStatus(ops(lead), grant).state,
+        "interrupted",
+        "the update is not accepted, so nothing resumes",
       );
       leadHost = yield* host(lead);
+      // The member approves; the update is accepted in the reloaded custodian's stores, and the owner's repeated scan
+      // then derives the coordinator and custodian and adopts the exchange.
+      assertExists(yield* approvePending(peer.hby, peer.runtime, { said: bup!.said!, registryName: "group-derived" }));
 
       // --- completion, read from the stores ---
       const done: IssuanceStatus = { state: "done", role: "issuer", phase: "issued" };
@@ -342,6 +337,14 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       assertEquals(peer.hab.mgr.getRegistryRoot(peer.hab.pre!, rip.said!)?.qb64, root.qb64);
       yield* sleep(300);
       assertEquals(sentCopies, [`${lead.member.pre}>${peer.member.pre}`], "exactly one copy per member, none twice");
+
+      // A member that was sent a root copy is not mistaken for the custodian, whatever the group events elect.
+      const registries = { hby: peer.hby, exc: peer.runtime.exc };
+      assertEquals(deriveGroupCustody(registries, peer.hab, grant), null, "the copy shows the root was not its own");
+      assertEquals(
+        deriveGroupCustody({ hby: lead.hby, exc: lead.runtime.exc }, lead.hab, grant)?.custodian,
+        lead.member.pre,
+      );
 
       // The custodian's public proof is derivable from the stores, and the status of a completed Grant reads from them.
       const proof = yield* groupIssuanceProof(ops(lead), { ...selection(lead), grant });

@@ -86,7 +86,7 @@ import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
-import { RetryBackoff } from "../runtime/retry-backoff.ts";
+import { DeliveryOutbox, type Outbound } from "../runtime/delivery-outbox.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
@@ -108,6 +108,13 @@ import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions, storedExchangeW
  * retained query that outlived its window).
  */
 export const ISSUANCE_QUERY_RESEND_MS = 1000;
+
+/**
+ * Milliseconds between scans of the pending exchange escrow for Grants a restarted process can finish. The scan
+ * repeats because what makes a Grant resumable can arrive after the restart (an issuer's update accepted once the
+ * other members approve it).
+ */
+export const ISSUANCE_SWEEP_MS = 5_000;
 
 /** Which side of the exchange the local identifier is. */
 export type IssuanceRole = "issuer" | "holder";
@@ -229,23 +236,12 @@ export interface LiveIssuance {
   /** Group party state, for an operation of a local group; such an operation has no {@link issuer} part. */
   readonly group?: GroupIssuance;
   phase: IssuancePhase;
-  /** Signed bytes the steps decided to send and delivery has not yet taken, in order. */
-  readonly outbox: Outbound[];
-  /** Delivery failures of the head of {@link outbox}; a member briefly offline is retried, not failed. */
-  readonly retry: RetryBackoff;
+  /** Signed bytes the steps decided to send and delivery has not yet taken; a member briefly offline is retried. */
+  readonly outbox: DeliveryOutbox;
   /** The steps are done; the operation ends once the outbox is empty. */
   finished: boolean;
   /** A step is running; overlapping `processOnce` calls skip it. */
   busy: boolean;
-}
-
-/** One message waiting for delivery. */
-export interface Outbound {
-  src: string;
-  dest: string;
-  /** The signed bytes, or a producer called at delivery for a message that must be timely when it leaves (a query). */
-  msg: Uint8Array | (() => Uint8Array);
-  topic?: string;
 }
 
 /** How long delivery failures may last on an operation that has no Grant deadline yet before it ends `failed`. */
@@ -301,7 +297,10 @@ export class IssuanceOperations {
   readonly discloser: IpexDiscloser;
   /** The DH child handlers this owner registered on the multiplexor, once a group operation began. */
   groupRoutes: Array<[string, ExchangeRouteHandler]> | null = null;
-  private swept = false;
+  /** When the next scan for resumable Grants is due (host clock, ms); 0 until the first pass. */
+  private nextSweep = 0;
+  /** Grants a scan found resumable and adoption refused; they are not tried again in this process. */
+  private readonly refused = new Set<string>();
   /** Grants an earlier process left resumable: each is adopted once, or dropped. */
   private stale: Resumable[] = [];
 
@@ -311,7 +310,7 @@ export class IssuanceOperations {
 
   /** Whether a pass has work: a live operation, or the one-time scan for resumable Grants has not run. */
   active(): boolean {
-    return this.live.size > 0 || !this.swept || this.stale.length > 0;
+    return this.live.size > 0 || this.stale.length > 0 || this.deps.clock.now() >= this.nextSweep;
   }
 
   /**
@@ -320,9 +319,14 @@ export class IssuanceOperations {
    * that signs and sends nothing.
    */
   *processOnce(): Operation<void> {
-    if (!this.swept) {
-      this.swept = true;
-      this.stale = resumableGrants(this.deps).filter(({ grant }) => !this.live.has(grant));
+    if (this.deps.clock.now() >= this.nextSweep) {
+      this.nextSweep = this.deps.clock.now() + ISSUANCE_SWEEP_MS;
+      const known = new Set(this.stale.map(({ grant }) => grant));
+      this.stale.push(
+        ...resumableGrants(this.deps).filter(({ grant }) =>
+          !this.live.has(grant) && !known.has(grant) && !this.refused.has(grant) && !this.ended.has(grant)
+        ),
+      );
     }
     for (const found of [...this.stale]) {
       if (yield* this.settle(found)) this.stale.splice(this.stale.indexOf(found), 1);
@@ -375,10 +379,14 @@ export class IssuanceOperations {
       throw error;
     }
     // Another operations table over this runtime reached the Grant first (a command's own, beside the host's).
-    if (this.deps.dhkes.dhke(found.hab).holds(found.grant)) return true;
+    if (this.deps.dhkes.dhke(found.hab).holds(found.grant)) {
+      this.refused.add(found.grant);
+      return true;
+    }
     try {
       yield* this.adopt(found);
     } catch (error) {
+      this.refused.add(found.grant);
       // A refusal means the stores no longer prove it resumable and status reads from them; anything else is
       // this Grant's failure alone and must not stop the other operations.
       if (!(error instanceof ValidationError)) {
@@ -412,8 +420,7 @@ export class IssuanceOperations {
       expires,
       issuer: wires ? { credential, ...wires, query: null, sent: true, nextQuery: 0 } : undefined,
       phase: "rootRetained",
-      outbox: [],
-      retry: new RetryBackoff(),
+      outbox: new DeliveryOutbox(),
       finished: false,
       busy: false,
     });
@@ -436,7 +443,7 @@ export class IssuanceOperations {
     deadline: string,
     expires: bigint,
   ): void {
-    const sel = deriveGroupCustody(this.deps, hab)!, { coordinator, custodian } = sel;
+    const sel = deriveGroupCustody(this.deps, hab, grant)!, { coordinator, custodian } = sel;
     const dh = this.deps.dhkes.dhke(hab), xid = dh.resume(grant, { coordinator, custodian });
     const frozen = retained.serder;
     this.ended.delete(grant);
@@ -463,8 +470,7 @@ export class IssuanceOperations {
         resumed: true,
       }),
       phase: "rootRetained",
-      outbox: [],
-      retry: new RetryBackoff(),
+      outbox: new DeliveryOutbox(),
       finished: false,
       busy: false,
     });
@@ -482,7 +488,7 @@ export class IssuanceOperations {
    * sends it, so a member that is briefly offline delays the operation instead of ending it.
    */
   enqueue(op: LiveIssuance, message: Outbound): void {
-    op.outbox.push(message);
+    op.outbox.enqueue(message);
   }
 
   /**
@@ -491,21 +497,11 @@ export class IssuanceOperations {
    * lasting {@link ISSUANCE_RETRY_BOUND_MS} end one that has none yet. True when the outbox is empty.
    */
   private *drain(op: LiveIssuance): Operation<boolean> {
-    while (op.outbox.length) {
-      const now = this.deps.clock.now();
-      if (!op.retry.due(now)) return false;
-      try {
-        const { src, dest, msg, topic } = op.outbox[0];
-        yield* this.deps.delivery.deliver({ src, dest, msg: typeof msg === "function" ? msg() : msg, topic });
-        op.outbox.shift();
-        op.retry.succeeded();
-      } catch (error) {
-        op.retry.failed(now, error);
-        if (op.expires === null && op.retry.exhausted(now, ISSUANCE_RETRY_BOUND_MS)) throw error;
-        return false;
-      }
-    }
-    return true;
+    return yield* op.outbox.drain(
+      this.deps.delivery,
+      this.deps.clock,
+      op.expires === null ? ISSUANCE_RETRY_BOUND_MS : undefined,
+    );
   }
 
   /** One pass: send what is queued, step only once the queue is empty, send what the step queued. */
@@ -556,8 +552,7 @@ export class IssuanceOperations {
         : begin.role === "issuer"
         ? "awaitingGrantSignatures"
         : "exchangingKeys",
-      outbox: [],
-      retry: new RetryBackoff(),
+      outbox: new DeliveryOutbox(),
       finished: false,
       busy: false,
     });
@@ -660,7 +655,7 @@ function reached(deps: Pick<IssuanceDeps, "clock">, expires: bigint | null): boo
  */
 function resumable(deps: IssuanceDeps, hab: Hab, grant: string, role: IssuanceRole): boolean {
   // A group exchange resumes only on the member the stores show to be its custodian.
-  if (isLocalGroupHab(deps.hby, hab) && !deriveGroupCustody(deps, hab)) return false;
+  if (isLocalGroupHab(deps.hby, hab) && !deriveGroupCustody(deps, hab, grant)) return false;
   const scope = resumableExchange({ hab, exc: deps.exc }, grant);
   if (!scope || (scope.issuer === hab.pre) !== (role === "issuer")) return false;
   return role === "holder" || scope.registries.every((r) => deps.rgy.store.headEvent(r)?.ilk === "bup");
@@ -804,8 +799,7 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
     expires,
     issuer: { credential, raw, grantWire, query, auths, sent: false, nextQuery: 0 },
     phase: "exchangingKeys",
-    outbox: [],
-    retry: new RetryBackoff(),
+    outbox: new DeliveryOutbox(),
     finished: false,
     busy: false,
   });
@@ -994,8 +988,7 @@ export function approveIssuanceExchange(
     registry: credential.regid!,
     expires,
     phase: "exchangingKeys",
-    outbox: [],
-    retry: new RetryBackoff(),
+    outbox: new DeliveryOutbox(),
     finished: false,
     busy: false,
   });

@@ -14,7 +14,7 @@
  *
  * The same workflow contract as the single-signature surface applies (see `wallet-api.ts`).
  */
-import type { SerderACDC, ThresholdSith } from "cesr-ts";
+import { SerderACDC, type ThresholdSith } from "cesr-ts";
 import { call, type Operation } from "effection";
 import {
   abandonGroupIpex,
@@ -67,9 +67,20 @@ import {
   waitForGroupIpex,
   waitForIssuance,
   waitForUnblinding,
+  type WaitResult,
 } from "keri-ts/runtime";
 import { WalletAuthor } from "../authoring.ts";
-import { type AdmitDelivery, Surface, WALLET_TIMEOUTS, within } from "./surface.ts";
+import { RegistryCustody } from "../custody.ts";
+import type { AdmittedCredential } from "../storing.ts";
+import {
+  type AdmitDelivery,
+  type TimeoutOptions,
+  WALLET_TIMEOUTS,
+  type WalletApiParts,
+  WalletScope,
+  within,
+} from "./surface.ts";
+import type { EndedStatus, EndedUnblinding, UnblindOutcome } from "./wallet-api.ts";
 
 // --- group events -------------------------------------------------------------------------------------------
 
@@ -144,6 +155,12 @@ export interface GroupRotateOptions extends GroupCounsel {
   timeoutMs?: number;
 }
 
+/** Inputs of {@link Groups.join}. */
+export interface GroupJoinOptions extends GroupWaitOptions {
+  /** Local alias of the group being joined. */
+  alias: string;
+}
+
 /** Choices for a call that waits on the Counselor. */
 export interface GroupWaitOptions extends GroupCounsel {
   timeoutMs?: number;
@@ -166,7 +183,13 @@ export type GroupMailboxOutcome =
   | { outcome: "timed-out"; timeoutMs: number; status: MailboxStatus };
 
 /** Group identifiers: propose events, join groups, observe the Counselor and add the group's mailbox. */
-export class Groups extends Surface {
+export class Groups {
+  readonly #scope: WalletScope;
+
+  constructor(scope: WalletScope) {
+    this.#scope = scope;
+  }
+
   /**
    * Propose a new group as `member`: create this member's inception, tell the other members and wait on the
    * Counselor for the group to be accepted and receipted. The other members join through
@@ -175,12 +198,12 @@ export class Groups extends Surface {
    * @throws ValidationError for a used alias or a `member` that is not a local single-signature identifier.
    */
   async incept(options: GroupInceptOptions): Promise<GroupEventOutcome> {
-    const { hby, runtime } = this.parts;
+    const { hby, runtime } = this.#scope.parts;
     const { alias, smids, rmids, timeoutMs = WALLET_TIMEOUTS.group } = options;
     if (hby.habByName(alias)) throw new ValidationError(`Alias ${alias} already exists.`);
-    const member = this.individual(options.member), inputs = counselInputs(this.parts.hby, options);
+    const member = this.#scope.individual(options.member), inputs = counselInputs(this.#scope.parts.hby, options);
     const { isith, nsith, toad, wits, delpre, data } = options;
-    return await this.go(function*(this: Groups) {
+    return await this.#scope.go(function*(this: Groups) {
       const proposed = yield* proposeGroupInception(
         this.proposeDeps(),
         member,
@@ -188,7 +211,7 @@ export class Groups extends Surface {
         { smids, rmids, isith, nsith, toad, wits, delpre, data },
         inputs,
       );
-      return yield* settleEvent(this.parts.runtime, proposed.event, timeoutMs);
+      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs);
     }.bind(this));
   }
 
@@ -199,31 +222,31 @@ export class Groups extends Surface {
    * @throws ValidationError for an unknown identifier or one that is not a local group.
    */
   async rotate(group: string, options: GroupRotateOptions = {}): Promise<GroupEventOutcome> {
-    const hab = this.group(group),
-      inputs = counselInputs(this.parts.hby, options),
+    const hab = this.#scope.group(group),
+      inputs = counselInputs(this.#scope.parts.hby, options),
       timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.group;
     const { smids, rmids, isith, nsith, toad, cuts, adds, data } = options;
-    return await this.go(function*(this: Groups) {
+    return await this.#scope.go(function*(this: Groups) {
       const proposed = yield* proposeGroupRotation(
         this.proposeDeps(),
         hab,
         { smids, rmids, isith, nsith, toad, cuts, adds, data },
         inputs,
       );
-      const settled = yield* settleEvent(this.parts.runtime, proposed.event, timeoutMs);
-      if (settled.outcome === "complete") settleProposedRotation({ hby: this.parts.hby }, proposed);
+      const settled = yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs);
+      if (settled.outcome === "complete") settleProposedRotation({ hby: this.#scope.parts.hby }, proposed);
       return settled;
     }.bind(this));
   }
 
   /** Propose an interaction event of `group` carrying `data` and wait for it. */
   async interact(group: string, data: unknown[], options: GroupWaitOptions = {}): Promise<GroupEventOutcome> {
-    const hab = this.group(group),
-      inputs = counselInputs(this.parts.hby, options),
+    const hab = this.#scope.group(group),
+      inputs = counselInputs(this.#scope.parts.hby, options),
       timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.group;
-    return await this.go(function*(this: Groups) {
+    return await this.#scope.go(function*(this: Groups) {
       const proposed = yield* proposeGroupInteraction(this.proposeDeps(), hab, data, inputs);
-      return yield* settleEvent(this.parts.runtime, proposed.event, timeoutMs);
+      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs);
     }.bind(this));
   }
 
@@ -233,34 +256,33 @@ export class Groups extends Surface {
    *
    * @throws ValidationError when `proposal` is not a stored inception or rotation proposal that needs an alias.
    */
-  async join(
-    proposal: string,
-    options: GroupWaitOptions & { alias: string },
-  ): Promise<GroupEventOutcome> {
-    const { runtime } = this.parts;
+  async join(proposal: string, options: GroupJoinOptions): Promise<GroupEventOutcome> {
+    const { runtime } = this.#scope.parts;
     const found = findGroupProposal(groupDeps(runtime), proposal);
     if (!found?.needs.groupAlias) {
       throw new ValidationError(`${proposal} is not a proposal to join a group; use proposals.approve.`);
     }
-    const inputs = counselInputs(this.parts.hby, options), timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.group;
-    return await this.go(function*(this: Groups) {
+    const inputs = counselInputs(this.#scope.parts.hby, options),
+      timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.group;
+    return await this.#scope.go(function*(this: Groups) {
       const approved = yield* approveGroupProposal(groupDeps(runtime), proposal, {
         groupAlias: options.alias,
         ...inputs,
       });
       if (!approved.event) throw new ValidationError(`Proposal ${proposal} sets up no group event.`);
-      return yield* settleEvent(this.parts.runtime, approved.event, timeoutMs);
+      return yield* settleEvent(this.#scope.parts.runtime, approved.event, timeoutMs);
     }.bind(this));
   }
 
   /** Pure read of a group event's progress through the Counselor. */
   status(event: GroupEventRef): GroupEventStatus {
-    return this.parts.runtime.counselor.status(event);
+    return this.#scope.parts.runtime.counselor.status(event);
   }
 
   /** Wait on the Counselor for `event`; call again after `timed-out` to keep waiting. */
-  async wait(event: GroupEventRef, { timeoutMs = WALLET_TIMEOUTS.group }: { timeoutMs?: number } = {}) {
-    return await this.go(() => settleEvent(this.parts.runtime, event, timeoutMs));
+  async wait(event: GroupEventRef, options: TimeoutOptions = {}): Promise<GroupEventOutcome> {
+    const timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.group;
+    return await this.#scope.go(() => settleEvent(this.#scope.parts.runtime, event, timeoutMs));
   }
 
   /**
@@ -268,13 +290,13 @@ export class Groups extends Surface {
    * The other members approve the `rip` proposal. A group issues into a registry that exists.
    */
   async inceptRegistry(group: string, name: string, options: GroupWaitOptions = {}): Promise<GroupEventOutcome> {
-    const { runtime } = this.parts;
-    const hab = this.group(group),
-      inputs = counselInputs(this.parts.hby, options),
+    const { runtime } = this.#scope.parts;
+    const hab = this.#scope.group(group),
+      inputs = counselInputs(this.#scope.parts.hby, options),
       timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.group;
     const regery = runtime.acdc;
     if (!regery) throw new ValidationError("This wallet's runtime has no ACDC v2 registry store.");
-    return await this.go(function*(this: Groups) {
+    return await this.#scope.go(function*(this: Groups) {
       const registry = regery.registryByName(name) ?? regery.makeRegistry(name, hab.pre!);
       const event = registry.store.event(registry.regk!);
       if (!event) throw new ValidationError(`Registry ${name} has no stored inception.`);
@@ -285,7 +307,7 @@ export class Groups extends Surface {
         undefined,
         inputs,
       );
-      return yield* settleEvent(this.parts.runtime, proposed.event, timeoutMs);
+      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs);
     }.bind(this));
   }
 
@@ -294,9 +316,9 @@ export class Groups extends Surface {
    * proposal. Then {@link Groups.completeMailbox} posts the accepted reply to the provider.
    */
   async proposeMailbox(group: string, mailbox: string): Promise<GroupMailboxProposal> {
-    const { hby, runtime } = this.parts;
-    const hab = this.group(group);
-    return await this.go(function*() {
+    const { hby, runtime } = this.#scope.parts;
+    const hab = this.#scope.group(group);
+    return await this.#scope.go(function*() {
       const sent = yield* proposeGroupMailbox(hby, runtime.protocol, runtime.postman, hab, mailbox);
       return { outcome: "proposed" as const, group: hab.pre!, mailbox, payload: sent.messages[0]?.payloadSaid ?? "" };
     });
@@ -306,14 +328,11 @@ export class Groups extends Surface {
    * Post the group's accepted mailbox reply to the provider and confirm it. `rejected` with the reason while the
    * members have not all approved, or when the provider refuses.
    */
-  async completeMailbox(
-    group: string,
-    mailbox: string,
-    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
-  ): Promise<GroupMailboxOutcome> {
-    const { hby, runtime } = this.parts;
-    const hab = this.group(group);
-    return await this.go(function*(): Operation<GroupMailboxOutcome> {
+  async completeMailbox(group: string, mailbox: string, options: TimeoutOptions = {}): Promise<GroupMailboxOutcome> {
+    const timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.mailbox;
+    const { hby, runtime } = this.#scope.parts;
+    const hab = this.#scope.group(group);
+    return await this.#scope.go(function*(): Operation<GroupMailboxOutcome> {
       const deps = { hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol };
       try {
         const done = yield* within(runtime.clock, timeoutMs, () => completeGroupMailbox(deps, hab, mailbox));
@@ -328,7 +347,7 @@ export class Groups extends Surface {
 
   /** The collaborators of proposing. */
   private proposeDeps() {
-    const { hby, runtime } = this.parts;
+    const { hby, runtime } = this.#scope.parts;
     return { hby, protocol: runtime.protocol, postman: runtime.postman, counselor: runtime.counselor };
   }
 }
@@ -340,6 +359,40 @@ function counselInputs(hby: Habery, { fallbackAfterMs, proxy }: GroupCounsel): C
     throw new ValidationError(`Delegation proxy ${proxy} is not a local identifier with key state.`);
   }
   return { ...(fallbackAfterMs === undefined ? {} : { fallbackAfterMs }), ...(proxyHab ? { proxy: proxyHab } : {}) };
+}
+
+/**
+ * Record a group issuance in the wallet inventory when it completes, through the same `ChangeSink` reaction the
+ * single-signature issuer path uses. The recorder returns true once the issuance is over (recorded, or ended without
+ * issuing) and false while it runs or while the exact derivation opening cannot be read yet (a member that has not
+ * received the registry root copy keeps trying on later changes). A failure to record is never thrown into the
+ * workflow that published the change.
+ */
+/** Records one tracked issuance in the inventory; throws while the exact opening cannot be read yet. */
+export type IssuanceRecorder = () => void;
+
+function trackGroupIssuance(
+  parts: WalletApiParts,
+  hab: Hab,
+  grant: string,
+  credential: SerderACDC,
+  registry: string,
+): IssuanceRecorder {
+  const { hby, runtime, wallet, inventory, tracked } = parts;
+  const ops = runtime.operations!.issuance, store = runtime.acdc!.store;
+  const record = () => {
+    if (inventory.issued.get([credential.said!])) return;
+    const head = store.headEvent(registry)!;
+    const custody = new RegistryCustody({ hby, hab, registry: store, db: inventory });
+    wallet.recordIssued(credential, head.said!, { blinder: custody.derivedOpening(head) });
+  };
+  tracked.set(grant, () => {
+    const status = issuanceStatus(ops, grant);
+    if (status.state === "active") return false;
+    if (status.state === "done") record();
+    return true;
+  });
+  return record;
 }
 
 // --- proposals ---------------------------------------------------------------------------------------------------
@@ -367,18 +420,31 @@ export type WalletProposal =
   );
 
 /** Result of {@link Proposals.approve}: the consent is recorded, and the outcome is where the group stands. */
-export type ProposalOutcome =
-  & { id: string; family: ProposalFamily; status: GroupEventStatus | GroupIpexStatus | IssuanceStatus | null }
-  & (
-    /** Consent recorded and the group's work finished (event complete, message accepted, issuance done). */
-    | { outcome: "complete" }
-    /** Consent recorded; nothing further is observable here (for example an endpoint-role reply). */
-    | { outcome: "approved" }
-    /** The work stopped (`reason`). */
-    | { outcome: "ended"; reason: string }
-    /** The other members have not finished within `timeoutMs`; the runtime keeps going. */
-    | { outcome: "timed-out"; timeoutMs: number }
-  );
+export type ProposalOutcome = ProposalFacts & ProposalProgress;
+
+/** Where a proposal's work stands, as a library status. */
+export type ProposalStatus = GroupEventStatus | GroupIpexStatus | IssuanceStatus;
+
+/** What every {@link ProposalOutcome} says about the proposal it answers. */
+export interface ProposalFacts {
+  id: string;
+  family: ProposalFamily;
+  status: ProposalStatus | null;
+}
+
+/** How far the group's work got. */
+export type ProposalProgress =
+  /** Consent recorded and the group's work finished (event complete, message accepted, issuance done). */
+  | { outcome: "complete" }
+  /** Consent recorded; nothing further is observable here (for example an endpoint-role reply). */
+  | { outcome: "approved" }
+  /** The work stopped (`reason`). */
+  | { outcome: "ended"; reason: string }
+  /** The other members have not finished within `timeoutMs`; the runtime keeps going. */
+  | { outcome: "timed-out"; timeoutMs: number };
+
+/** A progress with the status (and group event) it was read from, before the proposal's id is added. */
+export type ProposalSummary = ProposalProgress & { status: ProposalStatus; event?: GroupEventRef };
 
 /** Choices for {@link Proposals.approve}. */
 export interface ProposalApproveOptions extends GroupCounsel {
@@ -389,16 +455,31 @@ export interface ProposalApproveOptions extends GroupCounsel {
   timeoutMs?: number;
 }
 
+/** Inputs of {@link Proposals.list}. */
+export interface ProposalListOptions {
+  /** Only this group (prefix or alias). */
+  group?: string;
+  /** Include proposals already consented to and finished ones. */
+  all?: boolean;
+}
+
 /** The one consent surface of a group wallet. */
-export class Proposals extends Surface {
+export class Proposals {
+  readonly #scope: WalletScope;
+
+  constructor(scope: WalletScope) {
+    this.#scope = scope;
+  }
+
   /**
    * Everything the local groups are waiting on, one typed list: key and reply events, registry events, group IPEX
    * messages and group issuance Grants. By default only items this member has not consented to and that are not
    * finished; `all` lists the rest too. A pure read.
    */
-  list({ group, all = false }: { group?: string; all?: boolean } = {}): WalletProposal[] {
-    const { hby, runtime } = this.parts;
-    const wanted = group === undefined ? undefined : this.group(group);
+  list(options: ProposalListOptions = {}): WalletProposal[] {
+    const { group, all = false } = options;
+    const { hby, runtime } = this.#scope.parts;
+    const wanted = group === undefined ? undefined : this.#scope.group(group);
     const found: WalletProposal[] = [];
     for (const proposal of listGroupProposals(groupDeps(runtime), wanted ? { group: wanted.pre! } : {})) {
       found.push({
@@ -459,28 +540,28 @@ export class Proposals extends Surface {
    * `registryName`) the caller did not make.
    */
   async approve(id: string, options: ProposalApproveOptions = {}): Promise<ProposalOutcome> {
-    const { runtime } = this.parts;
+    const { runtime } = this.#scope.parts;
     const timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.group;
-    const inputs = counselInputs(this.parts.hby, options);
+    const inputs = counselInputs(this.#scope.parts.hby, options);
     const event = findGroupProposal(groupDeps(runtime), id);
     if (event) {
       const family = event.kind === "icp" || event.kind === "rot" || event.kind === "ixn" || event.kind === "rpy"
         ? "event"
         : "registry";
-      return await this.go(function*(this: Proposals): Operation<ProposalOutcome> {
+      return await this.#scope.go(function*(this: Proposals): Operation<ProposalOutcome> {
         const approved = yield* approveGroupProposal(groupDeps(runtime), id, {
           groupAlias: options.groupAlias,
           registryName: options.registryName,
           ...inputs,
         });
         if (!approved.event) return { id, family, outcome: "approved", status: null };
-        const settled = yield* settleEvent(this.parts.runtime, approved.event, timeoutMs);
+        const settled = yield* settleEvent(this.#scope.parts.runtime, approved.event, timeoutMs);
         return { id, family, ...eventSummary(settled) };
       }.bind(this));
     }
     const ipex = runtime.operations?.groupIpex;
     if (ipex && groupIpexProposals(ipex).some((item) => item.said === id)) {
-      return await this.go(function*(): Operation<ProposalOutcome> {
+      return await this.#scope.go(function*(): Operation<ProposalOutcome> {
         yield* approveGroupIpex(ipex, { said: id });
         return { id, family: "ipex", ...ipexSummary(yield* waitForGroupIpex(ipex, id, { timeoutMs })) };
       });
@@ -489,11 +570,15 @@ export class Proposals extends Surface {
     const grant = issuance
       && this.groupHabs().flatMap((hab) => groupIssuanceProposals(issuance, hab)).find((item) => item.grant === id);
     if (issuance && grant) {
-      const hab = this.group(grant.group);
+      const hab = this.#scope.group(grant.group);
       const selection = this.selection(hab);
-      return await this.go(function*(): Operation<ProposalOutcome> {
+      const parts = this.#scope.parts;
+      return await this.#scope.go(function*(): Operation<ProposalOutcome> {
         if (!issuance.live.has(id) && !issuance.deps.exc.complete(id)) {
           yield* beginGroupIssuance(issuance, { ...selection, grant: id });
+          // The member records the credential when the issuance completes, as the custodian does.
+          const origin = issuance.deps.exc.retainedInput(id, { pending: true })?.nests?.[0]?.body;
+          if (origin instanceof SerderACDC && origin.regid) trackGroupIssuance(parts, hab, id, origin, origin.regid);
         }
         const waited = yield* waitForIssuance(issuance, id, { timeoutMs });
         return { id, family: "issuance", ...issuanceSummary(waited) };
@@ -510,17 +595,17 @@ export class Proposals extends Surface {
    * @returns The number of notices removed.
    */
   dismiss(id: string): number {
-    const { runtime } = this.parts;
+    const { runtime } = this.#scope.parts;
     return dismissGroupProposal(runtime, id);
   }
 
   /** The accepted coordinator and elected custodian a group issuance is bound to. */
   private selection(hab: Hab) {
-    return electedSelection(this.parts.hby, hab);
+    return electedSelection(this.#scope.parts.hby, hab);
   }
 
   private groupHabs(): Hab[] {
-    return [...this.parts.hby.habs.values()].filter((hab) => isLocalGroupHab(this.parts.hby, hab));
+    return [...this.#scope.parts.hby.habs.values()].filter((hab) => isLocalGroupHab(this.#scope.parts.hby, hab));
   }
 }
 
@@ -540,7 +625,7 @@ function groupDeps(runtime: AgentRuntime) {
 }
 
 /** Reduce a settled group event to the common proposal outcome. */
-function eventSummary(settled: GroupEventOutcome) {
+function eventSummary(settled: GroupEventOutcome): ProposalSummary {
   const { status, event } = settled;
   if (settled.outcome === "complete") return { outcome: "complete" as const, status, event };
   if (settled.outcome === "timed-out") {
@@ -552,7 +637,15 @@ function eventSummary(settled: GroupEventOutcome) {
   return { outcome: "ended" as const, reason, status, event };
 }
 
-function ipexSummary(waited: { outcome: "settled" | "timed-out"; status: GroupIpexStatus; timeoutMs?: number }) {
+function ipexSummary(waited: WaitResult<GroupIpexStatus>): ProposalSummary {
+  const { status } = waited;
+  if (waited.outcome === "timed-out") return { outcome: "timed-out" as const, timeoutMs: waited.timeoutMs, status };
+  if (status.state === "done") return { outcome: "complete" as const, status };
+  if (status.state === "active") return { outcome: "approved" as const, status };
+  return { outcome: "ended" as const, reason: status.reason, status };
+}
+
+function issuanceSummary(waited: WaitResult<IssuanceStatus>): ProposalSummary {
   const { status } = waited;
   if (waited.outcome === "timed-out") return { outcome: "timed-out" as const, timeoutMs: waited.timeoutMs!, status };
   if (status.state === "done") return { outcome: "complete" as const, status };
@@ -560,19 +653,18 @@ function ipexSummary(waited: { outcome: "settled" | "timed-out"; status: GroupIp
   return { outcome: "ended" as const, reason: status.reason, status };
 }
 
-function issuanceSummary(waited: { outcome: "settled" | "timed-out"; status: IssuanceStatus; timeoutMs?: number }) {
-  const { status } = waited;
-  if (waited.outcome === "timed-out") return { outcome: "timed-out" as const, timeoutMs: waited.timeoutMs!, status };
-  if (status.state === "done") return { outcome: "complete" as const, status };
-  if (status.state === "active") return { outcome: "approved" as const, status };
-  return { outcome: "ended" as const, reason: status.reason, status };
+/** The group, its accepted coordinator event and the custodian that event elects. */
+export interface GroupSelection {
+  hab: Hab;
+  coordinator: string;
+  custodian: string;
 }
 
 /**
  * The accepted coordinator (the group's latest accepted event) and the custodian it elects, which is what a group
  * issuance is bound to. Every member that reads the same latest event picks the same custodian.
  */
-function electedSelection(hby: Surface["parts"]["hby"], hab: Hab) {
+function electedSelection(hby: Habery, hab: Hab): GroupSelection {
   const kever = hab.kever;
   if (!kever) throw new ValidationError("The group has no accepted key state.");
   const coordinator = kever.serder.said!;
@@ -589,13 +681,13 @@ export type GroupReceiveOutcome =
     outcome: "admitted";
     grant: string;
     admit: string;
-    held: import("../storing.ts").AdmittedCredential;
+    held: AdmittedCredential;
     delivery: AdmitDelivery;
   }
   | {
     outcome: "ended";
     grant: string;
-    status: import("./wallet-api.ts").EndedStatus | Extract<GroupIpexStatus, { state: "abandoned" | "failed" }>;
+    status: EndedStatus | EndedGroupIpex;
   }
   | {
     outcome: "timed-out";
@@ -605,19 +697,68 @@ export type GroupReceiveOutcome =
     status: IssuanceStatus | GroupIpexStatus;
   };
 
+/** A group IPEX message that was accepted. */
+export type DoneGroupIpex = Extract<GroupIpexStatus, { state: "done" }>;
+
+/** A group IPEX message that stopped without being accepted. */
+export type EndedGroupIpex = Extract<GroupIpexStatus, { state: "abandoned" | "failed" }>;
+
+/** Inputs of the group form of `credentials.receive`. */
+export interface GroupReceiveOptions extends TimeoutOptions {
+  /** Message carried by the Admit. */
+  message?: string;
+}
+
+/** What a group presents: the credential view and the Grant's body options. */
+export interface GroupPresentInput {
+  selection: DisclosureSelection;
+  options: Omit<PresentationOptions, "presentationRegistry">;
+}
+
+/** Inputs of the group form of `credentials.issue`. */
+export interface GroupIssueOptions extends TimeoutOptions {
+  /** Name of the group's registry (see `groups.inceptRegistry`). */
+  registry: string;
+  credential: Omit<AcdcMapOptions, "regid">;
+  /** Recipient of the Grant; defaults to the credential's issuee. */
+  recipient?: string;
+  message?: string;
+  artifacts?: readonly Uint8Array[];
+  /** Called once, after the issuing consent is given, with the Grant's SAID. */
+  onBegun?: (begun: IssuanceBegunNotice) => void;
+}
+
+/** What {@link GroupIssueOptions.onBegun} receives. */
+export interface IssuanceBegunNotice {
+  grant: string;
+  credential: string;
+}
+
+/** Inputs of the group form of `credentials.unblind`. */
+export interface GroupUnblindOptions extends TimeoutOptions {
+  states: readonly string[];
+  proposer?: string;
+}
+
 /** Result of presenting from a group: the lead delivers the completed Grant once every member has approved. */
 export type GroupPresentOutcome =
-  | { outcome: "accepted"; said: string; status: Extract<GroupIpexStatus, { state: "done" }> }
-  | { outcome: "ended"; said: string; status: Extract<GroupIpexStatus, { state: "abandoned" | "failed" }> }
+  | { outcome: "accepted"; said: string; status: DoneGroupIpex }
+  | { outcome: "ended"; said: string; status: EndedGroupIpex }
   | { outcome: "timed-out"; said: string; timeoutMs: number; status: GroupIpexStatus };
 
 /** The group forms of `credentials.receive`, `issue`, `present` and `unblind`. */
-export class GroupCredentials extends Surface {
+export class GroupCredentials {
+  readonly #scope: WalletScope;
+
+  constructor(scope: WalletScope) {
+    this.#scope = scope;
+  }
+
   /** Pending Grants addressed to local groups. */
   pending(pre?: string): PendingGrant[] {
-    const ops = this.parts.runtime.operations?.issuance;
+    const ops = this.#scope.parts.runtime.operations?.issuance;
     if (!ops) return [];
-    return pendingGroupGrants(ops, pre ? { group: this.group(pre) } : {});
+    return pendingGroupGrants(ops, pre ? { group: this.#scope.group(pre) } : {});
   }
 
   /**
@@ -625,16 +766,13 @@ export class GroupCredentials extends Surface {
    * to finish it, then propose the Admit (or approve the Admit another member proposed), wait until the group's
    * Admit is accepted and record the admission. The elected lead member delivers the Admit.
    */
-  async receive(
-    grant: string,
-    hab: Hab,
-    { timeoutMs = WALLET_TIMEOUTS.receive, message = "" }: { timeoutMs?: number; message?: string },
-  ): Promise<GroupReceiveOutcome> {
-    const { hby, wallet, runtime } = this.parts;
+  async receive(grant: string, hab: Hab, options: GroupReceiveOptions): Promise<GroupReceiveOutcome> {
+    const { timeoutMs = WALLET_TIMEOUTS.receive, message = "" } = options;
+    const { hby, wallet, runtime } = this.#scope.parts;
     const issuance = runtime.operations?.issuance, ipex = runtime.operations?.groupIpex;
     if (!issuance || !ipex) throw new ValidationError("This wallet's runtime has no group issuance owner.");
     const selection = electedSelection(hby, hab);
-    return await this.go(function*(): Operation<GroupReceiveOutcome> {
+    return await this.#scope.go(function*(): Operation<GroupReceiveOutcome> {
       let status = issuanceStatus(issuance, grant);
       if (status.state === "active" && status.needs === "exchange") {
         approveGroupIssuanceExchange(issuance, { ...selection, grant });
@@ -681,19 +819,8 @@ export class GroupCredentials extends Surface {
    * issues `credential`, and the other issuer members consent through `proposals.approve`. Waits for the exchange.
    * The runtime proposes the registry update; the other members approve it as a `bup` proposal.
    */
-  async issue(
-    hab: Hab,
-    options: {
-      registry: string;
-      credential: Omit<AcdcMapOptions, "regid">;
-      recipient?: string;
-      message?: string;
-      artifacts?: readonly Uint8Array[];
-      onBegun?: (begun: { grant: string; credential: string }) => void;
-      timeoutMs?: number;
-    },
-  ): Promise<GroupIssueOutcome> {
-    const { hby, runtime, wallet } = this.parts;
+  async issue(hab: Hab, options: GroupIssueOptions): Promise<GroupIssueOutcome> {
+    const { hby, runtime, wallet } = this.#scope.parts;
     const ops = runtime.operations?.issuance;
     if (!ops) throw new ValidationError("This wallet's runtime has no issuance owner.");
     const selection = electedSelection(hby, hab);
@@ -711,7 +838,8 @@ export class GroupCredentials extends Surface {
       );
     }
     const timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.issue;
-    return await this.go(function*(): Operation<GroupIssueOutcome> {
+    const parts = this.#scope.parts;
+    return await this.#scope.go(function*(): Operation<GroupIssueOutcome> {
       const author = new WalletAuthor(
         wallet,
         runtime.acdc!,
@@ -728,10 +856,20 @@ export class GroupCredentials extends Surface {
       } catch {
         // A caller's notification must not break the issuance it reports.
       }
+      const record = trackGroupIssuance(parts, hab, begun.grant, credential, registry.regk!);
       const waited = yield* waitForIssuance(ops, begun.grant, { timeoutMs });
       const base = { grant: begun.grant, credential: credential.said!, registry: registry.regk! };
       if (waited.outcome === "timed-out") return { ...base, outcome: "timed-out", timeoutMs, status: waited.status };
-      if (waited.status.state === "done") return { ...base, outcome: "issued" };
+      if (waited.status.state === "done") {
+        let recorded = false;
+        try {
+          record();
+          recorded = true;
+        } catch {
+          // The wallet keeps trying on later changes; `recorded` tells the caller it is not in the inventory yet.
+        }
+        return { ...base, outcome: "issued", recorded };
+      }
       const ended = waited.status as Extract<IssuanceStatus, { reason: string }>;
       return { ...base, outcome: "ended", state: ended.state, reason: ended.reason };
     });
@@ -742,31 +880,24 @@ export class GroupCredentials extends Surface {
    * as a proposal; the elected lead delivers it once every contribution is in. Only `grant`-style selections are
    * supported (the library's group presentation).
    */
-  async present(
-    hab: Hab,
-    input: { selection: DisclosureSelection; options: Omit<PresentationOptions, "presentationRegistry"> },
-    { timeoutMs = WALLET_TIMEOUTS.present }: { timeoutMs?: number } = {},
-  ): Promise<GroupPresentOutcome> {
-    const { runtime } = this.parts;
+  async present(hab: Hab, input: GroupPresentInput, wait: TimeoutOptions = {}): Promise<GroupPresentOutcome> {
+    const timeoutMs = wait.timeoutMs ?? WALLET_TIMEOUTS.present;
+    const { runtime } = this.#scope.parts;
     const presenter = runtime.operations?.presentation, ipex = runtime.operations?.groupIpex;
     if (!presenter || !ipex) throw new ValidationError("This wallet's runtime has no group presentation owner.");
-    return await this.go(function*(): Operation<GroupPresentOutcome> {
+    return await this.#scope.go(function*(): Operation<GroupPresentOutcome> {
       const begun = yield* proposeGroupPresentation(presenter.deps, ipex, { hab, ...input });
       const waited = yield* waitForGroupIpex(ipex, begun.said, { timeoutMs });
       const { status } = waited;
       if (waited.outcome === "timed-out") return { outcome: "timed-out", said: begun.said, timeoutMs, status };
       if (status.state === "done") return { outcome: "accepted", said: begun.said, status };
-      return {
-        outcome: "ended",
-        said: begun.said,
-        status: status as Extract<GroupIpexStatus, { state: "abandoned" | "failed" }>,
-      };
+      return { outcome: "ended", said: begun.said, status: status as EndedGroupIpex };
     });
   }
 
   /** Abandon a group IPEX operation this wallet began (local only; nothing is sent). */
   abandon(said: string, reason?: string): void {
-    const ipex = this.parts.runtime.operations?.groupIpex;
+    const ipex = this.#scope.parts.runtime.operations?.groupIpex;
     if (ipex) abandonGroupIpex(ipex, said, reason);
   }
 
@@ -775,16 +906,9 @@ export class GroupCredentials extends Surface {
    * the current signing member that authors the query (disclosee) or the reply (discloser); every member must
    * name the same one, and it defaults to the member the group's latest event elects.
    */
-  async unblind(
-    grant: string,
-    hab: Hab,
-    { states, timeoutMs = WALLET_TIMEOUTS.unblind, proposer }: {
-      states: readonly string[];
-      timeoutMs?: number;
-      proposer?: string;
-    },
-  ): Promise<import("./wallet-api.ts").UnblindOutcome> {
-    const { hby, runtime } = this.parts;
+  async unblind(grant: string, hab: Hab, options: GroupUnblindOptions): Promise<UnblindOutcome> {
+    const { states, timeoutMs = WALLET_TIMEOUTS.unblind, proposer } = options;
+    const { hby, runtime } = this.#scope.parts;
     const ops = runtime.operations?.unblinding;
     if (!ops) throw new ValidationError("This wallet's runtime has no Unblind owner.");
     const input = runtime.exc.retainedInput(grant)?.serder;
@@ -793,7 +917,7 @@ export class GroupCredentials extends Surface {
       throw new ValidationError("The group is neither party of that Grant.");
     }
     const lead = proposer ?? electedSelection(hby, hab).custodian;
-    return await this.go(function*() {
+    return await this.#scope.go(function*() {
       const before = unblindingStatus(ops, grant);
       if (before.state !== "active" && before.state !== "done" && before.state !== "expired") {
         if (requester) requestUnblind(ops, { hab, grant, states, proposer: lead });
@@ -803,7 +927,7 @@ export class GroupCredentials extends Surface {
       const { status } = waited;
       if (waited.outcome === "timed-out") return { outcome: "timed-out" as const, grant, timeoutMs, status };
       if (status.state === "done") return { outcome: "unblinded" as const, grant, status };
-      return { outcome: "ended" as const, grant, status: status as import("./wallet-api.ts").EndedUnblinding };
+      return { outcome: "ended" as const, grant, status: status as EndedUnblinding };
     });
   }
 }
@@ -812,7 +936,7 @@ export class GroupCredentials extends Surface {
 export type GroupIssueOutcome =
   & { grant: string; credential: string; registry: string }
   & (
-    | { outcome: "issued" }
+    | { outcome: "issued"; recorded: boolean }
     | { outcome: "ended"; state: string; reason: string }
     | { outcome: "timed-out"; timeoutMs: number; status: IssuanceStatus }
   );

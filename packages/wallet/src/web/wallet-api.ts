@@ -82,12 +82,16 @@ import {
 import {
   type AdmitDelivery,
   delivered,
-  Surface,
+  type TimeoutOptions,
   type TrackedIssuances,
   WALLET_TIMEOUTS,
   type WalletApiParts,
+  WalletScope,
   within,
 } from "./surface.ts";
+
+/** Where the wallet's sink forwards: the host's sink, the runtime's Signaler sink, or nothing yet. */
+export type ChangeSinkSource = () => ChangeSink | undefined;
 
 /**
  * The sink the runtime's owners publish to. It forwards every change to `forward` (the host's sink, or the
@@ -96,7 +100,7 @@ import {
  * failing reaction is dropped here (a sink must not throw into a workflow); the next `issue` call for it
  * records again and reports the failure.
  */
-export function walletChangeSink(tracked: TrackedIssuances, forward: () => ChangeSink | undefined): ChangeSink {
+export function walletChangeSink(tracked: TrackedIssuances, forward: ChangeSinkSource): ChangeSink {
   return {
     push(change: WorkflowChange) {
       forward()?.push(change);
@@ -167,22 +171,42 @@ export type IdentifierEvent =
     | { outcome: "timed-out"; timeoutMs: number }
   );
 
+/** How a completion treats a delegated event. */
+export interface EventFinish {
+  /** Alias of the local identifier that carries the delegation request. */
+  proxy?: string;
+  /** Budget of the delegator's approval wait. Default 120 s. */
+  timeoutMs?: number;
+}
+
+/** Inputs of {@link Identifiers.complete}. */
+export interface CompleteOptions extends EventFinish {
+  /** The event to complete; default the latest. */
+  sn?: number;
+}
+
 /** Single-signature identifiers: inception and rotation, each through witness receipts and delegation. */
-export class Identifiers extends Surface {
+export class Identifiers {
+  readonly #scope: WalletScope;
+
+  constructor(scope: WalletScope) {
+    this.#scope = scope;
+  }
+
   /**
    * Create an identifier and complete its inception event.
    *
    * @throws ValidationError for a used alias, witnesses without `toad`, or a delegator without a usable `proxy`.
    */
   async incept(options: InceptOptions): Promise<IdentifierEvent> {
-    const { hby } = this.parts;
+    const { hby } = this.#scope.parts;
     const { alias, witnesses = [], delegator, proxy } = options;
     if (witnesses.length && options.toad === undefined) {
       throw new ValidationError("Inception with witnesses needs an explicit toad.");
     }
     if (delegator && !proxy) throw new ValidationError("A delegated inception needs a proxy identifier.");
     if (proxy) this.proxy(proxy);
-    return await this.go(() => {
+    return await this.#scope.go(() => {
       if (hby.habByName(alias)) throw new ValidationError(`Alias ${alias} already exists.`);
       const hab = hby.makeHab(alias, undefined, {
         transferable: options.transferable ?? true,
@@ -206,9 +230,9 @@ export class Identifiers extends Surface {
    * @throws ValidationError for an unknown or group identifier.
    */
   async rotate(pre: string, options: RotateOptions = {}): Promise<IdentifierEvent> {
-    const hab = this.individual(pre);
+    const hab = this.#scope.individual(pre);
     if (options.proxy) this.proxy(options.proxy);
-    return await this.go(() => {
+    return await this.#scope.go(() => {
       hab.rotate({
         isith: options.keys?.threshold,
         nsith: options.next?.threshold,
@@ -228,22 +252,24 @@ export class Identifiers extends Surface {
    * wait again for the delegator. Use it after an `incomplete` or `timed-out` result. `sn` defaults to the
    * latest event.
    */
-  async complete(pre: string, { sn, proxy, timeoutMs }: { sn?: number; proxy?: string; timeoutMs?: number } = {}) {
-    const hab = this.individual(pre);
+  async complete(pre: string, options: CompleteOptions = {}) {
+    const { sn, proxy, timeoutMs } = options;
+    const hab = this.#scope.individual(pre);
     if (proxy) this.proxy(proxy);
-    return await this.go(() => this.finish(hab, sn ?? hab.kever!.sn, { proxy, timeoutMs }));
+    return await this.#scope.go(() => this.finish(hab, sn ?? hab.kever!.sn, { proxy, timeoutMs }));
   }
 
   /** The proxy identifier: local, with accepted key state. */
   private proxy(alias: string): Hab {
-    const hab = this.parts.hby.habByName(alias);
+    const hab = this.#scope.parts.hby.habByName(alias);
     if (!hab?.kever) throw new ValidationError(`Delegation proxy ${alias} is not a local identifier with key state.`);
     return hab;
   }
 
   /** Receipts, then delegation when the event is delegated, as one typed result. */
-  private *finish(hab: Hab, sn: number, { proxy, timeoutMs }: { proxy?: string; timeoutMs?: number }) {
-    const { hby, runtime, changes } = this.parts;
+  private *finish(hab: Hab, sn: number, options: EventFinish) {
+    const { proxy, timeoutMs } = options;
+    const { hby, runtime, changes } = this.#scope.parts;
     const deps: EventCompletionDeps = {
       hby,
       protocol: runtime.protocol,
@@ -293,7 +319,7 @@ export class Identifiers extends Surface {
 
   /** Pure read of an event's completion. */
   status(pre: string, sn: number): EventStatus {
-    return eventStatus(this.parts.hby, pre, sn);
+    return eventStatus(this.#scope.parts.hby, pre, sn);
   }
 }
 
@@ -308,15 +334,28 @@ export type OobiOutcome =
   | { outcome: "failed"; reason: string; record: ResolvedRecord }
   | { outcome: "timed-out"; timeoutMs: number };
 
+/** Inputs of {@link Oobis.resolve}. */
+export interface ResolveOobiOptions extends TimeoutOptions {
+  /** Contact alias recorded when the OOBI resolves. */
+  alias?: string;
+}
+
 /** Out-of-band introductions. */
-export class Oobis extends Surface {
+export class Oobis {
+  readonly #scope: WalletScope;
+
+  constructor(scope: WalletScope) {
+    this.#scope = scope;
+  }
+
   /**
    * Queue `url` with the running Oobiery and wait for it to resolve. The learned key state, endpoints and
    * contact alias are then in the wallet's stores.
    */
-  async resolve(url: string, { alias, timeoutMs = WALLET_TIMEOUTS.oobi }: { alias?: string; timeoutMs?: number } = {}) {
-    const { hby, runtime, changes } = this.parts;
-    return await this.go(function*(): Operation<OobiOutcome> {
+  async resolve(url: string, options: ResolveOobiOptions = {}) {
+    const { alias, timeoutMs = WALLET_TIMEOUTS.oobi } = options;
+    const { hby, runtime, changes } = this.#scope.parts;
+    return await this.#scope.go(function*(): Operation<OobiOutcome> {
       beginOobi({ oobiery: runtime.oobiery, changes }, url, { alias });
       const waited = yield* waitForOobi({ db: hby.db, changes }, url, { timeoutMs });
       const { status } = waited;
@@ -338,8 +377,20 @@ export type MailboxOutcome<Done extends "authorized" | "revoked" = "authorized">
   | { outcome: "rejected"; reason: string; status: MailboxStatus }
   | { outcome: "timed-out"; timeoutMs: number; status: MailboxStatus };
 
+/** Result of {@link Mailboxes.waitForPublication}: every mailbox of the identifier settled, or the budget expired. */
+export interface PublicationWait {
+  outcome: "settled" | "timed-out";
+  entries: readonly KelPublicationStatus[];
+}
+
 /** Mailbox providers an identifier receives through. The runtime polls an authorized mailbox by itself. */
-export class Mailboxes extends Surface {
+export class Mailboxes {
+  readonly #scope: WalletScope;
+
+  constructor(scope: WalletScope) {
+    this.#scope = scope;
+  }
+
   /**
    * Authorize `mailbox` for `pre`: sign the end role, post it to the provider and accept it locally.
    * Repeating it for an authorized mailbox posts the same reply again.
@@ -347,12 +398,8 @@ export class Mailboxes extends Surface {
    * @throws ValidationError when `pre` is not a local identifier or the mailbox's endpoint is unknown
    * (resolve its OOBI first).
    */
-  async add(
-    pre: string,
-    mailbox: string,
-    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
-  ): Promise<MailboxOutcome<"authorized">> {
-    return await this.change(pre, mailbox, timeoutMs, "authorized", addMailbox);
+  async add(pre: string, mailbox: string, options: TimeoutOptions = {}): Promise<MailboxOutcome<"authorized">> {
+    return await this.change(pre, mailbox, options.timeoutMs ?? WALLET_TIMEOUTS.mailbox, "authorized", addMailbox);
   }
 
   /**
@@ -361,17 +408,13 @@ export class Mailboxes extends Surface {
    *
    * @throws ValidationError as for {@link Mailboxes.add}.
    */
-  async remove(
-    pre: string,
-    mailbox: string,
-    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
-  ): Promise<MailboxOutcome<"revoked">> {
-    return await this.change(pre, mailbox, timeoutMs, "revoked", removeMailbox);
+  async remove(pre: string, mailbox: string, options: TimeoutOptions = {}): Promise<MailboxOutcome<"revoked">> {
+    return await this.change(pre, mailbox, options.timeoutMs ?? WALLET_TIMEOUTS.mailbox, "revoked", removeMailbox);
   }
 
   /** Pure read of the accepted end-role state. */
   status(pre: string, mailbox: string): MailboxStatus {
-    return mailboxStatus(this.parts.hby, pre, mailbox);
+    return mailboxStatus(this.#scope.parts.hby, pre, mailbox);
   }
 
   private change<Done extends "authorized" | "revoked">(
@@ -381,10 +424,10 @@ export class Mailboxes extends Surface {
     done: Done,
     admin: typeof addMailbox,
   ): Promise<MailboxOutcome<Done>> {
-    const { hby, runtime } = this.parts;
-    const hab = this.individual(pre);
+    const { hby, runtime } = this.#scope.parts;
+    const hab = this.#scope.individual(pre);
     requireMailboxEndpointUrl(hby, mailbox);
-    return this.go(function*(): Operation<MailboxOutcome<Done>> {
+    return this.#scope.go(function*(): Operation<MailboxOutcome<Done>> {
       const deps = { hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol };
       try {
         const result = yield* within(runtime.clock, timeoutMs, () => admin(deps, hab, mailbox));
@@ -407,19 +450,17 @@ export class Mailboxes extends Surface {
    * a new rotation, a successful poll of that mailbox or reopening the wallet tries again).
    */
   publication(pre: string): readonly KelPublicationStatus[] {
-    return this.parts.runtime.kelPublisher.status().entries.filter((entry) => entry.pre === pre);
+    return this.#scope.parts.runtime.kelPublisher.status().entries.filter((entry) => entry.pre === pre);
   }
 
   /**
    * Wait until every mailbox of `pre` is `published` or `timed-out`, or `timeoutMs` passes (`timed-out` result).
    * Only observes: the runtime's publisher does the posting.
    */
-  async waitForPublication(
-    pre: string,
-    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
-  ): Promise<{ outcome: "settled" | "timed-out"; entries: readonly KelPublicationStatus[] }> {
-    const publisher = this.parts.runtime.kelPublisher;
-    return await this.go(function*() {
+  async waitForPublication(pre: string, options: TimeoutOptions = {}): Promise<PublicationWait> {
+    const timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.mailbox;
+    const publisher = this.#scope.parts.runtime.kelPublisher;
+    return await this.#scope.go(function*() {
       const waited = yield* publisher.waitForPublication(pre, { timeoutMs });
       return { outcome: waited.outcome, entries: waited.status.entries.filter((entry) => entry.pre === pre) };
     });
@@ -519,21 +560,66 @@ export type IssueOutcome =
     status?: IssuanceStatus;
   };
 
+/** The credentials held and issued, as the inventory records them. */
+export interface CredentialList {
+  issued: IssuedCredential[];
+  held: AdmittedCredential[];
+}
+
+/** Inputs of {@link Credentials.receive}. */
+export interface ReceiveOptions extends TimeoutOptions {
+  /** Message carried by the Admit. */
+  message?: string;
+  /** Budget of the Admit's delivery. Default 30 s. */
+  deliveryTimeoutMs?: number;
+}
+
+/** What {@link Credentials.receive} returns: the individual or the group result. */
+export type ReceiveResult = ReceiveOutcome | GroupReceiveOutcome;
+
+/** What {@link Credentials.issue} returns: the individual or the group result. */
+export type IssueResult = IssueOutcome | GroupIssueOutcome;
+
+/** What {@link Credentials.present} returns: the individual or the group result. */
+export type PresentResult = PresentOutcome | GroupPresentOutcome;
+
+/** How long {@link Credentials.present} waits for delivery; delivery itself retries until the exchange's deadline. */
+export type PresentWaitOptions = TimeoutOptions;
+
+/** The body options of an `apply` request. */
+export type ApplyOptions = Extract<PresentInput, { verb: "apply" }>["options"];
+
+/** Inputs of {@link Credentials.unblind}. */
+export interface UnblindOptions extends TimeoutOptions {
+  /** The credential-state vocabulary to freeze; default {@link DEFAULT_UNBLIND_STATES}. */
+  states?: readonly string[];
+  /** Group parties only: the signing member that authors the query or reply; default is the elected one. */
+  proposer?: string;
+}
+
 /** Credentials this wallet holds and issues, over the runtime's IPEX issuance owner. */
-export class Credentials extends Surface {
+export class Credentials {
+  readonly #scope: WalletScope;
+  readonly #groups: GroupCredentials;
+
+  constructor(scope: WalletScope, groups: GroupCredentials) {
+    this.#scope = scope;
+    this.#groups = groups;
+  }
+
   /** The Grants waiting for consent, newest state of the stores; a pure read. */
   pending(pre?: string): PendingGrant[] {
     const ops = this.owner();
-    if (pre && isLocalGroupHab(this.parts.hby, this.hab(pre))) return new GroupCredentials(this.parts).pending(pre);
+    if (pre && isLocalGroupHab(this.#scope.parts.hby, this.#scope.hab(pre))) return this.#groups.pending(pre);
     return [
-      ...pendingIssuanceGrants(ops, pre ? { hab: this.hab(pre) } : {}),
-      ...(pre ? [] : new GroupCredentials(this.parts).pending()),
+      ...pendingIssuanceGrants(ops, pre ? { hab: this.#scope.hab(pre) } : {}),
+      ...(pre ? [] : this.#groups.pending()),
     ];
   }
 
   /** The credentials held and issued, as the inventory records them. */
-  list(): { issued: IssuedCredential[]; held: AdmittedCredential[] } {
-    return this.parts.wallet.inventory();
+  list(): CredentialList {
+    return this.#scope.parts.wallet.inventory();
   }
 
   /**
@@ -543,21 +629,15 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError when `grant` is not a Grant addressed to a local identifier, or was issued here.
    */
-  async receive(
-    grant: string,
-    { timeoutMs = WALLET_TIMEOUTS.receive, message = "", deliveryTimeoutMs = WALLET_TIMEOUTS.delivery }: {
-      timeoutMs?: number;
-      message?: string;
-      deliveryTimeoutMs?: number;
-    } = {},
-  ): Promise<ReceiveOutcome | GroupReceiveOutcome> {
-    const { hby, wallet, runtime } = this.parts;
+  async receive(grant: string, options: ReceiveOptions = {}): Promise<ReceiveResult> {
+    const { timeoutMs = WALLET_TIMEOUTS.receive, message = "", deliveryTimeoutMs = WALLET_TIMEOUTS.delivery } = options;
+    const { hby, wallet, runtime } = this.#scope.parts;
     const ops = this.owner();
     const hab = this.holder(grant);
     if (isLocalGroupHab(hby, hab)) {
-      return await new GroupCredentials(this.parts).receive(grant, hab, { timeoutMs, message });
+      return await this.#groups.receive(grant, hab, { timeoutMs, message });
     }
-    return await this.go(function*(): Operation<ReceiveOutcome> {
+    return await this.#scope.go(function*(): Operation<ReceiveOutcome> {
       let status = issuanceStatus(ops, grant);
       if (status.role === "issuer") throw new ValidationError("This Grant was issued by this wallet.");
       if (status.state === "active" && status.needs === "exchange") approveIssuanceExchange(ops, { hab, grant });
@@ -602,20 +682,20 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError for an unknown or group identifier, or a credential the registry refuses.
    */
-  async issue(options: IssueOptions): Promise<IssueOutcome | GroupIssueOutcome> {
-    const { hby, runtime, wallet, inventory } = this.parts;
+  async issue(options: IssueOptions): Promise<IssueResult> {
+    const { hby, runtime, wallet, inventory } = this.#scope.parts;
     const { pre, registry: name = `credential-${crypto.randomUUID()}`, timeoutMs = WALLET_TIMEOUTS.issue } = options;
-    if (isLocalGroupHab(hby, this.hab(pre))) {
+    if (isLocalGroupHab(hby, this.#scope.hab(pre))) {
       if (!options.registry) {
         throw new ValidationError("A group issues into a named registry; incept it with groups.inceptRegistry.");
       }
-      return await new GroupCredentials(this.parts).issue(this.hab(pre), { ...options, registry: options.registry });
+      return await this.#groups.issue(this.#scope.hab(pre), { ...options, registry: options.registry });
     }
-    const hab = this.individual(pre), ops = this.owner();
+    const hab = this.#scope.individual(pre), ops = this.owner();
     const recipient = options.recipient ?? options.credential.issuee;
     if (!recipient) throw new ValidationError("A recipient or an issuee is required.");
-    const { tracked } = this.parts;
-    return await this.go(function*(): Operation<IssueOutcome> {
+    const { tracked } = this.#scope.parts;
+    return await this.#scope.go(function*(): Operation<IssueOutcome> {
       const regery = runtime.acdc!;
       const author = new WalletAuthor(
         wallet,
@@ -679,15 +759,13 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError when this wallet signed no Admit for `grant`.
    */
-  async resendAdmit(
-    grant: string,
-    { timeoutMs = WALLET_TIMEOUTS.delivery }: { timeoutMs?: number } = {},
-  ): Promise<AdmitDelivery> {
-    const { hby, runtime } = this.parts;
+  async resendAdmit(grant: string, options: TimeoutOptions = {}): Promise<AdmitDelivery> {
+    const timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.delivery;
+    const { hby, runtime } = this.#scope.parts;
     const ops = this.owner();
     const admit = hby.db.erpy.get([grant])?.qb64;
     if (!admit) throw new ValidationError("This wallet has not admitted that Grant.");
-    return await this.go(function*(): Operation<AdmitDelivery> {
+    return await this.#scope.go(function*(): Operation<AdmitDelivery> {
       const rebuilt = yield* rebuildIssuanceAdmit(ops.deps, admit);
       const hab = hby.habs.get(rebuilt.admit.pre!)!;
       return yield* delivered(runtime.clock, timeoutMs, () => deliverIssuanceAdmit(ops.deps, hab, rebuilt));
@@ -702,20 +780,18 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError for an unknown or group identifier or a selection the discloser refuses.
    */
-  async present(
-    input: PresentInput,
-    { timeoutMs = WALLET_TIMEOUTS.present, maxAttempts }: { timeoutMs?: number; maxAttempts?: number } = {},
-  ): Promise<PresentOutcome | GroupPresentOutcome> {
+  async present(input: PresentInput, options: PresentWaitOptions = {}): Promise<PresentResult> {
+    const { timeoutMs = WALLET_TIMEOUTS.present } = options;
     const { pre, ...rest } = input;
-    if (isLocalGroupHab(this.parts.hby, this.hab(pre))) {
+    if (isLocalGroupHab(this.#scope.parts.hby, this.#scope.hab(pre))) {
       if (rest.verb !== "grant" && rest.verb !== "offer") {
         throw new ValidationError("A group presents a Grant (verb \"grant\") through the group IPEX path.");
       }
-      return await new GroupCredentials(this.parts).present(this.hab(pre), rest, { timeoutMs });
+      return await this.#groups.present(this.#scope.hab(pre), rest, { timeoutMs });
     }
-    const hab = this.individual(pre), ops = this.presenter();
-    return await this.go(function*(): Operation<PresentOutcome> {
-      const begun = yield* present(ops, { ...rest, hab } as PresentationInput, { maxAttempts });
+    const hab = this.#scope.individual(pre), ops = this.presenter();
+    return await this.#scope.go(function*(): Operation<PresentOutcome> {
+      const begun = yield* present(ops, { ...rest, hab } as PresentationInput);
       const { said, recipient } = begun;
       const waited = yield* waitForPresentation(ops, said, { timeoutMs });
       const { status } = waited;
@@ -729,11 +805,7 @@ export class Credentials extends Surface {
    * Ask a holder for a presentation (the verifier's `apply`). A thin form of {@link Credentials.present}.
    * The holder's answer arrives as an exchange the runtime stores.
    */
-  requestProof(
-    pre: string,
-    options: Extract<PresentInput, { verb: "apply" }>["options"],
-    wait?: { timeoutMs?: number; maxAttempts?: number },
-  ): Promise<PresentOutcome> {
+  requestProof(pre: string, options: ApplyOptions, wait?: PresentWaitOptions): Promise<PresentOutcome> {
     return this.present({ verb: "apply", pre, options }, wait) as Promise<PresentOutcome>;
   }
 
@@ -749,7 +821,7 @@ export class Credentials extends Surface {
    */
   presentations(pre?: string): PendingPresentation[] {
     const issuance = new Set(this.pending(pre).map((pending) => pending.grant));
-    return pendingPresentations(this.unblinder(), pre ? { hab: this.hab(pre) } : {}).filter((item) =>
+    return pendingPresentations(this.unblinder(), pre ? { hab: this.#scope.hab(pre) } : {}).filter((item) =>
       !issuance.has(item.grant)
     );
   }
@@ -761,27 +833,20 @@ export class Credentials extends Surface {
    *
    * @throws ValidationError when `grant` is not a Grant addressed to a local identifier.
    */
-  async unblind(
-    grant: string,
-    { states = DEFAULT_UNBLIND_STATES, timeoutMs = WALLET_TIMEOUTS.unblind, proposer }: {
-      states?: readonly string[];
-      timeoutMs?: number;
-      /** Group parties only: the signing member that authors the query or reply; default is the elected one. */
-      proposer?: string;
-    } = {},
-  ): Promise<UnblindOutcome> {
-    const { runtime } = this.parts;
+  async unblind(grant: string, options: UnblindOptions = {}): Promise<UnblindOutcome> {
+    const { states = DEFAULT_UNBLIND_STATES, timeoutMs = WALLET_TIMEOUTS.unblind, proposer } = options;
+    const { runtime } = this.#scope.parts;
     const ops = this.unblinder();
     const serder = runtime.exc.retainedInput(grant)?.serder;
     const holder = serder?.sad?.ri;
-    const hab = typeof holder === "string" ? this.parts.hby.habs.get(holder) : undefined;
-    const sender = typeof serder?.pre === "string" ? this.parts.hby.habs.get(serder.pre) : undefined;
-    const groupHab = [hab, sender].find((candidate) => candidate && isLocalGroupHab(this.parts.hby, candidate));
+    const hab = typeof holder === "string" ? this.#scope.parts.hby.habs.get(holder) : undefined;
+    const sender = typeof serder?.pre === "string" ? this.#scope.parts.hby.habs.get(serder.pre) : undefined;
+    const groupHab = [hab, sender].find((candidate) => candidate && isLocalGroupHab(this.#scope.parts.hby, candidate));
     if (groupHab) {
-      return await new GroupCredentials(this.parts).unblind(grant, groupHab, { states, timeoutMs, proposer });
+      return await this.#groups.unblind(grant, groupHab, { states, timeoutMs, proposer });
     }
     if (!hab) throw new ValidationError("The Grant is not addressed to a local identifier of this wallet.");
-    return await this.go(function*(): Operation<UnblindOutcome> {
+    return await this.#scope.go(function*(): Operation<UnblindOutcome> {
       const before = unblindingStatus(ops, grant);
       if (before.state !== "active" && before.state !== "done" && before.state !== "expired") {
         requestUnblind(ops, { hab, grant, states });
@@ -795,30 +860,30 @@ export class Credentials extends Surface {
   }
 
   private presenter() {
-    const ops = this.parts.runtime.operations?.presentation;
+    const ops = this.#scope.parts.runtime.operations?.presentation;
     if (!ops) throw new ValidationError("This wallet's runtime has no presentation owner.");
     return ops;
   }
 
   private unblinder() {
-    const ops = this.parts.runtime.operations?.unblinding;
+    const ops = this.#scope.parts.runtime.operations?.unblinding;
     if (!ops) throw new ValidationError("This wallet's runtime has no Unblind owner.");
     return ops;
   }
 
   /** The runtime's issuance owner. */
   private owner(): IssuanceOperations {
-    const ops = this.parts.runtime.operations?.issuance;
+    const ops = this.#scope.parts.runtime.operations?.issuance;
     if (!ops) throw new ValidationError("This wallet's runtime has no issuance owner.");
     return ops;
   }
 
   /** The local identifier a Grant is addressed to. */
   private holder(grant: string): Hab {
-    const { db } = this.parts.hby;
+    const { db } = this.#scope.parts.hby;
     const serder = db.exns.get([grant]) ?? db.epse.get([grant]);
     const holder = serder?.route === "/ipex/grant" ? serder.sad?.ri : undefined;
-    const hab = typeof holder === "string" ? this.parts.hby.habs.get(holder) : undefined;
+    const hab = typeof holder === "string" ? this.#scope.parts.hby.habs.get(holder) : undefined;
     if (!hab) throw new ValidationError("The Grant is not addressed to a local identifier of this wallet.");
     return hab;
   }
@@ -836,12 +901,13 @@ export interface WalletApi {
 
 /** Build the four namespaces over one wallet's parts. */
 export function createWalletApi(parts: WalletApiParts): WalletApi {
+  const scope = new WalletScope(parts), groups = new GroupCredentials(scope);
   return {
-    identifiers: new Identifiers(parts),
-    oobis: new Oobis(parts),
-    mailboxes: new Mailboxes(parts),
-    credentials: new Credentials(parts),
-    groups: new Groups(parts),
-    proposals: new Proposals(parts),
+    identifiers: new Identifiers(scope),
+    oobis: new Oobis(scope),
+    mailboxes: new Mailboxes(scope),
+    credentials: new Credentials(scope, groups),
+    groups: new Groups(scope),
+    proposals: new Proposals(scope),
   };
 }

@@ -123,9 +123,13 @@ The credential calls select the group path when the identifier is a local group:
   the group's latest event elects.
 - `credentials.pending(group)` lists the pending Grants addressed to the group.
 
-What the code does not do: a group issuance is not recorded in the wallet inventory by the wallet, and a group
-inception needs a route to every co-member (their endpoint roles resolved) before it can publish the proposal;
-otherwise the call rejects with the library's message and the proposer keeps the group habitat.
+A group inception checks that every other member can be reached (an end role is known for each, so resolve their
+OOBIs first) before it creates the group habitat; otherwise it rejects and nothing is left behind, so the same alias
+can be tried again (`proposeGroupInception`, so the CLI behaves the same). A group issuance is recorded in the wallet
+inventory when it completes, for the custodian and for a member that consented through `proposals.approve`, through
+the same `ChangeSink` reaction as a single-signature issuance. A member may not hold the registry root copy yet; its
+recorder then stays registered and tries again on the next issuance change (the custodian's `issued` result carries
+`recorded`).
 
 ## The workflow contract
 
@@ -251,8 +255,13 @@ How the poller schedules, backs off and classifies its polls is being rewritten 
   `WebWallet.storage` is a promise that never rejects and does not hold the open.
 - A failed Admit delivery is reported as `undelivered`; `resendAdmit` repeats it, and an issuer
   that already took the first Admit may drop the repeat as a KRAM replay.
-- A group issuance is not recorded in the wallet inventory by the wallet, and a group inception needs a route to
-  every co-member before it can publish its proposal (see the group wallet surface).
+- A group member that consented to an issuance records the credential only once it can read the exact derivation
+  opening, which needs the registry root copy. The copy arrives after issuance by the replicator and raises no
+  change, so the recording happens on a later issuance change, or never if none comes. The custodian records at
+  completion. **Not exercised end to end.**
+- A group inception that cannot reach a co-member is refused before anything is created. A proposal that is
+  created and then fails to send (the network, after the route check) leaves the group habitat in place; the wallet
+  offers no re-send.
 - A `KelPublisher` entry that timed out stays timed out until a new rotation, a successful poll of that mailbox, a
   repair request, `prompt` or the next runtime open re-arms it; `health()` reports `mailbox-unreachable` meanwhile.
 
