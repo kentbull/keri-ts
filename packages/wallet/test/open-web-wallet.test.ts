@@ -1,5 +1,16 @@
 /** `openWebWallet` composes lock, IndexedDB stores, runtime and barrier; fakes stand in for the browser. */
-import { concatBytes, Counter, MtrDex, Saider, type SerderKERI, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
+import {
+  concatBytes,
+  Counter,
+  Matter,
+  MtrDex,
+  Saider,
+  Salter,
+  type SerderKERI,
+  type Siger,
+  Signer,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import {
@@ -12,6 +23,7 @@ import {
   processCuesOnce,
   type RuntimeChange,
   Schemer,
+  ValidationError,
 } from "keri-ts/runtime";
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
@@ -23,6 +35,7 @@ import { MemStoreOpener } from "../../keri/src/db/core/memstore.ts";
 import { makeNowIso8601 } from "../../keri/src/time/mod.ts";
 import { walletChangeSink } from "../src/web/wallet-api.ts";
 import {
+  KeeperSaltMismatchError,
   openWebWallet,
   type OpenWebWalletOptions,
   recoverWebWallet,
@@ -125,6 +138,116 @@ Deno.test("reload: close and reopen with a fresh opener returns identifiers and 
     assertEquals(second.hby.habByName("main")?.pre, pre);
     assertEquals(second.inventory.credentials.get(["k"]), "v");
     assertEquals(second.health(), { status: "ok" });
+  } finally {
+    await second.close();
+  }
+});
+
+/** A fresh random 128-bit keeper salt in qb64. */
+const randomSalt = () => new Salter({ code: MtrDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
+
+Deno.test("openWebWallet stores a supplied salt as the keeper root salt", async () => {
+  const salt = randomSalt();
+  const w = await page().open({ salt });
+  try {
+    assertEquals(w.hby.mgr.salt, salt);
+  } finally {
+    await w.close();
+  }
+});
+
+Deno.test("two fresh stores with the same passcode and salt derive the same signator and named identifier", async () => {
+  const salt = randomSalt();
+  const derived: { signator: string; named: string; aeid: string | null }[] = [];
+  for (const options of [{ salt }, { salt }, {}]) {
+    const w = await page().open(options);
+    try {
+      derived.push({ signator: w.hby.signator!.pre, named: w.hby.makeHab("main").pre, aeid: w.hby.mgr.aeid });
+    } finally {
+      await w.close();
+    }
+  }
+  assertEquals(derived[1], derived[0]);
+  assert(derived[2].signator !== derived[0].signator, "a random salt derives other identifiers");
+  assertEquals(derived[2].aeid, derived[0].aeid, "the AEID comes from the passcode alone");
+});
+
+Deno.test("openWebWallet refuses a salt that differs from the stored one, closes what it opened, and leaves the store as it was", async () => {
+  const p = page();
+  const stored = randomSalt();
+  await (await p.open({ salt: stored })).close();
+  await assertRejects(() => p.open({ salt: randomSalt() }), KeeperSaltMismatchError);
+  assertEquals(p.held.size, 0, "the lock is released, so the stores are closed");
+  const unchanged = await p.open();
+  try {
+    assertEquals(unchanged.hby.mgr.salt, stored);
+  } finally {
+    await unchanged.close();
+  }
+  // A store opened without a salt keeps the random one it made, so a later salt cannot be the root.
+  const q = page();
+  await (await q.open()).close();
+  await assertRejects(() => q.open({ salt: stored }), KeeperSaltMismatchError);
+  assertEquals(q.held.size, 0);
+  await (await q.open({ salt: undefined })).close();
+});
+
+Deno.test("openWebWallet refuses a salt that is not a 128-bit salt, before any store opens", async () => {
+  const p = page();
+  const wide = new Matter({ code: MtrDex.Salt_256, raw: crypto.getRandomValues(new Uint8Array(32)) }).qb64;
+  for (const salt of [wide, "not-a-salt", "", randomSalt().slice(0, -2)]) {
+    await assertRejects(() => p.open({ salt }), ValidationError);
+    assertEquals(p.held.size, 0);
+  }
+  // Nothing was stored by the refusals: the first good salt becomes the root.
+  const salt = randomSalt();
+  const w = await p.open({ salt });
+  try {
+    assertEquals(w.hby.mgr.salt, salt);
+  } finally {
+    await w.close();
+  }
+});
+
+Deno.test("a held-signer identifier is not derived from the salt", async () => {
+  const salt = randomSalt();
+  const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+  const serder = incept([signer.verfer.qb64], { version: Vrsn_2_0, code: signer.verfer.code, nsith: "0", toad: 0 });
+  const first = await page().open({ salt });
+  let held: string;
+  try {
+    held = first.hby.makeSignedHab("held", undefined, {
+      serder,
+      sigers: [signer.sign(serder.raw, { index: 0 }) as Siger],
+    }).pre;
+  } finally {
+    await first.close();
+  }
+  const second = await page().open({ salt });
+  try {
+    assertEquals(second.hby.habByName("held"), null);
+    assertEquals(second.hby.habs.has(held), false);
+    assert(second.hby.makeHab("held").pre !== held, "the name derives other keys from the same salt");
+  } finally {
+    await second.close();
+  }
+});
+
+Deno.test("a fresh store with the same salt re-derives a retired identifier", async () => {
+  const salt = randomSalt();
+  const first = await page().open({ salt });
+  let retired: string;
+  try {
+    retired = (await first.identifiers.incept({ alias: "a" })).pre;
+    first.identifiers.retire(retired);
+    await assertRejects(() => first.identifiers.incept({ alias: "a" }), Error, "retired identifier");
+  } finally {
+    await first.close();
+  }
+  // The retirement marker is store state; a fresh store has none, so the name derives the same identifier.
+  const second = await page().open({ salt });
+  try {
+    assertEquals((await second.identifiers.incept({ alias: "a" })).pre, retired);
   } finally {
     await second.close();
   }
@@ -411,6 +534,7 @@ Deno.test("the wallet's error classes report their own names, in a bundle that m
   for (
     const [Error_, name] of [
       [UnencryptedKeeperError, "UnencryptedKeeperError"],
+      [KeeperSaltMismatchError, "KeeperSaltMismatchError"],
       [WalletStoppedError, "WalletStoppedError"],
       [WalletRecoveryError, "WalletRecoveryError"],
     ] as const

@@ -11,6 +11,7 @@
  * which `openWebWallet()` with the same name loads exactly the durable prefix. `recoverWebWallet()`
  * (recover-web-wallet.ts) performs that sequence and returns the new handle.
  */
+import { Salter } from "cesr-ts";
 import { call, createScope, type Operation, run, spawn, suspend } from "effection";
 import type { PersistenceStatus, WebStoreOpener } from "keri-ts/db";
 import { indexedDbOpener, type IndexedDbOpenerOptions } from "keri-ts/db/indexeddb";
@@ -33,6 +34,7 @@ import {
   signalerChangeSink,
   systemClock,
   type UnsignableHab,
+  ValidationError,
 } from "keri-ts/runtime";
 import {
   barrierHttpClient,
@@ -68,6 +70,15 @@ export const WALLET_KRAM_CACHES: NonNullable<KramConfig["caches"]> = Object.free
 /** The keeper would hold plaintext seeds in IndexedDB, so the wallet refuses to open it. */
 export class UnencryptedKeeperError extends AppError {
   override readonly name: string = "UnencryptedKeeperError";
+}
+
+/**
+ * A salt was supplied at open, but the keeper already stores a different root salt. The Manager writes its root
+ * salt only into a store that has none, so the supplied salt would silently not be the one in use. The wallet is
+ * closed before this is thrown; neither salt appears in the message.
+ */
+export class KeeperSaltMismatchError extends AppError {
+  override readonly name: string = "KeeperSaltMismatchError";
 }
 
 /** Page events that ask for a best-effort flush. */
@@ -118,6 +129,15 @@ export type OpenWebWalletOptions = WebWalletSecret & {
    * stored; pass them again at every open.
    */
   heldSigners?: HeldSigners;
+  /**
+   * The keeper's root salt, as the qb64 of a 128-bit salt. A fresh store stores it as its root salt, so the
+   * identifiers derived from it (the signator and every salty habitat by name) come back from the same
+   * passcode and salt on a new store. A store that already has a root salt must hold this one:
+   * `openWebWallet` rejects with `KeeperSaltMismatchError` otherwise. Omitted, a fresh store makes a random
+   * salt and an existing store keeps its own. A malformed salt rejects with `ValidationError` before any
+   * store opens.
+   */
+  salt?: string;
   host?: WebWalletHost;
 };
 
@@ -204,6 +224,20 @@ function assertSecret({ bran, seed, aeid }: WebWalletSecret): void {
   }
 }
 
+/**
+ * Parse a caller's keeper salt into canonical qb64, before any store opens.
+ *
+ * `Salter` accepts only the 128-bit salt code, so text that is not a salt primitive, or a salt of another size,
+ * is refused here instead of being normalized by the keeper into a different 128-bit salt.
+ */
+function parseSalt(salt: string): string {
+  try {
+    return new Salter({ qb64: salt }).qb64;
+  } catch (cause) {
+    throw new ValidationError("The keeper salt is not the qb64 of a 128-bit salt", { cause });
+  }
+}
+
 /** Run `step`, recording a failure instead of throwing, so later steps still run. */
 function* settle(failures: unknown[], step: () => Operation<unknown>): Operation<void> {
   try {
@@ -228,6 +262,7 @@ function* compose(
   let opening: { error: unknown } | undefined;
   try {
     assertSecret(options);
+    const salt = options.salt === undefined ? undefined : parseSalt(options.salt);
     // The opener takes the single-writer lock in the first store's reopen, before any store loads,
     // and releases it when the last store closes.
     const opener = indexedDbOpener({
@@ -243,6 +278,7 @@ function* compose(
       seed: options.seed,
       aeid: options.aeid,
       heldSigners: options.heldSigners,
+      salt,
     });
     const storage = requestPersistentStorage(host.storage);
     try {
@@ -250,6 +286,10 @@ function* compose(
       // AEID and holds the matching seed, so check that state, which is what protects seeds at rest.
       if (!hby.mgr.aeid || !hby.mgr.seed) {
         throw new UnencryptedKeeperError("The keeper holds no AEID, so it would store plaintext seeds");
+      }
+      // The Manager keeps a stored root salt over a supplied one, so a salt that was not stored is not in use.
+      if (salt !== undefined && hby.mgr.salt !== salt) {
+        throw new KeeperSaltMismatchError("The keeper stores a root salt other than the one supplied");
       }
       const inventory = yield* openWalletBaser(hby.opener, hby.storeIdentity());
       try {
@@ -344,7 +384,8 @@ function* scoped(body: () => Operation<void>): Operation<void> {
  * Open (or create) a browser wallet. See {@link OpenWebWalletOptions}.
  *
  * Order: create one IndexedDB opener; open the Habery, whose first store takes the opener's
- * store lock before it loads anything; request persistent storage; refuse an unencrypted keeper; open the inventory on the same queue; create the
+ * store lock before it loads anything; request persistent storage; refuse an unencrypted keeper, or a supplied
+ * salt other than the stored one; open the inventory on the same queue; create the
  * runtime over the output-barrier HTTP client; run it with mailbox polling. A failure at any
  * step closes what was opened, releases the lock and rejects.
  *
@@ -355,6 +396,8 @@ function* scoped(body: () => Operation<void>): Operation<void> {
  * @throws StoreLockHeldError when another tab holds this wallet.
  * @throws StoreLockUnsupportedError when Web Locks are unavailable.
  * @throws UnencryptedKeeperError when the keeper would not be encrypted.
+ * @throws ValidationError when `salt` is not a 128-bit qb64 salt, before any store opens.
+ * @throws KeeperSaltMismatchError when `salt` differs from the root salt the keeper already stores.
  */
 export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebWallet> {
   let delivered!: (composed: Composed) => void;
