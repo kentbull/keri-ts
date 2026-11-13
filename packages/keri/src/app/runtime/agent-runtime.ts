@@ -60,6 +60,7 @@ import {
   type OperationStores,
   type RuntimeOperations,
 } from "./operation-owners.ts";
+import type { RetryPolicy } from "./retry-backoff.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { signalerChangeSink } from "./workflow-contract.ts";
@@ -194,6 +195,14 @@ export interface AgentRuntimeOptions {
    * the poller defaults; a short `maxPollDurationMs` makes polls turn over quickly for an embedder or test.
    */
   mailboxPolling?: Partial<MailboxPollingTimeoutPolicy>;
+  /** Delivery retry delays of the issuance, presentation and Unblind operations; the production policy when absent. */
+  operationRetry?: Readonly<RetryPolicy>;
+  /** Milliseconds between issuer DH query resends of an individual issuance; one second when absent. */
+  issuanceQueryResendMs?: number;
+  /** Receipt retry delays of the Counselor; only `baseMs` and `maxMs` apply. Production policy when absent. */
+  counselorReceiptRetry?: Readonly<RetryPolicy>;
+  /** Retry delays and budget of KEL posts to mailboxes; the production policy when absent. */
+  kelPublishRetry?: Readonly<RetryPolicy>;
   /** Borrowed legacy registry store; the runtime creates its processors and never closes this store. */
   reger?: Reger;
   /** An injected v2 manager and its backing store remain caller-owned. */
@@ -437,6 +446,7 @@ export function* createAgentRuntime(
     http,
     clock,
     changes: signaler ? signalerChangeSink(signaler) : undefined,
+    retry: options.kelPublishRetry,
   });
   const mailboxPoller = new MailboxPoller(
     hby,
@@ -481,6 +491,7 @@ export function* createAgentRuntime(
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
     { rotated: (cue) => kelPublisher.rotated.push(cue) },
+    options.counselorReceiptRetry,
   );
   const owned = acdc && ipex
     ? composeOwners({
@@ -496,6 +507,8 @@ export function* createAgentRuntime(
       registryRoot,
       mux,
       counselor,
+      retry: options.operationRetry,
+      queryResendMs: options.issuanceQueryResendMs,
       changes: signaler ? signalerChangeSink(signaler) : undefined,
     }, options.operationStores)
     : null;

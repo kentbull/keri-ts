@@ -49,9 +49,12 @@ export class MailboxPoller {
   static readonly DefaultTimeoutPolicy: Readonly<MailboxPollingTimeoutPolicy> = Object.freeze({
     requestOpenTimeoutMs: 5_000,
     maxPollDurationMs: 30_000,
+    readIdleTimeoutMs: 500,
+    refusalInitialMs: 1_000,
+    refusalMaxMs: 30_000,
   });
   /**
-   * Idle read window after the first complete event, in milliseconds.
+   * Default idle read window after the first complete event, in milliseconds.
    */
   static readonly ReadIdleTimeoutMs = 500;
   /**
@@ -60,7 +63,7 @@ export class MailboxPoller {
    * starts over after a served poll. Without a wait the worker would repeat the same signed request as fast as
    * the loop turns.
    */
-  static readonly RefusalBackoff: Readonly<{ initialMs: number; maxMs: number }> = Object.freeze({
+  static readonly RefusalBackoff: Readonly<RefusalBackoffPolicy> = Object.freeze({
     initialMs: 1_000,
     maxMs: 30_000,
   });
@@ -236,7 +239,10 @@ export class MailboxPoller {
     let state: PollState = { backoffMs: 0 };
     while (true) {
       const outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
-      const step = nextPoll(state, outcome);
+      const step = nextPoll(state, outcome, {
+        initialMs: this.timeoutPolicy.refusalInitialMs,
+        maxMs: this.timeoutPolicy.refusalMaxMs,
+      });
       state = step.state;
       switch (step.action.kind) {
         case "poll":
@@ -313,6 +319,18 @@ export interface MailboxPollingTimeoutPolicy {
   requestOpenTimeoutMs: number;
   /** Stop reading one mailbox SSE response after this long-poll window. */
   maxPollDurationMs: number;
+  /** Stop reading one response this long after its last complete event. */
+  readIdleTimeoutMs: number;
+  /** First wait after a poll that was not served; it doubles per consecutive failure. */
+  refusalInitialMs: number;
+  /** Longest wait after a poll that was not served. */
+  refusalMaxMs: number;
+}
+
+/** Waits after polls that were not served, in milliseconds. */
+export interface RefusalBackoffPolicy {
+  initialMs: number;
+  maxMs: number;
 }
 
 /** One remote mailbox batch, consumed before its provider cursor advances. */
@@ -389,7 +407,7 @@ export function classifyPollRefusal(status: number): "unauthorized" | "refused" 
 /** Double the backoff (or start it) and wait that long. */
 export function backOff(
   state: PollState,
-  backoff: { initialMs: number; maxMs: number } = MailboxPoller.RefusalBackoff,
+  backoff: Readonly<RefusalBackoffPolicy> = MailboxPoller.RefusalBackoff,
 ): { state: PollState; action: PollAction } {
   const backoffMs = Math.min(backoff.maxMs, state.backoffMs ? state.backoffMs * 2 : backoff.initialMs);
   return { state: { backoffMs }, action: { kind: "wait", ms: backoffMs } };
@@ -399,7 +417,7 @@ export function backOff(
 export function nextPoll(
   state: PollState,
   outcome: PollOutcome,
-  backoff: { initialMs: number; maxMs: number } = MailboxPoller.RefusalBackoff,
+  backoff: Readonly<RefusalBackoffPolicy> = MailboxPoller.RefusalBackoff,
 ): { state: PollState; action: PollAction } {
   switch (outcome) {
     case "served":
@@ -518,6 +536,9 @@ function normalizeMailboxPollingTimeoutPolicy(
       overrides?.maxPollDurationMs,
       defaults.maxPollDurationMs,
     ),
+    readIdleTimeoutMs: positiveTimeoutMs(overrides?.readIdleTimeoutMs, defaults.readIdleTimeoutMs),
+    refusalInitialMs: positiveTimeoutMs(overrides?.refusalInitialMs, defaults.refusalInitialMs),
+    refusalMaxMs: positiveTimeoutMs(overrides?.refusalMaxMs, defaults.refusalMaxMs),
   });
 }
 
@@ -525,7 +546,7 @@ function normalizeMailboxPollingTimeoutPolicy(
  * Translate poller windows into the concrete request/SSE settings.
  *
  * @param timeouts Normalized poller policy.
- * @returns Per-attempt windows with the fixed 500 ms read-idle interval.
+ * @returns Per-attempt windows with the policy's read-idle interval.
  */
 function mailboxFetchTimeoutPolicy(
   timeouts: Readonly<MailboxPollingTimeoutPolicy>,
@@ -533,7 +554,7 @@ function mailboxFetchTimeoutPolicy(
   return {
     requestOpenTimeoutMs: timeouts.requestOpenTimeoutMs,
     maxReadDurationMs: timeouts.maxPollDurationMs,
-    readIdleTimeoutMs: MailboxPoller.ReadIdleTimeoutMs,
+    readIdleTimeoutMs: timeouts.readIdleTimeoutMs,
   };
 }
 

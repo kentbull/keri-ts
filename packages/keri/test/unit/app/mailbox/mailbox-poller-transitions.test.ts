@@ -50,3 +50,8 @@ Deno.test("classifyPollRefusal: 403 is unauthorized, every other status is refus
     "refused",
   ]);
 });
+
+Deno.test("a supplied refusal policy sets the wait instead of the production default", () => {
+  assertEquals(backOff({ backoffMs: 0 }, { initialMs: 5, maxMs: 12 }), { state: { backoffMs: 5 }, action: { kind: "wait", ms: 5 } });
+  assertEquals(backOff({ backoffMs: 10 }, { initialMs: 5, maxMs: 12 }), { state: { backoffMs: 12 }, action: { kind: "wait", ms: 12 } });
+});

@@ -373,6 +373,7 @@ Deno.test("mailbox polling normalizes positive fractional timeouts without produ
           { timeouts: { requestOpenTimeoutMs: value, maxPollDurationMs: value } },
         );
         assertEquals(poller.timeoutPolicy, {
+          ...defaults,
           requestOpenTimeoutMs: normalized ?? defaults.requestOpenTimeoutMs,
           maxPollDurationMs: normalized ?? defaults.maxPollDurationMs,
         }, `timeout override ${value}`);
