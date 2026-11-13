@@ -26,7 +26,6 @@ import { call, ensure, run, sleep, spawn } from "effection";
 import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { prepareAcdcV2Credential } from "../../../../tufa/src/cli/commands/acdc-v2-authoring.ts";
 import {
-  awaitGroupIssuanceProof,
   prepareGroupDerivedIssuance,
   runGroupDerivedIssuance,
 } from "../../../../tufa/src/cli/commands/ipex-group-issuance.ts";
@@ -47,6 +46,7 @@ import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { prepareAcdcV2GroupIpex, publishInitialGroupIpex } from "../../../src/app/ipex/ipex-grouping.ts";
+import { waitForIssuance } from "../../../src/app/ipex/issuance.ts";
 import { acdcV2RegistryProposal } from "../../../src/app/multisig/grouping.ts";
 import { findGroupProposal } from "../../../src/app/multisig/proposals.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
@@ -264,7 +264,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         gvrsn: Vrsn_2_0,
       }));
     }
-    const preparedGrant = yield* prepareGroupDerivedIssuance(lead.runtime, lead.wallet, credential, {
+    const preparedGrant = yield* prepareGroupDerivedIssuance(lead.runtime, credential, {
       recipient: holder.hab.pre,
       message: "Exact group issuance",
     }, { hab: lead.hab, coordinator: coordinator.said!, custodian: lead.member.pre });
@@ -405,16 +405,10 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       "the loop and the command share one replicator: exactly one copy per member, none twice",
     );
     // The custodian delivered the same proof by mailbox; the peer's host received it.
-    assertEquals(
-      yield* awaitGroupIssuanceProof(
-        issuerPeer.runtime,
-        issuerPeer.wallet,
-        grant.said!,
-        { hab: issuerPeer.hab, coordinator: coordinator.said!, custodian: lead.member.pre },
-        90000,
-      ),
-      true,
-    );
+    const proofWait = yield* waitForIssuance(issuerPeer.runtime.operations!.issuance, grant.said!, {
+      timeoutMs: 90000,
+    });
+    assertEquals(proofWait.status, { state: "done", role: "issuer", phase: "issued" });
     const delivered = [...issuerPeer.hby.db.exns.getTopItemIter()].map(([, body]) => body)
       .filter(body => body.route === "/multisig/ipex-proof");
     assertEquals(delivered.map(body => body.pre), [lead.member.pre]);

@@ -851,7 +851,21 @@ export {
   type WaitForIpexArrivalOptions,
 } from "../app/mailbox/ipex-arrival.ts";
 
-// Runtime-owned single-signature DH issuance operations (begin, process, status, wait, abandon).
+// Runtime-owned group DH issuance: consent calls for the custodian and the members, proof export.
+export {
+  approveGroupIssuanceExchange,
+  beginGroupIssuance,
+  type BeginGroupIssuanceInput,
+  followGroupIssuanceProof,
+  type GroupIssuanceDeps,
+  groupIssuanceProof,
+  type GroupIssuanceProposal,
+  groupIssuanceProposals,
+  type GroupIssuanceSelection,
+  prepareGroupIssuance,
+} from "../app/ipex/group-issuance.ts";
+
+// Runtime-owned DH issuance operations, single-signature and group (begin, process, status, wait, abandon).
 export {
   abandonIssuance,
   type AdmitDeps,
