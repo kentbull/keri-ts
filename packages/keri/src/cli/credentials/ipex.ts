@@ -2,7 +2,7 @@ import { concatBytes, Counter, parse, SerderKERI, type Versionage } from "cesr-t
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { Organizer } from "../../app/identity/organizing.ts";
-import { approveGroupIpex, groupIpexStatus, waitForGroupIpex } from "../../app/ipex/group-ipex.ts";
+import { approveGroupIpex, waitForGroupIpex } from "../../app/ipex/group-ipex.ts";
 import {
   type IpexSendDeps,
   requireIpexPrior,
@@ -573,8 +573,7 @@ export function* joinIpexProposal(
     const ops = runtime.operations?.groupIpex;
     if (!ops) throw new ValidationError("ACDC v2 group IPEX requires the runtime's operation owners.");
     const said = embedded.said!;
-    const status = groupIpexStatus(ops, said);
-    if (status.state === "active" && status.phase === "awaitingConsent") yield* approveGroupIpex(ops, { said });
+    if (!ops.live.has(said)) yield* approveGroupIpex(ops, { said });
     yield* withRuntimeWorkers(
       runtime,
       { hab: localGroupMember(hby, group), pollMailbox: true },

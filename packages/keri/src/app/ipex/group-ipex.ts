@@ -357,16 +357,18 @@ export function groupIpexProposals(ops: Pick<GroupIpexOperations, "deps">, hab?:
  * member's contribution and accepts it locally, and records the operation. Publishing it, collecting the other
  * members' contributions and, for the lead, delivering the completed message are `processOnce`.
  *
- * @throws ValidationError when no v2 proposal is stored for `said`, the message is already accepted or begun, or this
+ * An accepted message may be approved again: the recorded contribution is reused, and the elected lead delivers the
+ * completed message, which a lead that learned of the acceptance from another member's wrapper has not yet done.
+ *
+ * @throws ValidationError when no v2 proposal is stored for `said`, an operation is already live for it, or this
  * member still lacks the evidence to approve it.
  */
 export function* approveGroupIpex(
   ops: GroupIpexOperations,
   { said, deliver = true }: { said: string; deliver?: boolean },
 ): Operation<GroupIpexBegun> {
-  const { hby, protocol, exc } = ops.deps;
+  const { hby, protocol } = ops.deps;
   if (ops.live.has(said)) throw new ValidationError("A group IPEX message was already begun for this SAID");
-  if (exc.complete(said)) throw new ValidationError("The group IPEX message is already accepted");
   const wrapper = findStoredMultisigIpex(hby.db, said);
   if (!wrapper || wrapper.pvrsn.major !== 2) throw new ValidationError("No stored group IPEX proposal for this SAID");
   const { groupHab, genus, approved } = yield* approveMultisigIpexLocally(hby, protocol, null, wrapper);
