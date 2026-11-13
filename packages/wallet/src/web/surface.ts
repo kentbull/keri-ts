@@ -17,7 +17,9 @@ import type { WalletBaser } from "../storing.ts";
 import type { Wallet } from "../wallet.ts";
 
 /** Thrown by a call made on a wallet that was closed, or whose runtime stopped. */
-export class WalletStoppedError extends AppError {}
+export class WalletStoppedError extends AppError {
+  override readonly name: string = "WalletStoppedError";
+}
 
 /** Default wall-clock budgets, in milliseconds, of the calls that wait. */
 export const WALLET_TIMEOUTS = Object.freeze({

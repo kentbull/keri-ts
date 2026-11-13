@@ -360,3 +360,20 @@ Deno.test("a retained registry root copy gives every tracked recorder another tr
   sink.push({ kind: "root", id: "registry" });
   assertEquals(tracked.size, 0, "the root copy lets both record");
 });
+
+Deno.test("the wallet's error classes report their own names, in a bundle that mangles class names", () => {
+  for (
+    const [Error_, name] of [[UnencryptedKeeperError, "UnencryptedKeeperError"], [
+      WalletStoppedError,
+      "WalletStoppedError",
+    ]] as const
+  ) {
+    const original = Object.getOwnPropertyDescriptor(Error_, "name")!;
+    Object.defineProperty(Error_, "name", { value: "a", configurable: true });
+    try {
+      assertEquals(new Error_("x").name, name);
+    } finally {
+      Object.defineProperty(Error_, "name", original);
+    }
+  }
+});

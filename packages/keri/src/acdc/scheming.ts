@@ -13,12 +13,15 @@ export type SchemaValidation = { kind: "valid" } | { kind: "missing"; said: stri
 };
 /** Local issuance caller must supply this dependency before a disclosure can be derived. */
 export class MissingSchemaError extends ValidationError {
+  override readonly name: string = "MissingSchemaError";
   constructor(readonly schema: string) {
     super(`Missing ACDC schema: ${schema}`);
   }
 }
 /** Invalid schema or credential content cannot be staged as an issuance commitment. */
-export class FailedSchemaValidationError extends ValidationError {}
+export class FailedSchemaValidationError extends ValidationError {
+  override readonly name: string = "FailedSchemaValidationError";
+}
 /** Only explicit input/profile refusals are caught; arbitrary failures are not recategorized. */
 class InvalidSchema extends Error {}
 type Schema = Record<string, unknown>;
