@@ -217,7 +217,10 @@ export interface AgentRuntimeOptions {
    * Agent side of relay mode: `/fwd` intake delivers the child of a sender that authorized this host as its
    * `mailbox` or `agent`, through this runtime's own ingress to a local habitat and through its Poster to anyone
    * else. Requires a mailbox store, which hosts `/fwd` intake. The `/oobis` handler then resolves an OOBI only
-   * for such a sender. Omitted or false keeps store-only intake and accepts `/oobis` from any sender.
+   * for such a sender. A `logs` or `ksn` query from such a sender about a subject that is not local also makes
+   * this runtime query the subject's own endpoints for it (`relayRefreshCue`), and the cue router queues no
+   * query identical to one already queued. Omitted or false keeps store-only intake, accepts `/oobis` from any
+   * sender and never refreshes.
    */
   relaying?: boolean;
   /**
@@ -440,6 +443,7 @@ export function* createAgentRuntime(
     cues,
     replies,
     ipex ?? undefined,
+    options.relaying === true,
   );
   const reactor = new Reactor(protocol);
   loadChallengeHandlers(hby.db, exc);

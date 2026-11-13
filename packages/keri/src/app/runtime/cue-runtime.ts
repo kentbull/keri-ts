@@ -36,7 +36,8 @@ export function promptForEndRole(runtime: AgentRuntime, cue: EndRoleSavedCue): v
 /**
  * Route one initial cue batch to its concrete owners before removing source records.
  *
- * Transfer query instructions to the sender, stream cues to mailbox correlation,
+ * Transfer query instructions to the sender (a relaying runtime skips one identical to a request already queued),
+ * stream cues to mailbox correlation,
  * accepted mailbox end roles to the KEL publisher and poller, and produced responder
  * messages to Poster. No network delivery runs inline.
  * A responder cue whose signing habitat cannot sign yet moves to the tail and is
@@ -70,7 +71,9 @@ export function* processCuesOnce(
       continue;
     }
     if (cue.kin === "query") {
-      runtime.querying.enqueueCue(cue, interpreter);
+      // A relaying host serves many edges asking about the same subjects; one queued request per query suffices.
+      if (runtime.relaying) runtime.querying.enqueueCueOnce(cue, interpreter);
+      else runtime.querying.enqueueCue(cue, interpreter);
     } else if (cue.kin === "stream") {
       runtime.mailboxDirector.retainQueryCue(cue);
     } else if (interpreter) {
