@@ -226,6 +226,7 @@ export {
   Hab,
   Habery,
   type HaberyArgs,
+  type HeldSigners,
   type MakeGroupHabArgs,
   type MakeHabArgs,
   openHabery,
