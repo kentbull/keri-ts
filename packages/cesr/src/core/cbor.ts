@@ -1,5 +1,4 @@
-import { clearSource, Decoder } from "cbor-x/decode";
-import { Encoder } from "cbor-x/encode";
+import { clearSource, Decoder, Encoder } from "cbor-x/index-no-eval";
 import { codecSyntaxFailure } from "./codec-errors.ts";
 
 /**
@@ -72,10 +71,11 @@ function assertNoMapValues(
  * - `variableMapSize: true` forces preferred-size map headers, avoiding the
  *   default `map16` preallocation strategy that broke exact byte parity.
  *
- * We import `Encoder` from `cbor-x/encode` rather than the package root because
- * the root Node entrypoint probes `process.env` during module evaluation. That
- * widened Deno test permissions for no KERI value, so the shared codec avoids
- * that entrypoint on purpose.
+ * We import from `cbor-x/index-no-eval` rather than the package root for two reasons. The root Node
+ * entrypoint probes `process.env` during module evaluation, which widened Deno test permissions for no KERI
+ * value. And the default build probes, when it loads, whether it may build functions from strings, which a
+ * strict Content-Security-Policy (no `'unsafe-eval'`) reports as a violation even though the probe is caught;
+ * the no-eval build never makes the attempt, and the browser bundle gate rejects any bundled code that does.
  */
 const keriCborEncoder = new Encoder({
   useRecords: false,
@@ -91,8 +91,7 @@ const keriCborEncoder = new Encoder({
  * and keeps protocol/storage callers working with the same value shapes they
  * would see from JSON or MGPK decoding.
  *
- * Like the encoder, this uses the `cbor-x/decode` subpath to avoid the package
- * root's Node-oriented environment probe.
+ * Like the encoder, this comes from `cbor-x/index-no-eval`.
  */
 const keriCborDecoder = new Decoder({
   useRecords: false,

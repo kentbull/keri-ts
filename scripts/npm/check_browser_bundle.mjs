@@ -42,10 +42,17 @@ export const surface = {
  * through it) into a call that needs `_dnt.polyfills.js`, which the browser entries never load, so the first
  * construction of an error class threw a TypeError in a browser. Every error names itself with a literal instead.
  */
-const FORBIDDEN_TEXT = [[/import-meta-ponyfill/, "dnt import.meta ponyfill call (needs the polyfills a browser entry does not load)"]];
+const FORBIDDEN_TEXT = [
+  [/import-meta-ponyfill/, "dnt import.meta ponyfill call (needs the polyfills a browser entry does not load)"],
+  // A page under `script-src 'self'` without 'unsafe-eval' refuses both, and Ajv's compiled validators needed the first.
+  [/\bnew\s+Function\s*\(/, "new Function(...) code generation (refused under a strict Content-Security-Policy)"],
+  [/(?<![.\w$])eval\s*\(/, "direct eval(...) call (refused under a strict Content-Security-Policy)"],
+];
 
 /** Seeded regressions: Node-only subpaths a browser consumer must never reach. */
 const REGRESSIONS = [
+  { name: "new Function code generation", source: `export const compiled = new Function("a", "return a");` },
+  { name: "a direct eval call", source: `export const evaluated = (code) => eval(code);` },
   {
     name: "a dnt import.meta ponyfill call",
     source: `export const name = globalThis[Symbol.for("import-meta-ponyfill-esmodule")](import.meta).name;`,
