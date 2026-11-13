@@ -89,25 +89,28 @@ export function* delivered(clock: RuntimeClock, ms: number, send: Work<string[]>
   }
 }
 
-/** Shared by the four namespaces: the parts, and the one place an app's promise meets the runtime's scope. */
-export abstract class Surface {
-  constructor(protected readonly parts: WalletApiParts) {}
+/**
+ * What every namespace of the wallet-level API holds instead of inheriting: the wallet's collaborators, and the
+ * one place an app's promise meets the runtime's scope. Built once by `createWalletApi`.
+ */
+export class WalletScope {
+  constructor(readonly parts: WalletApiParts) {}
 
   /** Run one workflow to its result in its own Effection root. */
-  protected go<T>(op: Work<T>): Promise<T> {
+  go<T>(op: Work<T>): Promise<T> {
     this.parts.assertRunning();
     return run(op);
   }
 
-  /** The local single-signature identifier `pre`, or a caller-contract failure. */
-  protected hab(pre: string): Hab {
+  /** The local identifier `pre`, a single-signature one or a group, or a caller-contract failure. */
+  hab(pre: string): Hab {
     const hab = this.parts.hby.habs.get(pre);
     if (!hab) throw new ValidationError(`${pre} is not a local identifier of this wallet.`);
     return hab;
   }
 
-  /** The local group identifier `pre`, or a caller-contract failure. */
-  protected group(pre: string): Hab {
+  /** The local group identifier `pre` (prefix or alias), or a caller-contract failure. */
+  group(pre: string): Hab {
     const hab = this.parts.hby.habs.get(pre) ?? this.parts.hby.habByName(pre);
     if (!hab || !isLocalGroupHab(this.parts.hby, hab)) {
       throw new ValidationError(`${pre} is not a local group identifier of this wallet.`);
@@ -115,7 +118,8 @@ export abstract class Surface {
     return hab;
   }
 
-  protected individual(pre: string): Hab {
+  /** The local single-signature identifier `pre`: a group is refused. */
+  individual(pre: string): Hab {
     const hab = this.hab(pre);
     if (isLocalGroupHab(this.parts.hby, hab)) {
       throw new ValidationError("Group identifiers are not covered by this call.");
