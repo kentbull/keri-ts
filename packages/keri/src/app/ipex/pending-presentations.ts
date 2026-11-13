@@ -62,7 +62,10 @@ export function pendingPresentations(ops: UnblindingOperations, { hab }: { hab?:
   return found;
 }
 
-/** An accepted Apply addressed to a local identifier that nothing has answered. */
+/** Whether an Apply still waits for an answer or already has one. */
+export type ApplyState = "pending" | "answered";
+
+/** An accepted Apply addressed to a local identifier: unanswered (`pending`), or answered by the exchange `answer`. */
 export interface PendingApply {
   /** SAID of the Apply exchange. */
   apply: string;
@@ -76,16 +79,27 @@ export interface PendingApply {
   plan: DisclosurePlan;
   /** The Apply's exchange deadline (ISO 8601), when it has one. */
   deadline: string | null;
+  state: ApplyState;
+  /** SAID of the exchange that answered it (an Offer or a Spurn); null while `pending`. */
+  answer: string | null;
+}
+
+/** Choices of {@link pendingApplies}. */
+export interface ApplyListOptions {
+  /** Only the Applies addressed to this identifier. */
+  hab?: Hab;
+  /** Also list the Applies an exchange has answered, whatever their deadline; each says so in its `state`. */
+  includeAnswered?: boolean;
 }
 
 /**
  * The accepted v2 Applies addressed to a local identifier (to `hab` when given) that no exchange has answered
- * (no `erpy` pointer) and whose deadline has not passed. Mutates nothing. A group member lists the Applies of
- * its group once the group has accepted them.
+ * (no `erpy` pointer) and whose deadline has not passed; with `includeAnswered`, the answered ones too. Mutates
+ * nothing. A group member lists the Applies of its group once the group has accepted them.
  */
 export function pendingApplies(
   deps: { readonly hby: Habery; readonly exc: Exchanger; readonly clock: RuntimeClock },
-  { hab }: { hab?: Hab } = {},
+  { hab, includeAnswered = false }: ApplyListOptions = {},
 ): PendingApply[] {
   const { hby, exc, clock } = deps, found: PendingApply[] = [];
   const now = BigInt(clock.now()) * 1000n;
@@ -93,9 +107,11 @@ export function pendingApplies(
     const holder = serder.sad?.ri;
     if (serder.route !== "/ipex/apply" || serder.pvrsn.major < 2 || typeof holder !== "string") continue;
     if (!hby.habs.has(holder) || (hab && hab.pre !== holder)) continue;
-    if (!exc.complete(apply) || hby.db.erpy.get([apply])) continue;
+    if (!exc.complete(apply)) continue;
+    const answer = hby.db.erpy.get([apply])?.qb64 ?? null;
+    if (answer && !includeAnswered) continue;
     const deadline = exc.exchangeDeadline(serder), expiry = deadline ? timestampMicros(deadline) : null;
-    if (expiry !== null && now >= expiry) continue;
+    if (!answer && expiry !== null && now >= expiry) continue;
     const q = serder.sad?.q as { dp?: unknown } | undefined;
     found.push({
       apply,
@@ -104,7 +120,40 @@ export function pendingApplies(
       message: String((serder.sad?.a as { m?: unknown } | undefined)?.m ?? ""),
       plan: singleDagDisclosurePlan(q?.dp) ?? [],
       deadline,
+      state: answer ? "answered" : "pending",
+      answer,
     });
   }
   return found;
+}
+
+/** The exchange that answered another: an Agree for an Offer, an Offer for an Apply, an Admit for a Grant. */
+export interface ExchangeAnswer {
+  /** SAID of the answering exchange. */
+  answer: string;
+  /** Its route, for example `/ipex/agree`. */
+  route: string;
+  /** The AID that sent it. */
+  sender: string;
+  /** Whether this runtime has accepted it (it may be stored and still awaiting its proofs). */
+  accepted: boolean;
+}
+
+/** What answered the exchange `said`, from the answer pointer the stores keep; null when nothing has. Mutates nothing. */
+export function exchangeAnswer(
+  deps: { readonly hby: Habery; readonly exc: Exchanger },
+  said: string,
+): ExchangeAnswer | null {
+  const answer = deps.hby.db.erpy.get([said])?.qb64, serder = answer ? deps.hby.db.exns.get([answer]) : null;
+  if (!answer || !serder?.route) return null;
+  return { answer, route: serder.route, sender: serder.pre!, accepted: deps.exc.complete(answer) };
+}
+
+/** The Agree that answers the Offer `offer`; null while nothing, or something other than an Agree (a Spurn), answered it. */
+export function agreeFor(
+  deps: { readonly hby: Habery; readonly exc: Exchanger },
+  offer: string,
+): ExchangeAnswer | null {
+  const answer = exchangeAnswer(deps, offer);
+  return answer?.route === "/ipex/agree" ? answer : null;
 }

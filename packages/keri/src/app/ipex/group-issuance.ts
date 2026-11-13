@@ -93,7 +93,6 @@ import {
   type IssuanceRole,
   type LiveIssuance,
   partyComplete,
-  partyKey,
 } from "./issuance.ts";
 
 /** Milliseconds between scans of the stored wrappers for the final proof. */
@@ -435,7 +434,7 @@ export function* approveGroupIssuance(
   options: GroupApprovalOptions = {},
 ): Operation<IssuanceBegun> {
   const { deps, discloser } = ops;
-  if (ops.live.has(partyKey(grantSaid, "issuer")) || partyComplete(deps, grantSaid, "issuer")) {
+  if (ops.liveOf(grantSaid, "issuer") || partyComplete(deps, grantSaid, "issuer")) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const { child } = yield* proposalOf(ops, grantSaid, options.proposal);
@@ -543,7 +542,7 @@ export function approveGroupIssuanceExchange(
   coordinator?: string,
 ): IssuanceBegun {
   const { deps } = ops;
-  if (ops.live.has(partyKey(said, "holder")) || partyComplete(deps, said, "holder")) {
+  if (ops.liveOf(said, "holder") || partyComplete(deps, said, "holder")) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const { grant, nodes } = pendingGrant(deps, said);
@@ -565,7 +564,7 @@ export function* followGroupIssuanceProof(
   options: GroupFollowOptions = {},
 ): Operation<IssuanceBegun> {
   const { deps } = ops;
-  if (ops.live.has(partyKey(said, "issuer")) || partyComplete(deps, said, "issuer")) {
+  if (ops.liveOf(said, "issuer") || partyComplete(deps, said, "issuer")) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const { grant, nodes } = pendingGrant(deps, said);
@@ -735,7 +734,7 @@ export function registerGroupRoutes(ops: IssuanceOperations): void {
     acceptsNests: true,
     verify: (args) => structural(deps.hby, args.serder, args.nests ?? []),
     handle: (args) => {
-      for (const op of ops.live.values()) {
+      for (const op of ops.liveOps()) {
         if (op.group?.accepts(args.serder, args.nests!)) {
           op.group.pending.set(args.serder.said!, { wrapper: args.serder, child: args.nests![0] });
         }

@@ -31,6 +31,9 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    // A receipt is sent only where the recipient declared an end role to send it to.
+    hby.db.ends.pin([recipient.pre!, EndpointRoles.controller, recipient.pre!], { allowed: true });
+    hby.db.locs.pin([recipient.pre!, "https"], { url: "https://recipient.test/" });
     const cues: AgentCue[] = [
       { kin: "receipt", serder: recipient.kever!.serder },
       { kin: "witness", serder: recipient.kever!.serder },
@@ -433,6 +436,32 @@ Deno.test("app/runtime-responder - a receipt cue for the runtime's own group is 
       const cues = new Deck<AgentCue>([{ kin: "receipt", serder: created.serder }]);
       assertEquals(runtime.respondant.enqueueCue(member, cues), true);
       assertEquals([cues.empty, runtime.postman.evts.length], [true, 0]);
+    } finally {
+      yield* runtime.close();
+      yield* other.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("app/runtime-responder - a receipt with no end role to send to is consumed or skipped, never attempted", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const other = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    try {
+      const sender = hby.makeHab("sender"), stranger = other.makeHab("stranger");
+      for (const wire of other.db.clonePreIter(stranger.pre, 0)) {
+        yield* dispatchEnvelope(envelopeFromFrame(parseBytes(wire)[0]), hby.rvy, hby.kevery);
+      }
+      // The stranger is known but has declared no end role, so there is nowhere to send its receipt.
+      const cues = new Deck<AgentCue>([{ kin: "receipt", serder: stranger.kever!.serder }]);
+      assertEquals(runtime.respondant.enqueueCue(sender, cues, sender), true);
+      assertEquals([cues.empty, runtime.postman.evts.length], [true, 0]);
+      runtime.respondant.enqueueMsgs(sender, { kin: "receipt", serder: stranger.kever!.serder }, [
+        Uint8Array.of(1),
+      ]);
+      assertEquals(runtime.postman.evts.length, 0);
     } finally {
       yield* runtime.close();
       yield* other.close(true);

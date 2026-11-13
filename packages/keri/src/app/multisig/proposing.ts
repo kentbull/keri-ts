@@ -175,6 +175,14 @@ export function* proposeGroupInteraction(
   return { ...sent, route: MULTISIG_IXN_ROUTE, group: created.hab.pre, event, smids, rmids: [] };
 }
 
+/** What settling a proposed rotation reads of the proposal: its route, the counseled event and the named members. */
+export interface ProposedRotation {
+  readonly route: GroupEventResult["route"];
+  readonly event: GroupEventRef;
+  readonly smids: readonly string[];
+  readonly rmids: readonly string[];
+}
+
 /**
  * Commit the members a proposed rotation named, once the rotation is accepted and
  * is the group's latest establishment event. Idempotent; false until then, so a
@@ -182,7 +190,7 @@ export function* proposeGroupInteraction(
  *
  * @throws ValidationError when the event is not an accepted event body held locally.
  */
-export function settleProposedRotation(deps: Pick<GroupProposeDeps, "hby">, result: GroupEventResult): boolean {
+export function settleProposedRotation(deps: Pick<GroupProposeDeps, "hby">, result: ProposedRotation): boolean {
   if (result.route !== MULTISIG_ROT_ROUTE) return false;
   const serder = deps.hby.db.getEvtSerder(result.event.pre, result.event.said);
   if (!serder) throw new ValidationError(`No rotation ${result.event.said} is held for ${result.event.pre}.`);

@@ -20,6 +20,7 @@ import {
   addMailbox,
   admitIssuance,
   type AgentRuntime,
+  agreeFor,
   AppError,
   approveIssuanceExchange,
   beginOobi,
@@ -30,6 +31,7 @@ import {
   type EventCompletionDeps,
   type EventStatus,
   eventStatus,
+  type ExchangeAnswer,
   type Hab,
   type Habery,
   isLocalGroupHab,
@@ -603,6 +605,12 @@ export type PresentWaitOptions = TimeoutOptions;
 /** The body options of an `apply` request. */
 export type ApplyOptions = Extract<PresentInput, { verb: "apply" }>["options"];
 
+/** Choices of {@link Credentials.applies}. */
+export interface AppliesOptions {
+  /** Also list the Applies an exchange has answered. */
+  includeAnswered?: boolean;
+}
+
 /** Inputs of {@link Credentials.unblind}. */
 export interface UnblindOptions extends TimeoutOptions {
   /** The credential-state vocabulary to freeze; default {@link DEFAULT_UNBLIND_STATES}. */
@@ -818,11 +826,25 @@ export class Credentials {
 
   /**
    * The Applies addressed to this wallet (to `pre` when given) that nothing has answered: accepted, inside their
-   * deadline, and without an `erpy` answer pointer. A pure read; answer one with `present` and its `priorSaid`.
+   * deadline, and without an `erpy` answer pointer. With `includeAnswered` the answered ones are listed too; each
+   * entry's `state` says which, and `answer` names the exchange that answered it. A pure read; answer a pending one
+   * with `present` and its `priorSaid`.
    */
-  applies(pre?: string): PendingApply[] {
+  applies(pre?: string, options: AppliesOptions = {}): PendingApply[] {
     const { hby, runtime } = this.#scope.parts;
-    return pendingApplies({ hby, exc: runtime.exc, clock: runtime.clock }, pre ? { hab: this.#scope.hab(pre) } : {});
+    return pendingApplies({ hby, exc: runtime.exc, clock: runtime.clock }, {
+      ...(pre ? { hab: this.#scope.hab(pre) } : {}),
+      includeAnswered: options.includeAnswered,
+    });
+  }
+
+  /**
+   * The Agree that answers the Offer `offer` this wallet sent, or null while nothing, or something other than an
+   * Agree (a Spurn), has answered it. A pure read of the stores.
+   */
+  agreeFor(offer: string): ExchangeAnswer | null {
+    const { hby, runtime } = this.#scope.parts;
+    return agreeFor({ hby, exc: runtime.exc }, offer);
   }
 
   /**

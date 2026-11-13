@@ -33,7 +33,7 @@ import {
   proposeIssuance,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
-import { pendingApplies } from "../../../../src/app/ipex/pending-presentations.ts";
+import { exchangeAnswer, pendingApplies } from "../../../../src/app/ipex/pending-presentations.ts";
 import {
   preparePresentation,
   type PresentationDeps,
@@ -336,6 +336,20 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       assertEquals(side.hby.db.erpy.get([answered])?.qb64, withProof.said, `${side.name} pins the Apply's answer`);
     }
     assertEquals(waitingApplies(h1), [], "an answered Apply is no longer pending");
+    const listing = pendingApplies(
+      { hby: h1.hby, exc: h1.runtime.exc, clock: h1.runtime.clock },
+      { hab: h1.hab, includeAnswered: true },
+    );
+    assertEquals(listing.map((item) => [item.apply, item.state, item.answer]), [[
+      answered,
+      "answered",
+      withProof.said,
+    ]]);
+    assertEquals(
+      exchangeAnswer({ hby: h1.hby, exc: h1.runtime.exc }, answered)?.route,
+      "/ipex/grant",
+      "the Apply's answer is read back from the stores",
+    );
 
     // --- the group asks and spurns through the first-class call ---
     const asked = yield* proposeGroupNegotiation(presenting(h1), ops1, {

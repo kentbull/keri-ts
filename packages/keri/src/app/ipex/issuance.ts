@@ -322,9 +322,9 @@ interface EndedIssuance {
  */
 export class IssuanceOperations {
   /** Operations live in this process, by {@link partyKey}. Read them through {@link liveOf}. */
-  readonly live = new Map<string, LiveIssuance>();
+  private readonly live = new Map<string, LiveIssuance>();
   /** Operations that ended in this process with their reasons, by {@link partyKey}; not durable, see the module doc. */
-  readonly ended = new Map<string, EndedIssuance>();
+  private readonly ended = new Map<string, EndedIssuance>();
   readonly discloser: IpexDiscloser;
   /** The DH child handlers this owner registered on the multiplexor, once a group operation began. */
   groupRoutes: GroupRouteBinding[] | null = null;
@@ -351,6 +351,22 @@ export class IssuanceOperations {
     return role
       ? this.ended.get(partyKey(grant, role))
       : this.ended.get(partyKey(grant, "issuer")) ?? this.ended.get(partyKey(grant, "holder"));
+  }
+
+  /** Every live operation, for the module functions that look across parties. */
+  liveOps(): LiveIssuance[] {
+    return [...this.live.values()];
+  }
+
+  /** Record a consented operation as live, replacing what an earlier one of the same party left behind. */
+  begin(op: LiveIssuance): void {
+    this.ended.delete(partyKey(op.grant, op.role));
+    this.live.set(partyKey(op.grant, op.role), op);
+  }
+
+  /** Remember how a party's operation on `grant` ended without a live operation to end. */
+  remember(grant: string, ended: EndedIssuance): void {
+    this.ended.set(partyKey(grant, ended.role), ended);
   }
 
   /** Whether a pass has work: a live operation, or the one-time scan for resumable Grants has not run. */
@@ -782,7 +798,7 @@ function requireIndividual(deps: IssuanceDeps, hab: Hab): void {
 function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: IssuanceRole, group = false) {
   const { deps } = ops;
   if (!group) requireIndividual(deps, hab);
-  if (ops.live.has(partyKey(grant, role)) || partyComplete(deps, grant, role)) {
+  if (ops.liveOf(grant, role) || partyComplete(deps, grant, role)) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const retained = deps.exc.retainedInput(grant, { pending: true });
@@ -842,8 +858,7 @@ export function* beginIssuance(
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "issuer");
   const { raw, grantWire } = yield* grantWires(retained);
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant), query = dh.start(grant);
-  ops.ended.delete(partyKey(grant, "issuer"));
-  ops.live.set(partyKey(grant, "issuer"), {
+  ops.begin({
     grant,
     xid,
     role: "issuer",
@@ -1072,8 +1087,7 @@ export function approveIssuanceExchange(ops: IssuanceOperations, grant: string):
   if (!hab) throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "holder");
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant);
-  ops.ended.delete(partyKey(grant, "holder"));
-  ops.live.set(partyKey(grant, "holder"), {
+  ops.begin({
     grant,
     xid,
     role: "holder",
@@ -1185,7 +1199,7 @@ export function abandonIssuance(
   const live = ops.liveOf(grant, status.role);
   if (live) ops.end(live, "abandoned", reason);
   else {
-    ops.ended.set(partyKey(grant, status.role), { role: status.role, state: "abandoned", reason });
+    ops.remember(grant, { role: status.role, state: "abandoned", reason });
     ops.deps.changes?.push({ kind: "issuance", id: grant });
   }
 }

@@ -50,19 +50,29 @@ export class Respondant {
     const cue = cues.peekHead();
     if (!cue) return false;
     const dest = recipientForCue(cue), topic = topicForCue(cue);
-    const subject = cue.kin === "receipt" && dest ? this.hby.habs.get(dest) : undefined;
-    if (subject && isLocalGroupHab(this.hby, subject)) {
-      // A receipt goes to the controller of the event; when that is a group this runtime is a member of, it is
-      // the group's own event and its members are the Counselor's business, not a recipient with end roles.
+    const src = senderHabForCue(this.hby, cue, hint);
+    if (this.nothingToSend(cue, dest, topic, src)) {
       cues.pull();
       return true;
     }
-    const src = senderHabForCue(this.hby, cue, hint);
     if (!dest || !topic || !src) return false;
     const msgs = [...hab.processCuesIter([cue])];
     this.postman.sendAll(msgs.map((msg) => ({ src: src.pre, dest, topic, msg, replies: true })));
     cues.pull();
     return true;
+  }
+
+  /**
+   * Whether a receipt cue has nothing to send to. A receipt goes to the controller of the event it receipts, so it
+   * has nowhere to go when that controller is a group this runtime is a member of (the group's own event: its
+   * members are the Counselor's business) or when the controller has no end role to deliver to. Deciding that here
+   * keeps an attempt that could only fail from being made, and logged, for every event of a group.
+   */
+  private nothingToSend(cue: AgentCue, dest: string | null, topic: string | null, src: Hab | null): boolean {
+    if ((cue.kin !== "receipt" && cue.kin !== "witness") || !dest || !topic) return false;
+    const subject = this.hby.habs.get(dest);
+    if (subject && isLocalGroupHab(this.hby, subject)) return true;
+    return !!src && !this.postman.canReach(src.pre!, dest, topic);
   }
 
   /**
@@ -75,6 +85,7 @@ export class Respondant {
   enqueueMsgs(hab: Hab, cue: AgentCue, msgs: readonly Uint8Array[]): void {
     const dest = recipientForCue(cue), topic = topicForCue(cue);
     const src = senderHabForCue(this.hby, cue, hab);
+    if (this.nothingToSend(cue, dest, topic, src)) return;
     if (!dest || !topic || !src) return;
     this.postman.sendAll(msgs.map((msg) => ({ src: src.pre, dest, topic, msg, replies: true })));
   }
