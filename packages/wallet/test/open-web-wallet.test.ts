@@ -21,6 +21,7 @@ import {
   PersistenceLatchedError,
   PersistenceReadError,
   processCuesOnce,
+  type Relay,
   type RuntimeChange,
   Schemer,
   ValidationError,
@@ -108,7 +109,7 @@ function page() {
     lifecycle,
   };
   const options = (extra: Partial<OpenWebWalletOptions> = {}) =>
-    ({ name: "alice", bran: "0123456789abcdefghijk", host, ...extra }) as OpenWebWalletOptions;
+    ({ name: "alice", bran: "0123456789abcdefghijk", delivery: "direct", host, ...extra }) as OpenWebWalletOptions;
   const open = (extra: Partial<OpenWebWalletOptions> = {}) => openWebWallet(options(extra));
   return {
     open,
@@ -401,13 +402,9 @@ Deno.test("an OOBI the network cannot serve is not reported resolved, and mailbo
   }
 });
 
-Deno.test("health reports owner faults, and calls on a closed wallet are refused", async () => {
+Deno.test("health reads closed after close, and calls on a closed wallet are refused", async () => {
   const w = await page().open();
   assertEquals(w.health(), { status: "ok" });
-  const health = w.runtime.operations!.health;
-  health.faults = 1;
-  health.last = { owner: "issuance", error: "boom", at: "2026-01-01T00:00:00.000Z" };
-  assertEquals(w.health(), { status: "faulted", faults: 1, last: health.last });
   await w.close();
   assertEquals(w.health(), { status: "closed" });
   await assertRejects(() => w.identifiers.incept({ alias: "late" }), WalletStoppedError);
@@ -947,5 +944,161 @@ Deno.test("recoverWebWallet skips rejoin when the group record is present", asyn
   } finally {
     await recovered.wallet.close();
     await run(() => agent.close(true));
+  }
+});
+
+const RELAY_ORIGIN = "http://relay-agent.test:5642";
+const RELAY_URL = `${RELAY_ORIGIN}/`;
+
+/**
+ * A scripted relay agent at {@link RELAY_ORIGIN}: its OOBI serves its KEL, its controller end role and its location,
+ * and it takes every other request. `serving.oobi` false answers the OOBI 404, as an agent not up yet would.
+ * `requests` records every URL the wallet's injected client was asked for, in order.
+ */
+async function relayAgent() {
+  const agentHby = await run(() =>
+    openHabery({ name: "relay-agent", temp: true, skipConfig: true, opener: new MemStoreOpener() })
+  );
+  const agent = agentHby.makeHab("agent");
+  const relay: Relay = { aid: agent.pre, oobi: `${RELAY_URL}oobi/${agent.pre}/controller` };
+  const oobiBytes = concatBytes(
+    Counter.makeGVC(Vrsn_2_0),
+    ...agentHby.db.clonePreIter(agent.pre, 0, Vrsn_2_0),
+    agent.makeEndRole(agent.pre, "controller", true),
+    agent.makeLocScheme(RELAY_URL, agent.pre, "http"),
+  );
+  const third = agentHby.makeHab("third").pre;
+  const serving = { oobi: true };
+  const requests: string[] = [];
+  const http: HttpClient = {
+    *request(url): Operation<HttpResponse> {
+      requests.push(url);
+      return { status: 200, ok: true, headers: new Headers(), body: new Uint8Array() };
+    },
+    *open(url): Operation<HttpStreamResponse> {
+      requests.push(url);
+      if (url !== relay.oobi) return { status: 204, ok: true, headers: new Headers(), body: async function*() {} };
+      if (!serving.oobi) return { status: 404, ok: false, headers: new Headers(), body: async function*() {} };
+      return {
+        status: 200,
+        ok: true,
+        headers: new Headers({ "content-type": "application/json+cesr" }),
+        body: async function*() {
+          yield oobiBytes;
+        },
+      };
+    },
+  };
+  return { agentHby, relay, third, serving, requests, http };
+}
+
+/** Wait until `condition` holds; the runtime's loops run on their own tocks. */
+async function until(condition: () => boolean) {
+  for (let waited = 0; !condition() && waited < 5_000; waited += 20) await sleep(20);
+  assert(condition());
+}
+
+Deno.test("openWebWallet rejects a malformed relay before opening a store", async () => {
+  const p = page();
+  let lockRequests = 0;
+  const locks: StoreLockManager = {
+    async request(name, options, callback) {
+      lockRequests++;
+      return await p.host.locks.request(name, options, callback);
+    },
+  };
+  const malformed = [
+    { aid: "", oobi: `${RELAY_URL}oobi` },
+    { aid: "Eagent", oobi: "tcp://relay-agent.test:5632" },
+    { aid: "Eagent", oobi: "not a url" },
+    "relay",
+    undefined,
+  ];
+  for (const delivery of malformed) {
+    await assertRejects(() => p.open({ delivery, host: { ...p.host, locks } } as never), ValidationError);
+  }
+  assertEquals(lockRequests, 0, "no store took its lock");
+  assertEquals(p.sent, [], "nothing was sent");
+});
+
+Deno.test("a wallet opened with a relay makes requests only to the relay origin", async () => {
+  const { agentHby, relay, third, requests, http } = await relayAgent();
+  const p = page();
+  const w = await p.open({ delivery: relay, host: { ...p.host, http } });
+  try {
+    const { pre } = await w.identifiers.incept({ alias: "member" });
+    // The runtime queued the relay's OOBI at open; the host waits on it as the first onboarding step.
+    assertEquals((await w.oobis.resolve(relay.oobi)).outcome, "resolved");
+    assertEquals((await w.mailboxes.add(pre, relay.aid)).outcome, "authorized");
+    const hab = w.hby.habs.get(pre)!;
+    const evt = w.runtime.postman.send(
+      { src: pre, dest: third, topic: "/credential", msg: hab.query(pre, pre, { route: "logs", q: {} }) },
+      { notify: true },
+    );
+    const outcome = await run(() => w.runtime.postman.wait(evt));
+    assertEquals([outcome.kin, outcome.deliveries], ["sent", [RELAY_URL]]);
+    assert(requests.includes(relay.oobi) && requests.includes(`${RELAY_ORIGIN}/mailboxes`));
+    assertEquals(requests.filter((url) => new URL(url).origin !== RELAY_ORIGIN), [], "only the relay was asked");
+  } finally {
+    await w.close();
+    await run(() => agentHby.close(true));
+  }
+});
+
+// "a wallet opened direct behaves as before": every other test here opens through `page()`, whose options state
+// `delivery: "direct"`, e.g. "reload: close and reopen with a fresh opener returns identifiers and wallet inventory".
+
+Deno.test("health reports relay-unresolved then relay-unauthorized then ok as onboarding proceeds", async () => {
+  const { agentHby, relay, serving, http } = await relayAgent();
+  serving.oobi = false;
+  const p = page();
+  const w = await p.open({ delivery: relay, host: { ...p.host, http } });
+  try {
+    const { pre } = await w.identifiers.incept({ alias: "member" });
+    assertEquals(w.health(), { status: "relay-unresolved", relay });
+    serving.oobi = true;
+    assertEquals((await w.oobis.resolve(relay.oobi)).outcome, "resolved");
+    assertEquals(w.health(), { status: "relay-unauthorized", identifiers: [{ step: "authorize-member", pre }] });
+    assertEquals((await w.mailboxes.add(pre, relay.aid)).outcome, "authorized");
+    assertEquals(w.health(), { status: "ok" });
+  } finally {
+    await w.close();
+    await run(() => agentHby.close(true));
+  }
+});
+
+Deno.test("relayStatus lists the missing steps", async () => {
+  const { agentHby, relay, serving, http } = await relayAgent();
+  serving.oobi = false;
+  const p = page();
+  const w = await p.open({ delivery: relay, host: { ...p.host, http } });
+  const direct = await page().open({ name: "direct" });
+  try {
+    // Two local members, so the group's inception is not byte-identical to its member's (as a one-member group's
+    // would be); one signature meets its threshold, so it is accepted at once.
+    const member = w.hby.makeHab("member"), other = w.hby.makeHab("other");
+    const smids = [member.pre, other.pre];
+    const group = w.hby.makeGroupHab("group", member, smids, undefined, undefined, { isith: "1", nsith: "1", toad: 0 });
+    const gid = group.serder.pre!;
+    await until(() => w.hby.habs.get(gid)?.accepted === true);
+    assertEquals(w.relayStatus(), [
+      { step: "resolve-oobi", oobi: relay.oobi },
+      { step: "authorize-member", pre: member.pre },
+      { step: "authorize-member", pre: other.pre },
+      { step: "authorize-group", pre: gid },
+    ]);
+    // The authorization steps are read from the accepted mailbox role naming the relay, one identifier at a time.
+    w.hby.db.ends.pin([member.pre, "mailbox", relay.aid], { allowed: true });
+    assertEquals(w.relayStatus(), [
+      { step: "resolve-oobi", oobi: relay.oobi },
+      { step: "authorize-member", pre: other.pre },
+      { step: "authorize-group", pre: gid },
+    ]);
+    direct.hby.makeHab("member");
+    assertEquals(direct.relayStatus(), [], "direct delivery has no relay steps");
+  } finally {
+    await direct.close();
+    await w.close();
+    await run(() => agentHby.close(true));
   }
 });

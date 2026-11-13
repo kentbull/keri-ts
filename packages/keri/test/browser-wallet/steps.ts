@@ -72,7 +72,7 @@ function keyState(): { pre: string; sn: number; said: string; wits: string[]; to
 /** Why a step is stuck: the wallet reports a stopped runtime and its cause through `health()`. */
 export function crashCause(): Promise<string> {
   const health = wallet?.health();
-  if (health?.status === "stopped" || health?.status === "faulted") {
+  if (health?.status === "stopped") {
     return Promise.resolve(
       `\nwallet health: ${JSON.stringify(health, (_k, v) => v instanceof Error ? describe(v) : v)}`,
     );
@@ -162,7 +162,7 @@ async function awaitMailboxCursor({ mailbox, topic, above }: StepArgs) {
 /** Step 1: open a new wallet with a passcode and record the persistence request. */
 async function openWallet({ name, bran }: StepArgs) {
   assert(!wallet, "a wallet is already open");
-  wallet = await openWebWallet({ name, bran });
+  wallet = await openWebWallet({ name, bran, delivery: "direct" });
   // Firefox holds the persistence request on a permission prompt that headless runs never answer, so
   // record "still pending" instead of waiting; the open itself has already returned.
   const pending = Symbol("pending");
@@ -220,7 +220,7 @@ async function reopenWallet(args: StepArgs) {
     held: string[];
     cursor: Record<string, number>;
   };
-  wallet = await openWebWallet({ name, bran });
+  wallet = await openWebWallet({ name, bran, delivery: "direct" });
   const { hby } = open();
   const pre = expect.pre;
   hab = hby.habs.get(pre);

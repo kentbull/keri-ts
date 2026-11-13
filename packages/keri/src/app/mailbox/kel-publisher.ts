@@ -126,8 +126,6 @@ export class KelPublisher {
   readonly rotated = new Deck<RotatedCue>();
   /** The mailbox poller pushes what each poll said here; the next tock re-arms or repairs that entry. */
   readonly polls = new Deck<MailboxPollCue>();
-  /** A failure that escapes a pass is counted and kept here; the fiber keeps running. */
-  readonly health: { faults: number; last: { error: unknown; at: number } | null } = { faults: 0, last: null };
   readonly #deps: KelPublisherDeps;
   readonly #budgets = new Map<string, Budget>();
   readonly #inflight = new Set<string>();
@@ -381,8 +379,10 @@ export class KelPublisher {
 /**
  * Run the publisher on its own fiber until halted, as a fixed-tock doer: a sweep on tock 0 and every
  * `pacing.sweepTocks`, a pass on every tock, then a wait of one tock. A mailbox that hangs holds up only this
- * fiber, never the operation owners. A failure that escapes a pass is counted in `publisher.health` and the
- * loop keeps running.
+ * fiber, never the operation owners. Nothing is caught: every outcome of a post (an HTTP error status, a transport
+ * failure, no answer in time) is a `failed` publication that the pass records and retries, so what escapes a pass is a
+ * real fault (a store that cannot be read or written, a local group whose member is missing) and it ends the loop and
+ * `runAgentRuntime`. Halting the loop returns from the pass and is not a fault.
  */
 export function* kelPublisherDo(
   publisher: KelPublisher,
@@ -390,12 +390,7 @@ export function* kelPublisherDo(
   pacing: Readonly<DoerPacing> = KEL_PUBLISHER_PACING,
 ): Operation<never> {
   return yield* doEvery(clock, pacing.tockMs, function*(tock) {
-    try {
-      if (tock % pacing.sweepTocks === 0) publisher.sweep();
-      yield* publisher.processDue();
-    } catch (error) {
-      publisher.health.faults++;
-      publisher.health.last = { error, at: clock.now() };
-    }
+    if (tock % pacing.sweepTocks === 0) publisher.sweep();
+    yield* publisher.processDue();
   });
 }

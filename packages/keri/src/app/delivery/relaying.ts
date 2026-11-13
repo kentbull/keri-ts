@@ -118,6 +118,69 @@ export function relayRefusal(hby: Habery, relay: Relay, signer: string | null): 
 }
 
 /**
+ * Refuse a relay nothing can be composed over: its AID must be non-empty and its OOBI an absolute HTTP(S) URL,
+ * because the egress guard admits the OOBI's origin and the edge resolves that OOBI before anything else. A
+ * composition root (the guard, a wallet) calls it before it opens or sends anything.
+ *
+ * @param relay Candidate relay, possibly from untyped embedder input.
+ * @throws ValidationError when the AID is empty or the OOBI is not an absolute HTTP(S) URL.
+ */
+export function assertRelay(relay: Relay): void {
+  const aid: unknown = relay.aid, oobi: unknown = relay.oobi;
+  const origin = typeof oobi === "string" ? originOf(oobi) : null;
+  if (typeof aid !== "string" || !aid || origin === null || !/^https?:\/\//.test(origin)) {
+    throw new ValidationError(`Relay requires an AID and an absolute HTTP(S) OOBI URL; got ${String(oobi)}.`);
+  }
+}
+
+/** Onboarding step: the relay's OOBI has not resolved, so its location is not accepted; resolve `oobi`. */
+export interface RelayOobiStep {
+  readonly step: "resolve-oobi";
+  /** The relay's own OOBI; an edge runtime queues it at start, and a host may resolve it again explicitly. */
+  readonly oobi: string;
+}
+
+/**
+ * Onboarding step: local identifier `pre` has not authorized the relay as its `mailbox`, so the relay neither
+ * forwards what `pre` signs nor stores what is sent to it. `authorize-member` is a single-signature identifier,
+ * authorized by an ordinary mailbox add; `authorize-group` is a group, authorized by the group mailbox proposal and,
+ * once the members approve it, its completion.
+ */
+export interface RelayAuthorizationStep {
+  readonly step: "authorize-member" | "authorize-group";
+  /** The local identifier that has not authorized the relay. */
+  readonly pre: string;
+}
+
+/** One onboarding step still missing before the relay carries a local identifier's traffic. */
+export type RelayStep = RelayOobiStep | RelayAuthorizationStep;
+
+/**
+ * The onboarding steps still missing for delivery through the relay, derived from accepted state on every call;
+ * nothing records progress. Order is the order to take them: resolve the relay's OOBI, then authorize each
+ * single-signature identifier, then each group (whose inception needs its members to reach each other first).
+ *
+ * Only identifiers with accepted key state are listed: an identifier that has not completed its inception cannot
+ * sign an end-role reply yet. The resolution step comes from {@link relayRefusal}; the authorization steps from
+ * {@link relayAuthorized}, the row both the edge's senders and the relay read.
+ *
+ * @param hby Borrowed accepted-state store holding the relay's location and the local end roles.
+ * @param relay The configured relay agent.
+ * @returns The missing steps; empty when every accepted local identifier can send and receive through the relay.
+ */
+export function relayOnboarding(hby: Habery, relay: Relay): RelayStep[] {
+  const steps: RelayStep[] = [];
+  if (relayRefusal(hby, relay, null)) steps.push({ step: "resolve-oobi", oobi: relay.oobi });
+  const groups: RelayAuthorizationStep[] = [];
+  for (const hab of hby.habs.values()) {
+    if (!hab.accepted || relayAuthorized(hby, hab.pre, relay)) continue;
+    if (hby.db.getHab(hab.pre)?.mid) groups.push({ step: "authorize-group", pre: hab.pre });
+    else steps.push({ step: "authorize-member", pre: hab.pre });
+  }
+  return [...steps, ...groups];
+}
+
+/**
  * Scheme and authority of a URL, comparable across `http(s):` and `tcp:` (whose WHATWG `origin` is `"null"`).
  *
  * @param url Candidate absolute URL.
@@ -179,10 +242,7 @@ function requireRelayOrigin(hby: Habery, relay: Relay, url: string): void {
  * @throws ValidationError when the relay's OOBI is not an absolute HTTP(S) URL.
  */
 export function relayOnlyHttpClient(inner: HttpClient, hby: Habery, relay: Relay): HttpClient {
-  const oobiOrigin = originOf(relay.oobi);
-  if (!relay.aid || oobiOrigin === null || !/^https?:\/\//.test(oobiOrigin)) {
-    throw new ValidationError(`Relay requires an AID and an absolute HTTP(S) OOBI URL; got ${relay.oobi}.`);
-  }
+  assertRelay(relay);
   const dialer = inner.tcp;
   const tcp: TcpDialer | undefined = dialer
     ? {

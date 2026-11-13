@@ -7,7 +7,7 @@ import {
   localGroupMember,
   uniqueMembers,
 } from "../../../../src/app/multisig/group-members.ts";
-import { ValidationError } from "../../../../src/core/errors.ts";
+import { MissingDurableStateError, ValidationError } from "../../../../src/core/errors.ts";
 
 function fakeHab(pre: string): Hab {
   return { pre } as unknown as Hab;
@@ -41,16 +41,18 @@ Deno.test("group-members resolves local group metadata", () => {
   assertEquals(findLocalGroupMember(hby, ["Eremote", "Emember"]), member);
 });
 
-Deno.test("group-members rejects missing local member metadata", () => {
+Deno.test("group-members refuses a non-group and reports a missing member as missing durable state", () => {
   const hby = fakeHabery({
-    records: new Map([["Egroup", { mid: "Emissing" }]]),
+    records: new Map([["Egroup", { mid: "Emissing" }], ["Esolo", {}]]),
   });
 
-  assertThrows(
+  assertThrows(() => localGroupMember(hby, "Esolo"), ValidationError, "Esolo is not a local group.");
+  const missing = assertThrows(
     () => localGroupMember(hby, "Egroup"),
-    ValidationError,
-    "Group Egroup is missing local member metadata.",
+    MissingDurableStateError,
+    "Group Egroup names local member Emissing, which this store does not hold.",
   );
+  assertEquals(missing instanceof ValidationError, false, "a missing member is not a refusal of input");
 });
 
 Deno.test("group-members prefers key-state signing members and falls back to record members", () => {

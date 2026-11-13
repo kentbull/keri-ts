@@ -163,14 +163,19 @@ export {
   type PosterStream,
 } from "../app/delivery/forwarding.ts";
 export {
+  assertRelay,
   type Relay,
+  type RelayAuthorizationStep,
   relayAuthorized,
   type RelayEndpoint,
   relayEndpoint,
+  relayOnboarding,
   RelayOnlyError,
   relayOnlyHttpClient,
+  type RelayOobiStep,
   type RelayRefusal,
   relayRefusal,
+  type RelayStep,
   RelayUnauthorizedError,
   RelayUnresolvedError,
 } from "../app/delivery/relaying.ts";
@@ -646,6 +651,7 @@ export {
   DatabaseOperationError,
   InvalidPathNameError,
   KramRefusedError,
+  MissingDurableStateError,
   PathError,
   PersistenceLatchedError,
   PersistenceReadError,
@@ -1110,8 +1116,6 @@ export {
   OWNER_PACING,
   OWNER_SWEEP_TOCKS,
   OWNER_TOCK_MS,
-  type OwnerFault,
-  OwnerHealth,
   type OwnerLoopParts,
   type RuntimeOperations,
 } from "../app/runtime/operation-owners.ts";

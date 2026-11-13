@@ -124,7 +124,7 @@ export interface GroupReceipting {
 /**
  * Sends a completed event to members that may never have seen the signatures that completed it (a member that signed
  * nothing, or one whose own signature was not needed). One outcome per member; a transport failure is the member's
- * `failed` outcome and not an error.
+ * `failed` outcome and not an error. What it throws is a fault, which ends the Counselor's loop.
  */
 export interface GroupForwarding {
   forward(event: GroupEventRef, members: readonly string[]): Operation<GroupDelivery[]>;
@@ -370,20 +370,9 @@ export class Counselor {
       const now = this.clock.now();
       // The local member signs the forward; a group whose member cannot sign yet keeps it without spending an attempt.
       if (now < owed.nextAt || !this.hby.habs.get(owed.event.pre)?.canSign()) continue;
-      let outcomes: GroupDelivery[];
-      try {
-        outcomes = yield* this.forwarding.forward(owed.event, owed.members);
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        outcomes = owed.members.map((recipient) => ({
-          recipient,
-          exnSaid: owed.event.said,
-          payloadSaid: owed.event.said,
-          outcome: "failed" as const,
-          deliveries: [],
-          reason,
-        }));
-      }
+      // A member that could not be reached is its `failed` outcome; what `forward` throws is a fault (the accepted
+      // event or the local member missing from the store) and ends the loop instead of spending an attempt.
+      const outcomes = yield* this.forwarding.forward(owed.event, owed.members);
       const failed = outcomes.filter((outcome) => outcome.outcome === "failed");
       this.forwarded.set(key, [
         ...(this.forwarded.get(key)?.filter((prior) => !outcomes.some((o) => o.recipient === prior.recipient)) ?? []),

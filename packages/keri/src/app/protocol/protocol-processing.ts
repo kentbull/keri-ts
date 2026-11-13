@@ -13,6 +13,7 @@ import type { Verifier } from "../credentials/verifying.ts";
 import { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { QueryReplies } from "../queries/query-replies.ts";
+import { relayRefreshCue } from "../queries/relay-refresh.ts";
 import { type DoerPacing, doEveryOnWrite, PROTOCOL_PACING } from "../runtime/doing.ts";
 import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
 import {
@@ -94,6 +95,8 @@ export class ProtocolProcessor {
    * @param cues Application output Deck consumed by the composed cue router.
    * @param replies Shared live request correlations captured before application publication.
    * @param qvy Optional caller-owned auxiliary query receiver; owns its authorization and lifecycle.
+   * @param relaying Whether this domain is a relaying host's (the agent side of relay mode): a served sender's query
+   *   about a remote subject then also publishes the host's own refresh query cue (see `relayRefreshCue`).
    * @throws TypeError for inconsistent stores or cue bindings.
    */
   constructor(
@@ -116,6 +119,8 @@ export class ProtocolProcessor {
     /** Shared live request correlations; each requesting connection owns its slots. */
     readonly replies: QueryReplies,
     readonly qvy?: AuxiliaryQueryProcessor,
+    /** Relaying host: served senders' queries about remote subjects refresh this host's own view of them. */
+    readonly relaying: boolean = false,
   ) {
     if (
       protocolCues === cues || kvy.cues !== protocolCues || rvy.cues !== protocolCues
@@ -199,6 +204,9 @@ export class ProtocolProcessor {
         }
         const mailboxQueryAuthorized = !invalid && result.envelope.serder.route === "mbx"
           && kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope));
+        // Published with this query's own cues; the cue router hands it to this host's querier.
+        const refresh = self.relaying && !invalid ? relayRefreshCue(self.exc.hby, result, mailboxAid ?? null) : null;
+        if (refresh) self.protocolCues.push(refresh);
         // Capture this request's facts before optional escrows can suspend or change key state.
         self.publishCues();
         if (escrows) yield* self.advanceEscrows();
