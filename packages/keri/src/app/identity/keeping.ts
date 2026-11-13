@@ -1153,6 +1153,19 @@ export class Manager {
         "Invalid incept configuration produced no current verfers.",
       );
     }
+    // The same seed under the other transferability encodes the same public key differently (`D...`/`B...`),
+    // so a forgotten prefix's kept `pres.` row is looked up under both encodings.
+    const first = isigners[0];
+    const twin = new Signer({ code: first.code, raw: first.raw, transferable: !first.transferable }).verfer.qb64;
+    const retired = [opre, twin].map((pub) => this.ks.getPres(pub)).find((owner) =>
+      owner !== null && this.ks.getSits(owner) === null
+    );
+    if (retired) {
+      throw new Error(
+        `Already incepted pre=${opre}: these keys derive the forgotten keys of retired identifier ${retired}; `
+          + "use another name, namespace or salt.",
+      );
+    }
     if (!this.ks.putPres(opre, opre)) {
       throw new Error(`Already incepted pre=${opre}.`);
     }
@@ -1344,6 +1357,59 @@ export class Manager {
     }
 
     return [verfers, digers];
+  }
+
+  /**
+   * Delete the stored key rows of one managed prefix, in one Keeper transaction.
+   *
+   * Removed rows:
+   * - `prms.` and `sits.` for `pre`
+   * - every `pubs.` lot stored under `pre` or under an inception alias that
+   *   `move()` bound to it (the first current public key of a self-addressing prefix)
+   * - `pris.` for every public key named by those lots or by the situation
+   *
+   * Kept: every `pres.` row that resolves to `pre`. They are the one-way marker:
+   * `incept()` refuses any later inception whose first key is one of them, so
+   * the same name, namespace and salt cannot derive these keys again under a
+   * new or the same prefix.
+   *
+   * Limit: this deletes stored rows, not the secret's derivability. For a
+   * rooted salty prefix the seeds stay derivable from the Keeper-global salt
+   * and the habitat's derivation stem (its namespace and name).
+   *
+   * A prefix with no key rows, such as a keyless habitat whose signers are held
+   * externally (`hold()`) or one already forgotten, has nothing to delete and
+   * returns 0. Held signers are not touched; the host owns those references.
+   *
+   * No KERIpy counterpart: `Habery.deleteHab` keeps all of the Keeper's state.
+   *
+   * @returns The number of private keys deleted from `pris.`.
+   */
+  forget(pre: string): number {
+    return this.ks.transaction(() => {
+      const aliases = new Set([pre]);
+      for (const [keys, prefixer] of this.ks.pres.getTopItemIter()) {
+        if (prefixer.qb64 === pre) aliases.add(keys.join("."));
+      }
+      const pubs = new Set<string>();
+      const sit = this.ks.getSits(pre);
+      for (const lot of sit ? [sit.old, sit.new, sit.nxt] : []) {
+        for (const pub of lot.pubs) pubs.add(pub);
+      }
+      for (const alias of aliases) {
+        for (const [, lot] of this.ks.pubs.getTopItemIter(alias, { topive: true })) {
+          for (const pub of lot.pubs) pubs.add(pub);
+        }
+        this.ks.pubs.trim(alias, { topive: true });
+      }
+      this.ks.prms.rem(pre);
+      this.ks.sits.rem(pre);
+      let deleted = 0;
+      for (const pub of pubs) {
+        if (this.ks.pris.rem(pub)) deleted += 1;
+      }
+      return deleted;
+    });
   }
 
   /**
