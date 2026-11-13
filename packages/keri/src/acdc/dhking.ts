@@ -758,7 +758,8 @@ export class Dhke implements AuxiliaryQueryProcessor {
     }
     for (const [, key] of entries) decodePublicKey(key);
     const expires = this.retainUntil(envelope, grant);
-    const prior = this.pendingQueries.get(data.x);
+    // After a restart the persisted copy is the prior one, so a successor is judged as it is before one.
+    const prior = this.pendingQueries.get(data.x) ?? this.loadHeld(data.x, grant.said!);
     if (prior && !bytesEqual(prior.envelope.serder.raw, query.raw)) {
       // The issuer re-dates a query that aged before this side consented (`requery`): same sender, keys and
       // Grant under a new date. It replaces the held one; any other difference is a conflict.
