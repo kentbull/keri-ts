@@ -56,6 +56,23 @@ function copyQuery(instruction: QueryInstruction): QueryInstruction {
 }
 
 /**
+ * Identity of one unsigned request for duplicate detection: every field that changes what is signed or where it goes.
+ *
+ * @param request Queued or candidate request; query filters are strings and string-valued seal SADs.
+ * @returns A canonical string equal for two requests exactly when they would produce the same query.
+ */
+function requestKey(request: QueryRequest): string {
+  return JSON.stringify([
+    request.route,
+    request.pre,
+    request.signer ?? null,
+    request.src ?? null,
+    request.wits ?? null,
+    request.q,
+  ]);
+}
+
+/**
  * Return the sole local habitat when exactly one exists.
  *
  * Honesty rule:
@@ -69,6 +86,24 @@ function soleHab(hby: Habery): Hab | null {
   const habitats = hby.habs.values();
   const first = habitats.next();
   return first.done || !habitats.next().done ? null : first.value;
+}
+
+/**
+ * The attesters an ordinary (non-relay) query for `pre` may go to: the AIDs of the first role among controller,
+ * agent and witness that has any accepted endpoint for the subject. Mailbox providers are not query attesters.
+ *
+ * @param hab Local habitat whose accepted-state store is read.
+ * @param pre Subject AID whose accepted endpoint roles are consulted.
+ * @returns Eligible attester AIDs, or an empty array for an unknown subject or a subject with no such endpoint.
+ */
+export function queryAttesters(hab: Hab, pre: string): string[] {
+  if (!hab.db.getKever(pre)) return [];
+  const ends = hab.endsFor(pre);
+  for (const role of QUERY_ROLE_PRIORITY) {
+    const eids = Object.keys(ends[role] ?? {});
+    if (eids.length > 0) return eids;
+  }
+  return [];
 }
 
 /**
@@ -246,6 +281,24 @@ export class WitnessInquisitor {
     const { kin: _, ...request } = cue;
     const selected = { ...request, signer: request.signer ?? hab?.pre };
     this.enqueue(selected);
+  }
+
+  /**
+   * Admit a routed query cue unless an identical request is already queued: same subject, route, filters, signer,
+   * attester and witness overrides, with the signer resolved as {@link enqueueCue} resolves it. A relaying host's cue
+   * router uses this, so the queries of the many edges it serves about one subject leave one request queued; a request
+   * already taken for delivery is no longer queued, so a later cue queues the next one.
+   *
+   * @param cue Typed query cue; missing route/subject produces no request.
+   * @param hab Optional local signer hint when the cue has no explicit signer.
+   */
+  enqueueCueOnce(cue: QueryCue, hab?: Hab | null): void {
+    if (this.closed) throw new Error("Query sender is closed");
+    if (!cue.route || !cue.pre) return;
+    const { kin: _, ...request } = cue;
+    const key = requestKey({ ...request, signer: request.signer ?? hab?.pre });
+    for (const queued of this.requests) if (requestKey(queued) === key) return;
+    this.enqueueCue(cue, hab);
   }
 
   /** Include actual query I/O in convergence; pending instructions have their own queue. */
@@ -441,18 +494,6 @@ export class WitnessInquisitor {
       return [...wits];
     }
     const hab = this.configuredHab(signer);
-    if (!hab || !this.hby.db.getKever(pre)) return [];
-
-    const ends = hab.endsFor(pre);
-    for (const role of QUERY_ROLE_PRIORITY) {
-      const roleEnds = ends[role];
-      if (!roleEnds) {
-        continue;
-      }
-      const eids = Object.keys(roleEnds);
-      if (eids.length > 0) return eids;
-    }
-
-    return [];
+    return hab ? queryAttesters(hab, pre) : [];
   }
 }
