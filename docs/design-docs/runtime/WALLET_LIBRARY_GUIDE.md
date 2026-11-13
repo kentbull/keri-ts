@@ -46,6 +46,19 @@ mailbox), and `operationStores.derived` is the wallet's `derived-updates.` table
 with every failure after all steps ran. After a latched persistence failure, `close()` then
 `openWebWallet()` loads the last durable state.
 
+### Held signers at open
+
+A host that keeps an identifier's keys itself (`Habery.makeSignedHab`, ADR-0016) lends them to the Manager with
+`Manager.hold`; they are never stored, so a reopen must lend them again. `openWebWallet` starts its runtime before it
+returns, and a hold made after the open can come too late for the first mailbox poll, which would find no signer. Pass
+the signers as `heldSigners` instead: a list of `Signer`s (`HeldSigners`), held by `openHabery` right after the
+Manager is built and before the Habery exists, so before any runtime loop can sign. The option is on `HaberyArgs`, so
+every opener built on `openHabery` (`createHabery` included) takes it, and `openWebWallet` forwards its own
+`heldSigners`. It is a list, not a callback, because holding needs nothing but the signers.
+
+A signer released later (`Manager.release`) does not end the runtime: the poll for that identifier waits, the wallet's
+`health()` reports `signer-unavailable`, and a later `Manager.hold` resumes it at once.
+
 ## The wallet-level API
 
 (Composition note, read last: the namespaces below are classes that each hold one `WalletScope`, the wallet's collaborators
@@ -235,6 +248,26 @@ not recompile its schemas on every retry; a missing or invalid result is never k
 Presentation selects credentials from the embedder's inventory through
 `OperationStores.views`; `openWebWallet` binds it to its `Wallet`. Without it only replies and
 `apply` can be presented.
+
+Unblind is keyed like issuance: one live operation per Grant and party (`unblindingKey(grant, role)`, read with `liveOf` and
+`settledOf`), so a Habery that holds both the discloser and the disclosee of a presentation runs both sides.
+`unblindingStatus`, `waitForUnblinding` and `abandonUnblinding` take an optional `UnblindingParty` (`{ role }`); without it
+a Habery that holds both answers for the requester and says so in the status `role`. A recipient held in the same Habery
+takes the bytes through the reactor in process (the `reactor` dependency).
+
+An Unblind must be requested before the verifier answers the presentation. The discloser consents to answer queries
+about a live presentation, and the terminal response (an Admit or a Spurn) ends that authority, so `requestUnblind` after
+an Admit throws `PresentationClosedError` (a `ValidationError`) saying so. This is by design, not a gap: a verifier that
+admits first cannot audit later through the discloser. An Unblind also opens only updates derived from the registry root:
+an update blinded with a random blinder (what `Registry.blind` produces without custody) can be opened only by its author or
+from an opening the author published, so a holder cannot answer for it; revoke a DH-issued credential through the custody
+path (`RegistryAuthor.stage(registry, credential, "revoked")`), which derives the opening from the root the holder shares.
+
+A verifier cannot Admit a presentation of a credential the issuer has since revoked: signing an Admit requires the graph
+to be currently authenticated for new use (`proposeGroupAdmit` and `admitIssuance` refuse with "Current authenticated
+graph acceptance is required before signing"). That is intended, because an Admit states that the verifier accepts the
+credential. To record "presented, then found revoked", respond with a Spurn, or keep the presentation Grant and the
+registry state as the evidence (the revoked head is on the registry; an Unblind before the response opens it).
 
 Restart behavior: status after a reopen is what the protocol stores prove. In-memory only: the
 transient phases, `abandoned` and `failed` reasons, consent times, and the destinations of a

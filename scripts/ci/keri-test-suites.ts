@@ -17,7 +17,7 @@ export interface TestSuite {
 /** Keep native/global-state isolation; batch only suites already run with two workers. */
 export const suites: Record<string, TestSuite> = {
   "app-fast-parallel": {
-    jobs: 2,
+    jobs: 3,
     files: [
       "test/integration/app/db-dump.test.ts",
       "test/unit/app/runtime/abortable.test.ts",
@@ -231,6 +231,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/acdc/messaging.test.ts",
       "test/unit/acdc/regeventing.test.ts",
       "test/unit/core/deck.test.ts",
+      "test/unit/core/error-names.test.ts",
       "test/unit/core/kel/eventing.test.ts",
       "test/unit/core/kel/kevery-receipt.test.ts",
       "test/unit/core/mailbox/kram-policy.test.ts",

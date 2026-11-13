@@ -54,7 +54,7 @@ jobs:
       run_interop: ${{ steps.scope_dispatch.outputs.run_interop || steps.scope.outputs.run_interop }}
       run_package: ${{ steps.scope_dispatch.outputs.run_package || steps.scope.outputs.run_package }}
       run_browser: ${{ steps.scope_dispatch.outputs.run_browser || steps.scope.outputs.run_browser }}
-      unit_targets: ${{ steps.scope_dispatch.outputs.unit_targets || steps.scope.outputs.unit_targets }}
+      unit_shards: ${{ steps.scope_dispatch.outputs.unit_shards || steps.scope.outputs.unit_shards }}
       interop_targets: ${{ steps.scope_dispatch.outputs.interop_targets || steps.scope.outputs.interop_targets }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -90,9 +90,15 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash scripts/ci/check-changeset.sh "${{ github.event.pull_request.base.sha }}"
 
+  # One job per unit shard (scripts/ci/pr-test-scope.ts); the plan job lists only shards with work.
   unit-tests:
     needs: changeset-required
     if: needs.changeset-required.outputs.run_unit == 'true'
+    name: unit (${{ matrix.shard.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.changeset-required.outputs.unit_shards) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -118,16 +124,16 @@ jobs:
       - name: run selected unit suites
         shell: bash
         env:
-          UNIT_TARGETS: ${{ needs.changeset-required.outputs.unit_targets }}
+          UNIT_TARGETS: ${{ matrix.shard.targets }}
         run: |
           mkdir -p .test-timings
-          deno run -A scripts/ci/pr-test-scope.ts run-unit 2>&1 | tee .test-timings/required.log
+          deno run -A scripts/ci/pr-test-scope.ts run-unit 2>&1 | tee ".test-timings/${{ matrix.shard.name }}.log"
 
       - name: retain required-suite timings
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: keri-required-timings-pr-${{ github.event.pull_request.number || github.run_id }}
+          name: keri-unit-${{ matrix.shard.name }}-timings-pr-${{ github.event.pull_request.number || github.run_id }}
           path: .test-timings/
           if-no-files-found: ignore
           retention-days: 14

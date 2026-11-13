@@ -933,12 +933,17 @@ export class Multiplexor {
       && kever.tholder.satisfy(Kever.verifyIndexedSignatures(event.raw, envelope.sigers, kever.verfers).indices);
   }
 
-  /** Whether a rotation proposal names exactly the group's current signing members. */
+  /** Whether a rotation proposal names exactly the group's current signing members and rotation members. */
   private namesCurrentMembers(attrs: Record<string, unknown>): boolean {
     const group = typeof attrs.gid === "string" ? attrs.gid : "";
-    const named = new Set(memberPrefixes(attrs.smids, []));
-    const current = groupSigningMembers(this.hby, group);
-    return named.size === current.length && current.every((member) => named.has(member));
+    const same = (named: readonly string[], current: readonly string[]) => {
+      const set = new Set(named);
+      return set.size === current.length && current.every((member) => set.has(member));
+    };
+    const signing = memberPrefixes(attrs.smids, []);
+    const rotation = attrs.rmids === undefined ? signing : memberPrefixes(attrs.rmids, []);
+    return same(signing, groupSigningMembers(this.hby, group))
+      && same(rotation, this.hby.ks.getRmids(group).map((tuple) => tuple[0].qb64));
   }
 
   /** Return true when this wrapper can be accepted for local group work. */

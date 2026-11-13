@@ -175,6 +175,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       unblinds: ipex,
       group: { mux, protocol },
       delivery,
+      reactor,
       clock,
       retry: parts.retry,
       changes,

@@ -22,6 +22,7 @@ import {
   type CredentialViews,
   FetchHttpClient,
   type Habery,
+  type HeldSigners,
   type HttpClient,
   type KramConfig,
   openHabery,
@@ -64,7 +65,9 @@ export const WALLET_KRAM_CACHES: NonNullable<KramConfig["caches"]> = Object.free
 });
 
 /** The keeper would hold plaintext seeds in IndexedDB, so the wallet refuses to open it. */
-export class UnencryptedKeeperError extends AppError {}
+export class UnencryptedKeeperError extends AppError {
+  override readonly name: string = "UnencryptedKeeperError";
+}
 
 /** Page events that ask for a best-effort flush. */
 export interface PageLifecycleTargets {
@@ -108,6 +111,12 @@ export type OpenWebWalletOptions = WebWalletSecret & {
    * `runtime.ipex.unblind(hab)`.
    */
   runtime?: Pick<AgentRuntimeOptions, "kram" | "operationStores">;
+  /**
+   * Signers for identifiers whose keys the host keeps (`makeSignedHab`), held in the Manager as the Habery opens,
+   * before the runtime starts: the first mailbox poll of such an identifier is signed. Held signers are not
+   * stored; pass them again at every open.
+   */
+  heldSigners?: HeldSigners;
   host?: WebWalletHost;
 };
 
@@ -217,6 +226,7 @@ function* compose(
       bran: options.bran,
       seed: options.seed,
       aeid: options.aeid,
+      heldSigners: options.heldSigners,
     });
     const storage = requestPersistentStorage(host.storage);
     try {

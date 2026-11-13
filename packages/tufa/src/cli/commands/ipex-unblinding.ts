@@ -73,7 +73,7 @@ export function* runUnblind(
     const begun = requester ? requestUnblind(ops, grant, options) : group ? answerUnblind(ops, grant, options) : null;
     const outcome = yield* withRuntimeWorkers(runtime, { hab: member, pollMailbox: true }, function*() {
       const stop = runtime.clock.now() + timeoutMs;
-      while (!begun && !ops.live.has(grant) && !ops.settled.has(grant)) {
+      while (!begun && !ops.liveOf(grant) && !ops.settledOf(grant)) {
         if (runtime.clock.now() >= stop) {
           throw new ValidationError("Unblind reached its elapsed limit or original Grant deadline without Admit");
         }

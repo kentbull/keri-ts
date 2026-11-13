@@ -43,7 +43,7 @@ import {
 import { abortable } from "../app/runtime/abortable.ts";
 import { Deck } from "../core/deck.ts";
 import { type KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
-import { ValidationError } from "../core/errors.ts";
+import { PresentationClosedError, ValidationError } from "../core/errors.ts";
 import { verifyExchangeProofs, verifyQueryAttachments } from "../core/exchange/exchange-proofing.ts";
 import { Kever } from "../core/kel/kever.ts";
 import { query, reply } from "../core/protocol-eventing.ts";
@@ -199,6 +199,12 @@ export class Unblind implements AuxiliaryQueryProcessor {
       return xid;
     }
     const context = this.exc.presentationContext(grant, { xid, sender, recipient });
+    if (!context && this.hab.db.erpy.get([grant])) {
+      throw new PresentationClosedError(
+        "Presentation is closed: its terminal response (Admit or Spurn) ended the discloser's authority to answer "
+          + "queries about it, so an Unblind must be requested before the response is made",
+      );
+    }
     if (!context) throw new ValidationError("Presentation is unavailable, terminated or expired");
     this.operations.set(xid, {
       xid,
@@ -1073,7 +1079,13 @@ export class Unblind implements AuxiliaryQueryProcessor {
         }
       }
     }
-    if (!opening) throw new ValidationError("Required exact event opening is unavailable");
+    if (!opening) {
+      throw new ValidationError(
+        "Required exact event opening is unavailable: this identifier holds no public or carried opening and cannot "
+          + "derive one from its registry root (an update blinded with a random blinder, as `Registry.blind` does "
+          + "without custody, can be opened only by its author or from an opening its author published)",
+      );
+    }
     this.checkOpening(op, event, opening, nests);
     return opening;
   }

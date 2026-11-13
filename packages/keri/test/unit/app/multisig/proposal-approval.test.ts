@@ -145,6 +145,26 @@ Deno.test("a member that only receives takes a rotation its own keys complete, a
   });
 });
 
+Deno.test("a rotation that changes the rotation members waits for approval even when its own keys complete it", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      s.alice.rotate();
+      s.bob.rotate();
+      yield* call(() => learn(s.left, s.bob));
+      yield* call(() => learn(s.right, s.alice));
+      const rot = s.right.rotateGroupHab("group", s.mids, [s.bob.pre!], { isith: "1", nsith: "1", toad: 0 });
+      const rotation = signGroupMessage(
+        s.bob,
+        s.alice.pre,
+        yield* multisigRotateExn(s.group, s.bob, s.mids, [s.bob.pre!], messagize(rot.serder, { sigers: rot.sigers })),
+      );
+      yield* receive(s, rotation.message);
+      assertEquals(s.left.db.kels.getLast(s.group, rot.serder.sn!), null, "a change of rotation members waits");
+      assertEquals(findGroupProposal(readDeps(s), rotation.exnSaid)?.local, "unapproved");
+    }, "1");
+  });
+});
+
 Deno.test("an interaction the proposer's signature does not complete waits for approval", async () => {
   await run(function*() {
     yield* scenario(function*(s) {
