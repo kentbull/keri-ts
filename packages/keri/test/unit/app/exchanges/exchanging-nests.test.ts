@@ -21,7 +21,7 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run } from "effection";
+import { call, type Operation, run } from "effection";
 import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import depthVector from "../../../../../cesr/test/fixtures/nested-depth.json" with { type: "json" };
 import { type ExchangeInput, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
@@ -30,12 +30,17 @@ import { ForwardHandler } from "../../../../src/app/mailbox/forward-handler.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import { openMailboxerForHabery } from "../../../../src/app/mailbox/mailboxing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
-import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
+import {
+  type AgentRuntime,
+  createAgentRuntime,
+  settleRuntimeIngress,
+} from "../../../../src/app/runtime/agent-runtime.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../../../src/core/protocol-serialization.ts";
+import { Roles } from "../../../../src/core/roles.ts";
 import { loadNests, prepareNests, publishNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import keripy from "../../../../test/fixtures/keripy-ipex-current-state-vectors.json" with { type: "json" };
 
@@ -60,7 +65,7 @@ async function scenario(
       const sender = hby.makeHab("sender");
       const recipient = hby.makeHab("recipient", undefined, { wits: [provider.pre], toad: 1 });
       const director = new MailboxDirector(hby, { mailboxer });
-      const exchanger = new Exchanger(hby, { handlers: [new ForwardHandler(director)] });
+      const exchanger = new Exchanger(hby, { handlers: [new ForwardHandler(director, null)] });
       yield* call(() => test(hby, sender, recipient, provider, director, exchanger));
     } finally {
       yield* mailboxer.close(true);
@@ -104,11 +109,106 @@ function forward(
   })[0];
   return { serder, tsgs: signatures(sender, serder), nests: [nest], mailboxAid: provider.pre };
 }
+/** A relaying agent runtime and a remote edge: the agent knows the sender and recipient only from ingested wire. */
+interface RelayFixture {
+  readonly runtime: AgentRuntime;
+  readonly agent: Hab;
+  readonly sender: Hab;
+  readonly recipient: Hab;
+}
+
+/** Steps of one relay scenario, run while both Haberies and the agent runtime are open. */
+type RelayTest = (fixture: RelayFixture) => Operation<void>;
+
+/**
+ * Compose an agent with `relaying: true` and a separate edge Habery. The sender names the agent as its witness
+ * when `witnessed`; nothing else about the sender reaches the agent until a test ingests it.
+ */
+async function relayScenario(witnessed: boolean, test: RelayTest): Promise<void> {
+  await run(function*() {
+    const agentHby = yield* createHabery({ name: `relay-agent-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const edgeHby = yield* createHabery({ name: `relay-edge-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const agent = agentHby.makeHab("agent", undefined, { transferable: false });
+      const sender = edgeHby.makeHab("sender", undefined, witnessed ? { wits: [agent.pre], toad: 1 } : {});
+      const recipient = edgeHby.makeHab("recipient");
+      const runtime = yield* createAgentRuntime(agentHby, new FetchHttpClient(), systemClock, {
+        enableMailboxStore: true,
+        relaying: true,
+      });
+      try {
+        // A witness takes its controller's events as local input (its receipt endpoint), never as misfits.
+        yield* settleRuntimeIngress(runtime, [...sender.db.replay(sender.pre)!], { local: witnessed });
+        yield* test({ runtime, agent, sender, recipient });
+      } finally {
+        yield* runtime.close();
+      }
+    } finally {
+      yield* edgeHby.close(true);
+      yield* agentHby.close(true);
+    }
+  });
+}
+
+/** Send one nested `/fwd` from the sender to the agent and return what the agent's Poster queued. */
+function* forwardToAgent(fixture: RelayFixture, value: string): Operation<CesrFrame> {
+  const nest = yield* call(() => child(fixture.sender, value, Vrsn_2_0));
+  const decision = yield* fixture.runtime.exc.processEvent(
+    forward(fixture.sender, fixture.recipient, fixture.agent, nest),
+  );
+  assertEquals(decision.kind, "accept");
+  return nest;
+}
+
+Deno.test("forward handler relays a served sender's child through Poster", async () => {
+  await relayScenario(false, function*(fixture) {
+    const { runtime, agent, sender, recipient } = fixture;
+    yield* settleRuntimeIngress(runtime, [sender.makeEndRole(agent.pre, Roles.mailbox, true)]);
+    const nest = yield* forwardToAgent(fixture, "relay me");
+    const queued = [...runtime.postman.evts];
+    assertEquals(queued.length, 1);
+    // The agent sends as itself to the final recipient; the `/fwd` topic passes through unchanged.
+    assertEquals([queued[0].src, queued[0].dest, queued[0].topic, queued[0].kin], [
+      agent.pre,
+      recipient.pre,
+      "/nested",
+      "msg",
+    ]);
+    // The child keeps the sender's own signature: the agent relays it, it does not re-sign it.
+    assertEquals(queued[0].msg, yield* call(() => collectPayload(nestedPayload(nest, Vrsn_2_0))));
+    assertEquals(runtime.mailboxer!.getTopicMsgs(`${recipient.pre}/nested`), []);
+  });
+});
+
+Deno.test("forward handler ignores an unserved sender", async () => {
+  await relayScenario(false, function*(fixture) {
+    const { runtime, agent, sender, recipient } = fixture;
+    // Authorizing the agent for a different role does not make the sender a served sender.
+    yield* settleRuntimeIngress(runtime, [sender.makeEndRole(agent.pre, Roles.controller, true)]);
+    yield* forwardToAgent(fixture, "not served");
+    assertEquals([...runtime.postman.evts], []);
+    assertEquals(runtime.mailboxer!.getTopicMsgs(`${recipient.pre}/nested`), []);
+  });
+});
+
+Deno.test("witness membership alone does not relay", async () => {
+  await relayScenario(true, function*(fixture) {
+    const { runtime, agent, sender } = fixture;
+    assertEquals(runtime.hby.db.getKever(sender.pre)?.wits, [agent.pre]);
+    yield* forwardToAgent(fixture, "witnessed only");
+    assertEquals([...runtime.postman.evts], []);
+    // The same sender relays once it authorizes the agent as its mailbox.
+    yield* settleRuntimeIngress(runtime, [sender.makeEndRole(agent.pre, Roles.mailbox, true)]);
+    yield* forwardToAgent(fixture, "now served");
+    assertEquals([...runtime.postman.evts].map((evt) => evt.src), [agent.pre]);
+  });
+});
+
 Deno.test("nested forwarding rechecks provider authority before publishing collected child bytes", async () => {
   await scenario(async (_hby, sender, recipient, provider, director) => {
     const nest = await child(sender, "authority changed");
     const input = forward(sender, recipient, provider, nest);
-    const handler = new ForwardHandler(director);
+    const handler = new ForwardHandler(director, null);
     const pending = handler.handle({ ...input, attachments: [] });
     if (!pending) throw new Error("The nested handler must return its collection operation");
     // The returned operation has yet to collect its child; revoke the real witness authority.
@@ -194,7 +294,7 @@ Deno.test("nested forward preserves signed tree, ciphertext and duplicates acros
     await run(function*() {
       yield* hby.db.reopen();
     });
-    const reopened = new Exchanger(hby, { handlers: [new ForwardHandler(director)] });
+    const reopened = new Exchanger(hby, { handlers: [new ForwardHandler(director, null)] });
     for await (const frame of parse(reopened.replay(input.serder.said!))) {
       assertEquals(frame.body.raw, input.serder.raw);
       assertEquals(envelopeFromFrame(frame).tsgs.length, 1);

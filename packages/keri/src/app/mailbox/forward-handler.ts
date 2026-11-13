@@ -1,4 +1,4 @@
-/** Authenticated /fwd intake: validate provider authority before storing reconstructed child bytes. */
+/** Authenticated /fwd intake: store for recipients this host serves, or re-forward for senders it relays for. */
 import {
   type CesrFrame,
   collectPayload,
@@ -14,8 +14,10 @@ import {
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Kever } from "../../core/kel/kever.ts";
 import { Roles } from "../../core/roles.ts";
+import type { Poster } from "../delivery/forwarding.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
+import { isAcceptedGroupMember } from "../multisig/group-members.ts";
 import { abortable } from "../runtime/abortable.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 
@@ -24,9 +26,16 @@ import type { MailboxDirector } from "./mailbox-director.ts";
  *
  * This is the `keri-ts` mailbox-storage analogue to KERIpy's `ForwardHandler`.
  *
- * Authorization rule:
- * - the request-scoped mailbox AID passed with this message must currently be
- *   authorized for the addressed recipient
+ * Authorization rules, in order; exactly one path runs for one `/fwd`:
+ * - store: the request-scoped mailbox AID passed with this message must
+ *   currently be authorized for the addressed recipient (witness, mailbox or
+ *   agent). A recipient this host stores for is never also relayed, so a
+ *   recipient served here cannot receive the child twice.
+ * - relay (only with a Poster, composed by `relaying: true`): the `/fwd` sender
+ *   must have authorized this host as its `mailbox` or `agent`, directly or
+ *   through a group it is an accepted member of. The host then re-sends the
+ *   child to the recipient with its own Poster, as KERIA's agent re-sends a
+ *   Signify client's exn. Witness membership never grants relaying.
  */
 export class ForwardHandler implements ExchangeRouteHandler {
   /** Registered exchange route for store-forward messages. */
@@ -37,14 +46,18 @@ export class ForwardHandler implements ExchangeRouteHandler {
   readonly acceptsNests = true;
   /** Borrowed provider publication/correlation owner. */
   readonly mailboxDirector: MailboxDirector;
+  /** Borrowed delivery owner that re-forwards a served sender's child; null means store-only intake. */
+  readonly postman: Poster | null;
 
   /**
-   * Bind mailbox publication without acquiring a store.
+   * Bind mailbox publication and optional relaying without acquiring a store.
    *
    * @param mailboxDirector Borrowed provider owner that publishes accepted forwarded payloads.
+   * @param postman Borrowed Poster that re-sends a served sender's child; null keeps store-only intake.
    */
-  constructor(mailboxDirector: MailboxDirector) {
+  constructor(mailboxDirector: MailboxDirector, postman: Poster | null) {
     this.mailboxDirector = mailboxDirector;
+    this.postman = postman;
   }
 
   /**
@@ -77,15 +90,22 @@ export class ForwardHandler implements ExchangeRouteHandler {
 
   /**
    * Store one forwarded payload when the receiving host is allowed to act as
-   * the recipient's async correspondence store.
+   * the recipient's async correspondence store; otherwise, with a Poster,
+   * re-send it for a sender that this host serves.
    *
-   * Accepted host shapes:
+   * Accepted store host shapes:
    * - explicit mailbox provider authorized in `ends.`
    * - recipient witness host from the accepted KEL witness set
    * - recipient agent host authorized in `ends.`
    *
    * Controller endpoints stay excluded here because they are direct
    * correspondence destinations, not store-and-forward hosts.
+   *
+   * A relayed child is admitted to the Poster with this host as source and the
+   * `/fwd` topic unchanged; the Poster's own `transportMailboxTopic` is
+   * idempotent on that already-bare topic. Admission is the end of this
+   * handler's duty: a failed onward attempt is the Poster's logged failed
+   * outcome, with no outbox and no acknowledgement back to the sender.
    *
    * @param args Accepted exchange with borrowed attachments/children and receiving mailboxAid provenance.
    * @returns An operation for v2 child serialization, or synchronous completion/no-op for legacy or unauthorized input.
@@ -108,16 +128,54 @@ export class ForwardHandler implements ExchangeRouteHandler {
       return;
     }
 
-    if (!this.canStoreRecipient(recipient, mailboxAid)) return;
+    if (this.canStoreRecipient(recipient, mailboxAid)) {
+      if (child) {
+        // Mailbox LMDB accepts a finite row; collect one child, never the whole exchange stream.
+        return abortable(async (signal) => {
+          const wire = await collectPayload(nestedPayload(child, Vrsn_2_0), signal);
+          signal.throwIfAborted();
+          if (this.canStoreRecipient(recipient, mailboxAid)) this.mailboxDirector.publish(recipient, topic, wire);
+        });
+      }
+      this.mailboxDirector.publish(recipient, topic, forwarded!);
+      return;
+    }
+
+    const source: ForwardSource = {
+      sender: args.serder.pre,
+      origin: child ? childOrigin(child) : embeddedOrigin(args.serder),
+    };
+    if (!this.relayHost(source, recipient, mailboxAid)) return;
     if (child) {
-      // Mailbox LMDB accepts a finite row; collect one child, never the whole exchange stream.
       return abortable(async (signal) => {
         const wire = await collectPayload(nestedPayload(child, Vrsn_2_0), signal);
         signal.throwIfAborted();
-        if (this.canStoreRecipient(recipient, mailboxAid)) this.mailboxDirector.publish(recipient, topic, wire);
+        // Re-read authority in the same synchronous turn as Poster admission.
+        const host = this.relayHost(source, recipient, mailboxAid);
+        if (host) this.postman!.send({ src: host, dest: recipient, topic, msg: wire });
       });
     }
-    this.mailboxDirector.publish(recipient, topic, forwarded!);
+    const host = this.relayHost(source, recipient, mailboxAid)!;
+    this.postman!.send({ src: host, dest: recipient, topic, msg: forwarded! });
+  }
+
+  /**
+   * Select the local host that relays for this source, or null when relaying does not apply.
+   *
+   * Recipients in this Habery are never relayed: the Poster would only loop the child back to this host.
+   * Without request-scoped provenance any local habitat the source authorized may relay, as the store path
+   * accepts any local store host.
+   *
+   * @param source Authenticated `/fwd` signer and the forwarded message's own originator.
+   * @param recipient Final recipient AID named by the `/fwd` modifiers.
+   * @param mailboxAid Receiving hosted endpoint AID, or null when the request named none.
+   * @returns The local AID to send as, or null.
+   */
+  private relayHost(source: ForwardSource, recipient: string, mailboxAid: string | null | undefined): string | null {
+    const hby = this.mailboxDirector.hby;
+    if (!this.postman || hby.db.prefixes.has(recipient)) return null;
+    const hosts = mailboxAid ? [mailboxAid] : [...hby.db.prefixes];
+    return hosts.find((host) => hby.habs.has(host) && servesSource(hby, source, host)) ?? null;
   }
 
   /** Re-read accepted authority in the same synchronous turn as provider publication. */
@@ -151,15 +209,80 @@ function hostCanStoreForwardRecipient(
   if (recipientKever.wits.includes(hostAid)) {
     return true;
   }
+  return authorizesHost(hby, recipient, hostAid);
+}
 
+/**
+ * Whether `cid` has an accepted `mailbox` or `agent` end role naming `hostAid`: rows
+ * `ends.[cid, mailbox, hostAid]` and `ends.[cid, agent, hostAid]`, allowed or enabled.
+ *
+ * @param hby Borrowed local habitat collection and accepted-state database.
+ * @param cid Controller AID whose end-role authorization is read.
+ * @param hostAid Endpoint AID the role must name.
+ * @returns True when either row authorizes the host.
+ */
+function authorizesHost(hby: Habery, cid: string, hostAid: string): boolean {
   for (const role of [Roles.mailbox, Roles.agent]) {
-    const end = hby.db.ends.get([recipient, role, hostAid]);
+    const end = hby.db.ends.get([cid, role, hostAid]);
     if (end?.allowed || end?.enabled) {
       return true;
     }
   }
-
   return false;
+}
+
+/**
+ * Who a `/fwd` speaks for. A group's `/fwd` wrapper is signed by its local member (Poster cannot meet a group
+ * threshold with one signature), so the signer and the forwarded message's originator can differ.
+ */
+interface ForwardSource {
+  /** Authenticated `/fwd` signer (its `i`), verified by the Exchanger before this handler runs. */
+  readonly sender: string | null;
+  /** The forwarded message's own `i` (an ACDC's issuer), or null when it carries none. */
+  readonly origin: string | null;
+}
+
+/**
+ * Whether `hostAid` relays for this source: the sender authorized the host, or the forwarded message originates
+ * from a group the sender is an accepted member of and that group authorized the host. Witness membership of
+ * either is not consulted. Rows read: `ends.[sender, mailbox|agent, hostAid]`, then, only when the sender is an
+ * accepted member of `origin`, `ends.[origin, mailbox|agent, hostAid]`.
+ *
+ * @param hby Borrowed local habitat collection and accepted-state database.
+ * @param source Authenticated `/fwd` signer and forwarded originator.
+ * @param hostAid Local endpoint AID that would relay.
+ * @returns True when accepted end-role state makes the sender a served sender of this host.
+ */
+function servesSource(hby: Habery, source: ForwardSource, hostAid: string): boolean {
+  if (!source.sender) return false;
+  if (authorizesHost(hby, source.sender, hostAid)) return true;
+  return !!source.origin && source.origin !== source.sender
+    && isAcceptedGroupMember(hby.db, source.origin, source.sender)
+    && authorizesHost(hby, source.origin, hostAid);
+}
+
+/**
+ * Originator of a v2 nested child: a KERI message's `i`, an ACDC's issuer.
+ *
+ * @param child Bound nested child frame.
+ * @returns Originator AID, or null when the child names none.
+ */
+function childOrigin(child: CesrFrame): string | null {
+  const body = child.body;
+  if (body instanceof SerderKERI) return body.pre;
+  if (body instanceof SerderACDC) return body.issuer;
+  return null;
+}
+
+/**
+ * Originator of a legacy `e.evt` embed: its `i` field.
+ *
+ * @param serder Legacy forwarding exchange.
+ * @returns Originator AID, or null when the embed names none.
+ */
+function embeddedOrigin(serder: SerderKERI): string | null {
+  const evt = (serder.ked?.e as Record<string, unknown> | undefined)?.evt as Record<string, unknown> | undefined;
+  return typeof evt?.i === "string" ? evt.i : null;
 }
 
 /**

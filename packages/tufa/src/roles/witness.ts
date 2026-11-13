@@ -30,6 +30,7 @@ export function* runWitnessHost(
 ): Operation<void> {
   yield* runHostKernel(hby, {
     enableMailboxStore: true,
+    enableRelay: false,
     serviceHab,
     hostedPrefixes: [serviceHab.pre],
     http: {
