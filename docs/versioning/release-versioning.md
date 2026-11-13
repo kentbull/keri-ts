@@ -83,6 +83,41 @@ waits for all shards. A merged PR, or a run for a different tree, is not
 evidence. To get the evidence for a release commit, dispatch the gate on it
 (`gh workflow run pr-stage-gate.yml --ref master`); the run takes about ten minutes.
 
+## Release train
+
+The `Release train` workflow (`.github/workflows/release-train.yml`) releases the
+whole set from existing package tags in one run, in addition to the per-package tag
+workflows, which are unchanged and still release one package when its tag is pushed.
+
+- **Inputs.** `tag_<package>` for cesr, keri, hosting, wallet, registrar, verifier,
+  observer and tufa, each optional and defaulting to that package's highest
+  `<package>-v<semver>` tag; and `publish`, default `false`, which builds and
+  checks everything and publishes nothing.
+- **Plan** (`scripts/ci/release-train.ts plan`). For each package it resolves the tag
+  to its commit, requires the tag to match the package version and the commit to be
+  on master, and drops the package when that version is already on npm (a dry run keeps
+  an explicitly named tag so its build path can be exercised). It refuses a version
+  lower than the registry's `latest`, so `latest` never moves backwards. Nothing starts
+  for a dropped package.
+- **Order.** Stages come from the dependency graph in each package's
+  `scripts/build_npm.ts` `dependencies` object, which becomes the published
+  `package.json`; every release re-checks the built `npm/package.json` against it.
+  Today that is cesr, then keri, then hosting and wallet together, then registrar
+  (it depends on hosting), then verifier and observer together, then tufa (all of
+  them). Packages within a stage publish in parallel; a stage starts only when the
+  previous one succeeded, and each release first waits until the `name@version` of
+  its dependencies are visible on the npm registry.
+- **Qualify once.** For each distinct tag commit with no recorded green stage-gate run
+  (the rule above) the train dispatches the stage gate itself and waits; every package's
+  release check is then skipped on that evidence, so nothing is tested twice.
+- **Per package.** Each release is a call of `npm-release.yml` with `tag` set, so
+  provenance, the publish environment and the artifact smoke tests are the same, and
+  the GitHub release is created for the package tag also when the run is not a tag push.
+
+Use the train to release several packages at once or a whole version bump; use a
+single package workflow (push its tag) for one package. The train never creates or
+moves tags.
+
 ## Workflow and artifact ownership
 
 The three package tag workflows call
