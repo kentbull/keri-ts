@@ -4,6 +4,7 @@ import { type Operation, run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import {
   type ChangeSink,
+  DatabaseNotOpenError,
   type Habery,
   openHabery,
   PersistenceLatchedError,
@@ -24,8 +25,10 @@ import { walletChangeSink } from "../src/web/wallet-api.ts";
 import {
   openWebWallet,
   type OpenWebWalletOptions,
+  recoverWebWallet,
   UnencryptedKeeperError,
   WALLET_KRAM_CACHES,
+  WalletRecoveryError,
   WalletStoppedError,
   type WebWallet,
 } from "../web.ts";
@@ -85,19 +88,6 @@ function page() {
     page: new EventTarget(),
     document: Object.assign(new EventTarget(), { visibilityState: "visible" }),
   };
-  const open = (extra: Partial<OpenWebWalletOptions> = {}) =>
-    openWebWallet({
-      name: "alice",
-      bran: "0123456789abcdefghijk",
-      host: {
-        indexedDb: { factory, keyRange },
-        locks,
-        storage: { persist: () => Promise.resolve(true) },
-        http,
-        lifecycle,
-      },
-      ...extra,
-    } as OpenWebWalletOptions);
   const host = {
     indexedDb: { factory, keyRange },
     locks,
@@ -105,7 +95,20 @@ function page() {
     http,
     lifecycle,
   };
-  return { open, host, poison, held, log, sent, lifecycle, whenReleased: (fn: () => void) => onRelease = fn };
+  const options = (extra: Partial<OpenWebWalletOptions> = {}) =>
+    ({ name: "alice", bran: "0123456789abcdefghijk", host, ...extra }) as OpenWebWalletOptions;
+  const open = (extra: Partial<OpenWebWalletOptions> = {}) => openWebWallet(options(extra));
+  return {
+    open,
+    options,
+    host,
+    poison,
+    held,
+    log,
+    sent,
+    lifecycle,
+    whenReleased: (fn: () => void) => onRelease = fn,
+  };
 }
 
 Deno.test("reload: close and reopen with a fresh opener returns identifiers and wallet inventory", async () => {
@@ -406,10 +409,11 @@ Deno.test("a retained registry root copy gives every tracked recorder another tr
 
 Deno.test("the wallet's error classes report their own names, in a bundle that mangles class names", () => {
   for (
-    const [Error_, name] of [[UnencryptedKeeperError, "UnencryptedKeeperError"], [
-      WalletStoppedError,
-      "WalletStoppedError",
-    ]] as const
+    const [Error_, name] of [
+      [UnencryptedKeeperError, "UnencryptedKeeperError"],
+      [WalletStoppedError, "WalletStoppedError"],
+      [WalletRecoveryError, "WalletRecoveryError"],
+    ] as const
   ) {
     const original = Object.getOwnPropertyDescriptor(Error_, "name")!;
     Object.defineProperty(Error_, "name", { value: "a", configurable: true });
@@ -650,8 +654,11 @@ Deno.test("a host change sink receives kramRefused for a late peer message", asy
   }
 });
 
-Deno.test("wallet groups.rejoin", async () => {
-  // The custodial co-member: it holds the group and serves the group's OOBI.
+/**
+ * A custodial co-member `a` holding a two-member group with the wallet's keyless member, and an HTTP client that
+ * serves the group's OOBI and `a`'s OOBI from it. The member's signed inception is what the host keeps to re-adopt it.
+ */
+async function groupAgent() {
   const agent = await run(() =>
     openHabery({ name: "agent", temp: true, skipConfig: true, opener: new MemStoreOpener() })
   );
@@ -665,6 +672,8 @@ Deno.test("wallet groups.rejoin", async () => {
   const gid = agent.makeGroupHab("g", a, smids, [a.pre], undefined, { isith: ["1", "0"], nsith: "1", toad: 0 })
     .serder.pre!;
   const oobi = `http://agent.test/oobi/${gid}/controller`;
+  const memberOobi = `http://agent.test/oobi/${a.pre}/controller`;
+  const served = new Map([[oobi, gid], [memberOobi, a.pre]]);
   const fetched: string[] = [];
   const http: HttpClient = {
     *request(): Operation<HttpResponse> {
@@ -672,8 +681,9 @@ Deno.test("wallet groups.rejoin", async () => {
     },
     *open(url): Operation<HttpStreamResponse> {
       fetched.push(url);
-      if (url !== oobi) return { status: 404, ok: false, headers: new Headers(), body: async function*() {} };
-      const bytes = agent.habs.get(gid)!.replyToOobi(gid, "controller");
+      const pre = served.get(url);
+      if (!pre) return { status: 404, ok: false, headers: new Headers(), body: async function*() {} };
+      const bytes = agent.habs.get(pre)!.replyToOobi(pre, "controller");
       return {
         status: 200,
         ok: true,
@@ -684,6 +694,12 @@ Deno.test("wallet groups.rejoin", async () => {
       };
     },
   };
+  return { agent, signer, serder, sigers, a, smids, gid, oobi, memberOobi, http, fetched };
+}
+
+Deno.test("wallet groups.rejoin", async () => {
+  // The custodial co-member: it holds the group and serves the group's OOBI.
+  const { agent, signer, serder, sigers, a, smids, gid, oobi, http, fetched } = await groupAgent();
   const p = page();
   const w = await p.open({ host: { ...p.host, http } });
   try {
@@ -703,6 +719,143 @@ Deno.test("wallet groups.rejoin", async () => {
     await assertRejects(() => w.groups.rejoin({ ...options, member: gid }), Error, "Group identifiers");
   } finally {
     await w.close();
+    await run(() => agent.close(true));
+  }
+});
+
+/** Latch `w`: a commit made while writes fail exhausts its retries. Writes succeed again afterwards. */
+async function latch(p: ReturnType<typeof page>, w: WebWallet) {
+  p.poison.on = true;
+  w.inventory.credentials.pin(["lost"], "no");
+  await assertRejects(() => run(() => w.opener.queue.flushed()), PersistenceLatchedError);
+  p.poison.on = false;
+}
+
+Deno.test("recoverWebWallet returns a new healthy wallet after a latch and keeps the durable prefix", async () => {
+  const p = page();
+  const first = await p.open();
+  first.inventory.credentials.pin(["durable"], "yes");
+  await run(() => first.opener.queue.flushed());
+  await latch(p, first);
+  assertEquals(first.health().status, "latched");
+
+  const recovered = await recoverWebWallet(first, { open: p.options() });
+  try {
+    assertEquals([recovered.rejoin, recovered.skipped], [null, "no-group"]);
+    const second = recovered.wallet;
+    assert(second !== first && second.opener !== first.opener);
+    assertEquals(second.health(), { status: "ok" });
+    assertEquals(second.persistenceStatus(), "healthy");
+    assertEquals(second.inventory.credentials.get(["durable"]), "yes");
+    assertEquals(second.inventory.credentials.get(["lost"]), null);
+  } finally {
+    await recovered.wallet.close();
+  }
+  assertEquals(p.held.size, 0);
+});
+
+Deno.test("calls on the old handle fail after recovery", async () => {
+  const p = page();
+  const first = await p.open();
+  const { pre } = await first.identifiers.incept({ alias: "main" });
+  await run(() => first.opener.queue.flushed());
+  await latch(p, first);
+  const { wallet } = await recoverWebWallet(first, { open: p.options() });
+  try {
+    assertEquals(first.health(), { status: "closed" });
+    await assertRejects(() => first.identifiers.incept({ alias: "late" }), WalletStoppedError);
+    await assertRejects(() => first.oobis.resolve("http://agent.test/oobi"), WalletStoppedError);
+    await assertRejects(() => first.readPersisted(() => Promise.resolve("read")), WalletStoppedError);
+    // Synchronous reads reach the closed stores, which refuse them.
+    assertThrows(() => first.identifiers.status(pre, 0), DatabaseNotOpenError);
+    assertThrows(() => first.credentials.list(), DatabaseNotOpenError);
+    assertEquals(wallet.identifiers.status(pre, 0), { state: "complete" });
+  } finally {
+    await wallet.close();
+  }
+});
+
+Deno.test("recoverWebWallet throws WalletRecoveryError after its reopen attempts", async () => {
+  const p = page();
+  const first = await p.open();
+  let requests = 0;
+  // Another tab holds the wallet at every attempt.
+  const locks: StoreLockManager = {
+    async request(_name, _options, callback) {
+      requests++;
+      return await callback(null);
+    },
+  };
+  const error = await assertRejects(
+    () => recoverWebWallet(first, { open: p.options({ host: { ...p.host, locks } }), attempts: 2 }),
+    WalletRecoveryError,
+  );
+  assertInstanceOf(error.cause, StoreLockHeldError);
+  assertEquals(requests, 2);
+  assertEquals(first.health(), { status: "closed" });
+  await assertRejects(() => recoverWebWallet(first, { open: p.options(), attempts: 0 }), Error, "positive integer");
+});
+
+Deno.test("recoverWebWallet rejoins the group when its record is missing", async () => {
+  const { agent, signer, serder, sigers, a, smids, gid, oobi, memberOobi, http, fetched } = await groupAgent();
+  const p = page();
+  const options = p.options({ host: { ...p.host, http }, heldSigners: [signer] });
+  const first = await openWebWallet(options);
+  const member = first.hby.makeSignedHab("member", undefined, { serder, sigers });
+  await run(() => first.opener.queue.flushed());
+  await latch(p, first);
+  const group = { oobi, group: gid, alias: "group", member: member.pre, memberOobis: [memberOobi] };
+  const recovered = await recoverWebWallet(first, { open: options, group });
+  try {
+    assertEquals(recovered.rejoin, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre] });
+    assertEquals(recovered.wallet.hby.db.getHab(gid)?.mid, member.pre);
+    assertEquals(fetched.toSorted(), [memberOobi, oobi].toSorted());
+  } finally {
+    await recovered.wallet.close();
+    await run(() => agent.close(true));
+  }
+});
+
+Deno.test("recoverWebWallet skips rejoin when the member habitat is missing and says why", async () => {
+  const { agent, signer, serder, sigers, a, smids, gid, oobi, memberOobi, http, fetched } = await groupAgent();
+  const p = page();
+  // A wiped store: the wallet has never adopted its member.
+  const options = p.options({ host: { ...p.host, http }, heldSigners: [signer] });
+  const first = await openWebWallet(options);
+  const group = { oobi, group: gid, alias: "group", member: serder.pre!, memberOobis: [memberOobi] };
+  const recovered = await recoverWebWallet(first, { open: options, group });
+  const w = recovered.wallet;
+  try {
+    assertEquals([recovered.rejoin, recovered.skipped], [null, "member-missing"]);
+    assertEquals(fetched, []);
+    // The host's path: adopt the keyless member, resolve the co-members, rejoin.
+    w.hby.makeSignedHab("member", undefined, { serder, sigers });
+    assertEquals((await w.oobis.resolve(memberOobi)).outcome, "resolved");
+    const joined = await w.groups.rejoin({ oobi, group: gid, alias: "group", member: serder.pre! });
+    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre] });
+  } finally {
+    await w.close();
+    await run(() => agent.close(true));
+  }
+});
+
+Deno.test("recoverWebWallet skips rejoin when the group record is present", async () => {
+  const { agent, signer, serder, sigers, gid, oobi, memberOobi, http, fetched } = await groupAgent();
+  const p = page();
+  const options = p.options({ host: { ...p.host, http }, heldSigners: [signer] });
+  const first = await openWebWallet(options);
+  const member = first.hby.makeSignedHab("member", undefined, { serder, sigers });
+  await first.oobis.resolve(memberOobi);
+  const group = { oobi, group: gid, alias: "group", member: member.pre, memberOobis: [memberOobi] };
+  assertEquals((await first.groups.rejoin(group)).outcome, "joined");
+  const before = fetched.length;
+  const recovered = await recoverWebWallet(first, { open: options, group });
+  try {
+    assertEquals([recovered.rejoin, recovered.skipped], [null, "group-recorded"]);
+    assertEquals(recovered.wallet.hby.db.getHab(gid)?.mid, member.pre);
+    assertEquals(fetched.length, before);
+  } finally {
+    await recovered.wallet.close();
     await run(() => agent.close(true));
   }
 });
