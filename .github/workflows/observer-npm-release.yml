@@ -10,6 +10,25 @@ on:
         required: true
         default: false
         type: boolean
+      # Used by the release train and for releasing one package from an existing tag by dispatch.
+      tag:
+        description: Package tag to release (empty means the ref this run was started on)
+        required: false
+        default: ""
+        type: string
+      wait_for:
+        description: JSON array of name@version that must be visible on npm first (the train sets this)
+        required: false
+        default: "[]"
+        type: string
+      train_id:
+        description: Correlation id the release train sets so it can find this run
+        required: false
+        default: ""
+        type: string
+
+# The train finds its dispatched run by this title; every other run keeps the workflow name.
+run-name: ${{ inputs.train_id != '' && format('train {0}', inputs.train_id) || 'Observer npm release' }}
 
 permissions:
   actions: read
@@ -22,3 +41,5 @@ jobs:
     with:
       package: observer
       publish: ${{ github.event_name == 'push' || inputs.publish }}
+      tag: ${{ inputs.tag }}
+      wait_for: ${{ inputs.wait_for != '' && inputs.wait_for || '[]' }}

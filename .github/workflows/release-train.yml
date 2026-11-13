@@ -1,8 +1,10 @@
 name: Release train
 
 # Releases several packages from their package tags in one run: independent packages publish in parallel,
-# each stage only after the packages it depends on are visible on npm. The per-package tag workflows stay
-# and are unchanged for single releases. See docs/versioning/release-versioning.md.
+# each stage only after the packages it depends on are visible on npm. npm trusted publishing matches the
+# top-level workflow file, so this workflow never publishes itself: every stage job dispatches the package's
+# own `*-npm-release.yml` (the trusted publisher) with the tag and waits for that run. The per-package tag
+# workflows stay for single releases. See docs/versioning/release-versioning.md.
 on:
   workflow_dispatch:
     inputs:
@@ -137,16 +139,28 @@ jobs:
       fail-fast: false
       matrix:
         release: ${{ fromJSON(needs.plan.outputs.stage1) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
-      actions: read
-      contents: write
-      id-token: write
-    uses: ./.github/workflows/npm-release.yml
-    with:
-      package: ${{ matrix.release.package }}
-      tag: ${{ matrix.release.tag }}
-      wait_for: ${{ matrix.release.wait_for }}
-      publish: ${{ inputs.publish }}
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: release this package through its own workflow and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.release.package }}
+          TAG: ${{ matrix.release.tag }}
+          WAIT_FOR: ${{ matrix.release.wait_for }}
+          PUBLISH: ${{ inputs.publish }}
+          DISPATCH_REF: ${{ github.ref }}
+          TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: deno run --no-config --no-lock --allow-write --allow-env --allow-net=api.github.com scripts/ci/release-train.ts dispatch
 
   stage-2:
     needs: [plan, qualify, stage-1]
@@ -157,16 +171,28 @@ jobs:
       fail-fast: false
       matrix:
         release: ${{ fromJSON(needs.plan.outputs.stage2) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
-      actions: read
-      contents: write
-      id-token: write
-    uses: ./.github/workflows/npm-release.yml
-    with:
-      package: ${{ matrix.release.package }}
-      tag: ${{ matrix.release.tag }}
-      wait_for: ${{ matrix.release.wait_for }}
-      publish: ${{ inputs.publish }}
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: release this package through its own workflow and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.release.package }}
+          TAG: ${{ matrix.release.tag }}
+          WAIT_FOR: ${{ matrix.release.wait_for }}
+          PUBLISH: ${{ inputs.publish }}
+          DISPATCH_REF: ${{ github.ref }}
+          TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: deno run --no-config --no-lock --allow-write --allow-env --allow-net=api.github.com scripts/ci/release-train.ts dispatch
 
   stage-3:
     needs: [plan, qualify, stage-1, stage-2]
@@ -177,16 +203,28 @@ jobs:
       fail-fast: false
       matrix:
         release: ${{ fromJSON(needs.plan.outputs.stage3) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
-      actions: read
-      contents: write
-      id-token: write
-    uses: ./.github/workflows/npm-release.yml
-    with:
-      package: ${{ matrix.release.package }}
-      tag: ${{ matrix.release.tag }}
-      wait_for: ${{ matrix.release.wait_for }}
-      publish: ${{ inputs.publish }}
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: release this package through its own workflow and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.release.package }}
+          TAG: ${{ matrix.release.tag }}
+          WAIT_FOR: ${{ matrix.release.wait_for }}
+          PUBLISH: ${{ inputs.publish }}
+          DISPATCH_REF: ${{ github.ref }}
+          TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: deno run --no-config --no-lock --allow-write --allow-env --allow-net=api.github.com scripts/ci/release-train.ts dispatch
 
   stage-4:
     needs: [plan, qualify, stage-1, stage-2, stage-3]
@@ -197,16 +235,28 @@ jobs:
       fail-fast: false
       matrix:
         release: ${{ fromJSON(needs.plan.outputs.stage4) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
-      actions: read
-      contents: write
-      id-token: write
-    uses: ./.github/workflows/npm-release.yml
-    with:
-      package: ${{ matrix.release.package }}
-      tag: ${{ matrix.release.tag }}
-      wait_for: ${{ matrix.release.wait_for }}
-      publish: ${{ inputs.publish }}
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: release this package through its own workflow and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.release.package }}
+          TAG: ${{ matrix.release.tag }}
+          WAIT_FOR: ${{ matrix.release.wait_for }}
+          PUBLISH: ${{ inputs.publish }}
+          DISPATCH_REF: ${{ github.ref }}
+          TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: deno run --no-config --no-lock --allow-write --allow-env --allow-net=api.github.com scripts/ci/release-train.ts dispatch
 
   stage-5:
     needs: [plan, qualify, stage-1, stage-2, stage-3, stage-4]
@@ -217,16 +267,28 @@ jobs:
       fail-fast: false
       matrix:
         release: ${{ fromJSON(needs.plan.outputs.stage5) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
-      actions: read
-      contents: write
-      id-token: write
-    uses: ./.github/workflows/npm-release.yml
-    with:
-      package: ${{ matrix.release.package }}
-      tag: ${{ matrix.release.tag }}
-      wait_for: ${{ matrix.release.wait_for }}
-      publish: ${{ inputs.publish }}
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: release this package through its own workflow and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.release.package }}
+          TAG: ${{ matrix.release.tag }}
+          WAIT_FOR: ${{ matrix.release.wait_for }}
+          PUBLISH: ${{ inputs.publish }}
+          DISPATCH_REF: ${{ github.ref }}
+          TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: deno run --no-config --no-lock --allow-write --allow-env --allow-net=api.github.com scripts/ci/release-train.ts dispatch
 
   stage-6:
     needs: [plan, qualify, stage-1, stage-2, stage-3, stage-4, stage-5]
@@ -237,13 +299,25 @@ jobs:
       fail-fast: false
       matrix:
         release: ${{ fromJSON(needs.plan.outputs.stage6) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
-      actions: read
-      contents: write
-      id-token: write
-    uses: ./.github/workflows/npm-release.yml
-    with:
-      package: ${{ matrix.release.package }}
-      tag: ${{ matrix.release.tag }}
-      wait_for: ${{ matrix.release.wait_for }}
-      publish: ${{ inputs.publish }}
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: release this package through its own workflow and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ matrix.release.package }}
+          TAG: ${{ matrix.release.tag }}
+          WAIT_FOR: ${{ matrix.release.wait_for }}
+          PUBLISH: ${{ inputs.publish }}
+          DISPATCH_REF: ${{ github.ref }}
+          TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: deno run --no-config --no-lock --allow-write --allow-env --allow-net=api.github.com scripts/ci/release-train.ts dispatch

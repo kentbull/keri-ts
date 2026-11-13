@@ -3,6 +3,8 @@ import { unitShards } from "./pr-test-scope.ts";
 import {
   compareVersions,
   declaredDependencies,
+  dispatchAndWait,
+  type DispatchApi,
   gateSupportsEvidence,
   latestTag,
   type Package,
@@ -10,6 +12,7 @@ import {
   planTrain,
   type Sources,
   stages,
+  workflowFile,
 } from "./release-train.ts";
 
 const read = (id: string) =>
@@ -128,4 +131,64 @@ Deno.test("a tag's stage gate counts as evidence only when it is dispatchable an
   const missing = withFiles({});
   missing.file = () => Promise.reject(new Error("missing"));
   assertEquals(await gateSupportsEvidence(missing, "t"), false);
+});
+
+Deno.test("each package is released by its own workflow file", () => {
+  assertEquals(workflowFile("keri"), "keri-ts-npm-release.yml");
+  assertEquals(workflowFile("cesr"), "cesr-npm-release.yml");
+  assertEquals(workflowFile("tufa"), "tufa-npm-release.yml");
+});
+
+/** A fake API that returns the given runs on every poll and records the dispatch. */
+function dispatchApi(status: number, runs: Record<string, unknown>[]): DispatchApi & { sent: unknown[] } {
+  const sent: unknown[] = [];
+  return {
+    sent,
+    dispatch: (path, body) => {
+      sent.push({ path, body });
+      return Promise.resolve(status);
+    },
+    get: () => Promise.resolve({ workflow_runs: runs }),
+  };
+}
+const request = (clock: { t: number }) => ({
+  repo: "o/r",
+  workflow: "keri-ts-npm-release.yml",
+  ref: "refs/heads/master",
+  inputs: { publish: "false", tag: "keri-v1.0.0", wait_for: "[]", train_id: "7-keri" },
+  title: "train 7-keri",
+  timeoutMs: 60_000,
+  pollMs: 10_000,
+  now: () => clock.t,
+  sleep: (ms: number) => Promise.resolve(void (clock.t += ms)),
+});
+const done = (title: string, conclusion: string) => ({
+  id: 1,
+  display_title: title,
+  status: "completed",
+  conclusion,
+  html_url: "https://example/run/1",
+});
+
+Deno.test("dispatch-and-wait returns the url of the one matching successful run", async () => {
+  const api = dispatchApi(204, [done("train other", "failure"), done("train 7-keri", "success")]);
+  assertEquals(await dispatchAndWait(api, request({ t: 0 })), "https://example/run/1");
+  assertEquals((api.sent[0] as { body: { ref: string } }).body.ref, "refs/heads/master");
+});
+
+Deno.test("dispatch-and-wait fails on a failed run, a refused dispatch and a timeout", async () => {
+  await assertRejects(
+    () => dispatchAndWait(dispatchApi(204, [done("train 7-keri", "failure")]), request({ t: 0 })),
+    Error,
+    "ended failure",
+  );
+  await assertRejects(() => dispatchAndWait(dispatchApi(422, []), request({ t: 0 })), Error, "HTTP 422");
+  // Another run's title never satisfies the wait, and an in-progress run times out.
+  await assertRejects(
+    () => dispatchAndWait(dispatchApi(204, [done("train 8-keri", "success")]), request({ t: 0 })),
+    Error,
+    "Timed out",
+  );
+  const running = { ...done("train 7-keri", "success"), status: "in_progress", conclusion: null };
+  await assertRejects(() => dispatchAndWait(dispatchApi(204, [running]), request({ t: 0 })), Error, "Timed out");
 });
