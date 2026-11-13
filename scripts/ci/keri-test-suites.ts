@@ -4,6 +4,12 @@ export interface TestSuite {
   files: readonly string[];
   /** Proven file-level parallelism; omitted suites retain separate child processes. */
   jobs?: number;
+  /**
+   * Files that share no process-global or fixed-port state run as separate child processes,
+   * this many at a time. Unlike `jobs`, no two files share a Deno process, so in-process
+   * `HOME`/`DENO_DIR` swaps and native LMDB handles stay isolated.
+   */
+  processes?: number;
   /** Explicit opt-in values for manual endurance cases. */
   env?: Record<string, string>;
 }
@@ -125,6 +131,7 @@ export const suites: Record<string, TestSuite> = {
     ],
   },
   "interop-parity": {
+    processes: 2,
     files: [
       "test/integration/app/interop-annotate-kli-tufa.test.ts",
       "test/integration/app/interop-kli-tufa.test.ts",
@@ -132,6 +139,7 @@ export const suites: Record<string, TestSuite> = {
     ],
   },
   "interop-reference-profiles": {
+    processes: 2,
     files: [
       "test/integration/app/interop-acdc-kli-tufa.test.ts",
       "test/integration/app/interop-acdc-mixed-chain-i2i.test.ts",
@@ -151,6 +159,7 @@ export const suites: Record<string, TestSuite> = {
     files: ["test/integration/app/interop-essr-storage.test.ts"],
   },
   "interop-ipex-disclosure": {
+    processes: 2,
     files: [
       "test/integration/app/interop-ipex-disclosure.test.ts",
       "test/integration/app/interop-ipex-progressive.test.ts",
@@ -163,6 +172,7 @@ export const suites: Record<string, TestSuite> = {
     files: ["test/integration/app/interop-v2-registry.test.ts"],
   },
   "interop-delegation": {
+    processes: 2,
     files: [
       "test/integration/app/interop-delegation-group-kli-tufa.test.ts",
       "test/integration/app/interop-delegation-kli-tufa.test.ts",
@@ -174,6 +184,7 @@ export const suites: Record<string, TestSuite> = {
     ],
   },
   "interop-witness-main": {
+    processes: 2,
     files: [
       "test/integration/app/interop-witness-kli-tufa.test.ts",
       "test/integration/app/interop-hosted-witness-kli-tufa.test.ts",
@@ -320,6 +331,7 @@ export const suites: Record<string, TestSuite> = {
     ],
   },
   "interop-oobi-bootstrap": {
+    processes: 2,
     files: [
       "test/integration/app/interop-oobi-store.test.ts",
       "test/integration/app/interop-oobi-bootstrap.test.ts",

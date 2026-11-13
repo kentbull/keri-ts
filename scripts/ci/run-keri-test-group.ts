@@ -92,6 +92,16 @@ function fastDefault(): string {
   return Deno.args[0] === "qualification" ? "0" : "1";
 }
 
+/** Cap caller-requested concurrency at the suite's concurrent child-process allowance. */
+function processes(suite: TestSuite): number {
+  const value = Deno.env.get("KERI_TEST_JOBS") || Deno.env.get("DENO_JOBS");
+  const requested = value ? Number(value) : navigator.hardwareConcurrency;
+  if (!Number.isSafeInteger(requested) || requested < 1) {
+    throw new Error("Test worker count must be a positive integer.");
+  }
+  return Math.min(requested, suite.processes ?? 1);
+}
+
 /** Select the concrete owner's peer without allowing main setup to replace the candidate. */
 export function keripySuiteEnvironment(name: string, inherited: Record<string, string>): Record<string, string> {
   const env = { ...inherited, ...suites[name]?.env };
@@ -137,28 +147,40 @@ async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
   const executable = expandProfiles ? "python3" : Deno.execPath();
   let batches = suite.jobs ? [suite.files] : suite.files.map((file) => [file]);
   if (expandProfiles) batches = [suite.files];
-  for (const files of batches) {
-    const args = expandProfiles
-      ? [fromFileUrl(new URL("./qualify-reference-profiles.py", import.meta.url))]
-      : ["test", "--allow-all", "--unstable-ffi", ...(suite.jobs ? ["--parallel"] : []), ...files];
-    if (expandProfiles) console.log(`==> ${name}: all frozen reference profiles`);
-    else console.log(`==> ${name}: ${files.length} files, ${jobs(suite)} worker(s)`);
-    const start = performance.now();
-    const startedAt = new Date().toISOString();
-    const child = new Deno.Command(executable, {
-      args,
-      cwd: packageDir,
-      env: { DENO_JOBS: String(jobs(suite)), KERI_TEST_FAST: fastDefault(), ...env },
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    }).spawn();
-    const status = await child.status;
-    const durationMs = Math.round(performance.now() - start);
-    timings.push({ suite: name, executable, args, startedAt, durationMs, exitCode: status.code });
-    console.log(`==> ${name}: exit ${status.code}, ${(durationMs / 1000).toFixed(1)}s`);
-    // Finish independent files/suites so a full run reports all maintained failures.
-  }
+  const concurrent = processes(suite);
+  const queue = [...batches];
+  /** Each worker takes the next file; `slot` keeps concurrent children on disjoint random-port ranges. */
+  const worker = async (slot: number): Promise<void> => {
+    for (let files = queue.shift(); files; files = queue.shift()) {
+      const args = expandProfiles
+        ? [fromFileUrl(new URL("./qualify-reference-profiles.py", import.meta.url))]
+        : ["test", "--allow-all", "--unstable-ffi", ...(suite.jobs ? ["--parallel"] : []), ...files];
+      if (expandProfiles) console.log(`==> ${name}: all frozen reference profiles`);
+      else console.log(`==> ${name}: ${files.length} files, ${jobs(suite)} worker(s)`);
+      const start = performance.now();
+      const startedAt = new Date().toISOString();
+      const child = new Deno.Command(executable, {
+        args,
+        cwd: packageDir,
+        env: {
+          DENO_JOBS: String(jobs(suite)),
+          KERI_TEST_FAST: fastDefault(),
+          KERI_TEST_SLOT: String(slot),
+          KERI_TEST_SLOTS: String(concurrent),
+          ...env,
+        },
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      }).spawn();
+      const status = await child.status;
+      const durationMs = Math.round(performance.now() - start);
+      timings.push({ suite: name, executable, args, startedAt, durationMs, exitCode: status.code });
+      console.log(`==> ${name}: exit ${status.code}, ${(durationMs / 1000).toFixed(1)}s (${files.join(" ")})`);
+      // Finish independent files/suites so a full run reports all maintained failures.
+    }
+  };
+  await Promise.all(Array.from({ length: concurrent }, (_, slot) => worker(slot)));
 }
 
 /** Resolve the artifact path for local and hosted runs, on success as well as failure. */
