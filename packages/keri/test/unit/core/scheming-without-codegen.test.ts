@@ -39,6 +39,7 @@ function schemaSed(): Record<string, unknown> {
         type: "object",
         required: ["name"],
         properties: {
+          d: { type: "string" },
           name: { $ref: "#/$defs/name" },
           kind: { const: "person" },
           code: { type: "string", pattern: "^[A-Z]{2}$" },
