@@ -41,7 +41,10 @@ export const OWNER_TOCK_MS = 50;
 /** Tocks between the replicator's full rotation checks: 1200 tocks of 50 ms is a minute. */
 export const OWNER_SWEEP_TOCKS = 1200;
 /** The production pacing of the owner loop. */
-export const OWNER_PACING: Readonly<DoerPacing> = Object.freeze({ tockMs: OWNER_TOCK_MS, sweepTocks: OWNER_SWEEP_TOCKS });
+export const OWNER_PACING: Readonly<DoerPacing> = Object.freeze({
+  tockMs: OWNER_TOCK_MS,
+  sweepTocks: OWNER_SWEEP_TOCKS,
+});
 
 /**
  * What an embedder may supply; every field is optional. The operation tables are in memory and their status is

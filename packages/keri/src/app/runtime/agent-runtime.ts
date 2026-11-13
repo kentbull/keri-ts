@@ -6,7 +6,6 @@ import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../
 import { RegistryRoot } from "../../acdc/salting.ts";
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
-import { Roles } from "../../core/roles.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../../core/dispatch.ts";
 import { DatabaseNotOpenError, ValidationError } from "../../core/errors.ts";
 import { Kevery, type MessagePolicy } from "../../core/kel/eventing.ts";
@@ -18,6 +17,7 @@ import {
   REPLAY_MAILBOX_TOPIC,
   REPLY_MAILBOX_TOPIC,
 } from "../../core/mailbox/mailbox-topics.ts";
+import { Roles } from "../../core/roles.ts";
 import { Revery } from "../../core/routing.ts";
 import { openOwner } from "../../db/core/store-owner.ts";
 import { Mailboxer } from "../../db/mailbox/mailboxing.ts";
@@ -59,15 +59,15 @@ import { WitnessInquisitor } from "../queries/witness-inquisitor.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { Receiptor } from "../witness/receipting.ts";
 import { cueDo } from "./cue-runtime.ts";
+import { type DoerPacing, doEvery, PROTOCOL_PACING } from "./doing.ts";
 import { IpexAuxiliaries } from "./ipex-auxiliaries.ts";
 import {
   composeOwners,
-  OWNER_PACING,
   operationOwnersDo,
   type OperationStores,
+  OWNER_PACING,
   type RuntimeOperations,
 } from "./operation-owners.ts";
-import { type DoerPacing, doEvery, PROTOCOL_PACING } from "./doing.ts";
 import type { RetryPolicy } from "./retry-backoff.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { signalerChangeSink } from "./workflow-contract.ts";
@@ -938,8 +938,11 @@ export function* runAgentRuntime(
     ...(runtime.vdr && telReceiptor
       ? [
         yield* spawn(() =>
-          doEvery(runtime.clock, pacing.tockMs, () =>
-            publishPendingTel(runtime.hby, runtime.vdr!.publication, telReceiptor, runtime.http, runtime.clock))
+          doEvery(
+            runtime.clock,
+            pacing.tockMs,
+            () => publishPendingTel(runtime.hby, runtime.vdr!.publication, telReceiptor, runtime.http, runtime.clock),
+          )
         ),
       ]
       : []),

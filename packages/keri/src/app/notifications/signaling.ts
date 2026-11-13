@@ -185,8 +185,12 @@ export class Signaler {
   }
 
   *signalDo(clock: RuntimeClock = systemClock, pacing: Readonly<DoerPacing> = PROTOCOL_PACING): Operation<never> {
-    return yield* doEvery(clock, pacing.tockMs, function*(this: Signaler) {
-      this.processOnce();
-    }.bind(this));
+    return yield* doEvery(
+      clock,
+      pacing.tockMs,
+      function*(this: Signaler) {
+        this.processOnce();
+      }.bind(this),
+    );
   }
 }
