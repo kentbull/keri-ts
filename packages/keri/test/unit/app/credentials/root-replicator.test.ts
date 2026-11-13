@@ -282,3 +282,36 @@ Deno.test("root replicating: typed results keep the error and map to the root_co
     }
   });
 });
+
+Deno.test("root replicator: a rotation nobody prompted waits for the sweep; a prompted group is re-derived by the next pass", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted, { newcomer: true });
+    yield* seed(w);
+    w.alice.rgy.store.retainOpening(w.event, w.opening);
+    reachable(w.alice, w.bob);
+    reachable(w.alice, w.outsider);
+    const replicating = replicator(w.alice);
+    assertEquals(recipients(yield* pass(w.alice, replicating)), [[w.bob.hab.pre, "sent"]]);
+    const current = [w.alice, w.bob, w.outsider];
+    yield* rotate(w, current, current, "2");
+    // The fixed-tock pass looks only at prompted groups: it does not walk every identifier for rotations.
+    const delivering = yield* spawn(() => w.alice.runtime.postman.deliverDo());
+    try {
+      assertEquals(yield* replicating.processDue(), [], "an unprompted rotation waits for the sweep");
+      replicating.prompt(w.gid);
+      assertEquals(
+        new Set(recipients(yield* replicating.processDue()).map(([aid]) => aid)),
+        new Set([w.bob.hab.pre, w.outsider.hab.pre]),
+        "a prompted group is re-derived by the next pass",
+      );
+    } finally {
+      yield* delivering.halt();
+    }
+    // The sweep alone finds a rotation nobody prompted for.
+    const fresh = replicator(w.alice);
+    assertEquals((yield* pass(w.alice, fresh)).length, 0, "a restarted replicator finds the copies already sent");
+    fresh.sweep();
+    assertEquals(fresh.pending(), false);
+  });
+});

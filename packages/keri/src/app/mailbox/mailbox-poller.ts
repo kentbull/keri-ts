@@ -3,6 +3,7 @@ import { call, type Operation, scoped, spawn, type Task } from "npm:effection@^3
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { abortable } from "../runtime/abortable.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
+import { type DoerPacing, doEvery, PROTOCOL_PACING } from "../runtime/doing.ts";
 import { runtimeTurn } from "../runtime/runtime-turn.ts";
 import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { isLegacyCesrMediaRejection, readResponseDetail } from "../transport/cesr-egress.ts";
@@ -129,21 +130,45 @@ export class MailboxPoller {
    */
   *pollDo(
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
+    pacing: Readonly<DoerPacing> = PROTOCOL_PACING,
   ): Operation<never> {
     const remoteWorkers = new Map<string, Task<void>>();
-
+    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
+    const self = this;
+    let habs = -1, shape = "";
     try {
-      while (true) {
-        const topics = this.mailboxDirector.registeredTopics();
-        yield* this.syncRemoteWorkers(remoteWorkers, onBatch, topics);
-
-        yield* runtimeTurn();
-      }
+      return yield* doEvery(this.clock, pacing.tockMs, function*(tock) {
+        const topics = self.mailboxDirector.registeredTopics();
+        // Every tock looks only at what changed: the topics, the number of identifiers, and the identifiers
+        // prompted since. Everything else is found by the sweep on tock 0 and every `sweepTocks`.
+        const changed = topics.join("|") !== shape || self.hby.habs.size !== habs;
+        if (tock % pacing.sweepTocks === 0 || changed) {
+          shape = topics.join("|");
+          habs = self.hby.habs.size;
+          self.#dirty.clear();
+          yield* self.syncRemoteWorkers(remoteWorkers, onBatch, topics);
+        } else if (self.#dirty.size) {
+          const only = new Set(self.#dirty);
+          self.#dirty.clear();
+          yield* self.syncRemoteWorkers(remoteWorkers, onBatch, topics, only);
+        }
+      });
     } finally {
       for (const task of [...remoteWorkers.values()].reverse()) {
         yield* task.halt();
       }
     }
+  }
+
+  /** Identifiers whose mailbox endpoints changed; the poller re-selects their workers on the next tock. */
+  readonly #dirty = new Set<string>();
+
+  /**
+   * Tell the poller `pre`'s mailbox roles or endpoints changed, so its workers are re-selected on the next tock
+   * instead of at the next sweep.
+   */
+  prompt(pre: string): void {
+    this.#dirty.add(pre);
   }
 
   /**
@@ -192,10 +217,11 @@ export class MailboxPoller {
     remoteWorkers: Map<string, Task<void>>,
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
     topics: readonly string[],
+    only?: ReadonlySet<string>,
   ): Operation<void> {
     const active = new Set<string>();
     if (topics.length > 0) {
-      for (const target of this.remotePollTargets()) {
+      for (const target of this.remotePollTargets(only)) {
         for (const endpoint of mailboxPollEndpoints(target.hab)) {
           const workerKey = `${target.targetPre}:${endpoint.key}`;
           active.add(workerKey);
@@ -210,7 +236,7 @@ export class MailboxPoller {
     }
 
     for (const [workerKey, task] of [...remoteWorkers.entries()]) {
-      if (active.has(workerKey)) {
+      if (active.has(workerKey) || (only && !only.has(workerKey.slice(0, workerKey.indexOf(":"))))) {
         continue;
       }
       yield* task.halt();
@@ -263,11 +289,13 @@ export class MailboxPoller {
   /**
    * Select locally pollable subjects without substituting the group for its member signer.
    *
+   * @param only When given, only these identifiers are considered.
    * @returns Local subject/signing pairs; groups without an available local member are omitted.
    */
-  private remotePollTargets(): MailboxPollTarget[] {
+  private remotePollTargets(only?: ReadonlySet<string>): MailboxPollTarget[] {
     const targets: MailboxPollTarget[] = [];
     for (const hab of this.hby.habs.values()) {
+      if (only && !only.has(hab.pre)) continue;
       const signerHab = this.pollSignerHab(hab);
       if (!signerHab) {
         continue;

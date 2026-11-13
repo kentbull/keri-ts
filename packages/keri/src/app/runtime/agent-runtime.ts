@@ -6,6 +6,7 @@ import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../
 import { RegistryRoot } from "../../acdc/salting.ts";
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
+import { Roles } from "../../core/roles.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../../core/dispatch.ts";
 import { DatabaseNotOpenError, ValidationError } from "../../core/errors.ts";
 import { Kevery, type MessagePolicy } from "../../core/kel/eventing.ts";
@@ -61,10 +62,9 @@ import {
   type OperationStores,
   type RuntimeOperations,
 } from "./operation-owners.ts";
-import type { DoerPacing } from "./doing.ts";
+import { type DoerPacing, doEvery, PROTOCOL_PACING } from "./doing.ts";
 import type { RetryPolicy } from "./retry-backoff.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
-import { runtimeTurn } from "./runtime-turn.ts";
 import { signalerChangeSink } from "./workflow-contract.ts";
 import { observeUntil } from "./workflow-contract.ts";
 
@@ -146,6 +146,10 @@ export interface AgentRuntime {
   readonly ownerPacing: Readonly<DoerPacing>;
   /** Pacing of the KEL publisher loop `runAgentRuntime` runs. */
   readonly publisherPacing: Readonly<DoerPacing>;
+  /** Pacing of the protocol-facing background loops `runAgentRuntime` runs. */
+  readonly protocolPacing: Readonly<DoerPacing>;
+  /** Pacing of the mailbox poller `runAgentRuntime` runs. */
+  readonly pollerPacing: Readonly<DoerPacing>;
   /**
    * Background unsigned-request sender, run independently of reply intake.
    * Pending sender work excludes semantic query waits; their invoking operations
@@ -213,6 +217,10 @@ export interface AgentRuntimeOptions {
   ownerPacing?: Readonly<DoerPacing>;
   /** Tock and sweep interval of the KEL publisher loop; {@link KEL_PUBLISHER_PACING} when absent. */
   publisherPacing?: Readonly<DoerPacing>;
+  /** Tock of the protocol-facing background loops (cues, OOBI, authentication, signals, TEL publication, delegation, group counseling); {@link PROTOCOL_PACING} when absent. */
+  protocolPacing?: Readonly<DoerPacing>;
+  /** Tock and sweep interval of the mailbox poller; {@link PROTOCOL_PACING} when absent. */
+  pollerPacing?: Readonly<DoerPacing>;
   /** Borrowed legacy registry store; the runtime creates its processors and never closes this store. */
   reger?: Reger;
   /** An injected v2 manager and its backing store remain caller-owned. */
@@ -469,6 +477,12 @@ export function* createAgentRuntime(
       timeouts: options.mailboxPolling,
     },
   );
+  // A mailbox role accepted from a reply (a group member's approved add, an OOBI) is acted on at the next tock.
+  revery.onEndRole = (cid, role) => {
+    if (role !== Roles.mailbox) return;
+    kelPublisher.prompt(cid);
+    mailboxPoller.prompt(cid);
+  };
   for (
     const topic of [
       DELEGATE_MAILBOX_TOPIC,
@@ -556,6 +570,8 @@ export function* createAgentRuntime(
     kelPublisher,
     ownerPacing: options.ownerPacing ?? OWNER_PACING,
     publisherPacing: options.publisherPacing ?? KEL_PUBLISHER_PACING,
+    protocolPacing: options.protocolPacing ?? PROTOCOL_PACING,
+    pollerPacing: options.pollerPacing ?? PROTOCOL_PACING,
     querying,
     replyStreams,
     vdr,
@@ -909,58 +925,47 @@ export function* runAgentRuntime(
   } = {},
 ): Operation<void> {
   runtime.querying.configure({ hab: options.hab });
+  const pacing = runtime.protocolPacing;
   const telReceiptor = runtime.vdr ? new Receiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock) : null;
   const tasks = [
     yield* spawn(() => runtime.querying.deliverDo()),
     yield* spawn(() => runtime.postman.deliverDo()),
     ...(runtime.vdr && telReceiptor
       ? [
-        yield* spawn(function*() {
-          while (true) {
-            yield* publishPendingTel(runtime.hby, runtime.vdr!.publication, telReceiptor, runtime.http, runtime.clock);
-            yield* runtimeTurn();
-          }
-        }),
+        yield* spawn(() =>
+          doEvery(runtime.clock, pacing.tockMs, () =>
+            publishPendingTel(runtime.hby, runtime.vdr!.publication, telReceiptor, runtime.http, runtime.clock))
+        ),
       ]
       : []),
     yield* spawn(function*() {
-      yield* cueDo(runtime, options);
+      yield* cueDo(runtime, options, pacing);
     }),
     yield* spawn(function*() {
       yield* runtime.protocol.escrowDo(runtime.clock);
     }),
     yield* spawn(function*() {
-      yield* runtime.oobiery.oobiDo();
+      yield* runtime.oobiery.oobiDo(runtime.clock, pacing);
     }),
     yield* spawn(function*() {
-      yield* runtime.authenticator.authDo();
+      yield* runtime.authenticator.authDo(runtime.clock, pacing);
     }),
     ...(runtime.signaler
       ? [
         yield* spawn(function*() {
-          yield* runtime.signaler!.signalDo();
+          yield* runtime.signaler!.signalDo(runtime.clock, pacing);
         }),
       ]
       : []),
     ...(options.pollMailbox ?? true
       ? [
         yield* spawn(function*() {
-          yield* runtime.mailboxPoller.pollDo((batch) => settleMailboxPollBatch(runtime, batch));
+          yield* runtime.mailboxPoller.pollDo((batch) => settleMailboxPollBatch(runtime, batch), runtime.pollerPacing);
         }),
       ]
       : []),
-    yield* spawn(function*() {
-      while (true) {
-        yield* runtime.delegating.processAllOnce();
-        yield* runtimeTurn();
-      }
-    }),
-    yield* spawn(function*() {
-      while (true) {
-        yield* runtime.counselor.processOnce();
-        yield* runtimeTurn();
-      }
-    }),
+    yield* spawn(() => doEvery(runtime.clock, pacing.tockMs, () => runtime.delegating.processAllOnce())),
+    yield* spawn(() => doEvery(runtime.clock, pacing.tockMs, () => runtime.counselor.processOnce())),
     yield* spawn(() => kelPublisherDo(runtime.kelPublisher, runtime.clock, runtime.publisherPacing)),
     ...(runtime.operations && runtime.ipex
       ? [

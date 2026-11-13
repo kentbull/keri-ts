@@ -1,9 +1,11 @@
 /** Fixed-tock doers: a pass, then a wait of one tock on the runtime clock; no sleeping to a variable time, no wake. */
+import { Siger } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { kelPublisherDo } from "../../../../src/app/mailbox/kel-publisher.ts";
 import { KelPublisher } from "../../../../src/app/mailbox/kel-publisher.ts";
+import { dgKey } from "../../../../src/db/core/keys.ts";
 import { doEvery } from "../../../../src/app/runtime/doing.ts";
 import { FakeRuntimeHttpClient, ManualRuntimeClock } from "../../../support/runtime-fakes.ts";
 
@@ -91,6 +93,28 @@ Deno.test("a rotated cue is handled on the next tock", async () => {
       clock.advance(250);
       yield* settle();
       assertEquals(posts.length, 2, "the cue marks the identifier and the next tock posts the new KEL");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a held entry is posted on the tock after its receipts arrive", async () => {
+  await run(function*() {
+    const { hby, posts, clock, publisher } = yield* publishing();
+    try {
+      const witness = hby.makeHab("witness", undefined, { transferable: false, ncount: 0 });
+      const hab = hby.makeHab("witnessed", undefined, { transferable: true, toad: 1, wits: [witness.pre] });
+      hby.db.ends.pin([hab.pre, "mailbox", "alpha"], { allowed: true });
+      yield* spawn(() => kelPublisherDo(publisher, clock, { tockMs: 250, sweepTocks: 240 }));
+      yield* settle();
+      assertEquals(posts.length, 0, "unwitnessed: held");
+      const said = hab.kever!.lastEst.d, serder = hby.db.getEvtSerder(hab.pre, said)!;
+      const signature = witness.sign(serder.raw, true)[0];
+      hby.db.wigs.put(dgKey(hab.pre, said), [new Siger({ code: signature.code, raw: signature.raw, index: 0 })]);
+      clock.advance(250);
+      yield* settle();
+      assertEquals(posts.length, 1, "the owed entry was re-derived on the next tock, with no prompt");
     } finally {
       yield* hby.close(true);
     }

@@ -9,7 +9,7 @@ import type { RuntimeClock } from "./runtime-clock.ts";
 import { waitOnClock } from "./workflow-contract.ts";
 
 /** One pass of a doer; `tock` counts passes from 0, so a doer can do heavier work on tock 0 and every Nth. */
-export type DoerPass = (tock: number) => Operation<void>;
+export type DoerPass = (tock: number) => Operation<unknown>;
 
 /**
  * How often a doer runs, in milliseconds, and how many tocks apart its full sweeps are. A host that must be
@@ -19,6 +19,16 @@ export interface DoerPacing {
   tockMs: number;
   sweepTocks: number;
 }
+
+/** Milliseconds between passes of the protocol-facing background loops: KERIpy's Doist cycle, as the escrow loop uses. */
+export const PROTOCOL_TOCK_MS = 31.25;
+/** Tocks between full sweeps of a loop that has one: 1920 tocks of 31.25 ms is a minute. */
+export const PROTOCOL_SWEEP_TOCKS = 1920;
+/** The production pacing of the protocol-facing background loops. */
+export const PROTOCOL_PACING: Readonly<DoerPacing> = Object.freeze({
+  tockMs: PROTOCOL_TOCK_MS,
+  sweepTocks: PROTOCOL_SWEEP_TOCKS,
+});
 
 /** Run `pass` forever: pass 0, wait `tockMs` on `clock`, pass 1, and so on. A thrown error ends the doer. */
 export function* doEvery(clock: RuntimeClock, tockMs: number, pass: DoerPass): Operation<never> {

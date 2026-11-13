@@ -19,7 +19,8 @@ import { persistResolvedContact } from "../identity/organizing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { abortable } from "../runtime/abortable.ts";
-import { runtimeTurn } from "../runtime/runtime-turn.ts";
+import { type DoerPacing, doEvery, PROTOCOL_PACING } from "../runtime/doing.ts";
+import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
 import { collectBytes } from "../transport/byte-source.ts";
 import type { HttpStreamResponse } from "../transport/http-client.ts";
 import type { HttpClient } from "../transport/http-client.ts";
@@ -237,11 +238,8 @@ export class Oobiery {
    * This mirrors the KERIpy model where OOBI resolution is its own long-running
    * doer rather than root-owned queue plumbing.
    */
-  *oobiDo(): Operation<never> {
-    while (true) {
-      yield* this.processOnce();
-      yield* runtimeTurn();
-    }
+  *oobiDo(clock: RuntimeClock = systemClock, pacing: Readonly<DoerPacing> = PROTOCOL_PACING): Operation<never> {
+    return yield* doEvery(clock, pacing.tockMs, () => this.processOnce());
   }
 
   /** Select queued work, including a surviving in-flight row whose former process is gone. */
