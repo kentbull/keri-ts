@@ -16,6 +16,9 @@
  * | holder custodian or member    | {@link approveGroupIssuanceExchange}      | consent to DH (contributions follow as they arrive) |
  * | a member that only follows    | {@link followGroupIssuanceProof}          | nothing; verifies the custodian's final proof       |
  *
+ * The follow is not a consent and needs no call: the owner begins it itself (below). The explicit call remains for a
+ * proof supplied as bytes and is idempotent with the automatic follow.
+ *
  * The registry update is a separate consent: the custodian proposes the BUP through `proposeRegistryEvent`
  * (its own contribution is its approval) and every other issuer member approves that proposal with
  * `approveGroupProposal`. Admit is a separate consent as well.
@@ -25,10 +28,18 @@
  * Grant and the proof broadcast to the other members. Root copies are not sent here: the DH completion cue
  * feeds the runtime's `RootReplicator`, which sends exactly one copy per member.
  *
+ * Automatic follow: on its slow sweep of the pending exchange escrow the owner begins the proof-only follow, in either
+ * role, of each pending group Grant inside its deadline that this member has no live, ended or complete operation for
+ * and whose custodian's final proof is stored ({@link storedGroupProof}). The proof exists only after the key exchange
+ * finished, so the follow never takes the place of a member whose signature is still wanted; until the proof or a root
+ * copy is stored the member reads `awaitingExchangeConsent` and consents as usual. A member holding a root copy or the
+ * proof reads `awaitingAnchor` ({@link awaitsGroupProof}) until the follow accepts the Grant.
+ *
  * Reload: nothing about a group operation is durable but the protocol stores. A member that reloads reads
  * `awaitingExchangeConsent` for a pending Grant it holds no root for and consents again with the same call;
  * its signatures are deterministic, so consenting twice produces the same bytes. A custodian that reloaded
- * after retaining its root resumes when the stores allow it ({@link deriveGroupCustody}).
+ * after retaining its root resumes when the stores allow it ({@link deriveGroupCustody}). A follow signs nothing, so
+ * the first sweep after a reload begins it again from the stored proof.
  */
 import {
   bytesEqual,
@@ -300,25 +311,73 @@ export function deriveGroupCustody(deps: CustodyDeps, hab: Hab, grant: string): 
   const { hby } = deps;
   if (!isLocalGroupHab(hby, hab) || !hab.kever) return null;
   const member = localGroupMember(hby, hab.pre!);
-  const registries = new Set<string>();
-  for (const nest of deps.exc.retainedInput(grant)?.nests ?? []) {
-    const rd = nest.body.ked?.rd;
-    if (typeof rd === "string") registries.add(rd);
-  }
+  const registries = disclosedRegistries(deps.exc, grant);
   if (!registries.size || [...registries].some((registry) => !hab.mgr.hasRegistryRoot(hab.pre!, registry))) {
     return null;
   }
   if (receivedRootCopy(hby, hab.pre!, member.pre!, registries)) return null;
-  const events = [...hby.db.getKelItemIter(hab.pre!)].slice(-GROUP_COORDINATOR_SEARCH);
+  const coordinator = electingCoordinator(hby, hab.pre!, member.pre!);
+  return coordinator ? { coordinator, custodian: member.pre!, lead: true } : null;
+}
+
+/** The registries a retained Grant discloses credentials of. */
+function disclosedRegistries(exc: Exchanger, grant: string): Set<string> {
+  const registries = new Set<string>();
+  for (const nest of exc.retainedInput(grant)?.nests ?? []) {
+    const rd = nest.body.ked?.rd;
+    if (typeof rd === "string") registries.add(rd);
+  }
+  return registries;
+}
+
+/** The latest of the group's recent accepted events whose threshold evidence elects `member`, or null. */
+function electingCoordinator(hby: Habery, group: string, member: string): GroupCoordinator | null {
+  const events = [...hby.db.getKelItemIter(group)].slice(-GROUP_COORDINATOR_SEARCH);
   for (const [, said] of events.reverse()) {
-    const event = hby.db.getEvtSerder(hab.pre!, said);
+    const event = hby.db.getEvtSerder(group, said);
     if (!event || event.sn === null) continue;
     const coordinator = { sn: event.sn, said: event.said! };
-    if (groupElectedMember(hby, hab.pre!, coordinator) === member.pre) {
-      return { coordinator, custodian: member.pre!, lead: true };
-    }
+    if (groupElectedMember(hby, group, coordinator) === member) return coordinator;
   }
   return null;
+}
+
+/**
+ * The election of a final proof the local member of `hab` can follow for `grant` without taking part: the
+ * `/multisig/ipex-proof` wrapper of this exact Grant that another current signing member published, with a recent
+ * accepted group event electing that member as custodian. The custodian publishes the proof only after the key
+ * exchange finished and the registry update was accepted, so once it is stored no member's signature is still wanted
+ * for this issuance. The sender names the custodian exactly, which a root copy cannot (any member holding a root
+ * sends copies). Null when no such proof is stored. A pure read of the stored exchanges.
+ */
+export function storedGroupProof(deps: CustodyDeps, hab: Hab, grant: string): GroupElection | null {
+  const { hby } = deps;
+  if (!isLocalGroupHab(hby, hab) || !hab.kever) return null;
+  const member = localGroupMember(hby, hab.pre!).pre, signing = groupSigningMembers(hby, hab.pre!);
+  for (const [, parent] of hby.db.exns.getTopItemIter()) {
+    const attrs = parent.sad?.a as Record<string, unknown> | undefined;
+    if (
+      parent.route !== MULTISIG_IPEX_PROOF_ROUTE || attrs?.gid !== hab.pre || attrs?.grant !== grant
+      || !parent.pre || parent.pre === member || !signing.includes(parent.pre)
+    ) continue;
+    const coordinator = electingCoordinator(hby, hab.pre!, parent.pre);
+    if (coordinator) return { coordinator, custodian: parent.pre, lead: false };
+  }
+  return null;
+}
+
+/**
+ * Whether the group completed `grant` without the local member of `hab`, so that its runtime follows the final proof
+ * instead of asking it to consent: a `/registry/root` copy of a disclosed registry was sent to it (copies are
+ * authorized only once the registry update is accepted, after the key exchange), or the custodian's final proof is
+ * stored ({@link storedGroupProof}). A pure read of the stores.
+ */
+export function awaitsGroupProof(deps: CustodyDeps, hab: Hab, grant: string): boolean {
+  const { hby } = deps;
+  if (!isLocalGroupHab(hby, hab) || !hab.kever) return false;
+  const member = localGroupMember(hby, hab.pre!).pre!, registries = disclosedRegistries(deps.exc, grant);
+  return (registries.size > 0 && receivedRootCopy(hby, hab.pre!, member, registries))
+    || !!storedGroupProof(deps, hab, grant);
 }
 
 /** Whether `member` was sent a `/registry/root` copy of the group's root for any of `registries`. */
@@ -557,7 +616,11 @@ export function approveGroupIssuanceExchange(
  * is the Grant's sender when that is a local group, otherwise its recipient. The proof may already be stored (it
  * arrives by mailbox), or be supplied as bytes.
  *
- * @throws ValidationError for a Grant that is not pending for a local group, or one already begun.
+ * The owner begins the same follow on its own once the custodian's proof is stored ({@link storedGroupProof}), so a
+ * host needs this call only to supply the proof as bytes or to pin the coordinator. It is idempotent with that
+ * follow; see {@link beginGroupProofFollow}.
+ *
+ * @throws ValidationError for a Grant that is not pending for a local group, or one begun under a consent.
  */
 export function* followGroupIssuanceProof(
   ops: IssuanceOperations,
@@ -567,13 +630,37 @@ export function* followGroupIssuanceProof(
   const { deps } = ops, sent = deps.exc.retainedInput(said)?.serder.pre;
   const sender = sent ? deps.hby.habs.get(sent) : undefined;
   const role: IssuanceRole = sender && isLocalGroupHab(deps.hby, sender) ? "issuer" : "holder";
-  if (ops.liveOf(said, role) || partyComplete(deps, said, role)) {
-    throw new ValidationError("Issuance was already begun for this Grant");
+  const begun = beginGroupProofFollow(ops, said, role, options.coordinator);
+  // Stored for the follow's next scan, whether it began now or earlier.
+  if (options.proof) yield* deps.reactor.processBytes(options.proof);
+  return begun;
+}
+
+/**
+ * Begin `role`'s proof-only follow of the pending group Grant `said` under `coordinator` (default the group's latest
+ * establishment event). Signs nothing. Idempotent: when that party's follow is already live, or its side of the Grant
+ * is already complete, returns the Grant and its transaction and begins nothing. The owner's sweep and
+ * {@link followGroupIssuanceProof} both begin follows here.
+ *
+ * @throws ValidationError for a Grant that is not pending for a local group, one whose live operation is a consent,
+ * or a coordinator {@link GroupParty.resolve} refuses.
+ */
+export function beginGroupProofFollow(
+  ops: IssuanceOperations,
+  said: string,
+  role: IssuanceRole,
+  coordinator?: string,
+): IssuanceBegun {
+  const { deps } = ops, live = ops.liveOf(said, role);
+  if (live?.group?.mode === "proofOnly") return { grant: said, xid: live.xid };
+  if (live) throw new ValidationError("Issuance was already begun for this Grant");
+  if (partyComplete(deps, said, role)) {
+    const serder = deps.exc.retainedInput(said)?.serder;
+    return { grant: said, xid: serder ? grantTransactionId(serder) : said };
   }
   const { grant, nodes } = pendingGrant(deps, said);
   const group = localGroup(deps, role === "issuer" ? grant.pre : grant.sad!.ri);
-  const party = GroupParty.resolve(deps, group, options.coordinator);
-  if (options.proof) yield* deps.reactor.processBytes(options.proof);
+  const party = GroupParty.resolve(deps, group, coordinator);
   return ops.beginGroup(new GroupIssuance(party, role, grant, nodes, { mode: "proofOnly" }));
 }
 

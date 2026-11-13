@@ -404,9 +404,16 @@ Group work is a set of explicit library calls plus the `Counselor`.
   group is derived from the Grant, the proposal or the credential's registry, not passed in:
   `proposeGroupIssuance(ops, draft, options?)` (prepare, then the custodian's own approval in one consent),
   `approveGroupIssuance(ops, grant, options?)` (an issuer member's consent),
-  `approveGroupIssuanceExchange(ops, grant, coordinator?)` (a holder group member), `followGroupIssuanceProof` (an
-  issuer or holder member that contributes nothing, such as one of signing weight 0; signs nothing) and
-  `groupIssuanceProof`. `groupIssuanceElection(ops, group, coordinator?)` is a pure read of the custodian a coordinator
+  `approveGroupIssuanceExchange(ops, grant, coordinator?)` (a holder group member) and `groupIssuanceProof`. A member
+  the group completed without (signing weight 0, offline, or one that left after contributing) needs no call: on its
+  `ISSUANCE_SWEEP_MS` sweep the owner begins the proof-only follow of each pending group Grant, in either role, that
+  this member has no live, ended or complete operation for, inside the Grant deadline, once the custodian's final
+  proof wrapper is stored. The follow signs nothing, so it runs while the member cannot sign and a restart begins it
+  again. It never takes the place of a member whose signature is wanted: before the proof exists the member reads
+  `awaitingExchangeConsent`; holding a root copy or the proof it reads `awaitingAnchor`, then `awaitingAdmitConsent`
+  (holder) or `done` (issuer). A proof that never verifies ends the follow `expired` at the deadline.
+  `followGroupIssuanceProof(ops, grant, options?)` remains for a proof supplied as bytes or a pinned coordinator and is
+  idempotent with the automatic follow. Admit (`approveGroupIpex`) stays an explicit consent. `groupIssuanceElection(ops, group, coordinator?)` is a pure read of the custodian a coordinator
   elects and whether the local member is it; the coordinator is an optional pin that defaults to the group's latest
   establishment event, and the custodian is always the election's. `approveGroupIssuance` refuses a proposal the elected
   custodian did not sign, so a disagreement fails at consent instead of stalling DH. `groupIssuanceProposals` lists what

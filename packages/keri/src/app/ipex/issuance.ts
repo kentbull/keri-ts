@@ -22,6 +22,7 @@
  * | holder: pending Grant, no root held                                       | `awaitingExchangeConsent`                |
  * | pending Grant past its deadline                                           | `expired`                                |
  * | holder: root held, not committed otherwise; issuer: update accepted       | `active`, `rootRetained` (adopted)       |
+ * | group member: root copy received or the custodian's final proof stored    | `active`, `awaitingAnchor` (followed)    |
  * | issuer: pending Grant, update not accepted                                | `interrupted`                            |
  * | root held and the registry committed to another exchange                  | `interrupted`                            |
  * | holder: Grant accepted, no accepted Admit                                 | `active`, `awaitingAdmitConsent`         |
@@ -54,9 +55,12 @@
  * `{kind: "issuance", id: <grant>}` and the embedder records it.
  *
  * A local group issues and receives through the same table, status and wait: its consent calls and per-operation
- * steps are in `group-issuance.ts` and run inside the same `processOnce`. A group exchange is not resumed after a
- * restart (its frozen coordinator and custodian are not stored): a group pending Grant with no root reads
- * `awaitingExchangeConsent`, and a member consents again with the same call.
+ * steps are in `group-issuance.ts` and run inside the same `processOnce`. A group exchange in progress is not
+ * resumed after a restart (its frozen coordinator and custodian are not stored): a group pending Grant with no root
+ * reads `awaitingExchangeConsent`, and a member consents again with the same call. The custodian that retained the
+ * root is adopted once the stores allow it, and a member the group completed without is followed: the same sweep
+ * that finds resumable Grants begins the proof-only follow of each group Grant whose custodian's final proof is
+ * stored, signing nothing, so a restart begins it again.
  *
  * Collaborators are narrow concrete owners (ADR-0013); no `AgentRuntime`.
  */
@@ -97,13 +101,17 @@ import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
 import {
+  awaitsGroupProof,
+  beginGroupProofFollow,
   deriveGroupCustody,
+  type GroupElection,
   GroupIssuance,
   type GroupIssuanceDeps,
   GroupParty,
   type GroupRouteBinding,
   registerGroupRoutes,
   stepGroup,
+  storedGroupProof,
 } from "./group-issuance.ts";
 import { IpexAdmitter } from "./ipex-admitting.ts";
 import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions, storedExchangeWire } from "./ipex-discloser.ts";
@@ -117,9 +125,9 @@ import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions, storedExchangeW
 export const ISSUANCE_QUERY_RESEND_MS = 1000;
 
 /**
- * Milliseconds between scans of the pending exchange escrow for Grants a restarted process can finish. The scan
- * repeats because what makes a Grant resumable can arrive after the restart (an issuer's update accepted once the
- * other members approve it).
+ * Milliseconds between scans of the pending exchange escrow for Grants a restarted process can finish and group
+ * Grants whose final proof a member follows. The scan repeats because what makes a Grant resumable can arrive after
+ * the restart (an issuer's update accepted once the other members approve it), and a custodian's proof arrives late.
  */
 export const ISSUANCE_SWEEP_MS = 5_000;
 
@@ -314,6 +322,17 @@ interface Resumable {
   role: IssuanceRole;
 }
 
+/** A pending group Grant the local member follows to the custodian's stored proof, under the proof's election. */
+interface ProofFollow extends Resumable {
+  election: GroupElection;
+}
+
+/** What one sweep of the pending exchange escrow finds. */
+interface SweptGrants {
+  resumable: Resumable[];
+  follows: ProofFollow[];
+}
+
 /** What an operation that ended in this process reports until the process ends. */
 interface EndedIssuance {
   role: IssuanceRole;
@@ -377,26 +396,27 @@ export class IssuanceOperations {
     this.ended.set(partyKey(grant, ended.role), ended);
   }
 
-  /** Whether a pass has work: a live operation, or the one-time scan for resumable Grants has not run. */
+  /** Whether a pass has work: a live operation, an adoption still owed, or a sweep of the pending Grants is due. */
   active(): boolean {
     return this.live.size > 0 || this.stale.length > 0 || this.deps.clock.now() >= this.nextSweep;
   }
 
   /**
    * Advance every live operation by one pass. Each pass is bounded by the operation's Grant deadline.
-   * The first pass also adopts the pending Grants the stores prove resumable ({@link resumableGrants});
-   * that signs and sends nothing.
+   * Every {@link ISSUANCE_SWEEP_MS} a pass also scans the pending exchange escrow once ({@link sweptGrants}): it
+   * adopts the Grants the stores prove resumable and begins the proof-only follow of the group Grants whose
+   * custodian's proof is stored. Neither signs nor sends anything.
    */
   *processOnce(): Operation<void> {
     if (this.deps.clock.now() >= this.nextSweep) {
       this.nextSweep = this.deps.clock.now() + ISSUANCE_SWEEP_MS;
       const known = new Set(this.stale.map(({ grant, role }) => partyKey(grant, role)));
-      this.stale.push(
-        ...resumableGrants(this.deps).filter(({ grant, role }) => {
-          const key = partyKey(grant, role);
-          return !this.live.has(key) && !known.has(key) && !this.refused.has(key) && !this.ended.has(key);
-        }),
-      );
+      const swept = sweptGrants(this.deps, (grant, role) => {
+        const key = partyKey(grant, role);
+        return this.live.has(key) || known.has(key) || this.refused.has(key) || this.ended.has(key);
+      });
+      this.stale.push(...swept.resumable);
+      for (const found of swept.follows) this.follow(found);
     }
     for (const found of [...this.stale]) {
       if (yield* this.settle(found)) this.stale.splice(this.stale.indexOf(found), 1);
@@ -408,7 +428,8 @@ export class IssuanceOperations {
         const left = op.expires === null ? null : op.expires - BigInt(this.deps.clock.now()) * 1000n;
         if (left !== null && left <= 0n) this.end(op, "expired", EXPIRED);
         // A habitat that cannot sign yet waits for its signer; only its Grant deadline ends the operation meanwhile.
-        else if (!op.hab.canSign()) continue;
+        // A proof-only follow signs nothing, so it proceeds without one.
+        else if (!op.hab.canSign() && op.group?.mode !== "proofOnly") continue;
         else if (
           (yield* race([this.advance(op), ...(left === null ? [] : [this.timer(Number(left) / 1000)])])) === "expired"
         ) this.end(op, "expired", EXPIRED);
@@ -489,6 +510,24 @@ export class IssuanceOperations {
       }
     }
     return true;
+  }
+
+  /**
+   * Begin the proof-only follow a sweep found, under the stored proof's election; it signs nothing, so it needs no
+   * unlocked Keeper. A refusal means the stores no longer support it: the Grant then reads from them and is not tried
+   * again in this process. Any other failure is this Grant's alone and ends it `failed`, as for an adoption.
+   */
+  private follow(found: ProofFollow): void {
+    const key = partyKey(found.grant, found.role);
+    try {
+      beginGroupProofFollow(this, found.grant, found.role, found.election.coordinator.said);
+    } catch (error) {
+      this.refused.add(key);
+      if (!(error instanceof ValidationError)) {
+        this.ended.set(key, { role: found.role, state: "failed", reason: message(error) });
+        this.deps.changes?.push({ kind: "issuance", id: found.grant });
+      }
+    }
   }
 
   /** Rebuild the live entry of a resumable Grant from the stored Grant and the held roots. */
@@ -624,7 +663,8 @@ export class IssuanceOperations {
 
   /**
    * Record one group operation the user consented to ({@link approveGroupIssuance},
-   * {@link approveGroupIssuanceExchange}, {@link followGroupIssuanceProof}). A holder approves DH here, with its
+   * {@link approveGroupIssuanceExchange}), or a proof-only follow, which needs no consent ({@link beginGroupProofFollow},
+   * begun by the sweep or by {@link followGroupIssuanceProof}). A holder approves DH here, with its
    * consent; an issuer approves once the group has authenticated the Grant.
    */
   beginGroup(group: GroupIssuance): IssuanceBegun {
@@ -779,22 +819,45 @@ function grantParties(hby: Habery, grant: string) {
 }
 
 /**
- * Every pending Grant the stores prove a restarted process can finish: one scan of the pending exchange
- * escrow, made once when the owner first runs. A pure read.
+ * One scan of the pending exchange escrow, made every {@link ISSUANCE_SWEEP_MS}: each local party of a pending Grant
+ * that `skip` does not exclude (the owner skips what it holds live, ended, refused or already found) is either
+ * resumable, or a group member that follows the custodian's stored proof ({@link followable}). A pure read.
  */
-function resumableGrants(deps: IssuanceDeps): Resumable[] {
-  const found: Resumable[] = [];
+function sweptGrants(deps: IssuanceDeps, skip: (grant: string, role: IssuanceRole) => boolean): SweptGrants {
+  const swept: SweptGrants = { resumable: [], follows: [] };
   for (const [[grant]] of [...deps.hby.db.epse.getTopItemIter()]) {
     const parties = grantParties(deps.hby, grant);
     if (!parties) continue;
-    if (parties.issuer && resumable(deps, parties.issuer, grant, "issuer")) {
-      found.push({ hab: parties.issuer, grant, role: "issuer" });
-    }
-    if (parties.holder && resumable(deps, parties.holder, grant, "holder")) {
-      found.push({ hab: parties.holder, grant, role: "holder" });
+    for (const [hab, role] of [[parties.issuer, "issuer"], [parties.holder, "holder"]] as const) {
+      if (!hab || skip(grant, role)) continue;
+      if (resumable(deps, hab, grant, role)) {
+        swept.resumable.push({ hab, grant, role });
+        continue;
+      }
+      const election = followable(deps, hab, grant, role, parties.serder);
+      if (election) swept.follows.push({ hab, grant, role, election });
     }
   }
-  return found;
+  return swept;
+}
+
+/**
+ * The election under which the local member of group `hab` follows `grant` to its final proof, or null: the party's
+ * side is not complete, the Grant is inside its exchange deadline, and the custodian's proof is stored
+ * ({@link storedGroupProof}). Only the proof decides it, never the member's weight: a member that should sign is not
+ * followed, because the proof exists only once the key exchange no longer wants any signature.
+ */
+function followable(
+  deps: IssuanceDeps,
+  hab: Hab,
+  grant: string,
+  role: IssuanceRole,
+  serder: SerderKERI,
+): GroupElection | null {
+  if (!isLocalGroupHab(deps.hby, hab) || partyComplete(deps, grant, role)) return null;
+  const deadline = deps.exc.exchangeDeadline(serder), expires = deadline ? timestampMicros(deadline) : null;
+  if (expires === null || reached(deps.clock, expires)) return null;
+  return storedGroupProof(deps, hab, grant);
 }
 
 /** The terminal reading of a pending Grant no process can complete: ended by a restart, or by another exchange. */
@@ -1001,6 +1064,8 @@ export function issuanceStatus(
     return { state: "expired", role, reason: late ? EXPIRED_LATE : EXPIRED, deadline };
   }
   if (resumable(deps, hab, grant, role)) return { state: "active", role, phase: "rootRetained", deadline };
+  // The group completed without this member: the owner follows the custodian's proof once it is stored.
+  if (group && awaitsGroupProof(deps, hab, grant)) return { state: "active", role, phase: "awaitingAnchor", deadline };
   if ((role === "holder" || group) && !heldRoot(deps, hab, grant)) {
     // A group issuer's Grant may still be a partial one that only its members' contributions authenticate.
     if (!group && !deps.exc.retainedInput(grant, { pending: true })) {
