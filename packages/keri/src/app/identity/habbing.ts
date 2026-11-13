@@ -107,7 +107,6 @@ export interface HaberyArgs {
   aeid?: string;
   salt?: string;
   algo?: Algos;
-  tier?: Tier;
   /** Signers to hold as the Habery opens; see {@link HeldSigners}. */
   heldSigners?: HeldSigners;
 }
