@@ -506,7 +506,12 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
         assertRejects(
           () =>
             run(() =>
-              resumePresentationFile(fileDeps(receiverRuntime, presenterWallet), p.holder, preparedFile.grant, preparedFile.wire)
+              resumePresentationFile(
+                fileDeps(receiverRuntime, presenterWallet),
+                p.holder,
+                preparedFile.grant,
+                preparedFile.wire,
+              )
             ),
           ValidationError,
         )
