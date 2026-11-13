@@ -17,6 +17,7 @@ import {
   type Habery,
   type HeldCredential,
   IpexAdmitter,
+  listGroupDisclosures,
   type PreparedAdmit,
   type Receiptor,
   type RegistryDisclosure,
@@ -50,6 +51,14 @@ export interface WalletOptions {
   exc: Exchanger;
   db: WalletBaser;
 }
+/**
+ * What a new `admitted.` row is checked against. `current`: the Grant's credential graph is accepted for new use
+ * now (issued, not revoked), as fresh consent needs. `historical`: the Grant and its Admit reauthenticate against
+ * the key and registry history they were accepted under, which is all a consent already given needs; a credential
+ * revoked since is still a credential this wallet admitted.
+ */
+export type AdmissionEvidence = "current" | "historical";
+
 /** Compare durable application values, including exact originally issued raw bytes. */
 function identical(left: object, right: object): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -180,6 +189,40 @@ export class Wallet implements CredentialViews {
     { consent = false }: { consent?: boolean } = {},
   ): Promise<AdmittedCredential> {
     if (consent !== true) throw new ValidationError("Explicit consent is required.");
+    return await this.writeAdmission(grant, admit, "current");
+  }
+
+  /**
+   * Write the `admitted.` row of every accepted Grant addressed to a local habitat (individual or group) whose reply
+   * row names an accepted Admit and that has no row yet, and return the rows this call wrote. This is how imported
+   * history (`importCredentialStream` of a co-member's `exportDisclosureStream`) reaches the inventory.
+   *
+   * The accepted Admit is the consent: a local habitat signed it, here or on the store this one was refilled from.
+   * Each row is checked against `historical` evidence ({@link AdmissionEvidence}), so a credential revoked since it
+   * was admitted is still listed as held. A Grant whose retained evidence does not reauthenticate gets no row; the
+   * Grants come from `listGroupDisclosures`, so a proposal or partially signed Admit never counts.
+   *
+   * A state read and write on an explicit call; nothing runs it in the background. Idempotent: a second call
+   * writes nothing and returns an empty list.
+   */
+  async reconcileAdmissions(): Promise<AdmittedCredential[]> {
+    const written: AdmittedCredential[] = [];
+    for (const pre of this.hby.habs.keys()) {
+      for (const disclosure of listGroupDisclosures(this.hby, this.exc, pre)) {
+        if (disclosure.role !== "holder" || this.db.admitted.get([disclosure.grant])) continue;
+        try {
+          written.push(await this.writeAdmission(disclosure.grant, disclosure.admit, "historical"));
+        } catch (error) {
+          // Evidence that does not reauthenticate stays out of the inventory; the next call tries again.
+          if (!(error instanceof ValidationError)) throw error;
+        }
+      }
+    }
+    return written;
+  }
+
+  /** The one writer of `admitted.` rows: the linked pair, an identical existing row, or new evidence, then the write. */
+  private async writeAdmission(grant: string, admit: string, evidence: AdmissionEvidence): Promise<AdmittedCredential> {
     const g = await this.admitter.accepted(grant, "/ipex/grant"),
       a = await this.admitter.accepted(admit, "/ipex/admit");
     const holder = g.sad!.ri;
@@ -197,8 +240,15 @@ export class Wallet implements CredentialViews {
       }
       return old;
     }
-    if (!this.exc.verifyAccepted(admit, "/ipex/admit") || !this.admitter.graphAccepted(grant, origin)) {
-      throw new ValidationError("Current authenticated graph acceptance is required for new admission.");
+    if (evidence === "current") {
+      if (!this.exc.verifyAccepted(admit, "/ipex/admit") || !this.admitter.graphAccepted(grant, origin)) {
+        throw new ValidationError("Current authenticated graph acceptance is required for new admission.");
+      }
+    } else if (
+      !this.exc.verifyAccepted(admit, "/ipex/admit", { historical: true })
+      || !this.exc.verifyAccepted(grant, "/ipex/grant", { historical: true })
+    ) {
+      throw new ValidationError("The accepted Grant and Admit do not reauthenticate against their history.");
     }
     const record: AdmittedCredential = { credential: origin, grant, admit, holder, admitted: new Date().toISOString() };
     this.db.transaction(() => {

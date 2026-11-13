@@ -168,6 +168,7 @@ Deno.test("rejoinGroup rebuilds the group record from accepted state", async () 
       alias: "g",
       smids: [ag.a.pre, member.pre],
       rmids: [ag.a.pre],
+      written: true,
     });
     const record = w.hby.db.getHab(gid)!;
     assertEquals([record.mid, record.name, record.smids, record.rmids], [
@@ -215,6 +216,7 @@ Deno.test("rejoinGroup uses the members of a rotated group, not the inception's"
       alias: "g",
       smids: [ag.a.pre, after.pre],
       rmids: [ag.a.pre],
+      written: true,
     });
     assertEquals(joined.hby.db.getHab(gid)?.smids, [ag.a.pre, after.pre]);
 
@@ -266,11 +268,11 @@ Deno.test("rejoinGroup is idempotent for the recorded member", async () => {
     const w = yield* wallet(ag, member);
     const oobi = groupOobi(ag, gid);
     const first = yield* rejoin(w, { oobi, group: gid });
-    assertEquals(first.outcome, "joined");
+    assert(first.outcome === "joined");
     const requests = ag.http.requests.length, record = w.hby.db.getHab(gid);
 
     // A repeat resolves nothing and writes nothing.
-    assertEquals(yield* rejoin(w, { oobi, group: gid }), first);
+    assertEquals(yield* rejoin(w, { oobi, group: gid }), { ...first, written: false });
     assertEquals(ag.http.requests.length, requests);
     assertEquals(w.hby.db.getHab(gid), record);
 
@@ -284,6 +286,24 @@ Deno.test("rejoinGroup is idempotent for the recorded member", async () => {
       "is a group identifier",
     );
     assertEquals(ag.http.requests.length, requests);
+    assertEquals(w.hby.db.getHab(gid), record);
+  });
+});
+
+Deno.test("rejoin reports whether it wrote the group record", async () => {
+  await run(function*() {
+    const ag = yield* agent();
+    const member = heldMember();
+    const gid = inceptGroup(ag, [member]);
+    const w = yield* wallet(ag, member);
+    const oobi = groupOobi(ag, gid);
+    // The member had no record of its group: this call writes it, the signal to refill the store from a co-member.
+    const first = yield* rejoin(w, { oobi, group: gid });
+    assert(first.outcome === "joined" && first.written, "the first rejoin writes the record");
+    const record = w.hby.db.getHab(gid);
+    // The record is there now: the same call finds it and writes nothing.
+    const again = yield* rejoin(w, { oobi, group: gid });
+    assert(again.outcome === "joined" && !again.written, "a repeat finds the record already written");
     assertEquals(w.hby.db.getHab(gid), record);
   });
 });

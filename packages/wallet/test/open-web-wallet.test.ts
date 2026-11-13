@@ -33,7 +33,6 @@ import { messagize } from "../../keri/src/core/protocol-serialization.ts";
 import { dgKey } from "../../keri/src/db/core/keys.ts";
 import { MemStoreOpener } from "../../keri/src/db/core/memstore.ts";
 import { makeNowIso8601 } from "../../keri/src/time/mod.ts";
-import { walletChangeSink } from "../src/web/wallet-api.ts";
 import {
   KeeperSaltMismatchError,
   openWebWallet,
@@ -485,47 +484,6 @@ Deno.test("groups and proposals: refusals, an empty consent list, and a group in
   }
 });
 
-Deno.test("a tracked issuance is recorded on its issuance change, and one that cannot be recorded yet is tried again on the next", () => {
-  // A group member may not hold the registry root copy when the issuance completes; the same sink reaction that
-  // records a single-signature issuance keeps the recorder until it succeeds.
-  const tracked = new Map<string, () => boolean>(), forwarded: string[] = [];
-  const sink = walletChangeSink(
-    tracked,
-    () => ({ push: (change) => void forwarded.push(`${change.kind}:${change.id}`) }),
-  );
-  let attempts = 0;
-  tracked.set("grant", () => {
-    if (++attempts < 2) throw new Error("the root copy has not arrived");
-    return true;
-  });
-  sink.push({ kind: "event", id: "grant" });
-  assertEquals(attempts, 0, "only issuance changes trigger a recorder");
-  sink.push({ kind: "issuance", id: "grant" });
-  assertEquals([attempts, tracked.has("grant")], [1, true], "a failed recording stays tracked");
-  sink.push({ kind: "issuance", id: "grant" });
-  assertEquals([attempts, tracked.has("grant")], [2, false], "a recorded issuance is untracked");
-  assertEquals(forwarded, ["event:grant", "issuance:grant", "issuance:grant"], "every change is forwarded");
-});
-
-Deno.test("a retained registry root copy gives every tracked recorder another try", () => {
-  const tracked = new Map<string, () => boolean>();
-  const sink = walletChangeSink(tracked, () => undefined);
-  let ready = false;
-  const attempts: string[] = [];
-  for (const grant of ["one", "two"]) {
-    tracked.set(grant, () => {
-      attempts.push(grant);
-      if (!ready) throw new Error("the root copy has not arrived");
-      return true;
-    });
-  }
-  sink.push({ kind: "root", id: "registry" });
-  assertEquals([attempts, tracked.size], [["one", "two"], 2], "a failed recording stays tracked");
-  ready = true;
-  sink.push({ kind: "root", id: "registry" });
-  assertEquals(tracked.size, 0, "the root copy lets both record");
-});
-
 Deno.test("the wallet's error classes report their own names, in a bundle that mangles class names", () => {
   for (
     const [Error_, name] of [
@@ -829,11 +787,12 @@ Deno.test("wallet groups.rejoin", async () => {
 
     const options = { oobi, group: gid, member: member.pre, alias: "group" };
     const joined = await w.groups.rejoin(options);
-    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre] });
+    assert(joined.outcome === "joined");
+    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre], written: true });
     assertEquals(w.hby.db.getHab(gid)?.mid, member.pre);
     assertEquals(w.hby.habByName("group")?.pre, gid);
-    // A repeat is joined at once and fetches nothing.
-    assertEquals(await w.groups.rejoin(options), joined);
+    // A repeat is joined at once, writes nothing and fetches nothing.
+    assertEquals(await w.groups.rejoin(options), { ...joined, written: false });
     assertEquals(fetched, [oobi]);
     // The group is not a member of itself.
     await assertRejects(() => w.groups.rejoin({ ...options, member: gid }), Error, "Group identifiers");
@@ -927,7 +886,14 @@ Deno.test("recoverWebWallet rejoins the group when its record is missing", async
   const group = { oobi, group: gid, alias: "group", member: member.pre, memberOobis: [memberOobi] };
   const recovered = await recoverWebWallet(first, { open: options, group });
   try {
-    assertEquals(recovered.rejoin, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre] });
+    assertEquals(recovered.rejoin, {
+      outcome: "joined",
+      group: gid,
+      alias: "group",
+      smids,
+      rmids: [a.pre],
+      written: true,
+    });
     assertEquals(recovered.wallet.hby.db.getHab(gid)?.mid, member.pre);
     assertEquals(fetched.toSorted(), [memberOobi, oobi].toSorted());
   } finally {
@@ -952,7 +918,7 @@ Deno.test("recoverWebWallet skips rejoin when the member habitat is missing and 
     w.hby.makeSignedHab("member", undefined, { serder, sigers });
     assertEquals((await w.oobis.resolve(memberOobi)).outcome, "resolved");
     const joined = await w.groups.rejoin({ oobi, group: gid, alias: "group", member: serder.pre! });
-    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre] });
+    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre], written: true });
   } finally {
     await w.close();
     await run(() => agent.close(true));

@@ -78,11 +78,13 @@ import {
   type WaitResult,
 } from "keri-ts/runtime";
 import { WalletAuthor } from "../authoring.ts";
-import { RegistryCustody } from "../custody.ts";
 import type { AdmittedCredential } from "../storing.ts";
 import {
   type AdmitDelivery,
+  recordFinished,
+  recordIssuance,
   type TimeoutOptions,
+  type TrackedIssuance,
   WALLET_TIMEOUTS,
   type WalletApiParts,
   WalletScope,
@@ -340,9 +342,11 @@ export class Groups {
    * Record `group` again after the wallet lost its store, with `member` (re-adopted at open) as its local
    * member. Resolves the group's OOBI, waits for its accepted key state and reads the members from that state
    * only. The other members' key state must be known too: resolve their OOBIs first, or the result is
-   * `timed-out` with `waiting: "member-key-state"`. `joined` at once when the group already names `member`.
-   * Only `joined` writes. Credentials, registry state and exchanges are not restored by this call; they come
-   * back by ordinary KERI replay from a co-member.
+   * `timed-out` with `waiting: "member-key-state"`. `joined` at once, with `written: false`, when the group already
+   * names `member`. Only `joined` writes. Credentials, registry state and exchanges are not restored by this call.
+   * `written: true` means this identifier was already a member and this store had no record of the group, so it
+   * holds none of the group's credentials either: the signal to refill them from a co-member, which then
+   * `credentials.importStream` and `credentials.rebuild` take in (see the wallet library guide).
    *
    * @throws ValidationError when `member` is not a single-signature identifier of this wallet, or the group is
    * already recorded with another member (use {@link Groups.replaceMember}).
@@ -469,37 +473,21 @@ function counselInputs(hby: Habery, { fallbackAfterMs, proxy }: GroupCounsel): C
 }
 
 /**
- * Record a group issuance in the wallet inventory when it completes, through the same `ChangeSink` reaction the
- * single-signature issuer path uses. The recorder returns true once the issuance is over (recorded, or ended without
- * issuing) and false while it runs or while the exact derivation opening cannot be read yet (a member that has not
- * received the registry root copy keeps trying on later changes). A failure to record is never thrown into the
- * workflow that published the change.
+ * Track a group issuance so the wallet records it in the inventory when it completes, through the same `ChangeSink`
+ * reaction ({@link recordFinished}) the single-signature issuer path uses. A member that has not received the
+ * registry root copy keeps trying on later changes; a failure to record is never thrown into the workflow that
+ * published the change.
  */
-/** Records one tracked issuance in the inventory; throws while the exact opening cannot be read yet. */
-export type IssuanceRecorder = () => void;
-
 function trackGroupIssuance(
   parts: WalletApiParts,
   hab: Hab,
   grant: string,
   credential: SerderACDC,
   registry: string,
-): IssuanceRecorder {
-  const { hby, runtime, wallet, inventory, tracked } = parts;
-  const ops = runtime.operations!.issuance, store = runtime.acdc!.store;
-  const record = () => {
-    if (inventory.issued.get([credential.said!])) return;
-    const head = store.headEvent(registry)!;
-    const custody = new RegistryCustody({ hby, hab, registry: store, db: inventory });
-    wallet.recordIssued(credential, head.said!, { blinder: custody.issuedOpening(head, credential.said!) });
-  };
-  tracked.set(grant, () => {
-    const status = issuanceStatus(ops, grant);
-    if (status.state === "active") return false;
-    if (status.state === "done") record();
-    return true;
-  });
-  return record;
+): TrackedIssuance {
+  const tracking: TrackedIssuance = { parts, hab, credential, registry };
+  parts.tracked.set(grant, tracking);
+  return tracking;
 }
 
 // --- proposals ---------------------------------------------------------------------------------------------------
@@ -719,7 +707,8 @@ export class Proposals {
         const waited = yield* waitForIssuance(issuance, id, { timeoutMs });
         // A finished issuance sends no further change, so give the recorder its try now.
         try {
-          if (parts.tracked.get(id)?.()) parts.tracked.delete(id);
+          const tracking = parts.tracked.get(id);
+          if (tracking && recordFinished(id, tracking)) parts.tracked.delete(id);
         } catch {
           // The registry root copy has not arrived; its `root` change gives the recorder another try.
         }
@@ -976,14 +965,14 @@ export class GroupCredentials {
       } catch {
         // A caller's notification must not break the issuance it reports.
       }
-      const record = trackGroupIssuance(parts, hab, begun.grant, credential, registry.regk!);
+      const tracking = trackGroupIssuance(parts, hab, begun.grant, credential, registry.regk!);
       const waited = yield* waitForIssuance(ops, begun.grant, { timeoutMs });
       const base = { grant: begun.grant, credential: credential.said!, registry: registry.regk! };
       if (waited.outcome === "timed-out") return { ...base, outcome: "timed-out", timeoutMs, status: waited.status };
       if (waited.status.state === "done") {
         let recorded = false;
         try {
-          record();
+          recordIssuance(tracking);
           recorded = true;
         } catch {
           // The wallet keeps trying on later changes; `recorded` tells the caller it is not in the inventory yet.
