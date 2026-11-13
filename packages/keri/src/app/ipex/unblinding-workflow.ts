@@ -332,6 +332,16 @@ export class UnblindingOperations {
     this.deps.changes?.push({ kind: "unblinding", id: op.grant });
   }
 
+  /**
+   * End, as abandoned with `reason`, every live Unblind of local group `group` whose party member is `member`.
+   * Releasing the approval drops the owner's held query. Returns the Grants ended.
+   */
+  endBoundToMember(group: string, member: string, reason: string): string[] {
+    const bound = [...this.live.values()].filter(op => op.hab.pre === group && op.group?.member.pre === member);
+    for (const op of bound) this.end(op, "abandoned", reason);
+    return bound.map(op => op.grant);
+  }
+
   /** Drop the live entry and the owner's approval and frozen messages; delivered bytes stay the peer's. */
   private release(op: LiveUnblinding): void {
     this.live.delete(unblindingKey(op.grant, op.role));

@@ -12,6 +12,8 @@ import { ensure, type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { Anchorer } from "../../../../src/app/identity/delegating.ts";
 import { type Hab, type Habery, openHabery } from "../../../../src/app/identity/habbing.ts";
+import { IssuanceOperations, partyKey } from "../../../../src/app/ipex/issuance.ts";
+import { unblindingKey, UnblindingOperations } from "../../../../src/app/ipex/unblinding-workflow.ts";
 import {
   Counselor,
   DEFAULT_FALLBACK_AFTER_MS,
@@ -21,6 +23,8 @@ import {
   waitForGroupEvent,
 } from "../../../../src/app/multisig/counseling.ts";
 import { groupElectedMember, groupWitnesser } from "../../../../src/app/multisig/group-members.ts";
+import { replaceGroupMember } from "../../../../src/app/multisig/replace-member.ts";
+import type { AgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
 import { exchange } from "../../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
@@ -761,6 +765,28 @@ Deno.test("joinGroupHab replaces a local member that left the accepted key state
     assertThrows(() => a.hby.joinGroupHab(hid, "h", fresh, smidsH, rmidsH), Error, "still a member");
     assertEquals(a.hby.db.getHab(hid)!.mid, a.hab.pre);
 
+    // A group with no accepted key state yet cannot be judged, so the recorded member is kept.
+    const pending = a.hby.makeGroupHab(
+      "p",
+      a.hab,
+      [a.hab.pre!, b.hab.pre!],
+      [
+        a.hab.pre!,
+        b.hab.pre!,
+        fresh.pre!,
+      ],
+      undefined,
+      { isith: "2", nsith: "2", toad: 0 },
+    );
+    const pid = pending.serder.pre!;
+    assertEquals(a.hby.db.getKever(pid), null);
+    assertThrows(
+      () => a.hby.joinGroupHab(pid, "p", fresh, [a.hab.pre!, b.hab.pre!], [a.hab.pre!, b.hab.pre!, fresh.pre!]),
+      Error,
+      "cannot be judged",
+    );
+    assertEquals(a.hby.db.getHab(pid)!.mid, a.hab.pre);
+
     // The other members rotate a out; the Habery's recorded member is no longer in the accepted state.
     b.hab.rotate();
     c.hab.rotate();
@@ -786,7 +812,65 @@ Deno.test("joinGroupHab replaces a local member that left the accepted key state
     a.hby.db.rrsn.pin([gid, "Eregistry", a.hab.pre!], { key: "K", dt: "2026-01-01T00:00:00.000000+00:00" });
     a.hby.db.rrsn.pin([gid, "Eregistry", b.hab.pre!], { key: "K", dt: "2026-01-01T00:00:00.000000+00:00" });
 
-    const group = a.hby.joinGroupHab(gid, "g", fresh, next, next);
+    // The new member is judged from accepted state too: a local habitat that is not a member is refused.
+    const stray = a.hby.makeHab("stray");
+    assertThrows(
+      () => a.hby.joinGroupHab(gid, "g", stray, [...next, stray.pre!], [...next, stray.pre!]),
+      Error,
+      "not a member in the accepted key state",
+    );
+    assertEquals(a.hby.db.getHab(gid)!.mid, a.hab.pre);
+
+    // Live operations: one bound to the old member (as party member or as frozen custodian), one of another group.
+    const held = new Set(["old-member", "old-custodian", "other-group", "unblind-old", "unblind-other"]);
+    const party = (group: string, member: string, custodian: string) => ({
+      group: { pre: group },
+      member: { pre: member },
+      custodian,
+    });
+    const issuance = Object.create(IssuanceOperations.prototype) as IssuanceOperations;
+    const live = new Map<string, unknown>();
+    for (
+      const [grant, row, who] of [
+        ["Gmember", "old-member", party(gid, a.hab.pre!, b.hab.pre!)],
+        ["Gcustodian", "old-custodian", party(gid, fresh.pre!, a.hab.pre!)],
+        ["Gother", "other-group", party("Eother", a.hab.pre!, a.hab.pre!)],
+      ] as const
+    ) {
+      live.set(partyKey(grant, "holder"), {
+        grant,
+        role: "holder",
+        group: { party: who },
+        dh: { abandon: () => held.delete(row) },
+      });
+    }
+    Object.assign(issuance, { live, ended: new Map(), deps: {} });
+    const unblinding = Object.create(UnblindingOperations.prototype) as UnblindingOperations;
+    const unblinds = new Map<string, unknown>();
+    for (
+      const [grant, row, group] of [["Umember", "unblind-old", gid], ["Uother", "unblind-other", "Eother"]] as const
+    ) {
+      unblinds.set(unblindingKey(grant, "responder"), {
+        grant,
+        role: "responder",
+        hab: { pre: group },
+        group: { member: { pre: a.hab.pre! } },
+        owner: { abandon: () => held.delete(row) },
+      });
+    }
+    Object.assign(unblinding, { live: unblinds, settled: new Map(), deps: {} });
+    const runtime = { hby: a.hby, operations: { issuance, unblinding } } as unknown as AgentRuntime;
+
+    const replaced = replaceGroupMember(runtime, { group: gid, member: fresh, smids: next, rmids: next });
+    assertEquals(replaced, { previous: a.hab.pre, issuance: ["Gmember", "Gcustodian"], unblinding: ["Umember"] });
+    assertEquals([...held], ["other-group", "unblind-other"], "ended operations leave no held row; others stay");
+    const ended = (issuance as unknown as { ended: Map<string, { state: string; reason: string }> }).ended;
+    assertEquals(ended.get(partyKey("Gmember", "holder"))?.state, "abandoned");
+    assert(ended.get(partyKey("Gcustodian", "holder"))?.reason.includes("was replaced by"));
+    assertEquals(issuance.liveOf("Gother", "holder") !== undefined, true);
+    assertEquals(issuance.liveOf("Gmember", "holder"), undefined);
+    assertEquals(unblinding.liveOf("Uother", "responder") !== undefined, true);
+    const group = a.hby.habs.get(gid)!;
     assertEquals(a.hby.db.rrpe.get([copy.said!]), null, "no escrowed copy stays addressed to the old member");
     assertEquals(a.hby.db.rrsn.get([gid, "Eregistry", a.hab.pre!]), null);
     assert(a.hby.db.rrsn.get([gid, "Eregistry", b.hab.pre!]), "rows for other members stay");

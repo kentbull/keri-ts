@@ -315,6 +315,11 @@ Deno.test("groups and proposals: refusals, an empty consent list, and a group in
     await assertRejects(() => first.proposals.approve("Eunknown"), Error, "No group proposal");
     await assertRejects(() => first.groups.rotate(a.pre), Error, "not a local group");
     await assertRejects(() => first.groups.join("Eunknown", { alias: "g" }), Error, "not a proposal to join");
+    await assertRejects(
+      () => Promise.resolve().then(() => first.groups.replaceMember(a.pre, { member: a.pre, smids: [a.pre] })),
+      Error,
+      "not a local group",
+    );
     await assertRejects(() => first.groups.inceptRegistry("Eunknown", "r"), Error, "not a local group");
     await assertRejects(
       () => first.groups.incept({ alias: "a", member: a.pre, smids: [a.pre, b.pre] }),
@@ -410,6 +415,12 @@ Deno.test("pinSchema keeps a schema document, and a group present sends the verb
     const solo = await w.groups.incept({ alias: "solo", member: a.pre, smids: [a.pre], timeoutMs: 2000 });
     const group = w.hby.habByName("solo")!;
     assert(solo && group, "a one-member group is its own quorum");
+    // The recorded member is still a member in accepted state, so the wallet refuses to switch it.
+    assertThrows(
+      () => w.groups.replaceMember("solo", { member: b.pre, smids: [a.pre, b.pre] }),
+      Error,
+      "still a member",
+    );
     const options = { recipient: b.pre, message: "", plan: [] };
 
     const applied = await w.credentials.present({ verb: "apply", pre: group.pre!, options }, { timeoutMs: 2000 });

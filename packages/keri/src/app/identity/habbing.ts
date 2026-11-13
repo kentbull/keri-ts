@@ -1962,14 +1962,26 @@ export class Habery {
     }
     const existingRecord = this.db.getHab(pre);
     const replacing = !!existingRecord?.mid && existingRecord.mid !== mhab.pre;
-    if (replacing && isAcceptedGroupMember(this.db, pre, existingRecord.mid!)) {
-      // Membership is decided by accepted key state, never by the caller's lists.
-      throw new ValidationError(
-        `Group prefix ${pre} is already joined as ${existingRecord.name} by member ${existingRecord.mid}, `
-          + `which is still a member in its accepted key state.`,
-      );
+    if (replacing) {
+      // Membership is decided by accepted key state, never by the caller's lists or a proposal.
+      if (!this.db.getKever(pre)) {
+        throw new ValidationError(
+          `Group prefix ${pre} is already joined as ${existingRecord.name}; whether member ${existingRecord.mid} `
+            + `is still a member cannot be judged until the group has accepted key state.`,
+        );
+      }
+      if (isAcceptedGroupMember(this.db, pre, existingRecord.mid!)) {
+        throw new ValidationError(
+          `Group prefix ${pre} is already joined as ${existingRecord.name} by member ${existingRecord.mid}, `
+            + `which is still a member in its accepted key state.`,
+        );
+      }
+      if (!isAcceptedGroupMember(this.db, pre, mhab.pre)) {
+        throw new ValidationError(
+          `Local member identifier ${mhab.pre} is not a member in the accepted key state of group ${pre}.`,
+        );
+      }
     }
-
     const hab = this.habs.get(pre) ?? new Hab(
       group,
       this.db,
