@@ -30,6 +30,7 @@ import {
   issuanceStatus,
   pendingGroupGrants,
   posterDelivery,
+  proposeIssuance,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
 import { type PresentationDeps, proposeGroupPresentation } from "../../../../src/app/ipex/presenting.ts";
@@ -183,8 +184,7 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
     const host = (side: Side) => spawn(() => runAgentRuntime(side.runtime, { hab: side.member, pollMailbox: false }));
     const hosts = [yield* host(issuer), yield* host(h1), yield* host(h2)];
     const issuance = issuer.runtime.operations!.issuance;
-    const { grant } = yield* beginIssuance(issuance, {
-      hab: issuer.hab,
+    const { grant } = yield* proposeIssuance(issuance, {
       credential,
       options: { recipient: h1.hab.pre!, message: "Issue" },
     });
@@ -232,7 +232,7 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
     );
     assertEquals(groupIpexStatus(ops2, admit), { state: "active", phase: "awaitingConsent", needs: "approve" });
     assert(!h2.runtime.exc.complete(admit), "the Admit needs the second member's consent");
-    yield* approveGroupIpex(ops2, { said: admit });
+    yield* approveGroupIpex(ops2, admit);
 
     // The runtime completes: both members accept, the lead delivers it to the issuer.
     for (const ops of [ops1, ops2]) {
@@ -291,7 +291,7 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       () => groupIpexProposals(ops2, h2.hab).some((proposal) => proposal.said === withProof.said),
       "the second member to hold the Grant that carries the proof",
     );
-    yield* approveGroupIpex(ops2, { said: withProof.said });
+    yield* approveGroupIpex(ops2, withProof.said);
     for (const ops of [ops1, ops2]) {
       assertEquals((yield* waitForGroupIpex(ops, withProof.said, { timeoutMs: BUDGET_MS })).status, {
         state: "done",

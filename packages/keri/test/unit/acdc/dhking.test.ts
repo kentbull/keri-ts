@@ -34,7 +34,7 @@ import {
 import { prepareDerivedIssuance, runDerivedIssuance } from "../../../../tufa/src/cli/commands/ipex-issuance.ts";
 import { joinWalletIpex } from "../../../../tufa/src/cli/commands/ipex.ts";
 import { loadNests } from "../../../db.ts";
-import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
+import { deriveRoot, Dhke, generateKeyPair, grantTransactionId } from "../../../src/acdc/dhking.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { type RegistryStore } from "../../../src/acdc/registering.ts";
 import { Regery } from "../../../src/acdc/registraring.ts";
@@ -116,6 +116,17 @@ Deno.test("DHKE derives the Python root and UUIDs and refuses unbound or noncont
       vector.root_qb64,
     );
   }
+});
+
+Deno.test("a Grant's transaction id is its own SAID when it opens the exchange and the exchange it continues otherwise", () => {
+  const sender = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    recipient = "EBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+  const opener = ipexExnBody(sender, "/ipex/apply", [], { recipient, message: "", plan: [] });
+  assertEquals(opener.ilk, "xip");
+  assertEquals(grantTransactionId(opener), opener.said);
+  const continuation = ipexExnBody(recipient, "/ipex/offer", [], { prior: opener, message: "" });
+  assertEquals(continuation.ilk, "exn");
+  assertEquals(grantTransactionId(continuation), opener.said);
 });
 
 Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected members", async () => {

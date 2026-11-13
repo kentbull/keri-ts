@@ -23,7 +23,6 @@ import {
   IssuanceOperations,
   type IssuanceStatus,
   type KramConfig,
-  localGroupMember,
   Organizer,
   posterDelivery,
   prepareIssuanceGrant,
@@ -118,7 +117,6 @@ export function* prepareDerivedIssuance(
   owners(runtime, wallet, hab);
   const receiptor = new Receiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock);
   return yield* prepareIssuanceGrant(issuanceOperations(runtime, wallet, hab, receiptor), {
-    hab,
     credential,
     options,
   });
@@ -143,8 +141,8 @@ function* runIssuance(
   const ops = issuanceOperations(runtime, wallet, hab, receiptor);
   const issuer = request.role === "issuer";
   const { grant, xid } = issuer
-    ? yield* beginIssuance(ops, { hab, grant: request.grant, auths })
-    : approveIssuanceExchange(ops, { hab, grant: request.grant });
+    ? yield* beginIssuance(ops, request.grant, auths)
+    : approveIssuanceExchange(ops, request.grant);
   const credential = runtime.exc.retainedInput(grant, { pending: true })!.nests![0].body as SerderACDC;
   const outcome = yield* withRuntimeWorkers(runtime, { hab, pollMailbox: true }, function*() {
     const driver = yield* spawn(function*() {

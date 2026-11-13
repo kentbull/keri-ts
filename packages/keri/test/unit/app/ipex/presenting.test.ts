@@ -8,12 +8,11 @@
  */
 import type { SerderACDC } from "cesr-ts";
 import { type Operation, run } from "effection";
-import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
-import { beginIssuance, issuanceStatus } from "../../../../src/app/ipex/issuance.ts";
+import { assert, assertEquals, assertNotEquals, assertThrows } from "jsr:@std/assert";
+import { beginIssuance, issuanceStatus, proposeIssuance } from "../../../../src/app/ipex/issuance.ts";
 import {
   abandonPresentation,
   present,
-  PRESENTATION_RETRY_BOUND_MS,
   type PresentationDeps,
   PresentationOperations,
   presentationStatus,
@@ -22,7 +21,7 @@ import {
 } from "../../../../src/app/ipex/presenting.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import { timestampMicros } from "../../../../src/time/mod.ts";
-import { deadlineOf, pump, route, scenario } from "./issuance-fixtures.ts";
+import { deadlineOf, pastDeadline, pump, route, scenario } from "./issuance-fixtures.ts";
 
 const text = (msg: Uint8Array) => new TextDecoder().decode(msg);
 
@@ -93,7 +92,7 @@ Deno.test("an offer is signed and accepted locally at present; processOnce deliv
   });
 });
 
-Deno.test("a failing transport is retried with a doubling delay and ends the operation only at its bound", async () => {
+Deno.test("a failing transport is retried with a doubling delay and ends the operation only at its deadline", async () => {
   await run(function*() {
     const { s, ops, offer } = yield* setup();
     s.fail.on = true;
@@ -116,7 +115,8 @@ Deno.test("a failing transport is retried with a doubling delay and ends the ope
     assertEquals(presentationStatus(ops, said).state, "done");
     assertEquals(s.log.length, 3);
 
-    // An exchange that never reaches its peer ends at the deadline it has, or at the stated bound where it has none.
+    // An Apply carries an original exchange deadline like any opener, so an exchange that never reaches its peer ends
+    // at that deadline (`expired`) and never as `failed`.
     s.fail.on = true;
     const second = yield* present(ops, {
       verb: "apply",
@@ -125,10 +125,14 @@ Deno.test("a failing transport is retried with a doubling delay and ends the ope
     });
     yield* ops.processOnce();
     assertEquals(presentationStatus(ops, second.said).state, "active");
-    s.clock.skew += PRESENTATION_RETRY_BOUND_MS + 1;
+    assertNotEquals(ops.live.get(second.said)!.expires, null, "an Apply carries a deadline");
+    s.clock.skew = pastDeadline(s.issuer, second.said);
     yield* ops.processOnce();
-    const ended = presentationStatus(ops, second.said);
-    assert(ended.state === "failed" || ended.state === "expired", JSON.stringify(ended));
+    assertEquals(presentationStatus(ops, second.said), {
+      state: "expired",
+      verb: "apply",
+      reason: "The presentation reached its original exchange deadline",
+    });
   });
 });
 
@@ -238,8 +242,7 @@ Deno.test("the disclosee answers an accepted Offer with an Agree it signs and de
 function* issuedGrant(ctx: Ctx) {
   const { s, credential, hab, ops } = ctx;
   const issuing = s.owner(), deliver = route([s.issuer, s.holder], s.log);
-  const { grant } = yield* beginIssuance(issuing, {
-    hab,
+  const { grant } = yield* proposeIssuance(issuing, {
     credential,
     options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
   });

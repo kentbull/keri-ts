@@ -22,7 +22,6 @@ import {
   type AgentRuntime,
   AppError,
   approveIssuanceExchange,
-  beginIssuance,
   beginOobi,
   type ChangeSink,
   completeEvent,
@@ -50,6 +49,7 @@ import {
   type PresentationInput,
   type PresentationStatus,
   presentationStatus,
+  proposeIssuance,
   rebuildIssuanceAdmit,
   Receiptor,
   receiveIssuance,
@@ -635,7 +635,7 @@ export class Credentials {
    */
   async receive(grant: string, options: ReceiveOptions = {}): Promise<ReceiveResult> {
     const { timeoutMs = WALLET_TIMEOUTS.receive, message = "", deliveryTimeoutMs = WALLET_TIMEOUTS.delivery } = options;
-    const { hby, wallet, runtime } = this.#scope.parts;
+    const { hby, wallet } = this.#scope.parts;
     const ops = this.owner();
     const hab = this.holder(grant);
     if (isLocalGroupHab(hby, hab)) {
@@ -644,7 +644,6 @@ export class Credentials {
     return await this.#scope.go(function*(): Operation<ReceiveOutcome> {
       let held: AdmittedCredential | undefined;
       const received = yield* receiveIssuance(ops, {
-        hab,
         grant,
         message,
         timeoutMs,
@@ -698,8 +697,7 @@ export class Credentials {
         return { outcome: "ended", state: "failed", reason: `Registry inception failed: ${error.message}` };
       }
       const credential: SerderACDC = author.create(author.registry(name, pre), options.credential);
-      const begun = yield* beginIssuance(ops, {
-        hab,
+      const begun = yield* proposeIssuance(ops, {
         credential,
         options: { recipient, message: options.message ?? "", artifacts: [...(options.artifacts ?? [])] },
       });
@@ -753,8 +751,7 @@ export class Credentials {
     if (!admit) throw new ValidationError("This wallet has not admitted that Grant.");
     return await this.#scope.go(function*(): Operation<AdmitDelivery> {
       const rebuilt = yield* rebuildIssuanceAdmit(ops.deps, admit);
-      const hab = hby.habs.get(rebuilt.admit.pre!)!;
-      return yield* delivered(runtime.clock, timeoutMs, () => deliverIssuanceAdmit(ops.deps, hab, rebuilt));
+      return yield* delivered(runtime.clock, timeoutMs, () => deliverIssuanceAdmit(ops.deps.delivery, rebuilt));
     });
   }
 
@@ -835,7 +832,7 @@ export class Credentials {
     return await this.#scope.go(function*(): Operation<UnblindOutcome> {
       const before = unblindingStatus(ops, grant);
       if (before.state !== "active" && before.state !== "done" && before.state !== "expired") {
-        requestUnblind(ops, { hab, grant, states });
+        requestUnblind(ops, grant, { states });
       }
       const waited = yield* waitForUnblinding(ops, grant, { timeoutMs });
       const { status } = waited;

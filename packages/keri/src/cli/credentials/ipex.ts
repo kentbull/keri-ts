@@ -573,7 +573,7 @@ export function* joinIpexProposal(
     const ops = runtime.operations?.groupIpex;
     if (!ops) throw new ValidationError("ACDC v2 group IPEX requires the runtime's operation owners.");
     const said = embedded.said!;
-    if (!ops.live.has(said)) yield* approveGroupIpex(ops, { said });
+    if (!ops.live.has(said)) yield* approveGroupIpex(ops, said);
     yield* withRuntimeWorkers(
       runtime,
       { hab: localGroupMember(hby, group), pollMailbox: true },

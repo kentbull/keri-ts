@@ -149,12 +149,12 @@ Defined in `app/runtime/workflow-contract.ts` and followed by every library work
 `runtime.operations` (a writable Habery's runtime always has it) holds in-memory live tables whose
 status is derived from the protocol stores:
 
-| Owner          | Consents (may sign)                                                                       | Pure reads and waits                                            |
-| -------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `issuance`     | `beginIssuance`, `approveIssuanceExchange`, `admitIssuance` (then `deliverIssuanceAdmit`) | `issuanceStatus`, `pendingIssuanceGrants`, `waitForIssuance`    |
-| `presentation` | `present` (offer, grant, apply, agree, spurn)                                             | `presentationStatus`, `waitForPresentation`                     |
-| `unblinding`   | `requestUnblind` (the discloser answers its own Grant's queries with no consent call)     | `unblindingStatus`, `pendingPresentations`, `waitForUnblinding` |
-| `groupIpex`    | `proposeGroupAdmit`, `proposeGroupIpex`, `approveGroupIpex`                               | `groupIpexStatus`, `groupIpexProposals`, `waitForGroupIpex`     |
+| Owner          | Consents (may sign)                                                                                                                          | Pure reads and waits                                            |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `issuance`     | `proposeIssuance` (or `prepareIssuanceGrant` then `beginIssuance`), `approveIssuanceExchange`, `admitIssuance` (then `deliverIssuanceAdmit`) | `issuanceStatus`, `pendingIssuanceGrants`, `waitForIssuance`    |
+| `presentation` | `present` (offer, grant, apply, agree, spurn)                                                                                                | `presentationStatus`, `waitForPresentation`                     |
+| `unblinding`   | `requestUnblind` (the discloser answers its own Grant's queries with no consent call)                                                        | `unblindingStatus`, `pendingPresentations`, `waitForUnblinding` |
+| `groupIpex`    | `proposeGroupAdmit`, `proposeGroupIpex`, `approveGroupIpex`                                                                                  | `groupIpexStatus`, `groupIpexProposals`, `waitForGroupIpex`     |
 
 `runAgentRuntime` drives all owners on one fiber: every `OWNER_BUSY_MS` (50 ms) while anything is
 live, every `OWNER_IDLE_MS` (1 s) otherwise, and beginning an operation wakes it

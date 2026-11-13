@@ -562,7 +562,7 @@ export class Proposals {
     const ipex = runtime.operations?.groupIpex;
     if (ipex && groupIpexProposals(ipex).some((item) => item.said === id)) {
       return await this.#scope.go(function*(): Operation<ProposalOutcome> {
-        yield* approveGroupIpex(ipex, { said: id });
+        yield* approveGroupIpex(ipex, id);
         return { id, family: "ipex", ...ipexSummary(yield* waitForGroupIpex(ipex, id, { timeoutMs })) };
       });
     }
@@ -764,7 +764,7 @@ export class GroupCredentials {
           item.route === "/ipex/admit" && item.prior === grant
         );
         if (stored) {
-          yield* approveGroupIpex(ipex, { said: stored.said });
+          yield* approveGroupIpex(ipex, stored.said);
           admit = stored.said;
         } else {
           admit = (yield* proposeGroupAdmit(ipex, { hab, grant, message })).said;
@@ -893,8 +893,8 @@ export class GroupCredentials {
     return await this.#scope.go(function*() {
       const before = unblindingStatus(ops, grant);
       if (before.state !== "active" && before.state !== "done" && before.state !== "expired") {
-        if (requester) requestUnblind(ops, { hab, grant, states, proposer: lead });
-        else answerUnblind(ops, { hab, grant, states, proposer: lead });
+        if (requester) requestUnblind(ops, grant, { states, proposer: lead });
+        else answerUnblind(ops, grant, { states, proposer: lead });
       }
       const waited = yield* waitForUnblinding(ops, grant, { timeoutMs });
       const { status } = waited;
