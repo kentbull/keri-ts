@@ -23,7 +23,6 @@ import {
   DEFAULT_FALLBACK_AFTER_MS,
   type GroupEventRef,
   type GroupForwarding,
-  type GroupMemberDependents,
   type GroupReceipting,
   waitForGroupEvent,
 } from "../../../../src/app/multisig/counseling.ts";
@@ -185,7 +184,6 @@ function counselor(
   delegated = false,
   mailboxes?: ConstructorParameters<typeof Counselor>[5],
   forwarding?: GroupForwarding,
-  dependents?: GroupMemberDependents,
 ) {
   const receipting = new FakeReceipting(side.hby, wits);
   const changes = new MemoryChangeSink();
@@ -201,7 +199,6 @@ function counselor(
     mailboxes,
     undefined,
     forwarding,
-    dependents,
   );
   return { clock, receipting, changes, anchorer, queries, c };
 }
@@ -1291,6 +1288,21 @@ function* lateRotation() {
   return { p, e, n, gid, own, late, before, next };
 }
 
+/**
+ * A root replicator over `hby` holding one registry root, whose members are the group's stored signing members (a
+ * stand-in for `RegistryRoot.members`, so these tests show what the stored list alone makes owed). Nothing is sent.
+ */
+function storedMemberReplicator(hby: Habery): RootReplicator {
+  const root = { hby, held: () => ["Eregistry"], members: (group: string) => groupSigningMembers(hby, group) };
+  return new RootReplicator({
+    root: { ...root, contributor: () => "K" } as unknown as RegistryRoot,
+    postman: {} as Poster,
+    clock: new ManualRuntimeClock(0),
+  });
+}
+
+const owedCopies = (replicator: RootReplicator) => replicator.status().owed.map(copy => copy.recipient).sort();
+
 Deno.test("a group's stored members follow a rotation accepted after the proposer's wait ended", async () => {
   await run(function*() {
     const { p, gid, own, late, before, next } = yield* lateRotation();
@@ -1316,7 +1328,7 @@ Deno.test("a group's stored members follow a rotation accepted after the propose
 Deno.test("group messages go to the new member after a late-completing rotation", async () => {
   await run(function*() {
     const { p, e, n, gid, own, late } = yield* lateRotation();
-    const sent: string[][] = [], aligned: string[] = [];
+    const sent: string[][] = [];
     const forwarding: GroupForwarding = {
       *forward(forwarded, to) {
         sent.push([...to]);
@@ -1329,11 +1341,12 @@ Deno.test("group messages go to the new member after a late-completing rotation"
         }));
       },
     };
-    const { c } = counselor(p, [], { t: 0 }, false, undefined, forwarding, {
-      membersAligned: group => void aligned.push(group),
-    });
+    const { c } = counselor(p, [], { t: 0 }, false, undefined, forwarding);
+    const replicator = storedMemberReplicator(p.hby);
     c.start(ref(own.serder));
     yield* c.processOnce();
+    replicator.sweep();
+    assertEquals(owedCopies(replicator), [e.hab.pre!], "before the rotation the old member is owed the root");
     deliver(p.hby, late);
     yield* c.processOnce();
     // The weight-0 proposer holds signing index 0, so it is the rotation's witnesser and forwards it.
@@ -1344,24 +1357,31 @@ Deno.test("group messages go to the new member after a late-completing rotation"
       "every group recipient list is built from the stored members, which now name the new member",
     );
     assert(!groupSigningMembers(p.hby, gid).includes(e.hab.pre!));
-    assertEquals(aligned, [gid], "what derives work from the member list is prompted once");
+    replicator.sweep();
+    assertEquals(owedCopies(replicator), [n.hab.pre!], "the new member is owed the root, the old one no longer");
   });
 });
 
 Deno.test("stored members are not rewritten while a member's KEL is missing, and align once it arrives", async () => {
   await run(function*() {
-    const { e, n, gid, own, late, before, next } = yield* lateRotation();
+    const { p, e, n, gid, own, late, before, next } = yield* lateRotation();
     const { c } = counselor(e);
+    const replicator = storedMemberReplicator(e.hby);
     deliver(e.hby, { serder: own.serder, sigers: [...own.sigers, ...late.sigers] });
     assertEquals(e.hby.db.getKever(gid)!.said, own.serder.said, "the rotation is accepted without n's KEL");
     yield* c.processOnce();
     assertEquals(e.hby.db.getHab(gid)!.smids, before, "no partial list is written");
     assertEquals(e.hby.alignGroupMembers(gid), "unattributed");
+    replicator.sweep();
+    assertEquals(owedCopies(replicator), [p.hab.pre!], "copies are derived from the stored members as they stand");
     // n's rotation arrives; the next pass attributes every key and aligns.
     share(n.hby, n.hab.pre!, [e.hby]);
     yield* c.processOnce();
     assertEquals(groupSigningMembers(e.hby, gid), next);
     assertEquals(e.hby.db.getHab(gid)!.rmids, next);
+    // The establishment event is unchanged; the replicator re-derives because the stored members changed.
+    replicator.sweep();
+    assertEquals(owedCopies(replicator), next.slice().sort(), "the new member is owed its copy");
   });
 });
 

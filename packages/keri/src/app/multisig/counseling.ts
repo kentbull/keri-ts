@@ -134,14 +134,6 @@ export interface GroupForwarding {
   forward(event: GroupEventRef, members: readonly string[]): Operation<GroupDelivery[]>;
 }
 
-/**
- * Told when a local group's stored members changed to follow accepted state, so what derives work from the member
- * list re-derives on its next tock; the runtime prompts its root replicator.
- */
-export interface GroupMemberDependents {
-  membersAligned(group: string): void;
-}
-
 /** Forwarding attempts of one completed event before the Counselor stops retrying its failed members. */
 export const FORWARD_ATTEMPTS = 8;
 
@@ -216,7 +208,6 @@ export class Counselor {
    * @param delegation Anchorer and query port for delegated events; omit for non-delegated hosts.
    * @param mailboxes Told when one of the group's rotations completes; the member runtime's publisher then tells
    *   the group's mailboxes the new key state, and several members doing so is harmless.
-   * @param members Told when a group's stored members changed to follow an accepted establishment event.
    */
   constructor(
     private readonly hby: Habery,
@@ -227,7 +218,6 @@ export class Counselor {
     private readonly mailboxes?: GroupMailboxes,
     private readonly receiptRetry: Readonly<RetryPolicy> = DEFAULT_RECEIPT_RETRY,
     private readonly forwarding?: GroupForwarding,
-    private readonly members?: GroupMemberDependents,
   ) {
     this.anchorQuery = delegation && { hby, querying: delegation.querying, retryPasses: new Map() };
   }
@@ -496,8 +486,9 @@ export class Counselor {
    * event differs from the one its members were last found to follow; one that cannot be attributed yet (a member's
    * KEL is missing) is left as it is and read again on a later pass, which the arriving KEL's write brings about.
    *
-   * After a change, what derives work from the member list is prompted, and an elected member whose latest
-   * establishment event already completed owes it again to the members it now has.
+   * After a change, an elected member whose latest establishment event already completed owes it again to the
+   * members it now has. Other components read the stored members themselves (the root replicator re-derives a
+   * group whose stored members changed); nothing here tells them.
    */
   private alignMembers(): void {
     const db = this.hby.db;
@@ -509,7 +500,6 @@ export class Counselor {
       this.aligned.set(pre, est.d);
       if (alignment === "unchanged") continue;
       this.changes?.push({ kind: "group", id: `${pre}:${est.s}` });
-      this.members?.membersAligned(pre);
       const event = { pre, sn: est.s, said: est.d };
       if (this.completed(pre, est.s) === est.d) this.owe(event);
     }

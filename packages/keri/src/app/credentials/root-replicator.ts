@@ -14,8 +14,9 @@
  * receiving is idempotent.
  *
  * A pass runs for a group on the replicator's first pass, after its latest establishment
- * changes (an accepted rotation), and when the Dhke completion cue prompts it, so a cue
- * lost in a crash is recovered by the next start. Sending a root a member already holds to
+ * changes (an accepted rotation) or its stored members change (they follow accepted state once
+ * every member's KEL is known), and when the Dhke completion cue prompts it, so a cue lost in a
+ * crash is recovered by the next start. Sending a root a member already holds to
  * the group's current members is not a new consent, so nothing here asks anyone.
  *
  * A copy that cannot be prepared or delivered stays owed and is retried with a
@@ -25,8 +26,8 @@ import type { Operation } from "effection";
 import type { DhkeReplicate } from "../../acdc/dhking.ts";
 import type { RegistryRoot } from "../../acdc/salting.ts";
 import type { Poster } from "../delivery/forwarding.ts";
-import type { Hab } from "../identity/habbing.ts";
-import { isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
+import type { Hab, Habery } from "../identity/habbing.ts";
+import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import type { ChangeSink } from "../runtime/workflow-contract.ts";
 import { replicateRootCopy, type RootCopyResult, RootResealBudgetMs } from "./root-replicating.ts";
@@ -63,6 +64,15 @@ interface Pending extends OwedCopyStatus {
 }
 
 const idOf = (group: string, registry: string, recipient: string) => [group, registry, recipient].join("/");
+
+/**
+ * What a group's owed copies were last derived from: its latest establishment SAID and its stored signing members.
+ * The members change without a new establishment event when a member's KEL arrives after the event was accepted.
+ */
+function derivedFrom(hby: Habery, hab: Hab): string | null {
+  const established = hab.pre && isLocalGroupHab(hby, hab) ? hab.kever?.lastEst.d : null;
+  return established ? [established, ...groupSigningMembers(hby, hab.pre!)].join(" ") : null;
+}
 
 /**
  * Derives, sends and records registry root copies for a wallet's local groups.
@@ -189,18 +199,18 @@ export class RootReplicator {
     const hby = this.#deps.root.hby;
     for (const group of [...this.#dirty]) {
       const hab = hby.habs.get(group);
-      const established = hab && isLocalGroupHab(hby, hab) ? hab.kever?.lastEst.d : null;
+      const derived = hab ? derivedFrom(hby, hab) : null;
       this.#dirty.delete(group);
-      if (!established) continue;
-      this.#seen.set(group, established);
+      if (!derived) continue;
+      this.#seen.set(group, derived);
       this.#derive(group);
     }
   }
 
   /**
    * The full check: drop markers of groups that are gone (once) and re-derive each local group that is new or
-   * whose establishment event changed. One keyed read per local identifier, so a host runs it every
-   * many tocks, not every tock.
+   * whose establishment event or stored members changed. One keyed read per local identifier, so a host runs it
+   * every many tocks, not every tock.
    */
   sweep(): void {
     const { root } = this.#deps, hby = root.hby;
@@ -211,9 +221,9 @@ export class RootReplicator {
       }
     }
     for (const hab of hby.habs.values()) {
-      const established = hab.pre && isLocalGroupHab(hby, hab) ? hab.kever?.lastEst.d : null;
-      if (!established || (this.#seen.get(hab.pre!) === established && !this.#dirty.has(hab.pre!))) continue;
-      this.#seen.set(hab.pre!, established);
+      const derived = derivedFrom(hby, hab);
+      if (!derived || (this.#seen.get(hab.pre!) === derived && !this.#dirty.has(hab.pre!))) continue;
+      this.#seen.set(hab.pre!, derived);
       this.#dirty.delete(hab.pre!);
       this.#derive(hab.pre!);
     }
