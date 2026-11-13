@@ -23,6 +23,8 @@ import falcon
 from hio.base import doing
 from keri import Kinds, Roles, Vrsn_2_0
 from keri.acdc import Registrar, acdcmap, admit, grant
+from keri.acdc import regeventing
+from keri.kering import Ilks
 from keri.app.agenting import Receiptor
 from keri.app.forwarding import StreamPoster
 from keri.app.indirecting import Poller
@@ -137,7 +139,7 @@ class RelayControl:
             self.peer.receive()
             command = req.media
             action = command.pop("action")
-            if action not in ("resolve", "issue", "grant", "admit", "state"):
+            if action not in ("resolve", "issue", "grant", "admit", "state", "holding", "revoke"):
                 raise ValueError(f"Unknown relay command: {action}")
             rep.media = getattr(self, action)(**command)
         except Exception:
@@ -228,6 +230,41 @@ class RelayControl:
         poster.send(body, attachment=attachments, gvrsn=Vrsn_2_0)
         self.deliver(poster)
         return body.said
+
+    def holding(self, grant, credential, registry):
+        """Observation only: the registry state an accepted Grant authenticated for `credential` (`Baser.exrs`).
+
+        The IPEX handler records the state each registry proof carries and judges none of it; this reads that
+        record, the registry's accepted TEL head, and the state of that head as an opening this peer holds for it
+        discloses (`current`, None when it holds none).
+        """
+        record = self.peer.hby.db.exrs.get(keys=(grant, credential))
+        head = self.peer.rgy.store.headEvent(registry)
+        opening = self.peer.rgy.store.opening(head.said) if head is not None and head.ilk == Ilks.bup else None
+        current = regeventing.vetBlind(opening, blid=head.sad["b"])[1] if opening is not None else None
+        return dict(state=record.state if record else None, said=record.said if record else None,
+                    sn=record.sn if record else None, head=head.said if head else None, current=current)
+
+    def revoke(self):
+        """Revoke the issued registry credential with a published opening and send the evidence by StreamPoster.
+
+        The `bup` that blinds `revoked` is anchored by a new interaction event; both travel to the recipient's
+        published end role, the KEL event first, with the opening attached to the `bup` as in a public issuance.
+        """
+        issued = self.issued
+        assert issued is not None and issued["events"], "issue a registry credential first"
+        reg = self.peer.rgy.registryByName("relay")
+        opening, update = reg.blind(issued["full"], "revoked")
+        hab = self.peer.hab
+        msg = hab.interact(data=[dict(i=reg.regk, s=update.sad["n"], d=update.said)], gvrsn=Vrsn_2_0)
+        assert reg.anchorMsg(update.said)
+        ixn = hab.kever.serder
+        published = Counter.enclose(qb64=Blinder.enclose([opening]), code=Codens.AttachmentGroup, version=Vrsn_2_0)
+        poster = self.poster(issued["recipient"])
+        poster.send(ixn, attachment=bytes(msg[len(ixn.raw):]), gvrsn=Vrsn_2_0)
+        poster.send(update, attachment=published, gvrsn=Vrsn_2_0)
+        self.deliver(poster)
+        return dict(event=update.said, anchor=ixn.said)
 
     def state(self, urls=(), pres=(), saids=(), registries=()):
         """Observations only: OOBI outcomes, known KELs and end roles, exchange and registry state."""
