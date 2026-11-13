@@ -1,5 +1,5 @@
 /** Node issuer authentication over public KEL/TEL evidence; no conversation or validity policy. */
-import { Diger, NumberPrimitive, Prefixer, type SealEvent, type SerderACDC } from "cesr-ts";
+import { type CesrFrame, Diger, NumberPrimitive, Prefixer, type SealEvent, SerderACDC } from "cesr-ts";
 import type { ChainVerdict } from "../../acdc/chaining.ts";
 import {
   type RegistryState,
@@ -14,6 +14,7 @@ import { type KeriDispatchEnvelope, TransIdxSigGroup } from "../../core/dispatch
 import { DatabaseOperationError } from "../../core/errors.ts";
 import { verifyExchangeProofs } from "../../core/exchange/exchange-proofing.ts";
 import type { Baser } from "../../db/basing.ts";
+import { envelopeFromFrame } from "../protocol/parsering.ts";
 
 /** Borrow only normalized issuer proof families; routing and frame projection belong to intake. */
 type IpexNodeProofs = Pick<
@@ -25,7 +26,7 @@ type IpexNodeProofs = Pick<
 export type IpexNodeAuthentication =
   | { kind: "authenticated"; registration: RegistryState | null }
   | { kind: "missing"; reason: string }
-  | { kind: "reject" };
+  | { kind: "reject"; reason: string };
 
 /** Protocol admission authenticates registry observations without imposing an application state vocabulary. */
 export function authenticatedNodeVerdict(authentication: IpexNodeAuthentication): ChainVerdict {
@@ -96,6 +97,19 @@ export function acceptedRegistryEvidence(
   return { rip, updates };
 }
 
+/**
+ * Whether a Grant's origin node is a fresh issuance: a credential its own sender issues, disclosed with no registry
+ * proof because no registry update has issued it yet. A presentation of an issued credential carries the proof
+ * that opens its registry update, so it never matches. Both are Grants on the wire; only a fresh one is consented to
+ * as an issuance. The answer is the same before and after the registry update is approved.
+ */
+export function isIssuanceOrigin(sender: string, origin: CesrFrame | undefined): boolean {
+  const body = origin?.body;
+  if (!(body instanceof SerderACDC) || body.issuer !== sender || !body.regid) return false;
+  const { bsqs, bsss } = envelopeFromFrame(origin!);
+  return !bsqs.length && !bsss.length;
+}
+
 /** A declared registry, then supplied anchors, take precedence over current signatures. */
 export function authenticateIpexNode(
   serder: SerderACDC,
@@ -106,39 +120,54 @@ export function authenticateIpexNode(
 ): IpexNodeAuthentication {
   if (serder.regid) {
     const proofs = [...envelope.bsqs, ...envelope.bsss];
-    if (!proofs.length || !registry) return { kind: "reject" };
+    if (!proofs.length || !registry) {
+      return {
+        kind: "reject",
+        reason: "The node declares a registry but carries no issuer proof or no registry store is open.",
+      };
+    }
     const chain = acceptedRegistryEvidence(registry, serder.regid);
     if (!chain) return { kind: "missing", reason: `Missing local TEL evidence for ${serder.regid}.` };
     // A RIP alone authenticates ownership, never a disclosed credential state.
-    if (!chain.updates.length) return { kind: "reject" };
+    if (!chain.updates.length) {
+      return {
+        kind: "reject",
+        reason:
+          "The registry has only its inception; a RIP alone authenticates ownership, never a disclosed credential state.",
+      };
+    }
     let at: string | undefined;
     if (historical) {
       if (!serder.verify() || serder.issuer !== chain.rip.issuer || serder.regid !== chain.rip.said) {
-        return { kind: "reject" };
+        return { kind: "reject", reason: "The node differs from the registry inception it declares." };
       }
       // Authenticate all supplied bodies/duplicates and known bound contradictions
       // before missing evidence wins, independently of attachment order.
       if (
         proofs.some((proof) => !vetBlind(proof, proof.d.nonce))
         || new Set(proofs.map((proof) => proof.d.nonce)).size !== proofs.length
-      ) return { kind: "reject" };
+      ) return { kind: "reject", reason: "The disclosed issuer proofs are malformed or repeat a nonce." };
       let unresolved = false;
       for (const proof of proofs) {
         if (proof.td.nonce && proof.td.nonce !== serder.said) continue;
         const bound = vetBound(proof, serder, db);
-        if (bound?.kind === "reject") return { kind: "reject" };
+        if (bound?.kind === "reject") {
+          return { kind: "reject", reason: "A disclosed issuer proof contradicts the node." };
+        }
         if (bound) unresolved = true;
       }
       const selected = [];
       for (const proof of proofs) {
         if (proof.td.nonce !== serder.said) continue;
         const matches = chain.updates.filter((event) => event.sad!.b === proof.d.nonce);
-        if (matches.length > 1) return { kind: "reject" };
+        if (matches.length > 1) return { kind: "reject", reason: "Several registry updates match one issuer proof." };
         if (matches.length) selected.push(matches[0]);
         else unresolved = true;
       }
       if (unresolved) return { kind: "missing", reason: `Missing retained issuer proof evidence for ${serder.said}.` };
-      if (!selected.length) return { kind: "reject" };
+      if (!selected.length) {
+        return { kind: "reject", reason: "No registry update matches the disclosed issuer proofs." };
+      }
       const candidates = new Set(selected.map((event) => event.said));
       // Accepted history is ascending. Vacuous and other-target openings cannot
       // advance this issuer prefix; generic source locators never select it.
@@ -157,7 +186,7 @@ export function authenticateIpexNode(
     }
     return result.kind === "verified" && result.state.regid === serder.regid
       ? { kind: "authenticated", registration: result.state }
-      : { kind: "reject" };
+      : { kind: "reject", reason: "The registry update does not bind the node." };
   }
   // Disclosed inner rd without top-level rd is an unsupported hidden issuer registry.
   // Compact aggregate entries expose no declaration and remain opaque here.
@@ -168,13 +197,13 @@ export function authenticateIpexNode(
       section && typeof section === "object" && !Array.isArray(section)
       && (section as Record<string, unknown>).rd
     )
-  ) return { kind: "reject" };
-  if (!serder.issuer) return { kind: "reject" };
+  ) return { kind: "reject", reason: "A disclosed inner registry has no top-level declaration." };
+  if (!serder.issuer) return { kind: "reject", reason: "The node names no issuer." };
   let issuer: Prefixer;
   try {
     issuer = new Prefixer({ qb64: serder.issuer });
   } catch {
-    return { kind: "reject" };
+    return { kind: "reject", reason: "The node names a malformed issuer." };
   }
   const sourceSeals: SealEvent[] = [
     ...envelope.sscs.map((seal) => ({ i: issuer, ...seal })),
@@ -186,7 +215,7 @@ export function authenticateIpexNode(
       ? { kind: "missing", reason: `Missing issuer KEL anchor for ${serder.said}.` }
       : result.sourceSeals.length > 0
       ? { kind: "authenticated", registration: null }
-      : { kind: "reject" };
+      : { kind: "reject", reason: "No issuer KEL anchor seals the node." };
   }
   const explicit = envelope.tsgs.filter((group) => group.pre === issuer.qb64);
   const last = envelope.ssgs.filter((group) => group.pre === issuer.qb64);
@@ -206,5 +235,5 @@ export function authenticateIpexNode(
     ? { kind: "missing", reason: `Missing current issuer KEL evidence for ${serder.said}.` }
     : result.tsgs.length + result.cigars.length > 0
     ? { kind: "authenticated", registration: null }
-    : { kind: "reject" };
+    : { kind: "reject", reason: "No current issuer signature authenticates the node." };
 }

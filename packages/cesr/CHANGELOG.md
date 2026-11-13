@@ -1,5 +1,11 @@
 # cesr-ts
 
+## 2.2.0
+
+### Minor Changes
+
+- c550909: Add a polyfill-free `browser` export condition to the browser-safe entrypoints (`cesr-ts`, and `keri-ts`, `keri-ts/runtime`, `keri-ts/db`, `keri-ts/db/indexeddb`) so bundlers no longer pull `node:module`, `node:url` and `node:path` through DNT's polyfill import. `import` and `types` targets are unchanged; the Node-only subpaths get no `browser` condition.
+
 ## 2.1.0
 
 ### Minor Changes
@@ -20,6 +26,7 @@
   - Grants walk open by default, as in KERIpy. `walkIpexGraph` takes a `"open" | "closed"` policy instead of a boolean and `AcdcGraph` carries it as `walk`; pass `grantWalk: "closed"` for the 2.0 refusal of every Grant that omits a far node.
   - Edge chain evaluation follows KERIpy more strictly: unrecognized unary operators and `NOT` are non-retryable unknowns, every schema pin is checked, and a list, falsy or `n`/`w`-bearing Edge Section is malformed.
   - A v2 ACDC attribute, edge or rule section without a top-level `d` is no longer given one. The bytes and SAID built for such a body change to KERIpy's; credentials authored by 2.0.x keep their inserted `d` and still verify.
+
 - c907d83: Breaking: a v2 ACDC attribute, edge or rule section without a top-level `d` is no longer given one, so the bytes and SAID keri-ts builds for such a body change to match KERIpy. ACDC v2 attribute, edge and rule sections without a top-level `d` now match KERIpy. Such a section is a valid form: `d` is reserved in these sections, not required, and `kli vc create --version 2.0 --data` emits it whenever the data carries no `d`. `SerderACDC` previously inserted `d` at the end of the map while authoring, producing different bytes and a different SAID from KERIpy, and rejected KERIpy's bytes with "Invalid disclosed <label> section commitment." It now never inserts the label. The section stays expanded in both the displayed and the hashed message, also under `compactify`, while nested maps that carry their own `d` are still saidified. Sections that carry `d`, the schema section and v1 bodies are unchanged. Bodies keri-ts authored earlier carry the inserted `d` and still verify; the same input now yields KERIpy's SAID instead.
 - e8e7c1f: Remove libsodium from the published packages. Argon2id `Salter` stretching now runs on `@keri-ts/hash-wasm`, a fork of `hash-wasm` with empty-password support and a synchronous API, and stays byte-identical to KERIpy on every tier. The crypto layer's browser payload falls from about 188 KB gzipped to about 31 KB.
 

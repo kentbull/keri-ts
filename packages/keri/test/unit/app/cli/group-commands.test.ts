@@ -173,3 +173,46 @@ Deno.test("join --said refuses a proposal that belongs to another group and sign
     }, "2");
   });
 });
+
+Deno.test("join --kind approves only a proposal of that kind and leaves an earlier one of another kind", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const counts = countSigns(s);
+      const first = yield* peerInteraction(s, [{ n: 1 }]);
+      const stub = stubPrompts([]);
+      try {
+        // The only pending proposal is an interaction: asking for a bup approves nothing.
+        const none = yield* joinProposal(joinDeps(s), {
+          deadline: Date.now() + 400,
+          kind: "bup",
+          ...joinPrompts({ auto: true }),
+        });
+        assertEquals(none, null);
+        assertEquals(counts.signs, 0);
+        assertEquals(findGroupProposal(readDeps(s), first.signed.exnSaid)?.local, "unapproved");
+        // Naming the interaction's SAID with the wrong kind is refused, not approved.
+        let refused = "";
+        try {
+          yield* joinProposal(joinDeps(s), {
+            deadline: Date.now() + 400,
+            said: first.signed.exnSaid,
+            kind: "bup",
+            ...joinPrompts({ auto: true }),
+          });
+        } catch (error) {
+          refused = (error as Error).message;
+        }
+        assertEquals(refused.includes("not bup"), true, refused);
+        const joined = yield* joinProposal(joinDeps(s), {
+          deadline: Date.now() + 400,
+          kind: "ixn",
+          ...joinPrompts({ auto: true }),
+        });
+        assertEquals(joined?.proposal.said, first.signed.exnSaid);
+      } finally {
+        stub.restore();
+      }
+      assertEquals(counts.signs, 1);
+    }, "2");
+  });
+});

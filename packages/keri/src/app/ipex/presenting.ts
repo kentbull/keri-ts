@@ -231,6 +231,11 @@ export class PresentationOperations {
 
   constructor(readonly deps: PresentationDeps) {}
 
+  /** Whether the live presentation `said` still holds a message the transport has not taken. */
+  owes(said: string): boolean {
+    return (this.live.get(said)?.outbox.length ?? 0) > 0;
+  }
+
   /** Whether a delivery is live. */
   active(): boolean {
     return this.live.size > 0;
@@ -544,7 +549,10 @@ export function* waitForPresentation(
   said: string,
   { timeoutMs, clock = ops.deps.clock, until = (status) => status.state !== "active" }: PresentationWaitOptions,
 ): Operation<WaitResult<PresentationStatus>> {
-  const settled = yield* observeUntil(() => until(presentationStatus(ops, said)), { timeoutMs, clock });
+  const settled = yield* observeUntil(() => until(presentationStatus(ops, said)) && !ops.owes(said), {
+    timeoutMs,
+    clock,
+  });
   const status = presentationStatus(ops, said);
   return settled ? { outcome: "settled", status } : { outcome: "timed-out", status, timeoutMs };
 }

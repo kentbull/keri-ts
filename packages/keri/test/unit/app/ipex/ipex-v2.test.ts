@@ -86,12 +86,13 @@ Deno.test("IPEX node authentication keeps missing KEL evidence distinct from ref
       yield* call(() => learn(receiver, acceptedEventReplayMessage(source, issuer.pre, 0).message));
       assertEquals(receiver.habs.has(issuer.pre), false, "only public issuer evidence crossed intake");
       assertEquals(authenticate(signed), { kind: "authenticated", registration: null });
-      assertEquals(authenticate(node([])), { kind: "reject" });
+      const rejected = authenticate(node([]));
+      assert(rejected.kind === "reject" && rejected.reason.length > 0, "a reject says why");
       assertEquals(
         authenticate(
           node(messageAttachmentGroups({ tsgs: [claimedIssuer(foreign.sign(credential.raw, true))] }, Vrsn_2_0)),
-        ),
-        { kind: "reject" },
+        ).kind,
+        "reject",
         "a known issuer does not authenticate a foreign signature",
       );
       issuer.interact({ data: [{ d: credential.said! }] });

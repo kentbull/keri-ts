@@ -1,5 +1,0 @@
----
-"keri-ts": minor
----
-
-Create IPEX DH and Unblind owners lazily, from the stored Grant the message addresses. `IpexAuxiliaries` no longer polls existing owners or sweeps every local identifier: for an incoming DH or Unblind query or reply it resolves the one local identifier party to the transaction (an approved operation, the recipient of a stored Grant, the sender of a stored Grant addressed to the message sender, or a local group sending its own contribution) and creates that identifier's owner then. A message with no matching Grant, or with two local parties, stays unowned and drops before KRAM. An identifier made, joined or reloaded after the runtime needs no hook, and an owner whose identifier object is no longer the Habery's is replaced. Removed with no wrappers (not kept for 2.1.0 callers): `IpexAuxiliaries.ensureDhkes` and the `habs` constructor argument, and the owner sweep on the runtime loop. `Dhke.recipients` and `Unblind.recipients` are the store resolvers `inTransaction` now shares. Runtimes with `ipexAuxiliary` selected also serve other local identifiers' stored Grants lazily. Wire formats are unchanged.

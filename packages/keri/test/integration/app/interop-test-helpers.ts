@@ -506,6 +506,50 @@ function didWebsResolverVenvBin(name: string): string {
   return `${didWebsResolverVenvRoot()}/bin/${name}`;
 }
 
+/** Longest a provisioning step may hold a cache lock before another process treats it as abandoned. */
+const CACHE_LOCK_STALE_MS = 20 * 60_000;
+/** Longest a process waits for another process's provisioning before failing. */
+const CACHE_LOCK_WAIT_MS = 25 * 60_000;
+
+/**
+ * Run `work` while holding a cross-process lock on one shared cache entry.
+ *
+ * Concurrent test processes (two files of one owner, or separate `deno test` runs) share
+ * `~/.cache/tufa-interop`, and a venv cannot be built elsewhere and renamed because its scripts and
+ * editable installs record absolute paths. The lock is an atomically created directory next to the
+ * entry; a holder older than `CACHE_LOCK_STALE_MS` is treated as crashed. Callers re-check "already
+ * complete" after acquiring, so only the first process builds.
+ */
+async function withCacheLock<T>(entry: string, work: () => Promise<T>): Promise<T> {
+  const lock = `${entry}.lock`;
+  await Deno.mkdir(lock.slice(0, lock.lastIndexOf("/")), { recursive: true });
+  const deadline = Date.now() + CACHE_LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      await Deno.mkdir(lock);
+      break;
+    } catch (error) {
+      if (!(error instanceof Deno.errors.AlreadyExists)) throw error;
+      try {
+        const age = Date.now() - (await Deno.stat(lock)).mtime!.getTime();
+        if (age > CACHE_LOCK_STALE_MS) {
+          await Deno.remove(lock, { recursive: true }).catch(() => undefined);
+          continue;
+        }
+      } catch {
+        continue; // The holder released it between the two calls.
+      }
+      if (Date.now() > deadline) throw new Error(`Timed out waiting for the cache lock ${lock}.`);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  try {
+    return await work();
+  } finally {
+    await Deno.remove(lock, { recursive: true }).catch(() => undefined);
+  }
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await Deno.stat(path);
@@ -665,6 +709,13 @@ async function installDidWebsResolverIntoVenv(
 
 /** Resolve a pinned Python `dws` executable for did:webs interop. */
 export async function ensurePinnedDidWebsResolver(
+  env: Record<string, string>,
+): Promise<DidWebsResolverTooling> {
+  // Checkout, venv and marker are one cache entry; build it under one lock.
+  return await withCacheLock(didWebsResolverCacheRoot(), () => provisionDidWebsResolver(env));
+}
+
+async function provisionDidWebsResolver(
   env: Record<string, string>,
 ): Promise<DidWebsResolverTooling> {
   const checkout = await ensurePinnedDidWebsResolverCheckout(env);
@@ -1221,36 +1272,45 @@ export async function ensurePinnedKeripyKli(
 ): Promise<string> {
   const marker = `${keripyInteropCacheRoot()}/PIN`;
   const kli = keripyInteropVenvBin("kli");
-  const markerMatches = await pathExists(marker)
-    ? (await Deno.readTextFile(marker)).trim() === KERIPY_INTEROP_COMMIT
-    : false;
+  const complete = async () =>
+    await pathExists(marker)
+    && (await Deno.readTextFile(marker)).trim() === KERIPY_INTEROP_COMMIT
+    && await canUseKli(kli, env);
 
-  if (markerMatches && await canUseKli(kli, env)) {
+  if (await complete()) {
     await ensurePinnedKeripyFixtures();
     return kli;
   }
 
-  if (await pathExists(keripyInteropVenvRoot())) {
-    await Deno.remove(keripyInteropVenvRoot(), { recursive: true });
-  }
+  // One process builds; the others wait here, then find the marker the builder wrote last.
+  return await withCacheLock(keripyInteropCacheRoot(), async () => {
+    if (await complete()) {
+      await ensurePinnedKeripyFixtures();
+      return kli;
+    }
 
-  const python = await resolvePython314Command(env);
-  const installEnv = {
-    ...pyenvProbeEnv(env),
-    PIP_DISABLE_PIP_VERSION_CHECK: "1",
-  };
-  await installKeripyIntoVenv(python, keripyInteropVenvRoot(), installEnv);
+    if (await pathExists(keripyInteropVenvRoot())) {
+      await Deno.remove(keripyInteropVenvRoot(), { recursive: true });
+    }
 
-  if (!(await canUseKli(kli, env))) {
-    throw new Error(
-      `Pinned KERIpy install did not produce a runnable kli at ${kli}.`,
-    );
-  }
+    const python = await resolvePython314Command(env);
+    const installEnv = {
+      ...pyenvProbeEnv(env),
+      PIP_DISABLE_PIP_VERSION_CHECK: "1",
+    };
+    await installKeripyIntoVenv(python, keripyInteropVenvRoot(), installEnv);
 
-  await Deno.mkdir(keripyInteropCacheRoot(), { recursive: true });
-  await Deno.writeTextFile(marker, `${KERIPY_INTEROP_COMMIT}\n`);
-  await ensurePinnedKeripyFixtures();
-  return kli;
+    if (!(await canUseKli(kli, env))) {
+      throw new Error(
+        `Pinned KERIpy install did not produce a runnable kli at ${kli}.`,
+      );
+    }
+
+    await Deno.mkdir(keripyInteropCacheRoot(), { recursive: true });
+    await Deno.writeTextFile(marker, `${KERIPY_INTEROP_COMMIT}\n`);
+    await ensurePinnedKeripyFixtures();
+    return kli;
+  });
 }
 
 /**
