@@ -808,9 +808,11 @@ Deno.test("Interop registry root: a mixed group rotation rekeys the KERIpy membe
     assertEquals(lines.find(line => line.accepted !== undefined)?.accepted, true, rotated.stdout);
     // `tufa multisig rotate` re-seals automatically after acceptance, to the rekeyed KERIpy member only.
     const resealed = lines.filter(line => line.phase === "root_copy");
-    assertEquals(resealed.map(item => [item.sender, item.recipient, item.gid, item.registry, item.transmitted]), [
-      [group.tsPre, group.kliPre, group.group, registry, true],
-    ]);
+    assertEquals(
+      resealed.map(item => [item.sender, item.recipient, item.gid, item.registry, item.transmitted]),
+      [[group.tsPre, group.kliPre, group.group, registry, true]],
+      `rotate stdout: ${rotated.stdout}\nstderr: ${rotated.stderr}`,
+    );
     assertEquals(await kliListenRetains(group, registry), root);
     await withTufaStore(group.tufa, group.headDirPath, function*(hby) {
       assertEquals(hby.db.getKever(group.group)?.sn, 3, "inception, two registry anchors, then the rotation");
