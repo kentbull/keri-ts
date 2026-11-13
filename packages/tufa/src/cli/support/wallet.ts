@@ -1,5 +1,6 @@
 /** Tufa owns inventory-store configuration/lifetime; wallet owns admission decisions. */
-import { createWalletBaser, Wallet } from "@keri-ts/wallet";
+import { Wallet } from "@keri-ts/wallet";
+import { createWalletBaser } from "@keri-ts/wallet/lmdb";
 import { type Operation, resource } from "effection";
 import { type CommandStoreArgs, parseBooleanOption, parseStringOption } from "keri-ts/cli";
 import type { RegistryStore } from "keri-ts/db";

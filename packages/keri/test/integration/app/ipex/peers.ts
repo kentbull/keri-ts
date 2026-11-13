@@ -1,12 +1,12 @@
 /** Independent HTTP peers. Fixtures own resources; tests own conversation order. */
 import {
-  createWalletBaser,
   RegistryCustody,
   Wallet,
   WalletAuthor,
   type WalletBaser,
   WalletDiscloser,
 } from "@keri-ts/wallet";
+import { createWalletBaser } from "@keri-ts/wallet/lmdb";
 import { oobiTerminalState } from "../../../../src/app/bootstrap/oobiery.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { runAgentRuntimeUntil } from "../../../../src/app/runtime/agent-runtime.ts";

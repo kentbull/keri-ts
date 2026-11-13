@@ -5,7 +5,8 @@ import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
 
 import { createProtocolHandler } from "@keri-ts/hosting";
-import { createWalletBaser, Wallet, type WalletBaser, WalletDiscloser } from "@keri-ts/wallet";
+import { Wallet, type WalletBaser, WalletDiscloser } from "@keri-ts/wallet";
+import { createWalletBaser } from "@keri-ts/wallet/lmdb";
 import {
   type CesrFrame,
   collectPayload,
