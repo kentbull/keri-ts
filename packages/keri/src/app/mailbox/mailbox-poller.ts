@@ -250,28 +250,28 @@ export class MailboxPoller {
     topics: readonly string[],
     only?: ReadonlySet<string>,
   ): Operation<void> {
-    const active = new Set<string>();
+    const wanted = new Map<string, { target: MailboxPollTarget; endpoint: { eid: string; url: string } }>();
     if (topics.length > 0) {
       for (const target of this.remotePollTargets(only)) {
         for (const endpoint of mailboxPollEndpoints(target.hab)) {
-          const workerKey = `${target.targetPre}:${endpoint.key}`;
-          active.add(workerKey);
-          if (remoteWorkers.has(workerKey)) {
-            continue;
-          }
-
-          const task = yield* spawn(() => this.remoteEndpointWorker(target, endpoint, onBatch));
-          remoteWorkers.set(workerKey, task);
+          // The signer is part of the identity: a group whose local member was replaced gets a new worker.
+          wanted.set(`${target.targetPre}:${target.signerHab.pre}:${endpoint.key}`, { target, endpoint });
         }
       }
     }
 
+    // Halt before spawning: a halted worker clears the signer condition it shares with its replacement.
     for (const [workerKey, task] of [...remoteWorkers.entries()]) {
-      if (active.has(workerKey) || (only && !only.has(workerKey.slice(0, workerKey.indexOf(":"))))) {
+      if (wanted.has(workerKey) || (only && !only.has(workerKey.slice(0, workerKey.indexOf(":"))))) {
         continue;
       }
       yield* task.halt();
       remoteWorkers.delete(workerKey);
+    }
+
+    for (const [workerKey, { target, endpoint }] of wanted) {
+      if (remoteWorkers.has(workerKey)) continue;
+      remoteWorkers.set(workerKey, yield* spawn(() => this.remoteEndpointWorker(target, endpoint, onBatch)));
     }
   }
 
@@ -294,31 +294,36 @@ export class MailboxPoller {
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
   ): Operation<never> {
     let state: PollState = { backoffMs: 0 };
-    while (true) {
-      const { outcome, missing } = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
-      const source = `mailbox-poller:${target.targetPre}/${endpoint.eid}`;
-      if (missing) this.signerConditions?.report(source, missing, this.clock.now());
-      else this.signerConditions?.clear(source);
-      const step = nextPoll(state, outcome, {
-        initialMs: this.timeoutPolicy.refusalInitialMs,
-        maxMs: this.timeoutPolicy.refusalMaxMs,
-      });
-      state = step.state;
-      switch (step.action.kind) {
-        case "poll":
-          this.onPolled?.(target.targetPre, endpoint.eid);
-          yield* runtimeTurn();
-          break;
-        case "prompt-publisher":
-          this.onUnauthorized?.(target.targetPre, endpoint.eid);
-          yield* waitOnClock(this.clock, step.action.ms);
-          break;
-        case "wait":
-          // A released signer is waited out until one is held again, not for the full backoff.
-          if (missing && this.signerConditions) yield* this.signerConditions.waitForHold(this.clock, step.action.ms);
-          else yield* waitOnClock(this.clock, step.action.ms);
-          break;
+    const source = `mailbox-poller:${target.targetPre}/${endpoint.eid}`;
+    try {
+      while (true) {
+        const { outcome, missing } = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
+        if (missing) this.signerConditions?.report(source, missing, this.clock.now());
+        else this.signerConditions?.clear(source);
+        const step = nextPoll(state, outcome, {
+          initialMs: this.timeoutPolicy.refusalInitialMs,
+          maxMs: this.timeoutPolicy.refusalMaxMs,
+        });
+        state = step.state;
+        switch (step.action.kind) {
+          case "poll":
+            this.onPolled?.(target.targetPre, endpoint.eid);
+            yield* runtimeTurn();
+            break;
+          case "prompt-publisher":
+            this.onUnauthorized?.(target.targetPre, endpoint.eid);
+            yield* waitOnClock(this.clock, step.action.ms);
+            break;
+          case "wait":
+            // A released signer is waited out until one is held again, not for the full backoff.
+            if (missing && this.signerConditions) yield* this.signerConditions.waitForHold(this.clock, step.action.ms);
+            else yield* waitOnClock(this.clock, step.action.ms);
+            break;
+        }
       }
+    } finally {
+      // A halted worker (its endpoint or signer was replaced) leaves no signer condition behind.
+      this.signerConditions?.clear(source);
     }
   }
 
