@@ -124,6 +124,8 @@ export interface GroupIpexOutcome {
   messages: GroupSendResult["messages"];
   /** Destinations that took this member's wrappers. */
   deliveries: string[];
+  /** Each other member's outcome; a group IPEX publication retries until every member took it, so all are delivered. */
+  members: GroupSendResult["members"];
   /** Destinations that took the completed message; empty unless this member is the elected lead. */
   sent: string[];
 }
@@ -296,6 +298,7 @@ export class GroupIpexOperations {
     this.outcomes.set(op.said, {
       messages: op.publication?.messages ?? [],
       deliveries: op.publication?.deliveries ?? [],
+      members: op.publication?.members ?? [],
       sent: op.deliveries,
     });
     this.deps.changes?.push({ kind: "ipex", id: op.said });

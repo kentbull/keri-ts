@@ -309,3 +309,46 @@ Deno.test("a held keyless member signs at index 3 of a five-member group", async
     }
   });
 });
+
+Deno.test("a held non-transferable keyless member signs at index 1 of a three-member group", async () => {
+  await run(function*() {
+    const remote = (yield* openFresh()).hby;
+    const { hby: local } = yield* openFresh();
+    try {
+      const peers = [0, 2].map((i) => remote.makeHab(`peer${i}`));
+      const input = preSigned({ transferable: false });
+      const member = local.makeSignedHab("user", undefined, input);
+      local.mgr.hold(input.signers);
+      assertEquals(member.kever!.transferable, false);
+      for (const peer of peers) {
+        for (const [, said] of remote.db.getKelItemIter(peer.pre)) {
+          local.kevery.processEvent({
+            serder: remote.db.getEvtSerder(peer.pre, said)!,
+            sigers: remote.db.sigs.get([peer.pre, said]),
+            wigers: [],
+            frcs: [],
+            sscs: [],
+            ssts: [],
+            local: false,
+          });
+        }
+      }
+      const mids = [peers[0].pre, member.pre, peers[1].pre];
+      const created = local.makeGroupHab("group", member, mids, mids, undefined, {
+        isith: ["0", "1", "0"],
+        nsith: "1",
+        toad: 0,
+      });
+      const group = created.hab;
+      const keys = group.kever!.verfers;
+      assertEquals(created.sigers.map((siger) => siger.index), [1]);
+      assert(keys[1].verify(created.sigers[0].raw, created.serder.raw));
+      const interaction = local.interactGroupHab("group");
+      assertEquals(interaction.sigers.map((siger) => siger.index), [1]);
+      assertEquals(group.sign(message, true)[0].index, 1);
+    } finally {
+      yield* local.close();
+      yield* remote.close();
+    }
+  });
+});

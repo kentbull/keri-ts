@@ -37,18 +37,27 @@ export interface SignedGroupMessage extends GroupMessageRef {
   message: Uint8Array;
 }
 
-/** Completed transport destinations, not participant approval or group acceptance. */
+/**
+ * What happened to the one wrapper addressed to one member: completed transport destinations when `delivered`
+ * (never participant approval or group acceptance), or why the transport failed. A failed wrapper is already
+ * accepted locally and can be sent again.
+ */
 export interface GroupDelivery extends GroupMessageRef {
-  /** Successful transport destinations reported by this one concrete Poster admission. */
+  outcome: "delivered" | "failed";
+  /** Successful transport destinations reported by this one concrete Poster admission; empty when failed. */
   deliveries: string[];
+  /** The transport's reason, present when failed. */
+  reason?: string;
 }
 
 /** Public publication facts for exact selection, without treating transport as approval. */
 export interface GroupSendResult {
-  /** Recipient-specific outer/aggregate identities, in completed send order. */
+  /** Recipient-specific outer/aggregate identities of the delivered wrappers, in completed send order. */
   messages: GroupMessageRef[];
   /** Flattened completed destinations, preserving order and any repeats across messages. */
   deliveries: string[];
+  /** One outcome per other member, delivered or failed, in send order. A failed one does not fail the call. */
+  members: GroupDelivery[];
 }
 
 /** Select unique remote member AIDs, preserving the supplied member order. */
@@ -203,23 +212,54 @@ export function* sendGroupMessage(
     recipient: prepared.recipient,
     exnSaid: prepared.exnSaid,
     payloadSaid: prepared.payloadSaid,
+    outcome: "delivered",
     deliveries: [...outcome.deliveries],
   };
 }
 
-/** Collect successful recipient outcomes into message identities and completed target URLs. */
-export function groupSendResult(outcomes: readonly GroupDelivery[]): GroupSendResult {
+/** The outcome of sending `prepared` as a failed delivery with the transport's reason. */
+export function failedGroupDelivery(prepared: GroupMessageRef, error: unknown): GroupDelivery {
   return {
-    messages: outcomes.map(({ recipient, exnSaid, payloadSaid }) => ({ recipient, exnSaid, payloadSaid })),
-    deliveries: outcomes.flatMap(outcome => outcome.deliveries),
+    recipient: prepared.recipient,
+    exnSaid: prepared.exnSaid,
+    payloadSaid: prepared.payloadSaid,
+    outcome: "failed",
+    deliveries: [],
+    reason: error instanceof Error ? error.message : String(error),
+  };
+}
+
+/**
+ * Like {@link sendGroupMessage}, but a transport failure is this member's outcome and not an error: the wrapper
+ * is already accepted locally, so one unreachable member must not stop the others or the caller's next step.
+ */
+export function* deliverGroupMessage(
+  postman: Poster,
+  prepared: SignedGroupMessage,
+): Operation<GroupDelivery> {
+  try {
+    return yield* sendGroupMessage(postman, prepared);
+  } catch (error) {
+    return failedGroupDelivery(prepared, error);
+  }
+}
+
+/** Collect recipient outcomes: delivered message identities and completed target URLs, and every member's outcome. */
+export function groupSendResult(outcomes: readonly GroupDelivery[]): GroupSendResult {
+  const delivered = outcomes.filter(outcome => outcome.outcome === "delivered");
+  return {
+    messages: delivered.map(({ recipient, exnSaid, payloadSaid }) => ({ recipient, exnSaid, payloadSaid })),
+    deliveries: delivered.flatMap(outcome => outcome.deliveries),
+    members: [...outcomes],
   };
 }
 
 /**
  * Process the exact signed local contribution before admitting remote delivery,
  * so an immediate peer reply cannot outrun local Multiplexor evidence. Await
- * normal intake, then send the same bytes without signing again. Intake or send
- * failures propagate; no cross-store/network transaction is implied.
+ * normal intake, then send the same bytes without signing again. Intake failures
+ * propagate; a send failure is the member's `failed` outcome. No cross-store/network
+ * transaction is implied.
  */
 export function* admitAndSendGroupMessage(
   input: Reactor,
@@ -227,5 +267,5 @@ export function* admitAndSendGroupMessage(
   prepared: SignedGroupMessage,
 ): Operation<GroupDelivery> {
   yield* input.processBytes(prepared.message, { local: true });
-  return yield* sendGroupMessage(postman, prepared);
+  return yield* deliverGroupMessage(postman, prepared);
 }

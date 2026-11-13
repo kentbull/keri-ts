@@ -437,20 +437,23 @@ export const steps: Step[] = [
         ...["--out", `/work/peer/grant-${crypto.randomUUID()}.cesr`],
       ]);
       const grant = capture(prepared.stdout, /"grant":"([^"]+)"/);
-      // The sender waits for a key exchange nobody here answers; it only has to deliver the Grant.
+      // The sender waits for a key exchange nobody here answers, until its timeout; it only has to deliver the Grant
+      // (the browser had it about a second after the sender started), so the wait is kept short.
+      const began = Date.now();
       const sending = start(
         "tufa ipex grant --issue --resume (holder)",
         ctx.peer([...["ipex", "grant", "--issue", ...holder.store, "-a", holder.alias, "-r", group.pre], ...[
           "--resume",
           grant,
           "--timeout",
-          "30",
-        ]], 60_000)
+          "10",
+        ]], 40_000)
           .catch(() => undefined),
       );
       const received = await ctx.page("awaitGroupGrant", { ...who(ctx), grant });
+      const receivedAfterMs = Date.now() - began;
       await finish(sending);
-      return received;
+      return { ...received, receivedAfterMs };
     },
   },
   {

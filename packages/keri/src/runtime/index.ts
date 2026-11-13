@@ -404,6 +404,7 @@ export {
   multisigRpyExn,
 } from "../app/multisig/grouping.ts";
 export type {
+  GroupDelivery,
   GroupMessageRef,
   GroupSendResult,
 } from "../app/multisig/multisig-messaging.ts";

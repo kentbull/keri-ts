@@ -79,6 +79,7 @@ import {
   type MultisigChildRoute,
   multisigExnBody,
 } from "../multisig/grouping.ts";
+import { remoteGroupMembers } from "../multisig/multisig-messaging.ts";
 import { proposeRegistryEvent, type RegistryProposeDeps } from "../multisig/proposing.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import { exchangeWire, type IssuanceGrantOptions } from "./ipex-discloser.ts";
@@ -200,9 +201,9 @@ export class GroupParty {
     return this.member.pre === this.custodian;
   }
 
-  /** The other current signing members of the group. */
+  /** The other current signing members of the group that are not held in this Habery; local ones share its stores. */
   others(): string[] {
-    return groupSigningMembers(this.hby, this.group.pre!).filter((peer) => peer !== this.member.pre);
+    return remoteGroupMembers(this.hby, this.member, groupSigningMembers(this.hby, this.group.pre!));
   }
 
   /** The election this party stands for. */

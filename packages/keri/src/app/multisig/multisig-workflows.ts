@@ -94,6 +94,7 @@ import {
 } from "./grouping.ts";
 import {
   admitAndSendGroupMessage,
+  failedGroupDelivery,
   type GroupDelivery,
   type GroupSendResult,
   groupSendResult,
@@ -265,13 +266,12 @@ export function* publishAcdcV2Registry(
       notify: true,
     });
     const outcome = yield* postman.wait(evt);
-    if (outcome.kin === "failed") throw outcome.error;
-    outcomes.push({
-      recipient,
-      exnSaid: approval[0].said!,
-      payloadSaid: (approval[0].sad!.a as { anc: string }).anc,
-      deliveries: outcome.deliveries,
-    });
+    const ref = { recipient, exnSaid: approval[0].said!, payloadSaid: (approval[0].sad!.a as { anc: string }).anc };
+    outcomes.push(
+      outcome.kin === "failed"
+        ? failedGroupDelivery(ref, outcome.error)
+        : { ...ref, outcome: "delivered", deliveries: outcome.deliveries },
+    );
   }
   return groupSendResult(outcomes);
 }

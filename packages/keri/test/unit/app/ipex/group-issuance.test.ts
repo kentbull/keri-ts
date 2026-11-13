@@ -35,6 +35,7 @@ import {
   groupIssuanceElection,
   groupIssuanceProof,
   groupIssuanceProposals,
+  GroupParty,
   proposeGroupIssuance,
 } from "../../../../src/app/ipex/group-issuance.ts";
 import { exchangeWire } from "../../../../src/app/ipex/ipex-discloser.ts";
@@ -42,6 +43,7 @@ import {
   admitIssuance,
   approveIssuanceExchange,
   deliverIssuanceAdmit,
+  type IssuanceDeps,
   type IssuanceOperations,
   type IssuanceStatus,
   issuanceStatus,
@@ -59,6 +61,7 @@ import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
 import { approvePending } from "../multisig/approve-pending.ts";
+import { learn } from "../multisig/proposal-fixture.ts";
 
 const KRAM = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } as const;
 const BUDGET_MS = 60_000;
@@ -445,5 +448,23 @@ Deno.test("a member that left after contributing follows the custodian's proof w
     }
     assert(holderRefused.includes("pending group issuance"), holderRefused);
     assertThrows(() => groupIssuanceElection(issuance, hab.pre!), ValidationError, "local group");
+  });
+});
+
+Deno.test("a Habery that holds two members of one group does not send group issuance traffic to itself", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const other = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const first = hby.makeHab("first"), second = hby.makeHab("second"), remote = other.makeHab("remote");
+      yield* call(() => learn(hby, remote));
+      const smids = [first.pre!, second.pre!, remote.pre!];
+      const created = hby.makeGroupHab("group", first, smids, smids, undefined, { isith: "1", nsith: "1", toad: 0 });
+      const party = GroupParty.resolve({ hby, group: {} } as unknown as IssuanceDeps, created.hab);
+      assertEquals(party.others(), [remote.pre], "the other local member shares this Habery's stores and is skipped");
+    } finally {
+      yield* other.close(true);
+      yield* hby.close(true);
+    }
   });
 });

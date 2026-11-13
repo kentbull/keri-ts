@@ -30,6 +30,7 @@ import {
   type DisclosureSelection,
   dismissGroupProposal,
   findGroupProposal,
+  type GroupDelivery,
   type GroupEventRef,
   type GroupEventStatus,
   groupIpexProposals,
@@ -91,7 +92,13 @@ import type { EndedStatus, EndedUnblinding, UnblindOutcome } from "./wallet-api.
  * {@link Groups.wait} resumes the wait.
  */
 export type GroupEventOutcome =
-  & { group: string; event: GroupEventRef; status: GroupEventStatus }
+  & {
+    group: string;
+    event: GroupEventRef;
+    status: GroupEventStatus;
+    /** What became of the wrapper sent to each other member when this call proposed or approved; empty on a wait. */
+    members: readonly GroupDelivery[];
+  }
   & (
     | { outcome: "complete" }
     | { outcome: "superseded"; accepted: string }
@@ -104,9 +111,10 @@ function* settleEvent(
   runtime: AgentRuntime,
   event: GroupEventRef,
   timeoutMs: number,
+  members: readonly GroupDelivery[] = [],
 ): Operation<GroupEventOutcome> {
   const waited = yield* waitForGroupEvent(runtime.counselor, event, { timeoutMs, clock: runtime.clock });
-  const { status } = waited, base = { group: event.pre, event, status };
+  const { status } = waited, base = { group: event.pre, event, status, members };
   if (waited.outcome === "timed-out") return { ...base, outcome: "timed-out", timeoutMs };
   if (status.state === "complete") return { ...base, outcome: "complete" };
   if (status.state === "superseded") return { ...base, outcome: "superseded", accepted: status.accepted };
@@ -173,6 +181,8 @@ export interface GroupMailboxProposal {
   mailbox: string;
   /** SAID of the proposed reply; the other members see the proposal in `proposals.list()`. */
   payload: string;
+  /** What became of the wrapper sent to each other member; a failed one can be sent again. */
+  members: readonly GroupDelivery[];
 }
 
 /** Result of {@link Groups.completeMailbox}. */
@@ -211,7 +221,7 @@ export class Groups {
         { smids, rmids, isith, nsith, toad, wits, delpre, data },
         inputs,
       );
-      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs);
+      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs, proposed.members);
     }.bind(this));
   }
 
@@ -233,7 +243,7 @@ export class Groups {
         { smids, rmids, isith, nsith, toad, cuts, adds, data },
         inputs,
       );
-      const settled = yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs);
+      const settled = yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs, proposed.members);
       if (settled.outcome === "complete") settleProposedRotation({ hby: this.#scope.parts.hby }, proposed);
       return settled;
     }.bind(this));
@@ -246,7 +256,7 @@ export class Groups {
       timeoutMs = options.timeoutMs ?? WALLET_TIMEOUTS.group;
     return await this.#scope.go(function*(this: Groups) {
       const proposed = yield* proposeGroupInteraction(this.proposeDeps(), hab, data, inputs);
-      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs);
+      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs, proposed.members);
     }.bind(this));
   }
 
@@ -270,7 +280,7 @@ export class Groups {
         ...inputs,
       });
       if (!approved.event) throw new ValidationError(`Proposal ${proposal} sets up no group event.`);
-      return yield* settleEvent(this.#scope.parts.runtime, approved.event, timeoutMs);
+      return yield* settleEvent(this.#scope.parts.runtime, approved.event, timeoutMs, approved.members);
     }.bind(this));
   }
 
@@ -307,7 +317,7 @@ export class Groups {
         undefined,
         inputs,
       );
-      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs);
+      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs, proposed.members);
     }.bind(this));
   }
 
@@ -320,7 +330,13 @@ export class Groups {
     const hab = this.#scope.group(group);
     return await this.#scope.go(function*() {
       const sent = yield* proposeGroupMailbox(hby, runtime.protocol, runtime.postman, hab, mailbox);
-      return { outcome: "proposed" as const, group: hab.pre!, mailbox, payload: sent.messages[0]?.payloadSaid ?? "" };
+      return {
+        outcome: "proposed" as const,
+        group: hab.pre!,
+        mailbox,
+        payload: sent.messages[0]?.payloadSaid ?? sent.members[0]?.payloadSaid ?? "",
+        members: sent.members,
+      };
     });
   }
 
@@ -566,7 +582,7 @@ export class Proposals {
           ...inputs,
         });
         if (!approved.event) return { id, family, outcome: "approved", status: null };
-        const settled = yield* settleEvent(this.#scope.parts.runtime, approved.event, timeoutMs);
+        const settled = yield* settleEvent(this.#scope.parts.runtime, approved.event, timeoutMs, approved.members);
         return { id, family, ...eventSummary(settled) };
       }.bind(this));
     }

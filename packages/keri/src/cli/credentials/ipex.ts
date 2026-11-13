@@ -565,7 +565,10 @@ export function* joinIpexProposal(
   }
 
   if (!ipexArgs.auto) {
-    return { exn, group: { embedded, accepted: null, approved: null, lead: null, messages: [], deliveries: [] } };
+    return {
+      exn,
+      group: { embedded, accepted: null, approved: null, lead: null, messages: [], deliveries: [], members: [] },
+    };
   }
 
   if (embedded.pvrsn.major === 2) {
@@ -589,6 +592,7 @@ export function* joinIpexProposal(
         lead: runtime.exc.lead(hby.habs.get(group)!, said),
         messages: outcome?.messages ?? [],
         deliveries: [...(outcome?.deliveries ?? []), ...(outcome?.sent ?? [])],
+        members: outcome?.members ?? [],
       },
     };
   }
@@ -620,6 +624,7 @@ export function* joinIpexProposal(
             credentialSaved,
             messages: [],
             deliveries: [],
+            members: [],
           },
         };
       }
@@ -641,6 +646,7 @@ export function* joinIpexProposal(
         credentialSaved,
         messages: approval.messages,
         deliveries: approval.deliveries,
+        members: approval.members,
       },
     };
   } finally {

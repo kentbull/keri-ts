@@ -75,6 +75,26 @@ Deno.test("approveGroupProposal signs, sends, starts the Counselor and returns t
   });
 });
 
+Deno.test("approveGroupProposal reports an unreachable member, still starts the Counselor and accepts the event", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const { deps, started } = approvalDeps(s);
+      s.runtime.postman.wait = function*(evt) {
+        return { kin: "failed", evt, deliveries: [], error: new Error("no route to member") };
+      };
+      const { signed, ixn } = yield* peerInteraction(s, []);
+      const result = yield* approveGroupProposal(deps, signed.exnSaid);
+      assertEquals(result.members.map(({ recipient, outcome, reason }) => [recipient, outcome, reason]), [
+        [s.bob.pre, "failed", "no route to member"],
+      ]);
+      assertEquals(result.messages, [], "only delivered wrappers are listed as messages");
+      assertEquals(started.length, 1, "the Counselor counsels the event whoever could not be reached");
+      assertEquals(result.accepted, true, "the local signature already meets the threshold");
+      assertEquals(s.left.db.kels.getLast(s.group, ixn.serder.sn!), ixn.serder.said);
+    }, "1");
+  });
+});
+
 Deno.test("approveGroupProposal cannot approve a proposal the caller did not name", async () => {
   await run(function*() {
     yield* scenario(function*(s) {
@@ -172,9 +192,8 @@ Deno.test("crash window 2: wrapper stored but not sent is replayed, not re-signe
       s.runtime.postman.send = () => {
         throw new Error("crash before send");
       };
-      yield* call(() =>
-        assertRejects(() => run(() => approveGroupProposal(deps, signed.exnSaid)), Error, "crash before")
-      );
+      const first = yield* approveGroupProposal(deps, signed.exnSaid);
+      assertEquals(first.members.map(({ outcome, reason }) => [outcome, reason]), [["failed", "crash before send"]]);
       const stored = storedGroupMessage(s.left.db, s.alice.pre, s.left.db.exns.get([signed.exnSaid])!);
       assertExists(stored);
       s.runtime.postman.send = send;

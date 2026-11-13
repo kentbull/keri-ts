@@ -289,11 +289,13 @@ export function* approveMultisigIpex(
   const local = yield* approveMultisigIpexLocally(hby, protocol, reger, wrapper);
   const { embedded, groupHab, genus, approved } = local;
   const embeddedSaid = embedded.said!;
-  if (!approved) return { approved: null, accepted: protocol.exc.complete(embeddedSaid), messages: [], deliveries: [] };
+  if (!approved) {
+    return { approved: null, accepted: protocol.exc.complete(embeddedSaid), messages: [], deliveries: [], members: [] };
+  }
   const publication = options.publish
     ? yield* publishGroupIpexProposal(hby, protocol, postman, groupHab, approved, genus)
-    : { messages: [], deliveries: [] };
-  const deliveries = publication.deliveries;
+    : { messages: [], deliveries: [], members: [] };
+  const deliveries = [...publication.deliveries];
   if (
     (options.sendLead ?? true)
     && hby.db.exns.get([embeddedSaid])?.said === embeddedSaid
@@ -316,6 +318,7 @@ export function* approveMultisigIpex(
     accepted: hby.db.exns.get([embeddedSaid])?.said === embeddedSaid,
     messages: publication.messages,
     deliveries,
+    members: publication.members,
     approved,
   };
 }
@@ -611,6 +614,7 @@ export function* publishInitialGroupIpex(
       recipient: message.recipient,
       exnSaid: message.exnSaid,
       payloadSaid: message.payloadSaid,
+      outcome: "delivered",
       deliveries: outcome.deliveries,
     });
   }
