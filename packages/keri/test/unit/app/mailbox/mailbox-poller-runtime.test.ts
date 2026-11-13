@@ -4,6 +4,7 @@ import { ParserError, WireParseError } from "../../../../../cesr/mod.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
+import { KelPublisher } from "../../../../src/app/mailbox/kel-publisher.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import { type MailboxPollBatch, MailboxPoller } from "../../../../src/app/mailbox/mailbox-poller.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
@@ -15,6 +16,7 @@ import {
 } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
+import { TransportError } from "../../../../src/app/transport/transport-error.ts";
 import { FakeRuntimeHttpClient } from "../../../support/runtime-fakes.ts";
 
 import { runtimeTurn } from "../../../../src/app/runtime/runtime-turn.ts";
@@ -437,20 +439,35 @@ Deno.test("a mailbox that refuses the query is retried on a doubling backoff, an
   });
 });
 
-Deno.test("a 403 posts the KEL once and polls again at once; a second refusal waits out the backoff", async () => {
+Deno.test("a 403 prompts the publisher, which posts the KEL again, and the worker backs off before polling", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = makeTransferableHab(hby, "recipient"), endpoint = seedMailboxEndpoint(hby, hab.pre, "stale");
     const http = new FakeRuntimeHttpClient();
     const clock = new ManualRuntimeClock();
     const bodies: string[] = [];
+    let holdsKel = false;
     http.registerOrigin(endpoint.url, async (request) => {
-      bodies.push(new TextDecoder().decode(await request.arrayBuffer()));
-      return request.headers.get("CESR-DESTINATION") === endpoint.eid && bodies.at(-1)!.includes("\"qry\"")
-        ? new Response("Query requester is not authorized", { status: 403 })
-        : new Response(null, { status: 204 });
+      const body = new TextDecoder().decode(await request.arrayBuffer());
+      bodies.push(body);
+      if (!body.includes("\"qry\"")) {
+        holdsKel = true;
+        return new Response(null, { status: 204 });
+      }
+      return holdsKel
+        ? new Response(null, { status: 204 })
+        : new Response("Query requester is not authorized", { status: 403 });
     });
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    // The mailbox was told the KEL once, so the publisher thinks it holds it; the 403 says it does not.
+    hby.db.kpub.pin([hab.pre, endpoint.eid], { d: hab.kever!.lastEst.d, dt: "2026-01-01T00:00:00.000000+00:00" });
+    const publisher = new KelPublisher({ hby, http, clock });
+    const prompts: string[] = [];
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, {
+      onUnauthorized: (pre, mailbox) => {
+        prompts.push(`${pre}/${mailbox}`);
+        publisher.repair(pre, mailbox);
+      },
+    });
     poller.registerTopic("/reply");
     const worker = yield* spawn(() => poller.pollDo(() => {}));
     const kinds = () => bodies.map((body) => body.includes("\"qry\"") ? "poll" : "kel");
@@ -459,15 +476,48 @@ Deno.test("a 403 posts the KEL once and polls again at once; a second refusal wa
     }
     try {
       yield* settle();
-      assertEquals(kinds(), ["poll", "kel", "poll"], "one KEL post, then the next poll with no clock wait");
-      assert(bodies[1].includes(hab.pre) && bodies[1].includes("\"icp\""), "the post carries the KEL");
+      assertEquals(kinds(), ["poll"], "the poller does not post the KEL itself");
+      assertEquals(prompts, [`${hab.pre}/${endpoint.eid}`]);
+      assertEquals(hby.db.kpub.get([hab.pre, endpoint.eid])?.d, null, "the publisher is told to post it again");
+      assertEquals((yield* publisher.processOnce()).map((result) => result.outcome), ["told"]);
+      assert(bodies[1].includes(hab.pre) && bodies[1].includes("\"icp\""), "the publisher's post carries the KEL");
       const { initialMs } = MailboxPoller.RefusalBackoff;
       clock.advance(initialMs - 1);
       yield* settle();
-      assertEquals(kinds().length, 3, "the second refusal waits");
+      assertEquals(kinds(), ["poll", "kel"], "the worker waits out its backoff");
       clock.advance(1);
       yield* settle();
-      assertEquals(kinds(), ["poll", "kel", "poll", "poll"], "the KEL state was posted already");
+      assertEquals(kinds().slice(0, 3), ["poll", "kel", "poll"], "the next poll is served");
+      assertEquals(prompts.length, 1);
+    } finally {
+      yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a connection failure backs the worker off instead of failing pollDo", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = makeTransferableHab(hby, "recipient"), endpoint = seedMailboxEndpoint(hby, hab.pre, "unreachable");
+    const http = new FakeRuntimeHttpClient();
+    const clock = new ManualRuntimeClock();
+    http.registerOrigin(endpoint.url, () => {
+      throw new TransportError("connection refused");
+    });
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    poller.registerTopic("/reply");
+    // A worker that threw would fail this root through its parent; the run below only ends if it does not.
+    const worker = yield* spawn(() => poller.pollDo(() => {}));
+    function* settle(): Operation<void> {
+      for (let turn = 0; turn < 50; turn++) yield* runtimeTurn();
+    }
+    try {
+      yield* settle();
+      assertEquals(http.requests.length, 1);
+      clock.advance(MailboxPoller.RefusalBackoff.initialMs);
+      yield* settle();
+      assertEquals(http.requests.length, 2, "the worker is alive and polls again after its backoff");
     } finally {
       yield* waitForTaskHalt(worker);
       yield* hby.close(true);
