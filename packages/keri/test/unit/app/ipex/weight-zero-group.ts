@@ -2,8 +2,9 @@
  * The weight-0 group fixture (run in Docker): an issuer, and a holder group whose edge member's signature alone
  * satisfies the threshold `["1", "0"]` while the custodian member carries no weight and holds the group's sole
  * next-key commitment. Every party has a real runtime and HTTP endpoint. `grantToGroup` has the issuer grant a v2 DH
- * credential to the group, admitted on the edge member's signature alone; `custodianAccepts` has the custodian accept
- * that Admit. Shared by `group-weight-zero.test.ts` and the wallet's inventory-rebuild tests, which refill a fresh
+ * credential to the group, admitted on the edge member's signature alone, while the custodian's own runtime follows
+ * the final proof with no call from the test; `custodianAccepts` has the custodian accept that Admit, an explicit
+ * consent. Shared by `group-weight-zero.test.ts` and the wallet's inventory-rebuild tests, which refill a fresh
  * edge store from the custodian.
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
@@ -33,8 +34,13 @@ import {
   proposeGroupAdmit,
   waitForGroupIpex,
 } from "../../../../src/app/ipex/group-ipex.ts";
-import { approveGroupIssuanceExchange, followGroupIssuanceProof } from "../../../../src/app/ipex/group-issuance.ts";
-import { proposeIssuance, waitForIssuance } from "../../../../src/app/ipex/issuance.ts";
+import { approveGroupIssuanceExchange } from "../../../../src/app/ipex/group-issuance.ts";
+import {
+  type IssuanceStatus,
+  issuanceStatus,
+  proposeIssuance,
+  waitForIssuance,
+} from "../../../../src/app/ipex/issuance.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
@@ -95,6 +101,22 @@ export interface Granted {
   admit: string;
   credential: SerderACDC;
   regk: string;
+}
+
+/** Steps a test inserts into {@link grantToGroup}. */
+export interface GrantSteps {
+  /** Runs once both members hold the pending Grant, before the edge member consents to DH. */
+  beforeConsent?: (grant: string) => Operation<void>;
+  /**
+   * Brings the weight-0 member to the accepted Grant once it holds the lead's proof, its TEL head and its root copy.
+   * Default: nothing, because the weight-0 member's own runtime follows the proof.
+   */
+  follow?: (grant: string) => Operation<void>;
+}
+
+/** The status fields a test compares: state, phase and what the status asks for. */
+export function shape(status: IssuanceStatus): [string, string | undefined, string | undefined] {
+  return [status.state, (status as { phase?: string }).phase, (status as { needs?: string }).needs];
 }
 
 export function* until(cond: () => boolean, what: string, ms = BUDGET_MS): Operation<void> {
@@ -258,12 +280,12 @@ export function* weightZeroGroup(nonTransferableEdge: boolean): Operation<Weight
 
 /**
  * The issuer grants a credential to the group; the edge member alone consents to DH and admits it, and the weight-0
- * custodian follows the final proof. Asserts (a) the edge member sends the custodian the group's exchange
- * messages, (b) the issuer delivers the Grant to the custodian's own endpoint, (c) the custodian holds the accepted
- * Grant, the credential, the issuer's TEL head and the registry root, and (d) DH and the Admit complete on the edge
- * member's signature alone.
+ * custodian's runtime follows the final proof without being asked. Asserts (a) the edge member sends the custodian the
+ * group's exchange messages, (b) the issuer delivers the Grant to the custodian's own endpoint, (c) the custodian
+ * holds the accepted Grant, the credential, the issuer's TEL head and the registry root, and (d) DH and the Admit
+ * complete on the edge member's signature alone.
  */
-export function* grantToGroup(g: WeightZeroGroup): Operation<Granted> {
+export function* grantToGroup(g: WeightZeroGroup, steps: GrantSteps = {}): Operation<Granted> {
   const { issuer, edge, custodian, group, coordinator, arrivals } = g;
   const stub = { hby: issuer.hby, *receipt(): Operation<void> {} } as unknown as Receiptor;
   const author = new RegistryAuthor(issuer.runtime.acdc!, stub);
@@ -285,6 +307,7 @@ export function* grantToGroup(g: WeightZeroGroup): Operation<Granted> {
 
   // Only the edge member consents to DH; the custodian never consents to anything.
   yield* until(() => !!edge.runtime.exc.retainedInput(grant, { pending: true }), "the edge member to hold the Grant");
+  if (steps.beforeConsent) yield* steps.beforeConsent(grant);
   approveGroupIssuanceExchange(edge.runtime.operations!.issuance, grant, coordinator.said!);
   const edgeWaiting = yield* waitForIssuance(edge.runtime.operations!.issuance, grant, {
     timeoutMs: BUDGET_MS,
@@ -343,14 +366,18 @@ export function* grantToGroup(g: WeightZeroGroup): Operation<Granted> {
   assertEquals(issuer.runtime.acdc!.store.headEvent(regk)?.ilk, "bup", "the TEL head is the issuance update");
   yield* until(() => !!custodian.hab.mgr.getRegistryRoot(group, regk), "the custodian to retain its root copy");
   assertEquals(custodian.hab.mgr.getRegistryRoot(group, regk)?.qb64, root.qb64);
-  // The group completed the key exchange without the weight-0 member, so it is too late for it to consent; it
-  // follows the lead's final proof instead, signing nothing, and accepts the Grant.
-  yield* followGroupIssuanceProof(custodian.runtime.operations!.issuance, grant, { coordinator: coordinator.said! });
-  const followed = yield* waitForIssuance(custodian.runtime.operations!.issuance, grant, {
-    timeoutMs: BUDGET_MS,
-    until: (status) => status.state !== "active" || status.needs === "admit",
-  });
-  assertEquals([followed.status.state, (followed.status as { needs?: string }).needs], ["active", "admit"]);
+  // The group completed the key exchange without the weight-0 member, so it is too late for it to consent. Its
+  // runtime follows the lead's final proof on its own, signing nothing; meanwhile it reads active, never interrupted.
+  if (steps.follow) yield* steps.follow(grant);
+  else {
+    const during = issuanceStatus(custodian.runtime.operations!.issuance, grant);
+    assertEquals(during.state, "active", JSON.stringify(during));
+    const followed = yield* waitForIssuance(custodian.runtime.operations!.issuance, grant, {
+      timeoutMs: BUDGET_MS,
+      until: (status) => status.state !== "active" || status.needs === "admit",
+    });
+    assertEquals(shape(followed.status), ["active", "awaitingAdmitConsent", "admit"]);
+  }
   yield* until(() => custodian.runtime.exc.complete(grant), "the custodian to accept the Grant");
   assertCustodianHolds(g, { grant, admit, credential, regk });
   // The weight-0 member contributed nothing to any of it.

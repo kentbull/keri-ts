@@ -204,8 +204,9 @@ export interface OwnerLoopParts extends ComposedOwners {
  * Idle cost, per tock: four constant-time table checks, one in-memory walk of the Unblind owners for an owed
  * reply, one drain of each DH owner's cue deck, and the replicator's emptiness checks. The replicator's
  * rotation check (the establishment SAID of each local group, one keyed read per local identifier) runs on
- * tock 0 and every `pacing.sweepTocks`. No owner reads a protocol store. Only the first pass, once, scans the
- * pending exchange escrow for resumable Grants.
+ * tock 0 and every `pacing.sweepTocks`. No owner reads a protocol store on an ordinary tock. The issuance owner
+ * scans the pending exchange escrow on its first pass and then every `ISSUANCE_SWEEP_MS`, for resumable Grants and
+ * for group Grants whose custodian's final proof a member follows without signing; nothing else walks it per tock.
  *
  * A failure that escapes an owner pass is recorded in `operations.health` and the loop keeps running, so
  * one owner's fault never stops the others. The owners run one after another, so a delivery that does not return holds the others up until it fails or

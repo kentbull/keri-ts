@@ -7,7 +7,8 @@
  * Weight decides threshold satisfaction only; delivery and membership treat the custodian like any other member: the
  * issuer delivers the Grant to it, the edge member sends it the group's exchange messages, and it ends holding the
  * credential, its TEL state and the registry root, so a wiped co-member could replay from it. Having contributed
- * nothing to the key exchange, it accepts the Grant by following the lead's final proof, signing nothing.
+ * nothing to the key exchange, it accepts the Grant when its runtime follows the lead's final proof on its own, signing
+ * nothing and with no call from the host; its Admit approval stays an explicit consent.
  *
  * The second test uses the deployed shape: the edge member is a non-transferable, inception-only identifier whose
  * signer the host holds (`makeSignedHab`), so its wrappers carry non-indexed signatures, and the group later rotates
@@ -19,7 +20,7 @@
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { parseBytes, type Siger, Vrsn_2_0 } from "cesr-ts";
-import { call, ensure, type Operation, run } from "effection";
+import { call, ensure, type Operation, run, sleep } from "effection";
 import { assert, assertEquals, assertExists, assertFalse, assertThrows } from "jsr:@std/assert";
 import { Regery } from "../../../../src/acdc/registraring.ts";
 import {
@@ -29,7 +30,8 @@ import {
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { type DisclosureRole, listGroupDisclosures } from "../../../../src/app/ipex/disclosure-replaying.ts";
-import { issuanceStatus } from "../../../../src/app/ipex/issuance.ts";
+import { followGroupIssuanceProof } from "../../../../src/app/ipex/group-issuance.ts";
+import { ISSUANCE_SWEEP_MS, IssuanceOperations, issuanceStatus } from "../../../../src/app/ipex/issuance.ts";
 import { groupSigningMembers } from "../../../../src/app/multisig/group-members.ts";
 import { proposeGroupRotation } from "../../../../src/app/multisig/proposing.ts";
 import { replaceGroupMember } from "../../../../src/app/multisig/replace-member.ts";
@@ -46,6 +48,7 @@ import { dgKey } from "../../../../src/db/core/keys.ts";
 import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
 import {
   assertCustodianHolds,
+  BUDGET_MS,
   custodianAccepts,
   exported,
   type Granted,
@@ -53,6 +56,7 @@ import {
   heldEdge,
   KRAM,
   receives,
+  shape,
   shareKel,
   type Side,
   until,
@@ -61,11 +65,79 @@ import {
   wrappersFrom,
 } from "./weight-zero-group.ts";
 
-Deno.test("a weight-0 group member receives the group's Grant and holds the credential", async () => {
+Deno.test("a weight-0 member holds the group's credential without an explicit follow", async () => {
   await run(function*() {
     const g = yield* weightZeroGroup(false);
     const { admit } = yield* grantToGroup(g);
     yield* custodianAccepts(g, admit);
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("a member that is expected to contribute is not followed automatically", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { edge, custodian } = g;
+    yield* grantToGroup(g, {
+      *beforeConsent(grant) {
+        // Every owner sweeps the pending Grants after both members hold this one. The edge member is the elected
+        // custodian, whose keys and signature the exchange needs, and no member holds a proof or a root copy yet, so
+        // neither is followed: each still reads that its consent is wanted.
+        yield* sleep(ISSUANCE_SWEEP_MS + 1_000);
+        for (const side of [edge, custodian]) {
+          const ops = side.runtime.operations!.issuance;
+          assertEquals(ops.liveOf(grant), undefined, `${side.name} has no operation it did not consent to`);
+          assertEquals(shape(issuanceStatus(ops, grant)), ["active", "awaitingExchangeConsent", "exchange"], side.name);
+        }
+      },
+    });
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("an automatic follow resumes after a reload", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { custodian } = g;
+    yield* grantToGroup(g, {
+      // The weight-0 member's host stops before the group completes, so its owner follows nothing; its endpoint
+      // still stores what the edge member sends.
+      *beforeConsent() {
+        yield* g.hosts[2].halt();
+      },
+      *follow(grant) {
+        assertFalse(custodian.runtime.exc.complete(grant), "no owner of the stopped host followed the proof");
+        // A reload keeps only the stores: an owner with an empty table over the same stores reads the pending Grant
+        // as followed, and its first pass begins the follow from the stored proof and accepts the Grant.
+        const reloaded = new IssuanceOperations(custodian.runtime.operations!.issuance.deps);
+        assertEquals(shape(issuanceStatus(reloaded, grant)), ["active", "awaitingAnchor", undefined]);
+        const end = Date.now() + BUDGET_MS;
+        while (!custodian.runtime.exc.complete(grant)) {
+          if (Date.now() > end) throw new Error("timed out waiting for the reloaded owner to follow the proof");
+          yield* reloaded.processOnce();
+          yield* sleep(20);
+        }
+        assertEquals(reloaded.liveOf(grant), undefined, "the follow finished");
+        assertEquals(shape(issuanceStatus(reloaded, grant)), ["active", "awaitingAdmitConsent", "admit"]);
+      },
+    });
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("an explicit follow after the automatic one changes nothing", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { custodian, coordinator } = g;
+    const { grant } = yield* grantToGroup(g);
+    const ops = custodian.runtime.operations!.issuance, before = issuanceStatus(ops, grant);
+    assertEquals(
+      yield* followGroupIssuanceProof(ops, grant, { coordinator: coordinator.said! }),
+      { grant, xid: grant },
+      "the explicit call returns the Grant the automatic follow already accepted",
+    );
+    assertEquals(ops.liveOf(grant), undefined, "it begins nothing");
+    assertEquals(issuanceStatus(ops, grant), before);
     for (const task of g.hosts) yield* task.halt();
   });
 });
