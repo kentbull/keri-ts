@@ -96,9 +96,11 @@ await w.close();
 
 Every `run(...)` is an Effection root; the library workflows are generators, and the page bridges them to promises by hand. The calls an app should not have to write: the completion-deps record (`hby`, `protocol`, `http`, `clock`, `withDelegation`) built from the runtime three times; the three-way hand-off of an Admit (admit, record admission, deliver); the Grant poll; the `RegistryCustody`/`WalletAuthor` construction; the OOBI begin-and-wait pair with its status check; and `recordIssued` with `derivedOpening(head)` after an issuance. A wallet-level `w.identifiers.incept`, `w.oobis.resolve`, `w.mailboxes.add`, `w.credentials.{receive,issue}` over these, with typed results instead of `status.state` checks, is the shape these calls point to.
 
-## Group lanes: written, not yet run
+## Group lanes
 
-Nothing in this section has been executed. The lanes were written while browser runs were barred, and checked only by `deno check`, `deno task check` and the wallet unit tests. Treat every step below as a hypothesis until the qualification run; the first run will find defects in the lanes themselves.
+Lane 15c (group wallet) ran in Chromium on the branch that fixed the defects below and passed every step; lane 15d (KERIpy member) has not run. The step list below is the plan; the lane 15c run took 3 s, 6 s, 3 s, 11 s, 0.3 s, 9 s, 1 s, 7 s, 4 s and 34 s for steps 3, 4, 5, 6a, 6b, 6c, 6d, 7, 8 and 9 (steps 1 to 2b: 0.6 s, 4.8 s, 7.2 s).
+
+What the first runs found, all fixed with the lane: a fresh DH issuance Grant was listed and approved as a plain group IPEX message (the wallet took `approveGroupIpex`), so a member consenting before the registry update failed with "ACDC v2 group graph is false or unresolved"; the member that approved the registry update retained no derivation coordinates, so its inventory never recorded the credential; a non-elected member's witness receipt fetch against the pinned KERIpy witness (whose `GET /receipts` counts a v2 `-L` group in items, not quadlets) failed to parse on every try, so group events completed only after the 60 s fallback grace (steps 3, 5 and 8 took about 62 s each); and the lane read the last JSON line of `multisig join`, which is a later root copy line for the custodian.
 
 Run with `deno task test:browser:wallet:group [engine ...]` and `deno task test:browser:wallet:keripy-member [engine ...]` (Chromium by default, same servers and Firefox note as above, local only). Page side: `test/browser-wallet/group-steps.ts`; Deno side: `group-scenario.ts`, `keripy-member-scenario.ts`, `group-flows.ts`; shared runner: `scripts/browser_wallet_lane.ts`.
 

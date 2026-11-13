@@ -387,7 +387,8 @@ export const steps: Step[] = [
       const rotating = start("browser proposes the group rotation", ctx.page("rotateGroup", who(ctx)));
       const [rotated, ...joined] = await finish<any>(rotating, ...joining);
       for (const result of joined) {
-        assert(lastJson("multisig join", result).accepted === true, `join: ${result.stdout}`);
+        // A custodian goes on to print its root copy deliveries after the join result, so the last line is not it.
+        assert(jsonLines(result.stdout).some((line) => line.accepted === true), `join: ${result.stdout}`);
       }
       const seen = await keyStateOf(ctx, a, group.pre);
       assert(
