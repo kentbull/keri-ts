@@ -13,7 +13,11 @@ A group's mailbox is also read by its signing members. A member polls as itself 
 provably controlled a group-current key: a poll signature by a key in both key lists, or a verifying signature by such
 a key on an establishment event in the member's KEL as the host holds it. Listing a group key proves nothing. The host
 must hold the member's KEL (the keri-ts poller and `KelPublisher` submit it; a KERIpy member's KEL must arrive by OOBI
-or a mailbox add), and a rotation-only member holds no current group key and is refused. Forwarded mail is plaintext
+or a mailbox add), and a rotation-only member holds no current group key and is refused.
+A **non-transferable** member (a `B...` key that is its whole identifier) signs the poll with a cigar and has no KEL beyond
+its inception: the host verifies that signature with the key in the cigar and requires that key to be in the group's
+current key list, so it needs nothing but the group's KEL. A signature by another key under the member's prefix, a
+key outside the list and a member whose key has left the list are refused. Forwarded mail is plaintext
 CESR unless ESSR is used, so these checks are the read protection. KERIpy hosts do no read authorization at all.
 
 Tufa authenticates the exact incoming envelope before consulting shared stream

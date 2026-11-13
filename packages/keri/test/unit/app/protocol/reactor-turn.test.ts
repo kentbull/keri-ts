@@ -3,16 +3,20 @@ import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert
 import {
   b,
   type CesrFrame,
+  Cigar,
   concatBytes,
   Diger,
+  MtrDex,
   parseBytes,
   Prefixer,
   SealLast,
+  type Siger,
+  Signer,
   Texter,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
 import { Oobiery } from "../../../../src/app/bootstrap/oobiery.ts";
-import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../../src/app/protocol/parsering.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
@@ -374,6 +378,61 @@ Deno.test("a rotation-only group member holding no current group key is refused 
         );
       assertEquals(authorized(alice), true);
       assertEquals(authorized(carol), false);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a non-transferable group member reads its group's mailbox by the signature of its own key", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
+    try {
+      /** A keyless non-transferable identifier (its prefix is its key) whose signer the host holds. */
+      const keyless = (alias: string) => {
+        const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+        const serder = incept([signer.verfer.qb64], {
+          version: Vrsn_2_0,
+          code: signer.verfer.code,
+          nsith: "0",
+          toad: 0,
+        });
+        const hab = hby.makeSignedHab(alias, undefined, {
+          serder,
+          sigers: [signer.sign(serder.raw, { index: 0 }) as Siger],
+        });
+        hby.mgr.hold([signer]);
+        return { hab, signer };
+      };
+      const member = keyless("member"), stranger = keyless("stranger");
+      const peer = hby.makeHab("peer");
+      const group = hby.makeGroupHab("team", member.hab, [member.hab.pre, peer.pre], [peer.pre], undefined, {
+        isith: ["1", "1"],
+        nsith: "1",
+        toad: 0,
+      }).hab;
+      const protocol = protocolFixture(hby);
+      const topics = { "/reply": 0 };
+      const authorized = (wire: Uint8Array) =>
+        protocol.kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(envelopeFromFrame(parseBytes(wire)[0])));
+      const poll = (signer: Hab) => signer.query(group.pre, group.pre, { route: "mbx", q: { topics } });
+
+      assertEquals(authorized(poll(member.hab)), true, "a non-transferable member whose key is in the list is served");
+      assertEquals(authorized(poll(peer)), true, "a transferable member still is");
+      assertEquals(authorized(poll(stranger.hab)), false, "a non-transferable identifier outside the list is refused");
+
+      // The stranger signs a poll that claims the member's prefix: the signature does not verify under the
+      // member's key, so it is refused even though that key is in the group's list.
+      const claim = query("mbx", { i: group.pre, src: group.pre, topics }, {
+        pre: member.hab.pre,
+        stamp: makeNowIso8601(),
+      });
+      const forged = new Cigar({ qb64: stranger.signer.sign(claim.raw).qb64 }, member.hab.kever!.verfers[0]);
+      assertEquals(authorized(messagize(claim, { cigars: [forged] })), false, "another key under the member's prefix");
+      // The stranger names the member's key as its verifier and signs with its own key: same refusal. Naming
+      // its own key verifies, but that key is not in the list.
+      const own = new Cigar({ qb64: stranger.signer.sign(claim.raw).qb64 }, stranger.hab.kever!.verfers[0]);
+      assertEquals(authorized(messagize(claim, { cigars: [own] })), false, "a verifying key that is not the group's");
     } finally {
       yield* hby.close(true);
     }

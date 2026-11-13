@@ -11,11 +11,14 @@ import {
   CtrDexV1,
   CtrDexV2,
   Diger,
+  MtrDex,
   NumberPrimitive,
   parseBytes,
   Prefixer,
   SealEvent,
   SerderKERI,
+  type Siger,
+  Signer,
   Texter,
   type Versionage,
   Vrsn_2_0,
@@ -49,6 +52,7 @@ import { collectKelSubmission } from "../../keri/src/app/mailbox/kel-submission.
 import type { ProtocolProcessor } from "../../keri/src/app/protocol/protocol-processing.ts";
 import { abortable } from "../../keri/src/app/runtime/abortable.ts";
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
+import { incept as inceptKel } from "../../keri/src/core/protocol-eventing.ts";
 import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue } from "../../keri/src/core/protocol-vdr-eventing.ts";
 import type { Reger } from "../../keri/src/db/reger.ts";
@@ -750,6 +754,54 @@ Deno.test("several local identifiers behind one ingress URL are routed by CESR-D
       // The identifier with her own path is found by the path, whatever the destination says.
       assertEquals(routedTo(post("/carol")), carol.pre);
       assertEquals(routedTo(post("/carol", alice.pre)), carol.pre);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a mailbox host serves a group's mailbox to a non-transferable member and refuses a stranger", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { enableMailboxStore: true });
+    try {
+      const keyless = (alias: string) => {
+        const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+        const serder = inceptKel([signer.verfer.qb64], {
+          version: Vrsn_2_0,
+          code: signer.verfer.code,
+          nsith: "0",
+          toad: 0,
+        });
+        const hab = hby.makeSignedHab(alias, undefined, {
+          serder,
+          sigers: [signer.sign(serder.raw, { index: 0 }) as Siger],
+        });
+        hby.mgr.hold([signer]);
+        return hab;
+      };
+      const member = keyless("member"), stranger = keyless("stranger");
+      const peer = hby.makeHab("peer");
+      const service = hby.makeHab("mailbox");
+      const group = hby.makeGroupHab("team", member, [member.pre, peer.pre], [peer.pre], undefined, {
+        isith: ["1", "1"],
+        nsith: "1",
+        toad: 0,
+      }).hab;
+      const handler = createProtocolHandler(runtime, { serviceHab: service });
+      const poll = (signer: Hab) => (handler(
+        new Request("http://localhost/", {
+          method: "POST",
+          headers: { "content-type": "application/cesr" },
+          body: new Uint8Array(signer.query(group.pre, service.pre, { route: "mbx", q: { topics: { "/reply": 0 } } })),
+        }),
+      ));
+      const served = yield* call(() => poll(member));
+      assertEquals(served.status, 200, "the non-transferable member reads its group's mailbox");
+      yield* call(() => served.body?.cancel());
+      const refused = yield* call(() => poll(stranger));
+      assertEquals(refused.status, 403);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
