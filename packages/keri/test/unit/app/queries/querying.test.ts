@@ -538,7 +538,8 @@ Deno.test("selected roles keep missing locations visible instead of promoting an
     try {
       inquisitor.enqueue({ pre: subject.pre, route: "logs", q: {} });
       assertEquals(subject.endsFor(subject.pre)[Roles.controller], { [subject.pre]: {} });
-      yield* call(() => assertRejects(() => run(() => inquisitor.deliverOnce()), ValidationError, "No endpoint URL"));
+      // The selected controller has no location: the request waits, as unresolved work does, and nothing is sent.
+      yield* inquisitor.deliverOnce();
       assertEquals([inquisitor.pending.length, messages.length], [1, 0]);
       // A cut is retained in storage but excluded from routing; the agent can now answer.
       hby.db.ends.pin([subject.pre, Roles.controller, subject.pre], { allowed: false });

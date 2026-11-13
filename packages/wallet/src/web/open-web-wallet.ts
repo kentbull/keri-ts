@@ -29,7 +29,6 @@ import {
   type HttpClient,
   type KramConfig,
   openHabery,
-  type OwnerFault,
   type Relay,
   type RelayAuthorizationStep,
   relayOnboarding,
@@ -163,10 +162,9 @@ export type OpenWebWalletOptions = WebWalletSecret & {
  * What the wallet can still do:
  * - `ok`;
  * - `latched`: a persistence write failed, so every store refuses commits (reads continue);
- * - `faulted`: the runtime runs, but an operations owner pass failed outside any single operation
- *   (`faults` of them, the latest in `last`);
  * - `stopped`: the runtime task ended without `close()`, so the stores are closed and the lock released;
- *   `cause` is the failure that ended it;
+ *   `cause` is the failure that ended it (a fault in any runtime loop, such as a store error or a
+ *   `MissingDurableStateError`, ends the runtime);
  * - `closed`: `close()` was called.
  * - `relay-unresolved`: the wallet delivers through `relay`, whose location is not accepted yet (its OOBI has not
  *   resolved), so nothing is sent, queried or polled; the runtime queued the OOBI at open.
@@ -178,17 +176,16 @@ export type OpenWebWalletOptions = WebWalletSecret & {
  * - `signer-unavailable`: a local identifier cannot sign because the host has not held its signer (the wallet was
  *   opened without it); `identifiers` names each with the public keys it lacks (`Habery.unsignable`, read now).
  *   Background loops skip such an identifier and act for it on the next tock after `Manager.hold`.
- * Precedence: `closed`, `stopped`, `latched`, `faulted`, `relay-unresolved`, `relay-unauthorized`,
- * `mailbox-unreachable`, `signer-unavailable`, `ok`. The relay states follow the wallet's own failures, which matter
- * whatever it delivers through, and precede the mailbox and signer states, because until the relay is resolved and
- * authorized no mailbox is reached for those identifiers at all. Every status is derived when `health()` is read.
+ * Precedence: `closed`, `stopped`, `latched`, `relay-unresolved`, `relay-unauthorized`, `mailbox-unreachable`,
+ * `signer-unavailable`, `ok`. The relay states follow the wallet's own failures, which matter whatever it delivers
+ * through, and precede the mailbox and signer states, because until the relay is resolved and authorized no mailbox
+ * is reached for those identifiers at all. Every status is derived when `health()` is read.
  * An agent that resolved but stops answering polls is not reported unless it also refuses or ignores a rotated KEL
  * long enough for `mailbox-unreachable`: a failed poll is retried with backoff, and nothing records it.
  */
 export type WebWalletHealth =
   | { status: "ok" }
   | { status: "latched"; cause: unknown }
-  | { status: "faulted"; faults: number; last: OwnerFault | null }
   | { status: "relay-unresolved"; relay: Relay }
   | { status: "relay-unauthorized"; identifiers: readonly RelayAuthorizationStep[] }
   | { status: "mailbox-unreachable"; mailboxes: readonly { pre: string; mailbox: string; reason: string | null }[] }
@@ -519,8 +516,6 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
       } catch (error) {
         return { status: "latched", cause: (error as Error).cause };
       }
-      const owners = parts.runtime.operations?.health;
-      if (owners?.faults) return { status: "faulted", faults: owners.faults, last: owners.last };
       if (relay) {
         const steps = relayOnboarding(parts.hby, relay);
         if (steps.some(({ step }) => step === "resolve-oobi")) return { status: "relay-unresolved", relay };

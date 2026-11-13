@@ -402,13 +402,9 @@ Deno.test("an OOBI the network cannot serve is not reported resolved, and mailbo
   }
 });
 
-Deno.test("health reports owner faults, and calls on a closed wallet are refused", async () => {
+Deno.test("health reads closed after close, and calls on a closed wallet are refused", async () => {
   const w = await page().open();
   assertEquals(w.health(), { status: "ok" });
-  const health = w.runtime.operations!.health;
-  health.faults = 1;
-  health.last = { owner: "issuance", error: "boom", at: "2026-01-01T00:00:00.000Z" };
-  assertEquals(w.health(), { status: "faulted", faults: 1, last: health.last });
   await w.close();
   assertEquals(w.health(), { status: "closed" });
   await assertRejects(() => w.identifiers.incept({ alias: "late" }), WalletStoppedError);

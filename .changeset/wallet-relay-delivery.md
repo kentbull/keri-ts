@@ -11,7 +11,7 @@ without it does not compile; a relay with an empty AID or a non-HTTP(S) OOBI rej
 store opens. `recoverWebWallet` reopens with the same `delivery`.
 
 `WebWallet.health()` reports `relay-unresolved` (the relay's OOBI has not resolved) and `relay-unauthorized` (with the
-local identifiers that have not authorized it as their mailbox), after `faulted` and before `mailbox-unreachable`.
+local identifiers that have not authorized it as their mailbox), after `latched` and before `mailbox-unreachable`.
 `WebWallet.relayStatus()` lists the onboarding steps still missing, in order. Both are read from accepted state by the
 new `relayOnboarding(hby, relay)` in `keri-ts`, which also exports `assertRelay` and the `RelayStep` types.
 

@@ -192,14 +192,14 @@ the admission before it delivers the Admit, so consent is on record whatever the
 `issue` takes an optional `registry`; omitted, each issuance gets a fresh registry, because a DH
 exchange derives a registry's root with the recipient and the registry takes it once.
 
-`health()` returns `ok`, `latched` (a persistence write failed), `faulted` (the operation owners
-recorded a fault outside any single operation), `stopped` (the runtime task ended without
-`close()`; `cause` says why), `relay-unresolved` and `relay-unauthorized` (relay onboarding is
-incomplete; see [Delivering through an agent](#delivering-through-an-agent)), `mailbox-unreachable`
-(the runtime gave up telling a mailbox a rotated KEL; see below), `signer-unavailable` (a local
-identifier's signer is not held) or `closed`. Precedence: `closed`, `stopped`, `latched`, `faulted`,
-`relay-unresolved`, `relay-unauthorized`, `mailbox-unreachable`, `signer-unavailable`, `ok`. Each is
-derived when read. A call on a stopped or closed wallet rejects with `WalletStoppedError`.
+`health()` returns `ok`, `latched` (a persistence write failed), `stopped` (the runtime task ended
+without `close()`; `cause` says why: a fault in any runtime loop ends the runtime), `relay-unresolved`
+and `relay-unauthorized` (relay onboarding is incomplete; see
+[Delivering through an agent](#delivering-through-an-agent)), `mailbox-unreachable` (the runtime gave
+up telling a mailbox a rotated KEL; see below), `signer-unavailable` (a local identifier's signer is
+not held) or `closed`. Precedence: `closed`, `stopped`, `latched`, `relay-unresolved`,
+`relay-unauthorized`, `mailbox-unreachable`, `signer-unavailable`, `ok`. Each is derived when read. A
+call on a stopped or closed wallet rejects with `WalletStoppedError`.
 `mailboxes.publication(pre)` and `mailboxes.waitForPublication(pre)` report where each mailbox stands
 in being told the identifier's KEL.
 
@@ -361,8 +361,9 @@ poller for a new mailbox role, so both act on it at their next tock.
 
 ### Failures, retries and what is durable
 
-A failure that escapes an owner pass is recorded in `operations.health` (`faults`, `last`) and the loop continues; a
-failure of one operation ends that operation as `failed`. Issuance, presentation and Unblind (single and group) deliver
+A failure of one operation ends that operation as `failed`; remote, network and validation outcomes never escape an
+owner pass. What does escape (a store fault, missing durable state such as a `MissingDurableStateError`) ends the
+owner loop and `runAgentRuntime`, and the wallet reads `stopped`. A halted loop is not a fault. Issuance, presentation and Unblind (single and group) deliver
 through one `DeliveryOutbox`: a failed message keeps its signed bytes and is retried with a doubling delay until the
 Grant's deadline, or, for an operation with no deadline, until failures have lasted a bound (10 minutes), when it ends
 `failed`. An active status reports a retrying delivery as `failure` (`attempts`, `reason` with the error's `cause` chain
