@@ -32,6 +32,8 @@ import {
   DatabaseOperationError,
   InvalidPathNameError,
   PathError,
+  PersistenceLatchedError,
+  PersistenceReadError,
   ValidationError,
 } from "../../../src/core/errors.ts";
 import { UnsupportedTelReplayError } from "../../../src/db/replay/tel-replay.ts";
@@ -61,6 +63,8 @@ const errors: [string, () => Error][] = [
   ["DatabaseNotOpenError", () => new DatabaseNotOpenError("x")],
   ["DatabaseKeyError", () => new DatabaseKeyError("x")],
   ["DatabaseOperationError", () => new DatabaseOperationError("x")],
+  ["PersistenceLatchedError", () => new PersistenceLatchedError("x")],
+  ["PersistenceReadError", () => new PersistenceReadError("x")],
   ["CesrHttpRefusal", () => new CesrHttpRefusal("x", 400)],
   ["PeerVersionError", () => new PeerVersionError("x")],
   ["RootRefused", () => new RootRefused("x")],

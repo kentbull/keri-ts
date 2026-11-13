@@ -25,8 +25,9 @@
  *
  * Another tab's upgrade or delete fires `versionchange` here. The connection
  * closes at once so that tab is never blocked, and this adapter is then lost:
- * its next `load` or `write` rejects, which latches the queue, because writing
- * on after another context deleted the database would break prefix durability.
+ * its next `load` or `write` rejects, and so does every retry of it (a write never
+ * reconnects), which latches the queue, because writing on after another context
+ * deleted the database would break prefix durability.
  * Recovery is a new open, whose `meta` reconnects. Single-writer exclusion is
  * the composition's job, not this adapter's.
  *

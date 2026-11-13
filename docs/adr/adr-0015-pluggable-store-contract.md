@@ -161,11 +161,15 @@ synchronous instead of becoming operations at every call site.
    batch committed. `IndexedDbPersistence` requests strict durability on every
    batch. That is a browser hint, so power loss on a browser that ignores it is
    outside this contract.
-3. **Failure latches.** The first failed write puts the queue, and so every store
-   of the composition, in a failed state, because a later batch would create a
-   gap. Further transactions throw, reads continue, and `flushed()` and `close`
-   report the original failure. There is no
-   retry, skip or storage-quota policy; exhausted storage is an ordinary failure
+3. **Transient failures retry; then the queue latches.** The library retries a
+   failed write in place on a short fixed schedule, holding the head of the
+   queue so no later batch overtakes it; every queued task is re-runnable. A
+   write that still fails latches the queue, and so every store of the
+   composition, because a later batch would create a gap. Further transactions
+   throw `PersistenceLatchedError`, reads continue, and `flushed()` and `close`
+   report it with the original failure as cause. The latch is terminal for that
+   composition; recovery is reopening, which loads the durable prefix. There is
+   no skip or storage-quota policy; exhausted storage is an ordinary failure
    under ADR-0013.
 4. **Close joins.** `close` drains and joins the queue, including when cancelled,
    and reports failure.

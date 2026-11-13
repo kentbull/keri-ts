@@ -6,6 +6,8 @@ import {
   type ChangeSink,
   type Habery,
   openHabery,
+  PersistenceLatchedError,
+  PersistenceReadError,
   processCuesOnce,
   type RuntimeChange,
   Schemer,
@@ -207,10 +209,14 @@ Deno.test("a failed write latches; close reports it and reopen sees exactly the 
   first.inventory.credentials.pin(["durable"], "yes");
   await run(() => first.opener.queue.flushed());
   assertEquals(first.health(), { status: "ok" });
+  assertEquals(first.persistenceStatus(), "healthy");
+  assertEquals(await first.readPersisted(() => Promise.resolve("after the durable pin")), "after the durable pin");
 
   p.poison.on = true;
   first.inventory.credentials.pin(["lost"], "no");
-  await assertRejects(() => run(() => first.opener.queue.flushed()));
+  await assertRejects(() => run(() => first.opener.queue.flushed()), PersistenceLatchedError);
+  assertEquals(first.persistenceStatus(), "latched");
+  await assertRejects(() => first.readPersisted(() => Promise.reject(new Error("read"))), PersistenceReadError);
   const health = first.health();
   assertEquals(health.status, "latched");
   assertInstanceOf((health as { cause: unknown }).cause, DOMException);
