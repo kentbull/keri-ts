@@ -481,7 +481,7 @@ export function* createAgentRuntime(
   });
   const respondant = new Respondant(hby, postman);
   if (mailboxer) {
-    exc.addHandler(new ForwardHandler(mailboxDirector, options.relaying ? { postman, reactor } : null));
+    exc.addHandler(new ForwardHandler(mailboxDirector, reactor, options.relaying ? postman : null));
   }
   for (const route of exc.routes.keys()) {
     if (route === ForwardHandler.resource) {

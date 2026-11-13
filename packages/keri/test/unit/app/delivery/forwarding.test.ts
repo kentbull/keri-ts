@@ -594,7 +594,7 @@ Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
       });
       mailboxer = yield* openMailboxerForHabery(hby);
       const director = new MailboxDirector(hby, { mailboxer });
-      const handler = new ForwardHandler(director, null);
+      const handler = new ForwardHandler(director, null, null);
       const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         mailboxer,
       });
@@ -1098,7 +1098,7 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
           modifiers: { pre: recipient.pre, topic: "/receipt" },
           embeds: { evt: forwarded },
         });
-        const handler = new ForwardHandler(runtime.mailboxDirector, null);
+        const handler = new ForwardHandler(runtime.mailboxDirector, null, null);
         const attachments = [{
           raw: wrapped.attachments,
           text: new TextDecoder().decode(wrapped.attachments),

@@ -22,22 +22,11 @@ import { abortable } from "../runtime/abortable.ts";
 import { authorizedStoringHost, keepsForPickup, ownTraffic } from "./agent-inbox.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 
-/**
- * What a relaying host uses for a served sender's child: its own Poster for a remote recipient, and its own byte
- * ingress for a recipient that is one of its habitats.
- */
-export interface ForwardRelaying {
-  /** Borrowed delivery owner that re-sends the child to a remote recipient with this host as source. */
-  readonly postman: Poster;
-  /** Borrowed byte ingress of this host's runtime, through which a local recipient receives the child. */
-  readonly reactor: Reactor;
-}
-
 /** The single path one accepted `/fwd` takes, decided from accepted state in the turn that takes it. */
 type ForwardPath =
   /**
-   * The recipient is a habitat of this Habery, and the sender is served or this host keeps the recipient's mail for
-   * pickup: process the child here, and when `store`, also keep one copy in the recipient's mailbox topic.
+   * The recipient is a habitat of this Habery, and this host keeps the recipient's mail for pickup or (relaying) the
+   * sender is served: process the child here, and when `store`, also keep one copy in the recipient's mailbox topic.
    */
   | { readonly kind: "ingest"; readonly store: boolean }
   /** This host is the recipient's witness, mailbox or agent: store the child in its mailbox topic. */
@@ -52,11 +41,12 @@ type ForwardPath =
  * This is the `keri-ts` mailbox-storage analogue to KERIpy's `ForwardHandler`.
  *
  * Paths, in order; exactly one runs for one `/fwd`:
- * - ingest (relaying only): the recipient is a habitat of this Habery and
- *   either the `/fwd` sender is served or this host keeps the recipient's mail
- *   for pickup (`keepsForPickup`: a local group that authorized it as mailbox
- *   or agent), whoever the sender is. The child goes through this runtime's own
- *   byte ingress as remote input addressed to that habitat's endpoint, so
+ * - ingest: the recipient is a habitat of this Habery and either this host
+ *   keeps the recipient's mail for pickup (`keepsForPickup`: a local group that
+ *   authorized it as mailbox or agent), whoever the sender is and whether or
+ *   not the host relays, or the host relays and the `/fwd` sender is served.
+ *   The child goes through this runtime's own byte ingress as remote input
+ *   addressed to that habitat's endpoint, so
  *   signature, KRAM and escrow rules apply as for any received message. This is
  *   how an edge's group co-member hosted on the agent receives every group
  *   message. When the host keeps mail for pickup and the child is not
@@ -64,7 +54,9 @@ type ForwardPath =
  *   host, or a member of the group, i.e. the edge that would pick it up), it is
  *   also stored once in the group's mailbox topic for its remote members: one
  *   ingest, one stored copy. A third party's `/fwd` to the group is ingested and
- *   stored; the edge's own is ingested only.
+ *   stored; the edge's own is ingested only. This ingest is the only local
+ *   delivery of a pickup group's mail: the host's `MailboxPoller` never polls
+ *   its own endpoint for that group, so the stored copy is for remote members.
  * - store: the request-scoped mailbox AID passed with this message must
  *   currently be authorized for the addressed recipient (witness, mailbox or
  *   agent). A recipient this host stores for is never also relayed.
@@ -85,18 +77,25 @@ export class ForwardHandler implements ExchangeRouteHandler {
   readonly acceptsNests = true;
   /** Borrowed provider publication/correlation owner. */
   readonly mailboxDirector: MailboxDirector;
-  /** Borrowed relaying collaborators; null means store-only intake. */
-  readonly relaying: ForwardRelaying | null;
+  /**
+   * Borrowed byte ingress of this host's runtime, through which a local recipient receives the child; null (a
+   * standalone Exchanger without a runtime) never ingests and only stores.
+   */
+  readonly reactor: Reactor | null;
+  /** Borrowed Poster that re-sends a served sender's child to a remote recipient; null means this host never relays. */
+  readonly relay: Poster | null;
 
   /**
-   * Bind mailbox publication and optional relaying without acquiring a store.
+   * Bind mailbox publication, local ingress and optional relaying without acquiring a store.
    *
    * @param mailboxDirector Borrowed provider owner that publishes accepted forwarded payloads.
-   * @param relaying Borrowed Poster and ingress that deliver a served sender's child; null keeps store-only intake.
+   * @param reactor Borrowed ingress for a local recipient's child; null only outside a runtime.
+   * @param relay Borrowed Poster of a relaying host; null keeps the host from relaying or serving senders.
    */
-  constructor(mailboxDirector: MailboxDirector, relaying: ForwardRelaying | null) {
+  constructor(mailboxDirector: MailboxDirector, reactor: Reactor | null, relay: Poster | null) {
     this.mailboxDirector = mailboxDirector;
-    this.relaying = relaying;
+    this.reactor = reactor;
+    this.relay = relay;
   }
 
   /**
@@ -202,15 +201,14 @@ export class ForwardHandler implements ExchangeRouteHandler {
     mailboxAid: string | null | undefined,
   ): ForwardPath | null {
     const hby = this.mailboxDirector.hby;
-    if (this.relaying && hby.habs.has(recipient)) {
+    if (this.reactor && hby.habs.has(recipient)) {
       const pickup = this.pickupHost(recipient, mailboxAid);
-      if (pickup || servingHost(hby, source, mailboxAid)) {
-        return { kind: "ingest", store: !!pickup && !ownTraffic(hby, source.origin, recipient, pickup) };
-      }
+      if (pickup) return { kind: "ingest", store: !ownTraffic(hby, source.origin, recipient, pickup) };
+      if (this.relay && servingHost(hby, source, mailboxAid)) return { kind: "ingest", store: false };
     }
     if (this.canStoreRecipient(recipient, mailboxAid)) return { kind: "store" };
     // Nothing addressed to this Habery leaves through its own Poster; it would only loop back here.
-    if (!this.relaying || hby.db.prefixes.has(recipient)) return null;
+    if (!this.relay || hby.db.prefixes.has(recipient)) return null;
     const host = servingHost(hby, source, mailboxAid);
     return host ? { kind: "relay", host } : null;
   }
@@ -245,12 +243,12 @@ export class ForwardHandler implements ExchangeRouteHandler {
         this.mailboxDirector.publish(recipient, topic, wire);
         return;
       case "relay":
-        this.relaying!.postman.send({ src: path.host, dest: recipient, topic, msg: wire });
+        this.relay!.send({ src: path.host, dest: recipient, topic, msg: wire });
         return;
       case "ingest":
         if (path.store) this.mailboxDirector.publish(recipient, topic, wire);
         // Remote input at the recipient's own endpoint, never `local`: it must earn acceptance like any arrival.
-        return this.relaying!.reactor.processBytes(wire, { mailboxAid: recipient });
+        return this.reactor!.processBytes(wire, { mailboxAid: recipient });
     }
   }
 
