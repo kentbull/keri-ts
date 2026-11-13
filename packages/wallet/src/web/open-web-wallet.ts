@@ -22,7 +22,6 @@ import {
   type CredentialViews,
   FetchHttpClient,
   type Habery,
-  type HeldSigners,
   type HttpClient,
   type KramConfig,
   openHabery,
@@ -111,12 +110,6 @@ export type OpenWebWalletOptions = WebWalletSecret & {
    * `runtime.ipex.unblind(hab)`.
    */
   runtime?: Pick<AgentRuntimeOptions, "kram" | "operationStores">;
-  /**
-   * Signers for identifiers whose keys the host keeps (`makeSignedHab`), held in the Manager as the Habery opens,
-   * before the runtime starts: the first mailbox poll of such an identifier is signed. Held signers are not
-   * stored; pass them again at every open.
-   */
-  heldSigners?: HeldSigners;
   host?: WebWalletHost;
 };
 
@@ -226,7 +219,6 @@ function* compose(
       bran: options.bran,
       seed: options.seed,
       aeid: options.aeid,
-      heldSigners: options.heldSigners,
     });
     const storage = requestPersistentStorage(host.storage);
     try {

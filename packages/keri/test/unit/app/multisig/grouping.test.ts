@@ -135,12 +135,22 @@ Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote s
         nsith: "1",
         toad: 0,
       });
-      const { hab: group } = hby.makeGroupHab("group", member, [member.pre], undefined, undefined, {
+      const outsider = hby.makeHab("outsider", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      // The remote submitter is a signing member of the group; the outsider is not.
+      const { hab: group } = hby.makeGroupHab("group", member, [member.pre, remote.pre], undefined, undefined, {
         isith: "1",
         nsith: "1",
         toad: 0,
       });
       hby.habs.delete(remote.pre);
+      hby.habs.delete(outsider.pre);
 
       const acdc = exchangeMessage("/dummy/acdc", { d: "data" }, { sender: group.pre })[0];
       const [grant] = ipexGrantExn(group, member.pre, "grant", acdc);
@@ -157,6 +167,11 @@ Deno.test("Multiplexor indexes embedded proposal SAIDs and notifies for remote s
         assertEquals((yield* mux.add(invalid)).kind, "reject");
       }
       assertEquals(notifier.list().length, 0);
+      const [fromOutsider] = multisigExn(group, outsider, grant);
+      const refused = yield* mux.add(fromOutsider);
+      assertEquals(refused.kind, "reject");
+      assertEquals(refused.kind === "reject" && refused.reason.includes("not a signing member"), true);
+      assertEquals(notifier.list().length, 0, "a submitter outside the group raises no notice");
       const decision = yield* mux.add(wrapped);
       const embeddedSaid = (wrapped.ked?.e as Record<string, unknown>).d as string;
 
