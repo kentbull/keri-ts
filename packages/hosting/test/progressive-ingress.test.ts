@@ -44,6 +44,7 @@ import {
 } from "keri-ts/runtime";
 import { completeEvent } from "../../keri/src/app/identity/event-completion.ts";
 import { acceptedEventReplayMessage } from "../../keri/src/app/identity/habbing.ts";
+import { KelPublisher } from "../../keri/src/app/mailbox/kel-publisher.ts";
 import { collectKelSubmission } from "../../keri/src/app/mailbox/kel-submission.ts";
 import type { ProtocolProcessor } from "../../keri/src/app/protocol/protocol-processing.ts";
 import { abortable } from "../../keri/src/app/runtime/abortable.ts";
@@ -626,26 +627,38 @@ function* rotatedWalletWithMailboxes(down: number | null) {
   return { client, wallet, hosts, http };
 }
 
-Deno.test("completing a rotation tells every mailbox, whose next poll is then accepted", async () => {
+/** Complete the wallet's rotation with a publisher announced to, then run one publisher pass. */
+function* rotateAndPublish(
+  { client, wallet, http }: { client: Habery; wallet: Hab; http: ReturnType<typeof httpClient> },
+) {
+  wallet.rotate({});
+  const publisher = new KelPublisher({ hby: client, http, clock: systemClock });
+  const completion = yield* completeEvent(
+    {
+      hby: client,
+      protocol: {} as ProtocolProcessor,
+      http,
+      clock: systemClock,
+      rotated: publisher.rotated,
+      withDelegation() {
+        throw new Error("not delegated");
+      },
+    },
+    wallet,
+    wallet.kever!.sn,
+  );
+  return { completion, publisher, results: yield* publisher.processOnce() };
+}
+
+Deno.test("completing a rotation prompts the publisher to tell every mailbox, whose next poll is then accepted", async () => {
   await run(function*() {
-    const { client, wallet, hosts, http } = yield* rotatedWalletWithMailboxes(null);
+    const fixture = yield* rotatedWalletWithMailboxes(null);
+    const { client, wallet, hosts } = fixture;
     try {
-      wallet.rotate({});
-      const completion = yield* completeEvent(
-        {
-          hby: client,
-          protocol: {} as ProtocolProcessor,
-          http,
-          clock: systemClock,
-          withDelegation() {
-            throw new Error("not delegated");
-          },
-        },
-        wallet,
-        wallet.kever!.sn,
-      );
+      const { completion, results, publisher } = yield* rotateAndPublish(fixture);
       assertEquals(completion.outcome, "settled");
-      assertEquals(completion.mailboxes, hosts.map(({ service }) => ({ mailbox: service.pre, outcome: "told" })));
+      assertEquals(results, hosts.map(({ service }) => ({ mailbox: service.pre, outcome: "told" })));
+      assertEquals(publisher.status().entries.map((entry) => entry.state), ["published", "published"]);
       for (const { service, handler } of hosts) {
         const poll = wallet.query(wallet.pre, service.pre, { route: "mbx", q: { topics: { "/reply": 0 } } });
         const served = yield* call(() =>
@@ -670,29 +683,21 @@ Deno.test("completing a rotation tells every mailbox, whose next poll is then ac
   });
 });
 
-Deno.test("a mailbox that cannot be reached is reported and does not fail the rotation", async () => {
+Deno.test("a mailbox that cannot be reached is reported by the publisher and does not fail the rotation", async () => {
   await run(function*() {
-    const { client, wallet, hosts, http } = yield* rotatedWalletWithMailboxes(1);
+    const fixture = yield* rotatedWalletWithMailboxes(1);
+    const { client, hosts } = fixture;
     try {
-      wallet.rotate({});
-      const completion = yield* completeEvent(
-        {
-          hby: client,
-          protocol: {} as ProtocolProcessor,
-          http,
-          clock: systemClock,
-          withDelegation() {
-            throw new Error("not delegated");
-          },
-        },
-        wallet,
-        wallet.kever!.sn,
-      );
+      const { completion, results, publisher } = yield* rotateAndPublish(fixture);
       assertEquals(completion.outcome, "settled");
       assertEquals(completion.status, { state: "complete" });
-      assertEquals(completion.mailboxes, [
+      assertEquals(results, [
         { mailbox: hosts[0].service.pre, outcome: "told" },
         { mailbox: hosts[1].service.pre, outcome: "failed", reason: "connection refused" },
+      ]);
+      assertEquals(publisher.status().entries.map((entry) => [entry.state, entry.lastFailure]), [
+        ["published", undefined],
+        ["pending", "connection refused"],
       ]);
     } finally {
       for (const { runtime, host } of hosts) {

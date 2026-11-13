@@ -13,7 +13,7 @@ import {
 } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { requestWithHeaderTimeout } from "../transport/httping.ts";
-import { postKelToMailbox } from "./kel-publishing.ts";
+import { pinKelPublished, postKelToMailbox } from "./kel-publishing.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import { mailboxPollEndpoints } from "./mailboxing.ts";
@@ -26,6 +26,8 @@ interface MailboxPollerOptions {
    * Optional millisecond header and poll-window overrides.
    */
   timeouts?: Partial<MailboxPollingTimeoutPolicy>;
+  /** Told after each accepted poll of a mailbox; the runtime re-arms a timed-out KEL publication with it. */
+  onPolled?: (pre: string, mailbox: string) => void;
 }
 
 /**
@@ -68,6 +70,8 @@ export class MailboxPoller {
   readonly http: HttpClient;
   /** Borrowed clock for this owner's actual network deadlines. */
   readonly clock: RuntimeClock;
+  /** Told after each accepted poll of a mailbox. */
+  readonly onPolled: ((pre: string, mailbox: string) => void) | undefined;
 
   /**
    * Bind polling inputs and dependencies without starting workers or acquiring stores.
@@ -85,7 +89,8 @@ export class MailboxPoller {
     clock: RuntimeClock,
     options: MailboxPollerOptions = {},
   ) {
-    const { timeouts } = options;
+    const { timeouts, onPolled } = options;
+    this.onPolled = onPolled;
     this.hby = hby;
     this.mailboxDirector = mailboxDirector;
     this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
@@ -228,11 +233,15 @@ export class MailboxPoller {
         const head = this.unpostedHead(target, posted);
         if (head && (yield* postKelToMailbox(this, target.targetPre, endpoint)).outcome === "told") {
           posted = head;
+          // Same marker the publisher keeps, so it does not send what the repair just did.
+          const kever = this.hby.db.getKever(target.targetPre);
+          if (kever) pinKelPublished(this.hby.db, target.targetPre, endpoint.eid, kever.lastEst.d, this.clock);
           outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
         }
       }
-      if (outcome === "settled") {
+      if (outcome === "settled" || outcome === "silent") {
         refusedFor = 0;
+        if (outcome === "settled") this.onPolled?.(target.targetPre, endpoint.eid);
         yield* runtimeTurn();
       } else {
         refusedFor = Math.min(maxMs, refusedFor ? refusedFor * 2 : initialMs);
@@ -287,7 +296,7 @@ export class MailboxPoller {
 }
 
 /** How a mailbox answered one poll: a 403 is kept apart because a KEL it has not seen can cause it. */
-type PollOutcome = "settled" | "unauthorized" | "refused";
+type PollOutcome = "settled" | "silent" | "unauthorized" | "refused";
 
 /**
  * Mailbox subject and signer selection; a group subject uses its local member for signing.
@@ -394,7 +403,7 @@ function* fetchMailboxMessages(
       };
       const response = yield* requestWithHeaderTimeout(http, clock, url, request, timeouts.requestOpenTimeoutMs);
       // No headers within the open window: that wait was the pause, so the next attempt may start at once.
-      if (!response) return "settled" as const;
+      if (!response) return "silent" as const;
       if (!response.ok) {
         const detail = yield* abortable(signal => readResponseDetail(response, signal));
         if (isLegacyCesrMediaRejection(request, response.status, detail)) return "alternate" as const;

@@ -37,6 +37,7 @@
  */
 import { Diger, Ilks, NumberPrimitive, NumDex, type SerderKERI, Verfer } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
+import type { RotatedCue } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import type { Baser } from "../../db/basing.ts";
@@ -117,9 +118,9 @@ export interface GroupReceipting {
   get(pre: string, options: { sn: number; said: string }): Operation<boolean>;
 }
 
-/** Publishes a completed group rotation to the group's mailboxes; `tellMailboxes` over the runtime's HTTP fits. */
+/** Told when a group rotation completes, so its mailboxes are told; the runtime's `kelPublisher.rotated` fits. */
 export interface GroupMailboxes {
-  tell(pre: string): Operation<unknown>;
+  rotated(cue: RotatedCue): void;
 }
 
 /** Grace before a non-elected member submits receipts itself. */
@@ -172,8 +173,8 @@ export class Counselor {
    * @param clock Time source for fallback and retry; only `now` is used.
    * @param changes Optional sink told `{kind:"group", id:"<pre>:<sn>"}` after commits.
    * @param delegation Anchorer and query port for delegated events; omit for non-delegated hosts.
-   * @param mailboxes Told the group once one of its rotations completes, so each member's runtime that has the
-   *   group's mailbox role authorized publishes the new key state; duplicates from several members are harmless.
+   * @param mailboxes Told when one of the group's rotations completes; the member runtime's publisher then tells
+   *   the group's mailboxes the new key state, and several members doing so is harmless.
    */
   constructor(
     private readonly hby: Habery,
@@ -360,7 +361,7 @@ export class Counselor {
   ): Operation<void> {
     const { anchorer } = this.delegation!;
     if (anchorer.complete(event.pre, event.sn)) {
-      yield* this.finish(this.hby.db.gdee, event, row);
+      this.finish(this.hby.db.gdee, event, row);
       return;
     }
     // The Anchorer asks the delegator only once the event's witnesses have receipted it.
@@ -394,7 +395,7 @@ export class Counselor {
   }
 
   /** Record completion of a counseled event and drop its row from `table`. */
-  private *finish(table: Baser["gpse"], event: GroupEventRef, row: [NumberPrimitive, Diger]): Operation<void> {
+  private finish(table: Baser["gpse"], event: GroupEventRef, row: [NumberPrimitive, Diger]): void {
     const db = this.hby.db;
     db.transaction(() => {
       table.rem([event.pre], row);
@@ -403,9 +404,8 @@ export class Counselor {
     this.runs.delete(this.runKey(event));
     this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
     const ilk = db.getEvtSerder(event.pre, event.said)?.ilk;
-    if (this.mailboxes && (ilk === Ilks.rot || ilk === Ilks.drt)) {
-      // The event is complete whether or not a mailbox hears of it; the poller repairs one that refuses.
-      yield* this.mailboxes.tell(event.pre);
+    if (ilk === Ilks.rot || ilk === Ilks.drt) {
+      this.mailboxes?.rotated({ kin: "rotated", pre: event.pre, sn: event.sn, said: event.said });
     }
   }
 
@@ -421,7 +421,7 @@ export class Counselor {
         yield* this.pursueReceipts(event, serder);
         if (!db.fullyWitnessed(serder)) continue;
       }
-      yield* this.finish(db.gpwe, event, [number, diger]);
+      this.finish(db.gpwe, event, [number, diger]);
     }
   }
 

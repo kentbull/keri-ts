@@ -1,0 +1,6 @@
+---
+"keri-ts": patch
+"@keri-ts/wallet": patch
+---
+
+Telling mailboxes about a rotation moves onto a runtime reaction, `KelPublisher` (`app/mailbox/kel-publisher.ts`), on its own fiber in `runAgentRuntime`. `completeEvent` and the Counselor now push a `RotatedCue` instead of posting inline, and `EventCompletion.mailboxes` and `tellMailboxes` are removed. The durable state is a new Baser record, `kpub.` (identifier, mailbox) -> the establishment event whose KEL the mailbox last answered 2xx for, plus a `failed` entry when publishing used up its budget; what is owed is derived from it against the identifier's latest establishment event, so a crash, a bare `Hab.rotate` or a one-shot host loses nothing (the CLI runs a pass after a rotation). An event is published once it is fully witnessed and, for a delegated identifier, anchored. A failed post is retried after 1 s, doubling to 60 s, and given up after 300 s; a new rotation, a successful poll of that mailbox, a successful 403 repair, `prompt` or the next open tries again. `status()` and `waitForPublication` report `published`, `pending`, `waiting` or `timed-out` per mailbox. In the wallet, `mailboxes.publication(pre)` and `mailboxes.waitForPublication(pre)` expose that, and `health()` reports `mailbox-unreachable` for a timed-out publication. `addMailbox` and the poller's repair record the same marker.

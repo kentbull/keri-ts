@@ -727,6 +727,27 @@ export class RootSentRecord extends RawRecord<RootSentRecordShape> implements Ro
   declare dt: string;
 }
 
+export interface KelPublishedRecordShape {
+  /** Establishment event SAID (`lastEst.d`) of the KEL this mailbox was last given and answered 2xx for; null if never. */
+  d: string | null;
+  /** ISO-8601 time of that answer (or of the record's creation when `d` is null). */
+  dt: string;
+  /** Written when publishing the KEL up to establishment event `failed.d` used its whole budget; cleared by the next success. */
+  failed?: { d: string; dt: string; attempts: number; reason: string };
+}
+
+/**
+ * The KEL a mailbox was last given for an identifier: coordinates only. A 2xx is not acceptance (the host may
+ * escrow), which is why the poller still repairs a 403.
+ *
+ * keri-ts only. Stored through `Komer` in `Baser.kpub`, keyed (identifier, mailbox).
+ */
+export class KelPublishedRecord extends RawRecord<KelPublishedRecordShape> implements KelPublishedRecordShape {
+  declare d: string | null;
+  declare dt: string;
+  declare failed?: KelPublishedRecordShape["failed"];
+}
+
 export interface DerivedUpdateRecordShape {
   credential: string;
   state: string;

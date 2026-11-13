@@ -118,12 +118,16 @@ export type OpenWebWalletOptions = WebWalletSecret & {
  * - `stopped`: the runtime task ended without `close()`, so the stores are closed and the lock released;
  *   `cause` is the failure that ended it;
  * - `closed`: `close()` was called.
- * Precedence: `closed`, `stopped`, `latched`, `faulted`, `ok`.
+ * - `mailbox-unreachable`: the runtime gave up telling a mailbox an identifier's rotated KEL (five minutes of
+ *   backed-off attempts), so the wallet cannot receive from it until it is told; a new rotation, a successful poll
+ *   of that mailbox or reopening the wallet tries again.
+ * Precedence: `closed`, `stopped`, `latched`, `faulted`, `mailbox-unreachable`, `ok`.
  */
 export type WebWalletHealth =
   | { status: "ok" }
   | { status: "latched"; cause: unknown }
   | { status: "faulted"; faults: number; last: OwnerFault | null }
+  | { status: "mailbox-unreachable"; mailboxes: readonly { pre: string; mailbox: string; reason: string | null }[] }
   | { status: "stopped"; cause: unknown }
   | { status: "closed" };
 
@@ -368,6 +372,17 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
       }
       const owners = parts.runtime.operations?.health;
       if (owners?.faults) return { status: "faulted", faults: owners.faults, last: owners.last };
+      const unreachable = parts.runtime.kelPublisher.status().entries.filter((entry) => entry.state === "timed-out");
+      if (unreachable.length) {
+        return {
+          status: "mailbox-unreachable",
+          mailboxes: unreachable.map(({ pre, mailbox, lastFailure }) => ({
+            pre,
+            mailbox,
+            reason: lastFailure ?? null,
+          })),
+        };
+      }
       return { status: "ok" };
     },
     close: () =>

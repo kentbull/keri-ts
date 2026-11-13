@@ -38,6 +38,7 @@ import {
   type IssuanceOperations,
   type IssuanceStatus,
   issuanceStatus,
+  type KelPublicationStatus,
   type MailboxStatus,
   mailboxStatus,
   type OobiRecord,
@@ -295,6 +296,7 @@ export class Identifiers extends Surface {
       http: runtime.http,
       clock: runtime.clock,
       changes,
+      rotated: runtime.kelPublisher.rotated,
       *withDelegation(_hab, use) {
         return yield* use({ anchorer: runtime.delegating, changes });
       },
@@ -411,6 +413,31 @@ export class Mailboxes extends Surface {
   /** Pure read of the accepted end-role state. */
   status(pre: string, mailbox: string): MailboxStatus {
     return mailboxStatus(this.parts.hby, pre, mailbox);
+  }
+
+  /**
+   * Where each mailbox of `pre` stands in being told its KEL after a rotation, derived from state: `published`
+   * (it holds the latest establishment event), `pending` (being sent or waiting out a retry delay), `waiting`
+   * (gated: `unwitnessed`, `unanchored` or `no-url`) or `timed-out` (the runtime gave up after five minutes;
+   * a new rotation, a successful poll of that mailbox or reopening the wallet tries again).
+   */
+  publication(pre: string): readonly KelPublicationStatus[] {
+    return this.parts.runtime.kelPublisher.status().entries.filter((entry) => entry.pre === pre);
+  }
+
+  /**
+   * Wait until every mailbox of `pre` is `published` or `timed-out`, or `timeoutMs` passes (`timed-out` result).
+   * Only observes: the runtime's publisher does the posting.
+   */
+  async waitForPublication(
+    pre: string,
+    { timeoutMs = WALLET_TIMEOUTS.mailbox }: { timeoutMs?: number } = {},
+  ): Promise<{ outcome: "settled" | "timed-out"; entries: readonly KelPublicationStatus[] }> {
+    const publisher = this.parts.runtime.kelPublisher;
+    return await this.go(function*() {
+      const waited = yield* publisher.waitForPublication(pre, { timeoutMs });
+      return { outcome: waited.outcome, entries: waited.status.entries.filter((entry) => entry.pre === pre) };
+    });
   }
 }
 
