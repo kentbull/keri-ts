@@ -833,11 +833,12 @@ Deno.test("wallet groups.rejoin", async () => {
 
     const options = { oobi, group: gid, member: member.pre, alias: "group" };
     const joined = await w.groups.rejoin(options);
-    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre] });
+    assert(joined.outcome === "joined");
+    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre], written: true });
     assertEquals(w.hby.db.getHab(gid)?.mid, member.pre);
     assertEquals(w.hby.habByName("group")?.pre, gid);
-    // A repeat is joined at once and fetches nothing.
-    assertEquals(await w.groups.rejoin(options), joined);
+    // A repeat is joined at once, writes nothing and fetches nothing.
+    assertEquals(await w.groups.rejoin(options), { ...joined, written: false });
     assertEquals(fetched, [oobi]);
     // The group is not a member of itself.
     await assertRejects(() => w.groups.rejoin({ ...options, member: gid }), Error, "Group identifiers");
@@ -931,7 +932,14 @@ Deno.test("recoverWebWallet rejoins the group when its record is missing", async
   const group = { oobi, group: gid, alias: "group", member: member.pre, memberOobis: [memberOobi] };
   const recovered = await recoverWebWallet(first, { open: options, group });
   try {
-    assertEquals(recovered.rejoin, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre] });
+    assertEquals(recovered.rejoin, {
+      outcome: "joined",
+      group: gid,
+      alias: "group",
+      smids,
+      rmids: [a.pre],
+      written: true,
+    });
     assertEquals(recovered.wallet.hby.db.getHab(gid)?.mid, member.pre);
     assertEquals(fetched.toSorted(), [memberOobi, oobi].toSorted());
   } finally {
@@ -956,7 +964,7 @@ Deno.test("recoverWebWallet skips rejoin when the member habitat is missing and 
     w.hby.makeSignedHab("member", undefined, { serder, sigers });
     assertEquals((await w.oobis.resolve(memberOobi)).outcome, "resolved");
     const joined = await w.groups.rejoin({ oobi, group: gid, alias: "group", member: serder.pre! });
-    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre] });
+    assertEquals(joined, { outcome: "joined", group: gid, alias: "group", smids, rmids: [a.pre], written: true });
   } finally {
     await w.close();
     await run(() => agent.close(true));

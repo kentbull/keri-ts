@@ -17,7 +17,8 @@
  * - Remote outcomes are returned (`RejoinResult`); only programmer misuse throws. A result other than
  *   `joined` writes no habitat record; key state the OOBI taught stays, as for any resolution.
  * - Only the record is rebuilt. Credentials, registry state and exchanges the store held come back by
- *   ordinary KERI replay from a co-member; this call does not request it.
+ *   replay from a co-member (`listGroupDisclosures`, `exportDisclosureStream`, `importCredentialStream`); this call
+ *   does not request it. `written: true` on the result says such a refill is due.
  * - Dependencies are declared collaborators (ADR-0013); an `AgentRuntime` fits.
  */
 import type { Operation } from "npm:effection@^3.6.0";
@@ -79,7 +80,10 @@ export type RejoinWait =
 /**
  * Outcome of {@link rejoinGroup}:
  * - `joined`: the record names `member`; `smids` and `rmids` are the accepted members recorded (on a repeat,
- *   the members already recorded, and nothing was written).
+ *   the members already recorded). `written` is true when this call wrote the record and false when it found the
+ *   record already there. A written record means this identifier was already a member and this store had no record
+ *   of the group, so the store holds none of the group's credentials either: the embedder's signal to refill them
+ *   from a co-member.
  * - `not-member`: `member` is in neither the signing nor the rotation members of the accepted state.
  * - `oobi-failed`: the OOBI failed and the group has no accepted key state here; `reason` is the Oobiery's.
  * - `timed-out`: the budget expired; `waiting` says on what.
@@ -87,7 +91,14 @@ export type RejoinWait =
  * Only `joined` writes a habitat record.
  */
 export type RejoinResult =
-  | { outcome: "joined"; group: string; alias: string; smids: readonly string[]; rmids: readonly string[] }
+  | {
+    outcome: "joined";
+    group: string;
+    alias: string;
+    smids: readonly string[];
+    rmids: readonly string[];
+    written: boolean;
+  }
   | { outcome: "not-member"; group: string; member: string }
   | { outcome: "oobi-failed"; group: string; reason: string }
   | { outcome: "timed-out"; group: string; timeoutMs: number; waiting: RejoinWait };
@@ -105,7 +116,7 @@ type RejoinReading =
  * replicator are prompted for the group, so each acts for it on its next tock. Creates no event and signs
  * nothing. Observe-only: the host must already run the runtime's workers (see `workflow-contract.ts`).
  *
- * A record that already names `member` returns `joined` at once, with no OOBI and no write.
+ * A record that already names `member` returns `joined` at once with `written: false`, with no OOBI and no write.
  *
  * @throws ValidationError for misuse: `member` is not a local single-signature habitat, `group` is a local
  * single-signature habitat, the group already has a local record naming a different member (use
@@ -136,7 +147,7 @@ export function* rejoinGroup(deps: RejoinDeps, input: RejoinInput): Operation<Re
   deps.kelPublisher.prompt(group);
   deps.rootReplicator?.prompt(group);
   deps.changes?.push({ kind: "group", id: group });
-  return { outcome: "joined", group, alias, smids, rmids };
+  return { outcome: "joined", group, alias, smids, rmids, written: true };
 }
 
 /**
@@ -171,6 +182,7 @@ function rejoinedRecord(hby: Habery, { group, member, alias, domain }: RejoinInp
       alias: record.name ?? alias,
       smids: [...(record.smids ?? [])],
       rmids: [...(record.rmids ?? [])],
+      written: false,
     };
   }
   const bound = hby.db.getName(domain ?? "", alias);

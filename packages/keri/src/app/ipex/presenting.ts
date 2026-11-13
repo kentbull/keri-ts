@@ -78,7 +78,6 @@ import {
   type PreparedDisclosure,
   storedExchangeWire,
 } from "./ipex-discloser.ts";
-import { prepareAcdcV2GroupIpex } from "./ipex-grouping.ts";
 import type { IssuanceDelivery } from "./issuance.ts";
 
 /** How long delivery failures may last on an exchange with no deadline (an Apply, an Agree) before it reads `failed`. */
@@ -394,7 +393,7 @@ export function* proposeGroupPresentation(
   const { presentationRegistry, ...body } = options;
   const gvrsn = body.gvrsn ?? undefined;
   const discloser = discloserFor(deps, hab, selection.derive);
-  let prepared = yield* discloser.prepareGrantBody(hab.pre!, selection, body);
+  const prepared = yield* discloser.prepareGrantBody(hab.pre!, selection, body);
   if (!presentationRegistry) {
     return yield* proposeGroupIpex(groupIpex, { hab, exn: prepared.exn, nests: prepared.nests, gvrsn, deliver });
   }
@@ -409,28 +408,12 @@ export function* proposeGroupPresentation(
   // The Grant SAID is frozen before the update is anchored; only its nested proof is extended afterwards.
   const [proof, update] = reg.present(prepared.exn, "presented", { stamp: body.stamp });
   const proposed = yield* proposeRegistryEvent(proposals, hab, update, proof, counsel);
-  const exn = prepared.exn;
   return groupIpexAfter(groupIpex, {
     hab,
-    exn,
+    exn: prepared.exn,
     gvrsn,
     deliver,
-    prerequisite: {
-      anchor: registryEventRef(update, proposed.event),
-      *proceed() {
-        const seal = deps.rgy.store.anchor(update.said!);
-        if (!seal) throw new ValidationError("The presentation update is accepted but its anchor is unavailable");
-        prepared = yield* discloser.attachPresentationProof(prepared, proof, { s: seal[0], d: seal[1] });
-        const candidate = concatBytes(
-          Counter.makeGVC(gvrsn ?? Vrsn_2_0),
-          prepared.exn.raw,
-          Counter.enclose({ qb64: prepared.nests, version: gvrsn ?? Vrsn_2_0 }),
-        );
-        const own = yield* prepareAcdcV2GroupIpex(deps.hby, groupIpex.deps.protocol, hab, candidate);
-        if (!own) throw new ValidationError("ACDC v2 group disclosure awaits authenticating dependencies.");
-        return own;
-      },
-    },
+    prerequisite: { anchor: registryEventRef(update, proposed.event), grant: prepared, opening: proof },
   });
 }
 

@@ -64,7 +64,8 @@ export type RecoverSkip = "no-group" | "group-recorded" | "member-missing";
 
 /**
  * A recovered wallet: the new handle, and either the rejoin's typed outcome or why no rejoin ran.
- * A `rejoin` other than `joined` is a remote outcome to act on, not a failed recovery: the wallet is open.
+ * A `rejoin` other than `joined` is a remote outcome to act on, not a failed recovery: the wallet is open. A
+ * `joined` rejoin that wrote the record (`written: true`) is the signal to refill the store from a co-member.
  */
 export type RecoveredWebWallet =
   | { wallet: WebWallet; rejoin: RejoinResult; skipped?: undefined }
@@ -89,7 +90,10 @@ export type RecoveredWebWallet =
  * `wallet.hby.makeSignedHab(alias, undefined, { serder, sigers })`, passing the member's inception and the
  * signatures it kept, holds the member's signer (`heldSigners` at open, or `wallet.hby.mgr.hold([signer])`),
  * resolves the co-members' OOBIs (`wallet.oobis.resolve`) and calls `wallet.groups.rejoin`. Neither path restores
- * credentials, registry state or exchanges: those come back by ordinary KERI replay from a co-member.
+ * credentials, registry state or exchanges. A `joined` rejoin with `written: true` says this identifier was already
+ * a member and the store had no record of the group, so it holds none of the group's credentials either: refill
+ * them from a co-member (its `listGroupDisclosures` and `exportDisclosureStream`, the registry root copy, then
+ * `credentials.importStream` and `credentials.rebuild` here; see the wallet library guide).
  *
  * The returned wallet is a new handle; drop the old one. On the old handle `health()` reads `closed` and every
  * call fails: with `WalletStoppedError` from the wallet (workflow calls, `readPersisted`), or with

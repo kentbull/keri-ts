@@ -13,9 +13,11 @@
  * The runtime keeps working after a call returns `timed-out`: the operation is still live, and the same call
  * made again resumes it where it stands.
  */
-import type { SerderACDC, ThresholdSith, Versionage } from "cesr-ts";
+import { SerderACDC, type ThresholdSith, type Versionage } from "cesr-ts";
 import { action, call, type Operation, race, run } from "effection";
+import { loadNests } from "keri-ts/db";
 import {
+  acceptedRegistryEvidence,
   type AcdcMapOptions,
   addMailbox,
   admitIssuance,
@@ -26,6 +28,7 @@ import {
   beginOobi,
   type ChangeSink,
   completeEvent,
+  type CredentialImportResult,
   deliverIssuanceAdmit,
   type EventCompletion,
   type EventCompletionDeps,
@@ -34,12 +37,14 @@ import {
   type ExchangeAnswer,
   type Hab,
   type Habery,
+  importCredentialStream,
   isLocalGroupHab,
   type IssuanceEndState,
   type IssuanceOperations,
   type IssuanceStatus,
   issuanceStatus,
   type KelPublicationStatus,
+  listGroupDisclosures,
   type MailboxStatus,
   mailboxStatus,
   type OobiRecord,
@@ -69,6 +74,7 @@ import {
   type UnblindingStatus,
   unblindingStatus,
   ValidationError,
+  vetBlind,
   waitForIssuance,
   waitForOobi,
   waitForPresentation,
@@ -598,6 +604,12 @@ export interface CredentialList {
   held: AdmittedCredential[];
 }
 
+/** Choices of {@link Credentials.importStream}. */
+export interface ImportStreamOptions {
+  /** Budget, after the input is read, for escrowed events in it to settle; default the importer's 5 s. */
+  timeoutMs?: number;
+}
+
 /** Inputs of {@link Credentials.receive}. */
 export interface ReceiveOptions extends TimeoutOptions {
   /** Message carried by the Admit. */
@@ -658,6 +670,77 @@ export class Credentials {
   /** The credentials held and issued, as the inventory records them. */
   list(): CredentialList {
     return this.#scope.parts.wallet.inventory();
+  }
+
+  /**
+   * Import a finite CESR stream of retained history into this wallet's stores: KELs, registry TELs, accepted
+   * exchanges, such as a co-member's `exportDisclosureStream` or a `/registry/root` copy. Each message is processed
+   * as retained history (`importCredentialStream`): signatures, anchors and route verification apply, KRAM's
+   * freshness window does not, and nothing is answered or notified. The inventory is not touched; call
+   * {@link Credentials.rebuild} after the streams are in. Importing the same stream again changes nothing.
+   *
+   * @returns What the importer accepted; `complete` false lists the SAIDs still unaccepted when the budget ran out.
+   * @throws ValidationError when this wallet's runtime has no credential store.
+   */
+  async importStream(bytes: Uint8Array, options: ImportStreamOptions = {}): Promise<CredentialImportResult> {
+    const { runtime } = this.#scope.parts;
+    const vdr = runtime.vdr;
+    if (!vdr) throw new ValidationError("This wallet's runtime has no credential store.");
+    return await this.#scope.go(() =>
+      importCredentialStream(runtime.protocol, vdr.reger, bytes, runtime.clock, options.timeoutMs)
+    );
+  }
+
+  /**
+   * Rebuild the inventory from what this wallet's stores accept, and return it, as after a refill from a co-member
+   * ({@link Credentials.importStream}):
+   * - held: every accepted Grant addressed to a local identifier, individual or group, whose accepted Admit answers
+   *   it and that has no row yet (`Wallet.reconcileAdmissions`). The Admit is the consent; the row is checked against
+   *   the history the pair was accepted under, so a credential revoked since is still listed as held.
+   * - issued: every accepted Grant a local identifier sent of a credential it issued, once this wallet holds the
+   *   registry root (a group's arrives as a `/registry/root` copy). The issuance opening is derived from the root and
+   *   must open the update's own commitment. A bound issuance is not derived here.
+   *
+   * An explicit call that reads state and writes inventory rows; nothing runs it in the background, so call it again
+   * after a later import or root copy. Idempotent: rows already there are kept, and a second call writes nothing.
+   *
+   * @returns The whole inventory after the rebuild, as {@link Credentials.list} reads it.
+   */
+  async rebuild(): Promise<CredentialList> {
+    const { wallet } = this.#scope.parts;
+    this.#scope.parts.assertRunning();
+    await wallet.reconcileAdmissions();
+    this.reconcileIssued();
+    return wallet.inventory();
+  }
+
+  /** Record each accepted Grant a local identifier sent of a credential it issued, when the registry root is held. */
+  private reconcileIssued(): void {
+    const { hby, runtime, wallet, inventory } = this.#scope.parts;
+    const store = runtime.acdc!.store;
+    for (const [pre, hab] of hby.habs) {
+      for (const { role, grant, credential, registry } of listGroupDisclosures(hby, runtime.exc, pre)) {
+        if (role !== "issuer" || !registry || inventory.issued.get([credential])) continue;
+        if (!hby.mgr.getRegistryRoot(pre, registry)) continue;
+        const acdc = loadNests(hby.db, grant).map((node) => node.body)
+          .find((body): body is SerderACDC => body instanceof SerderACDC && body.said === credential);
+        const updates = acceptedRegistryEvidence(store, registry)?.updates ?? [];
+        const custody = new RegistryCustody({ hby, hab, registry: store, db: inventory });
+        // The accepted update whose commitment the root opens for this credential's issuance; updates start at 1.
+        const index = updates.findIndex((update, at) =>
+          update.ilk === "bup"
+          && vetBlind(custody.derive(registry, at + 1, credential, "issued"), update.sad!.b as string)
+        );
+        if (!acdc || index < 0) continue;
+        try {
+          const update = updates[index];
+          wallet.recordIssued(acdc, update.said!, { blinder: custody.issuedOpening(update, credential) });
+        } catch (error) {
+          // Evidence that does not prove the issuance stays out of the inventory; the next call tries again.
+          if (!(error instanceof ValidationError)) throw error;
+        }
+      }
+    }
   }
 
   /**

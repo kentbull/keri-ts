@@ -288,6 +288,7 @@ export {
 } from "../app/ipex/ipex-credentialing.ts";
 export {
   anchorExchange as anchorIpexExchange,
+  attachPresentationProof,
   type CredentialViews,
   type DisclosureBodyOptions,
   type DisclosureSelection,

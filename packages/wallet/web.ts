@@ -13,7 +13,13 @@ export {
   WalletDiscloser,
 } from "./src/disclosing.ts";
 export { type AdmittedCredential, type IssuedCredential, openWalletBaser, WalletBaser } from "./src/storing.ts";
-export { type HeldCredential, type PreparedAdmit, Wallet, type WalletOptions } from "./src/wallet.ts";
+export {
+  type AdmissionEvidence,
+  type HeldCredential,
+  type PreparedAdmit,
+  Wallet,
+  type WalletOptions,
+} from "./src/wallet.ts";
 export {
   type DoneGroupIpex,
   type EndedGroupIpex,
@@ -86,6 +92,7 @@ export {
   type EventFinish,
   type IdentifierEvent,
   type Identifiers,
+  type ImportStreamOptions,
   type InceptOptions,
   type IssueOptions,
   type IssueOutcome,
