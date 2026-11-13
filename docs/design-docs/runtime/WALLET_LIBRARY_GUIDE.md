@@ -243,9 +243,6 @@ How the poller schedules, backs off and classifies its polls is being rewritten 
   runtime answers it with no resend. A group Unblind keeps its per-operation state (the members' wrappers it has
   taken in and the contributions) in memory (`GroupUnblind` in `unblinding-workflow.ts`); what a restart does to a
   partly contributed group reply is **unconfirmed**: no test I read pins it.
-- A group member that rotates before its group: the changeset for group polls says a keri-ts mailbox authorizes a
-  group poll when a member signs it with a key in the group's current key list, so a member whose key the group has
-  not yet adopted would not meet that rule. **Inferred from the changeset; not exercised.**
 - A KERIpy controller using a keri-ts mailbox after rotating is not told by its own runtime: only keri-ts runs the
   `KelPublisher`, so the mailbox learns of the rotation from a keri-ts runtime or by other means.
   **Inferred; not exercised.**
