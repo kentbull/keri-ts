@@ -1,6 +1,7 @@
 import { MtrDex, Salter } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { runtimeTurn } from "../runtime/runtime-turn.ts";
+import { type DoerPacing, doEvery, PROTOCOL_PACING } from "../runtime/doing.ts";
+import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -183,10 +184,9 @@ export class Signaler {
     this.clear();
   }
 
-  *signalDo(): Operation<never> {
-    while (true) {
+  *signalDo(clock: RuntimeClock = systemClock, pacing: Readonly<DoerPacing> = PROTOCOL_PACING): Operation<never> {
+    return yield* doEvery(clock, pacing.tockMs, function*(this: Signaler) {
       this.processOnce();
-      yield* runtimeTurn();
-    }
+    }.bind(this));
   }
 }

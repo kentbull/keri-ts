@@ -380,6 +380,12 @@ export class Revery {
   readonly cues: Deck<AgentCue>;
   readonly lax: boolean;
   readonly local: boolean;
+  /**
+   * Told after an `/end/role` reply is accepted, with the controller, role, endpoint and whether the role is
+   * allowed. The runtime uses it to have the mailbox poller and KEL publisher look at a controller whose mailbox
+   * role just changed, rather than at their next sweep.
+   */
+  onEndRole: ((cid: string, role: string, eid: string, allowed: boolean) => void) | undefined;
 
   /**
    * Create one reply verifier bound to one `Baser` and optional shared router.
@@ -998,6 +1004,7 @@ export class BasicReplyRouteHandler {
       return acceptReplyDecision();
     });
     if (queryCues.length) this.rvy.cues.extend(queryCues);
+    if (decision.kind === "accept") this.rvy.onEndRole?.(cid, role, eid, allowed);
     return decision;
   }
 

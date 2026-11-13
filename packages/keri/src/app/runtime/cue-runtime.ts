@@ -3,7 +3,7 @@ import type { AgentCue } from "../../core/cues.ts";
 import type { Deck } from "../../core/deck.ts";
 import type { Hab } from "../identity/habbing.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
-import { runtimeTurn } from "./runtime-turn.ts";
+import { type DoerPacing, doEvery, PROTOCOL_PACING } from "./doing.ts";
 
 /**
  * Use an explicitly selected or sole local habitat; never guess among hosted identities.
@@ -62,9 +62,7 @@ export function* processCuesOnce(
 export function* cueDo(
   runtime: AgentRuntime,
   options: { hab?: Hab; queryCues?: Deck<AgentCue> } = {},
+  pacing: Readonly<DoerPacing> = PROTOCOL_PACING,
 ): Operation<never> {
-  while (true) {
-    yield* processCuesOnce(runtime, options);
-    yield* runtimeTurn();
-  }
+  return yield* doEvery(runtime.clock, pacing.tockMs, () => processCuesOnce(runtime, options));
 }

@@ -84,7 +84,7 @@ Deno.test("a runtime with nothing counseled makes no receipt, anchor or network 
       yield* processOnce();
     };
     yield* working(runtime, () => sleep(150));
-    assert(passes > 20, `the loop must actually run, ran ${passes} passes`);
+    assert(passes > 3, `the loop must actually run at its 31.25 ms tock, ran ${passes} passes`);
     assertEquals(http.calls, 0);
     assertEquals(runtime.postman.hasPending, false);
     assertEquals([runtimePendingState(runtime).groupPending, runtimePendingState(runtime).delegationPending], [
