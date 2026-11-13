@@ -418,3 +418,19 @@ Deno.test("a fresh query that reaches a peer holding a persisted one replaces it
     assertEquals(issuanceStatus(ops, grant), { state: "done", role: "issuer", phase: "issued" });
   });
 });
+
+Deno.test("a wait does not settle while the operation still owes a delivery for the step that reached its phase", async () => {
+  await run(function*() {
+    const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
+    const outbox = ops.live.get(grant)!.outbox;
+    outbox.enqueue({ src: s.issuer.habs[0].pre!, dest: s.holder.habs[0].pre!, msg: new Uint8Array([1]) });
+    // Any phase satisfies the condition, yet the queued message keeps the wait open.
+    const early = yield* waitForIssuance(ops, grant, { timeoutMs: 40, until: () => true });
+    assertEquals(early.outcome, "timed-out");
+    yield* ops.processOnce();
+    assertEquals(outbox.length, 0, "the owner pass delivered what was owed");
+    const late = yield* waitForIssuance(ops, grant, { timeoutMs: 40, until: () => true });
+    assertEquals(late.outcome, "settled");
+  });
+});

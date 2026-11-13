@@ -126,6 +126,10 @@ function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): 
           .option("--registry-name <name>", "Registry name for multisig registry approvals")
           .option("--said <said>", "Specific multisig EXN SAID to approve")
           .option(
+            "--kind <kind>",
+            "Approve only a proposal of this kind (icp, rot, ixn, rpy, rip, bup, vcp, iss, rev); other pending proposals are left alone",
+          )
+          .option(
             "-Y, --auto",
             "Auto approve the matching multisig proposal non-interactively",
             false,
@@ -151,6 +155,7 @@ function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): 
         group: options.group,
         registryName: options.registryName,
         said: options.said,
+        kind: options.kind,
         auto: options.auto || false,
         approvalTimeoutSeconds: options.approvalTimeout,
         ...witnessAuthArgs(options),

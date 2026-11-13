@@ -175,6 +175,11 @@ export class UnblindingOperations {
 
   constructor(readonly deps: UnblindingDeps) {}
 
+  /** Whether the live operation for `grant` still holds a message the transport has not taken. */
+  owes(grant: string): boolean {
+    return (this.live.get(grant)?.outbox.length ?? 0) > 0;
+  }
+
   /**
    * Whether a pass has work: a live operation, or an owner holds an authenticated peer query whose reply is
    * owed (an in-memory walk of the owners, no store read).
@@ -689,7 +694,10 @@ export function* waitForUnblinding(
   grant: string,
   { timeoutMs, clock = ops.deps.clock }: UnblindingWaitOptions,
 ): Operation<WaitResult<UnblindingStatus>> {
-  const settled = yield* observeUntil(() => unblindingStatus(ops, grant).state !== "active", { timeoutMs, clock });
+  const settled = yield* observeUntil(() => unblindingStatus(ops, grant).state !== "active" && !ops.owes(grant), {
+    timeoutMs,
+    clock,
+  });
   const status = unblindingStatus(ops, grant);
   return settled ? { outcome: "settled", status } : { outcome: "timed-out", status, timeoutMs };
 }

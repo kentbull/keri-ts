@@ -1201,7 +1201,7 @@ Deno.test("Interop registry root: a mixed group issues with DH through the CLIs 
         "tufa multisig join (RIP)",
         runTufaWithTimeout(
           [
-            ...["multisig", "join", ...group.tufaStore, "--group", "group", "--auto"],
+            ...["multisig", "join", ...group.tufaStore, "--group", "group", "--auto", "--kind", "rip"],
             ...["--approval-timeout", "90", "--receipt-endpoint"],
           ],
           group.ctx.env,
@@ -1277,7 +1277,7 @@ Deno.test("Interop registry root: a mixed group issues with DH through the CLIs 
       "tufa multisig join (BUP)",
       runTufaWithTimeout(
         [
-          ...["multisig", "join", ...group.tufaStore, "--group", "group", "--auto"],
+          ...["multisig", "join", ...group.tufaStore, "--group", "group", "--auto", "--kind", "bup"],
           ...["--approval-timeout", "150", "--receipt-endpoint"],
         ],
         group.ctx.env,
