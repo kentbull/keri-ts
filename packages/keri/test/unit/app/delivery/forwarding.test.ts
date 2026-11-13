@@ -1447,6 +1447,37 @@ Deno.test("a local provider different from the sender stores without a URL even 
   });
 });
 
+Deno.test("Poster stores locally for a recipient whose agent is a local habitat", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const edgeHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    // The hosted co-member sends to the edge member, whose agent is this Habery's own `agent`.
+    const sender = hby.makeHab("co-member"), agent = hby.makeHab("agent"), edge = edgeHby.makeHab("edge");
+    hby.db.locs.pin([agent.pre, "http"], { url: "http://agent.test/" });
+    hby.db.ends.pin([edge.pre, EndpointRoles.agent, agent.pre], { allowed: true });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(() => {
+        throw new Error("The agent must not post to its own ingress");
+      }),
+      systemClock,
+      { enableMailboxStore: true },
+    );
+    try {
+      const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
+      const evt = runtime.postman.send({ src: sender.pre, dest: edge.pre, topic: "/multisig", msg }, { notify: true });
+      yield* runtime.postman.process();
+      const result = yield* runtime.postman.wait(evt);
+      assertEquals([result.kin, result.deliveries], ["sent", [`local-mailbox:${agent.pre}`]]);
+      assertEquals(runtime.mailboxer!.getTopicMsgs(`${edge.pre}/multisig`), [msg]);
+    } finally {
+      yield* runtime.close();
+      yield* edgeHby.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("queued streams keep all source messages ordered at one randomly selected relay", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });

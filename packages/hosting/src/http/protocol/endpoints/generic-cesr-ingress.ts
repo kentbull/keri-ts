@@ -4,6 +4,9 @@
  * Explicit routes are classified before this module runs. This handler owns
  * the remaining raw CESR traffic and decides whether it belongs to local
  * witness ingestion, mailbox SSE query streaming, or normal runtime ingress.
+ * Runtime ingress addressed to a hosted endpoint is dispatched once (the
+ * agent's own ingest) and then offered once to `keepRawArrival`, which keeps
+ * a copy for the identifiers that authorized that endpoint as their agent.
  */
 import { Ilks, parse, ParserError, type SerderKERI } from "cesr-ts";
 import { call, ensure, type Operation, run } from "effection";
@@ -12,6 +15,7 @@ import {
   type HostedRouteResolution,
   isCesrContentType,
   isKramLateReason,
+  keepRawArrival,
   type KramLateReason,
   requestBytes,
   rethrowCleanupFailure,
@@ -265,6 +269,10 @@ function* ingest(
             escrows: true,
           });
           if (decision?.kind === "drop" && isKramLateReason(decision.reason)) late = decision.reason;
+          // Each frame of a request body is its own arrival; a `/fwd` child enters through the reactor, never here.
+          if (route.kind === "runtimeIngress" && route.mailboxAid) {
+            yield* keepRawArrival(runtime.mailboxDirector, { frame, hostAid: route.mailboxAid, decision });
+          }
           if (query) {
             // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
             query.transportOnly = decision?.kind === "drop"
