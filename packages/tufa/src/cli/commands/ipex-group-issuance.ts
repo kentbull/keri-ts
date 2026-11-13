@@ -1,7 +1,7 @@
 /**
  * Finite group issuance commands: a caller of the runtime's `operations.issuance`.
  *
- * The runtime owns the group protocol (`keri-ts/runtime`: `prepareGroupIssuance`, `beginGroupIssuance`,
+ * The runtime owns the group protocol (`keri-ts/runtime`: `prepareGroupIssuance`, `approveGroupIssuance`,
  * `approveGroupIssuanceExchange`, `followGroupIssuanceProof`, the per-operation steps and the proof broadcast).
  * This file only hosts what a one-shot command needs around it: the workers, an optional direct listener, an elapsed
  * limit, the wallet inventory reaction and the `root_copy` read-back.
@@ -15,16 +15,19 @@ import type { RootCopyLine } from "keri-ts/cli";
 import {
   abandonIssuance,
   type AgentRuntime,
+  approveGroupIssuance,
   approveGroupIssuanceExchange,
-  beginGroupIssuance,
   consoleLogger,
   followGroupIssuanceProof,
+  type GroupFollowOptions,
+  groupIssuanceElection,
   groupIssuanceProof,
   type Hab,
   type IssuanceGrantOptions,
   type IssuanceOperations,
   type IssuanceStatus,
   localGroupMember,
+  type PreparedGroupGrant,
   prepareGroupIssuance,
   RegistryCustody,
   ValidationError,
@@ -33,18 +36,15 @@ import {
 } from "keri-ts/runtime";
 import { sendRootCopies } from "./registry-root.ts";
 
-/** Exact accepted coordinator and already elected custody member selected by this invocation. */
-export interface GroupIssuanceSelection {
-  /** The local group identifier that issues. */
-  hab: Hab;
-  coordinator: string;
-  custodian: string;
-}
 /** Explicit party/Grant selection; issuer members also select the frozen authenticated proposal. */
-export interface GroupIssuanceRequest extends GroupIssuanceSelection {
+export interface GroupIssuanceRequest {
+  /** The local group identifier that issues or receives. */
+  hab: Hab;
   role: "issuer" | "recipient";
   grant: string;
   proposal?: Uint8Array;
+  /** SAID of the accepted group event that elects the custodian; default the group's latest establishment. */
+  coordinator?: string;
 }
 /** Contribution completion is distinct from verified issuance; neither result implies Admit. */
 export interface GroupIssuanceResult {
@@ -84,9 +84,9 @@ export function* prepareGroupDerivedIssuance(
   runtime: AgentRuntime,
   credential: SerderACDC,
   options: IssuanceGrantOptions,
-  selection: GroupIssuanceSelection,
-): Operation<{ grant: string; proposal: Uint8Array }> {
-  return yield* prepareGroupIssuance(owner(runtime), { ...selection, credential, options });
+  coordinator?: string,
+): Operation<PreparedGroupGrant> {
+  return yield* prepareGroupIssuance(owner(runtime), { credential, options }, coordinator);
 }
 
 /**
@@ -95,15 +95,15 @@ export function* prepareGroupDerivedIssuance(
  */
 export function* acceptGroupDerivedProof(
   runtime: AgentRuntime,
-  selection: GroupIssuanceSelection,
+  hab: Hab,
   grant: string,
-  proof: Uint8Array | undefined,
+  options: GroupFollowOptions,
   timeoutMs: number,
 ): Operation<boolean> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new ValidationError("Proof timeout must be positive");
   const ops = owner(runtime);
-  yield* followGroupIssuanceProof(ops, { ...selection, grant, proof });
-  const member = localGroupMember(runtime.hby, selection.hab.pre!);
+  yield* followGroupIssuanceProof(ops, grant, options);
+  const member = localGroupMember(runtime.hby, hab.pre!);
   const { status } = yield* withRuntimeWorkers(
     runtime,
     { hab: member, pollMailbox: true },
@@ -159,19 +159,16 @@ function* runGroupIssuance(
   request: GroupIssuanceRequest,
   { timeoutMs, auths }: GroupIssuanceOptions,
 ): Operation<GroupIssuanceResult> {
-  const ops = owner(runtime), { hab, coordinator, custodian, grant: selected } = request;
-  const member = localGroupMember(runtime.hby, hab.pre!), lead = member.pre === custodian;
-  const selection = { hab, coordinator, custodian };
+  const ops = owner(runtime), { hab, coordinator, grant: selected } = request;
+  const member = localGroupMember(runtime.hby, hab.pre!), lead = groupIssuanceElection(ops, hab.pre!, coordinator).lead;
   const started = runtime.clock.now();
   const { grant, xid } = request.role === "issuer"
-    ? yield* beginGroupIssuance(ops, {
-      ...selection,
-      grant: selected,
+    ? yield* approveGroupIssuance(ops, selected, {
       proposal: request.proposal,
-      auths,
-      counsel: { fallbackAfterMs: 0 },
+      coordinator,
+      anchor: { auths, fallbackAfterMs: 0 },
     })
-    : approveGroupIssuanceExchange(ops, { ...selection, grant: selected });
+    : approveGroupIssuanceExchange(ops, selected, coordinator);
   // An issuer member is done once it has contributed; a holder stops where it needs its separate Admit consent.
   const contributed = (status: IssuanceStatus) =>
     status.state === "active" && request.role === "issuer" && !lead && status.phase === "awaitingAnchor";
@@ -208,7 +205,7 @@ function* runGroupIssuance(
     const head = runtime.acdc!.store.headEvent(registry)!;
     const custody = new RegistryCustody({ hby: runtime.hby, hab, registry: wallet.registry, store: ops.deps.derived });
     wallet.recordIssued(origin as SerderACDC, head.said!, { blinder: custody.derivedOpening(head) });
-    result.proof = yield* groupIssuanceProof(ops, { ...selection, grant });
+    result.proof = yield* groupIssuanceProof(ops, grant);
   }
   if (!lead) return result;
   // The DH custodian retained the root and an accepted, issuer-anchored BUP exists. The issuance succeeded; the

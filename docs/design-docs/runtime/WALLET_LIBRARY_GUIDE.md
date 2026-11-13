@@ -102,7 +102,7 @@ consents with one call; the runtime's Counselor and owners finish the work. The 
 | `proposals.dismiss(id)`                   | Remove an event proposal's notices (KERI has no reject message; 0 for kinds that raise none)                          |
 
 `proposals.approve` calls `approveGroupProposal` for events and registry events (then waits on the
-Counselor), `approveGroupIpex` for a group IPEX message, and `beginGroupIssuance` for a group issuance Grant (then
+Counselor), `approveGroupIpex` for a group IPEX message, and `approveGroupIssuance` for a group issuance Grant (then
 waits on the issuance). It returns `complete`, `approved` (consent recorded, nothing further observable, as for an
 endpoint-role reply), `ended` (with a `reason`) or `timed-out`, each with the status read at return. Group event
 waits return `complete`, `superseded`, `unknown` or `timed-out`.
@@ -193,8 +193,8 @@ Group work is a set of explicit library calls plus the `Counselor`.
   `waitForGroupEvent`. A group habitat is held across a reopen even while its inception is
   unaccepted.
 - **Issuance and Admit.** A group issues or receives a v2 DH credential through
-  `runtime.operations.issuance` (`prepareGroupIssuance`, `beginGroupIssuance`,
-  `approveGroupIssuanceExchange`, `followGroupIssuanceProof`; `groupIssuanceProposals` lists what
+  `runtime.operations.issuance` (`prepareGroupIssuance`, `proposeGroupIssuance`,
+  `approveGroupIssuance`, `approveGroupIssuanceExchange`, `followGroupIssuanceProof`; `groupIssuanceProposals` lists what
   a member may consent to). A group's Admit or other v2 IPEX message goes through
   `runtime.operations.groupIpex`. Root copies for the other members come from the runtime's
   `RootReplicator`, which derives what is owed from state and records sent copies in `rrsn.`.

@@ -886,18 +886,24 @@ export {
 } from "../app/ipex/group-ipex.ts";
 export { RETRY_BASE_MS, RETRY_MAX_MS, RetryBackoff } from "../app/runtime/retry-backoff.ts";
 
-// Runtime-owned group DH issuance: consent calls for the custodian and the members, proof export.
+// Runtime-owned group DH issuance: consent calls for the custodian and the members, election read, proof export.
 export {
+  approveGroupIssuance,
   approveGroupIssuanceExchange,
-  beginGroupIssuance,
-  type BeginGroupIssuanceInput,
   followGroupIssuanceProof,
+  type GroupApprovalOptions,
+  type GroupConsentOptions,
+  type GroupElection,
+  type GroupFollowOptions,
+  type GroupGrantDraft,
   type GroupIssuanceDeps,
+  groupIssuanceElection,
   groupIssuanceProof,
   type GroupIssuanceProposal,
   groupIssuanceProposals,
-  type GroupIssuanceSelection,
+  type PreparedGroupGrant,
   prepareGroupIssuance,
+  proposeGroupIssuance,
 } from "../app/ipex/group-issuance.ts";
 
 // Runtime-owned DH issuance operations, single-signature and group (begin, process, status, wait, abandon).

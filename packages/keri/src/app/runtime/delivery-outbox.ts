@@ -20,9 +20,17 @@ export interface Outbound {
   topic?: string;
 }
 
+/** Signed bytes handed to the transport. */
+export interface DeliveryMessage {
+  src: string;
+  dest: string;
+  msg: Uint8Array;
+  topic?: string;
+}
+
 /** Delivery of signed bytes; resolves once the transport reports an outcome and throws when it failed. */
 export interface OutboxDelivery {
-  deliver(message: { src: string; dest: string; msg: Uint8Array; topic?: string }): Operation<string[]>;
+  deliver(message: DeliveryMessage): Operation<string[]>;
 }
 
 /** The queue and its retry state for one live operation. */
