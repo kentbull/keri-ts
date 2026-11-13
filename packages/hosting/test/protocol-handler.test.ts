@@ -1,9 +1,13 @@
 // @file-test-lane app-fast-parallel
 
-import { Ilks } from "cesr-ts";
+import { concatBytes, Counter, Ilks, Vrsn_2_0 } from "cesr-ts";
+import { call, run, sleep } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import type { AgentRuntime, Hab, HostedRouteResolution, ProtocolHostPolicy } from "keri-ts/runtime";
-import { Schemer } from "keri-ts/runtime";
+import { createAgentRuntime, Schemer } from "keri-ts/runtime";
+import { systemClock } from "../../keri/src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../keri/src/app/transport/http-client.ts";
 import { createTufaApp } from "../src/http/app.ts";
 import {
   classifyCesrIngressRoute,
@@ -250,6 +254,7 @@ Deno.test("tufa/protocol-handler - serves hosted schema data OOBIs before identi
         schema: {
           get: (said: string) => said === schemer.said ? schemer : null,
         },
+        ends: { getTopItemIter: () => [] },
       },
       habs: new Map(),
       prefixes: [],
@@ -355,4 +360,50 @@ Deno.test("tufa/protocol-handler - classifies witness-local and runtime ingress 
       mailboxAid: witnessHab.pre,
     },
   );
+});
+
+Deno.test("tufa/protocol-handler - serves the OOBI of an identifier whose accepted end role names a local agent", async () => {
+  await run(function*() {
+    const open = (name: string) =>
+      createHabery({ name: `${name}-${crypto.randomUUID()}`, temp: true, skipConfig: true, skipSignator: true });
+    const host = yield* open("host"), controller = yield* open("controller");
+    const runtime = yield* createAgentRuntime(host, new FetchHttpClient(), systemClock, {});
+    try {
+      const agent = host.makeHab("agent");
+      const group = controller.makeHab("group"), plain = controller.makeHab("plain");
+      for (const hab of [group, plain]) {
+        for (const wire of controller.db.clonePreIter(hab.pre!, 0, Vrsn_2_0)) {
+          yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire));
+        }
+      }
+      // The host hosts no prefix directly: the end role alone makes it the group's agent.
+      const handler = createProtocolHandler(runtime, { hostedPrefixes: [] });
+      const get = (path: string) => handler(new Request(`http://127.0.0.1${path}`));
+      const status = function*(path: string) {
+        const response = yield* call(() => get(path));
+        yield* call(() => response.body?.cancel());
+        return response.status;
+      };
+      assertEquals(yield* status(`/oobi/${group.pre}/agent/${agent.pre}`), 404, "no end role accepted yet");
+
+      yield* runtime.reactor.processBytes(group.makeEndRole(agent.pre!, "agent", true));
+      assertEquals(yield* status(`/oobi/${group.pre}/agent/${agent.pre}`), 200);
+      assertEquals(yield* status(`/oobi/${group.pre}/agent`), 200, "the eid may be omitted");
+      assertEquals(yield* status(`/oobi/${group.pre}/mailbox/${agent.pre}`), 404, "another role is not served");
+      assertEquals(yield* status(`/oobi/${plain.pre}/agent/${agent.pre}`), 404, "an identifier with no end role here");
+
+      const scoped = createProtocolHandler(runtime, { hostedPrefixes: [group.pre!] });
+      const response = yield* call(() => scoped(new Request(`http://127.0.0.1/oobi/${group.pre}/agent/${agent.pre}`)));
+      yield* call(() => response.body?.cancel());
+      assertEquals(response.status, 404, "a local agent outside a non-empty hostedPrefixes is out of scope");
+
+      yield* sleep(5);
+      yield* runtime.reactor.processBytes(group.makeEndRole(agent.pre!, "agent", false));
+      assertEquals(yield* status(`/oobi/${group.pre}/agent/${agent.pre}`), 404, "a cut end role is not served");
+    } finally {
+      yield* runtime.close();
+      yield* host.close(true);
+      yield* controller.close(true);
+    }
+  });
 });

@@ -975,6 +975,7 @@ export {
 export {
   abandonPresentation,
   deliverPreparedGrant,
+  type GroupNegotiationInput,
   type GroupPresentationInput,
   type PreparedGrantDelivery,
   type PreparedPresentation,
@@ -992,12 +993,18 @@ export {
   presentationStatus,
   type PresentationVerb,
   type PresentationWaitOptions,
+  proposeGroupNegotiation,
   proposeGroupPresentation,
   resendPresentation,
   waitForPresentation,
 } from "../app/ipex/presenting.ts";
 
-export { type PendingPresentation, pendingPresentations } from "../app/ipex/pending-presentations.ts";
+export {
+  pendingApplies,
+  type PendingApply,
+  type PendingPresentation,
+  pendingPresentations,
+} from "../app/ipex/pending-presentations.ts";
 
 // Exact public Grant files for a group presentation (prepare, resume), and the delivery outbox with retry.
 export {

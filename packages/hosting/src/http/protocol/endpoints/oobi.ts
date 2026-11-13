@@ -97,6 +97,7 @@ export function handleOobiRoute(
     aid,
     request.eid,
     context.policy.hostedPrefixes,
+    request.role,
   );
   const hab = respondingHabAid ? runtime.hby.habs.get(respondingHabAid) : undefined;
   if (!hab) {
@@ -155,6 +156,10 @@ export function defaultOobiAid(
  * - the requested AID itself when locally controlled
  * - the explicit endpoint AID when it is locally controlled
  * - the hosted endpoint matched from the request path
+ * - a local identifier that an accepted end-role record of `aid` names as `eid` in the requested role, so a host
+ *   serves the OOBI of an identifier it is the agent of even when it hosts no prefix directly. A non-empty
+ *   `hostedPrefixes` is the operator's stated scope, so the named `eid` must be in it; when it is empty or absent,
+ *   any local identifier qualifies.
  */
 export function selectResponderHab(
   runtime: AgentRuntime,
@@ -165,6 +170,7 @@ export function selectResponderHab(
   aid: string,
   eid?: string,
   hostedPrefixes?: readonly string[],
+  role?: string,
 ): string | undefined {
   const hostedSet = hostedPrefixes ? new Set(hostedPrefixes) : null;
   const hostedCandidate = (candidate?: string): string | undefined => {
@@ -203,12 +209,13 @@ export function selectResponderHab(
       ) {
         return hostedAid;
       }
-      return undefined;
+      return endRoleResponder(runtime, aid, role, eid, hostedPrefixes);
     }
     return hostedCandidate(aid)
       ?? hostedCandidate(eid)
       ?? rootHostedCandidate(aid)
-      ?? rootHostedCandidate(eid);
+      ?? rootHostedCandidate(eid)
+      ?? endRoleResponder(runtime, aid, role, eid, hostedPrefixes);
   }
 
   if (runtime.hby.habs.has(aid)) {
@@ -217,5 +224,24 @@ export function selectResponderHab(
   if (eid && runtime.hby.habs.has(eid)) {
     return eid;
   }
-  return hosted.endpoint?.eid ?? undefined;
+  return hosted.endpoint?.eid ?? endRoleResponder(runtime, aid, role, eid, hostedPrefixes);
+}
+
+/**
+ * The local identifier an accepted, uncut end-role record of `aid` names as `eid` in `role` (any role when
+ * omitted; only `eid` when given), within `scope` when it is non-empty. Reads accepted state only: a role never accepted, or cut, names nobody.
+ */
+function endRoleResponder(
+  runtime: AgentRuntime,
+  aid: string,
+  role?: string,
+  eid?: string,
+  scope?: readonly string[],
+): string | undefined {
+  for (const [keys, end] of runtime.hby.db.ends.getTopItemIter([aid], { topive: true })) {
+    const [, currentRole, agent] = keys;
+    if (!agent || !(end.allowed || end.enabled) || (role && currentRole !== role) || (eid && agent !== eid)) continue;
+    if (runtime.hby.habs.has(agent) && (!scope?.length || scope.includes(agent))) return agent;
+  }
+  return undefined;
 }

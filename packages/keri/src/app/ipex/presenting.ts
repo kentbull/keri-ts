@@ -434,6 +434,74 @@ export function* proposeGroupPresentation(
   });
 }
 
+/**
+ * A group-authored negotiation message other than a Grant: the group asks (`apply`), offers a view, or answers an
+ * accepted exchange with `agree` or `spurn`. The fields are those of the single-signature {@link PresentationInput}
+ * verbs, without the witness authorization a group never needs (a group exchange is anchored by no one member).
+ */
+export type GroupNegotiationInput =
+  | { verb: "apply"; hab: Hab; options: Omit<IpexV2BodyOptions, "prior">; deliver?: boolean }
+  | { verb: "offer"; hab: Hab; selection: DisclosureSelection; options: DisclosureBodyOptions; deliver?: boolean }
+  | {
+    verb: "agree" | "spurn";
+    hab: Hab;
+    /** SAID of the accepted, authenticated exchange being answered. */
+    priorSaid: string;
+    message?: string;
+    recipient?: string;
+    deliver?: boolean;
+  };
+
+/**
+ * A group's consent to send an Apply, Offer, Agree or Spurn: freezes the unsigned body (the same body a single
+ * identifier would sign) and proposes it as a group-authored message with {@link proposeGroupIpex}. The other members
+ * list and approve it with `approveGroupIpex` and the elected lead delivers the completed message. A Grant has its own
+ * call, {@link proposeGroupPresentation}; an Admit has `proposeGroupAdmit`.
+ *
+ * @throws ValidationError for an identifier that is not a local group, a selection or predecessor the discloser
+ * refuses, an exchange that requires anchoring (a group message carries member contributions, not one source seal),
+ * or a message awaiting authenticating dependencies.
+ */
+export function* proposeGroupNegotiation(
+  deps: PresentationDeps,
+  groupIpex: GroupIpexOperations,
+  input: GroupNegotiationInput,
+): Operation<GroupIpexBegun> {
+  const { hab, deliver } = input;
+  const sender = hab.pre!;
+  let exn: SerderKERI, nests: Uint8Array | undefined, gvrsn;
+  switch (input.verb) {
+    case "apply":
+      gvrsn = input.options.gvrsn;
+      exn = discloserFor(deps, hab).applyBody(sender, input.options);
+      break;
+    case "offer": {
+      gvrsn = input.options.gvrsn;
+      const offer = yield* discloserFor(deps, hab, input.selection.derive).prepareOfferBody(
+        sender,
+        input.selection,
+        input.options,
+      );
+      ({ exn, nests } = offer);
+      break;
+    }
+    case "agree":
+    case "spurn":
+      exn = yield* discloserFor(deps, hab).replyBody(
+        sender,
+        input.verb,
+        input.priorSaid,
+        input.message ?? "",
+        input.recipient,
+      );
+      break;
+  }
+  if ((exn.sad!.a as { ax?: boolean[] }).ax?.[0] === true) {
+    throw new ValidationError("A group cannot send an exchange that requires anchoring.");
+  }
+  return yield* proposeGroupIpex(groupIpex, { hab, exn, nests, gvrsn: gvrsn ?? undefined, deliver });
+}
+
 /** A completed prepared Grant ready for the elected lead to deliver. */
 export interface PreparedGrantDelivery {
   hab: Hab;

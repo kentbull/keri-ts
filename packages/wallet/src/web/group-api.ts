@@ -38,6 +38,7 @@ import {
   groupIpexStatus,
   groupIssuanceElection,
   groupIssuanceProposals,
+  type GroupNegotiationInput,
   type GroupProposal,
   type GroupProposalNeeds,
   type Hab,
@@ -57,6 +58,7 @@ import {
   proposeGroupInteraction,
   proposeGroupIssuance,
   proposeGroupMailbox,
+  proposeGroupNegotiation,
   proposeGroupPresentation,
   proposeGroupRotation,
   proposeRegistryEvent,
@@ -742,11 +744,17 @@ export interface GroupReceiveOptions extends TimeoutOptions {
   message?: string;
 }
 
-/** What a group presents: the credential view and the Grant's body options. */
-export interface GroupPresentInput {
-  selection: DisclosureSelection;
-  options: Omit<PresentationOptions, "presentationRegistry">;
-}
+/** A group form of `Credentials.present`'s input minus the `hab`: the verb picks the message the group proposes. */
+type WithoutHab<Input> = Input extends { hab: Hab } ? Omit<Input, "hab"> : never;
+
+/**
+ * What a group sends. `grant` presents the selected credential view; `offer`, `apply`, `agree` and `spurn` are the
+ * negotiation messages of the library's `proposeGroupNegotiation`. Every verb is proposed the same way: the other
+ * members approve it and the elected lead delivers it.
+ */
+export type GroupPresentInput =
+  | { verb: "grant"; selection: DisclosureSelection; options: Omit<PresentationOptions, "presentationRegistry"> }
+  | WithoutHab<GroupNegotiationInput>;
 
 /** Inputs of the group form of `credentials.issue`. */
 export interface GroupIssueOptions extends TimeoutOptions {
@@ -906,9 +914,10 @@ export class GroupCredentials {
   }
 
   /**
-   * Present from a group: freeze the Grant body and propose it as a group message. The other members approve it
-   * as a proposal; the elected lead delivers it once every contribution is in. Only `grant`-style selections are
-   * supported (the library's group presentation).
+   * Send from a group: freeze the message `input.verb` names and propose it as a group message. The other members
+   * approve it as a proposal; the elected lead delivers it once every contribution is in.
+   *
+   * @throws ValidationError for a verb a group cannot send; no other message is ever substituted.
    */
   async present(hab: Hab, input: GroupPresentInput, wait: TimeoutOptions = {}): Promise<GroupPresentOutcome> {
     const timeoutMs = wait.timeoutMs ?? WALLET_TIMEOUTS.present;
@@ -916,7 +925,22 @@ export class GroupCredentials {
     const presenter = runtime.operations?.presentation, ipex = runtime.operations?.groupIpex;
     if (!presenter || !ipex) throw new ValidationError("This wallet's runtime has no group presentation owner.");
     return await this.#scope.go(function*(): Operation<GroupPresentOutcome> {
-      const begun = yield* proposeGroupPresentation(presenter.deps, ipex, { hab, ...input });
+      let begun;
+      switch (input.verb) {
+        case "grant": {
+          const { verb: _verb, ...grant } = input;
+          begun = yield* proposeGroupPresentation(presenter.deps, ipex, { hab, ...grant });
+          break;
+        }
+        case "offer":
+        case "apply":
+        case "agree":
+        case "spurn":
+          begun = yield* proposeGroupNegotiation(presenter.deps, ipex, { ...input, hab });
+          break;
+        default:
+          throw new ValidationError(`A group cannot send the verb ${(input as { verb: string }).verb}.`);
+      }
       const waited = yield* waitForGroupIpex(ipex, begun.said, { timeoutMs });
       const { status } = waited;
       if (waited.outcome === "timed-out") return { outcome: "timed-out", said: begun.said, timeoutMs, status };
