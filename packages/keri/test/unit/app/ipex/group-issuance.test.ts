@@ -105,7 +105,7 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       for (const name of names) {
         const bran = `${name}GroupIssuancePasscodeABC`;
         const storeName = `${name}-${crypto.randomUUID()}`;
-        const stores = yield* open(storeName, bran, name === "member" ? dir : undefined);
+        const stores = yield* open(storeName, bran, name === "holder" ? undefined : dir);
         const member = stores.hby.makeHab(name);
         sides.push({ name, storeName, ...stores, member, hab: member } as Side);
       }
@@ -113,8 +113,8 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       yield* ensure(function*() {
         for (const side of sides) {
           yield* side.runtime.close();
-          yield* side.hby.close(side.name !== "member");
-          yield* side.baser.close(side.name !== "member");
+          yield* side.hby.close(side.name === "holder");
+          yield* side.baser.close(side.name === "holder");
         }
       });
       // Each party knows the others' member KELs.
@@ -214,6 +214,26 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       };
       for (const side of sides) countCopies(side);
 
+      // Every store and the runtime close and open again; only what the stores prove survives.
+      const reload = function*(side: Side) {
+        yield* side.runtime.close();
+        yield* side.hby.close();
+        yield* side.baser.close();
+        const reopened = yield* open(side.storeName, `${side.name}GroupIssuancePasscodeABC`, dir);
+        side.hby = reopened.hby;
+        side.baser = reopened.baser;
+        side.runtime = reopened.runtime;
+        side.member = side.hby.habs.get(side.member.pre!)!;
+        side.hab = side.hby.habs.get(side.hab.pre!)!;
+        assertExists(side.hab);
+        side.runtime.ipex!.dhke(side.hab);
+        side.handler = createProtocolHandler(side.runtime, {
+          hostedPrefixes: [side.member.pre!, side.hab.pre!],
+          serviceHab: side.member,
+        });
+        countCopies(side);
+      };
+
       const selection = (side: Side) => ({
         hab: side.hab,
         coordinator: coordinator.said!,
@@ -230,7 +250,7 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       const grant = prepared.grant;
       yield* beginGroupIssuance(ops(lead), { ...selection(lead), grant, proposal: prepared.proposal });
       assertEquals(issuanceStatus(ops(lead), grant).state, "active");
-      const leadHost = yield* host(lead);
+      let leadHost = yield* host(lead);
       const holderHost = yield* host(holder);
 
       // --- the member sees the proposal and consents; nothing is sent until its host runs ---
@@ -247,22 +267,7 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       assertEquals(sentCopies, []);
 
       // --- the member reloads between consent and completion: every store and the runtime close and reopen ---
-      yield* peer.runtime.close();
-      yield* peer.hby.close();
-      yield* peer.baser.close();
-      const reopened = yield* open(peer.storeName, "memberGroupIssuancePasscodeABC", dir);
-      peer.hby = reopened.hby;
-      peer.baser = reopened.baser;
-      peer.runtime = reopened.runtime;
-      peer.member = peer.hby.habs.get(peer.member.pre!)!;
-      peer.hab = peer.hby.habs.get(peer.hab.pre!)!;
-      assertExists(peer.hab);
-      peer.runtime.ipex!.dhke(peer.hab);
-      peer.handler = createProtocolHandler(peer.runtime, {
-        hostedPrefixes: [peer.member.pre!, peer.hab.pre!],
-        serviceHab: peer.member,
-      });
-      countCopies(peer);
+      yield* reload(peer);
       // What the stores prove: the Grant is pending, no operation holds it, and consent is the member's to give.
       const afterReload = issuanceStatus(ops(peer), grant);
       assertEquals(
@@ -293,7 +298,24 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       }, "the registry update proposal to reach the member");
       assertEquals(lead.runtime.acdc!.store.headEvent(rip.said!)!.said, rip.said!, "DH does not approve the update");
       assert(!lead.runtime.exc.complete(grant), "the issuance waits for the member's approval of the update");
+      // The custodian's host stops while the member approves: its stores take the update in, nothing finishes.
+      yield* leadHost.halt();
       assertExists(yield* approvePending(peer.hby, peer.runtime, { said: bup!.said!, registryName: "group-derived" }));
+      for (let polls = 0; lead.runtime.acdc!.store.headEvent(rip.said!)?.ilk !== "bup"; polls++) {
+        if (polls > 1000) throw new Error("timed out waiting for the custodian's registry to accept the update");
+        yield* lead.runtime.protocol.processEscrowsOnce();
+        yield* sleep(20);
+      }
+      assert(!lead.runtime.exc.complete(grant), "the Grant is not finished while the custodian's host is down");
+
+      // --- the custodian reloads with its root retained and the update accepted: it adopts the exchange ---
+      yield* reload(lead);
+      assertEquals(
+        (issuanceStatus(ops(lead), grant) as { phase?: string }).phase,
+        "rootRetained",
+        "the coordinator and custodian are derived from the stores, so the exchange resumes",
+      );
+      leadHost = yield* host(lead);
 
       // --- completion, read from the stores ---
       const done: IssuanceStatus = { state: "done", role: "issuer", phase: "issued" };

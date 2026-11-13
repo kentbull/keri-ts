@@ -162,13 +162,33 @@ Deno.test("a holder that never replies leaves the wait timed-out; abandon is loc
   });
 });
 
-Deno.test("a failed delivery ends the issuance as failed with the transport's reason", async () => {
+Deno.test("a failed delivery is retried with backoff and the issuance goes on once the transport recovers", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
     const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
     s.fail.on = true;
     yield* ops.processOnce();
-    assertEquals(issuanceStatus(ops, grant), { state: "failed", role: "issuer", reason: "transport failed" });
+    assertEquals(issuanceStatus(ops, grant).state, "active", "the first failure does not end the issuance");
+    yield* ops.processOnce();
+    assertEquals(s.log.length, 1, "no new attempt before the backoff has passed");
+    s.fail.on = false;
+    s.clock.skew += 1100;
+    yield* ops.processOnce();
+    assert(text(s.log[1].msg).includes("/ipex/grant"), "the queued Grant is delivered first");
+    assert(s.log.length >= 3 && text(s.log[2].msg).includes("/ipex/dhke"), "then the query");
+    assertEquals(issuanceStatus(ops, grant).state, "active");
+  });
+});
+
+Deno.test("delivery failures last no longer than the Grant deadline: the issuance then reads expired", async () => {
+  await run(function*() {
+    const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
+    const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
+    s.fail.on = true;
+    yield* ops.processOnce();
+    s.clock.skew = pastDeadline(s.issuer, grant);
+    yield* ops.processOnce();
+    assertEquals(issuanceStatus(ops, grant).state, "expired");
   });
 });
 
