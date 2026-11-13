@@ -40,7 +40,12 @@ import { loadIpexHandlers } from "../ipex/ipexing.ts";
 import { ForwardHandler } from "../mailbox/forward-handler.ts";
 import { KEL_PUBLISHER_PACING, KelPublisher, kelPublisherDo } from "../mailbox/kel-publisher.ts";
 import { MailboxDirector } from "../mailbox/mailbox-director.ts";
-import { type MailboxPollBatch, MailboxPoller, type MailboxPollingTimeoutPolicy } from "../mailbox/mailbox-poller.ts";
+import {
+  MAILBOX_POLLER_PACING,
+  type MailboxPollBatch,
+  MailboxPoller,
+  type MailboxPollingTimeoutPolicy,
+} from "../mailbox/mailbox-poller.ts";
 import { mailboxerOptionsForHabery } from "../mailbox/mailboxing.ts";
 import { mailboxTopicForRoute } from "../mailbox/topic-routing.ts";
 import { Counselor } from "../multisig/counseling.ts";
@@ -219,7 +224,7 @@ export interface AgentRuntimeOptions {
   publisherPacing?: Readonly<DoerPacing>;
   /** Tock of the protocol-facing background loops (cues, OOBI, authentication, signals, TEL publication, delegation, group counseling); {@link PROTOCOL_PACING} when absent. */
   protocolPacing?: Readonly<DoerPacing>;
-  /** Tock and sweep interval of the mailbox poller; {@link PROTOCOL_PACING} when absent. */
+  /** Tock and sweep interval of the mailbox poller; {@link MAILBOX_POLLER_PACING} when absent: a sweep every five seconds. */
   pollerPacing?: Readonly<DoerPacing>;
   /** Borrowed legacy registry store; the runtime creates its processors and never closes this store. */
   reger?: Reger;
@@ -571,7 +576,7 @@ export function* createAgentRuntime(
     ownerPacing: options.ownerPacing ?? OWNER_PACING,
     publisherPacing: options.publisherPacing ?? KEL_PUBLISHER_PACING,
     protocolPacing: options.protocolPacing ?? PROTOCOL_PACING,
-    pollerPacing: options.pollerPacing ?? PROTOCOL_PACING,
+    pollerPacing: options.pollerPacing ?? MAILBOX_POLLER_PACING,
     querying,
     replyStreams,
     vdr,
