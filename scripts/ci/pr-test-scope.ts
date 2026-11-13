@@ -35,8 +35,10 @@ function targets<Owner extends string>(value: unknown, owners: readonly Owner[])
  * another, and the shards are balanced to finish together (see docs/reference/PR_TEST_SCOPE.md).
  */
 export const unitShards: Record<string, readonly UnitTarget[]> = {
-  "keri-app": ["app-fast-parallel", "app-fast-isolated"],
-  "keri-runtime": ["runtime-medium", "runtime-slow", "app-stateful-a", "app-stateful-b"],
+  "keri-app-a": ["app-fast-parallel-a"],
+  "keri-app-b": ["app-fast-parallel-b", "app-fast-isolated"],
+  "keri-runtime": ["runtime-medium", "runtime-slow", "app-stateful-b"],
+  "keri-stateful": ["app-stateful-a"],
   tufa: ["tufa"],
   small: [
     "db-fast",
