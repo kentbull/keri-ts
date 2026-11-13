@@ -200,7 +200,7 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       ]]);
       const begun = approveGroupIssuanceExchange(side.runtime.operations!.issuance, grant, coordinator.said!);
       assertEquals(
-        side.runtime.operations!.issuance.live.get(grant)!.group!.xid,
+        side.runtime.operations!.issuance.liveOf(grant)!.group!.xid,
         begun.xid,
         "the derived transaction id is the one DH approved",
       );

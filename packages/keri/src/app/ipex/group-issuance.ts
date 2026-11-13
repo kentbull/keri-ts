@@ -92,6 +92,8 @@ import {
   type IssuanceOperations,
   type IssuanceRole,
   type LiveIssuance,
+  partyComplete,
+  partyKey,
 } from "./issuance.ts";
 
 /** Milliseconds between scans of the stored wrappers for the final proof. */
@@ -433,7 +435,7 @@ export function* approveGroupIssuance(
   options: GroupApprovalOptions = {},
 ): Operation<IssuanceBegun> {
   const { deps, discloser } = ops;
-  if (ops.live.has(grantSaid) || deps.exc.complete(grantSaid)) {
+  if (ops.live.has(partyKey(grantSaid, "issuer")) || partyComplete(deps, grantSaid, "issuer")) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const { child } = yield* proposalOf(ops, grantSaid, options.proposal);
@@ -541,7 +543,7 @@ export function approveGroupIssuanceExchange(
   coordinator?: string,
 ): IssuanceBegun {
   const { deps } = ops;
-  if (ops.live.has(said) || deps.exc.complete(said)) {
+  if (ops.live.has(partyKey(said, "holder")) || partyComplete(deps, said, "holder")) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const { grant, nodes } = pendingGrant(deps, said);
@@ -563,7 +565,7 @@ export function* followGroupIssuanceProof(
   options: GroupFollowOptions = {},
 ): Operation<IssuanceBegun> {
   const { deps } = ops;
-  if (ops.live.has(said) || deps.exc.complete(said)) {
+  if (ops.live.has(partyKey(said, "issuer")) || partyComplete(deps, said, "issuer")) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const { grant, nodes } = pendingGrant(deps, said);
@@ -851,7 +853,10 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
   const broadcast = function*(msg: Uint8Array) {
     for (const peer of party.others()) yield* send(peer, msg);
   };
-  if (deps.exc.complete(grant)) return true;
+  // The accepted Grant is one fact of the Habery. A holder in the issuer's own Habery is not finished by the issuer
+  // finishing it: its key exchange completes, and its proof goes to its members, in its own steps.
+  const issuerHere = op.role === "holder" && deps.hby.habs.has(g.grant.pre!);
+  if (deps.exc.complete(grant) && (!issuerHere || g.mode === "resumed")) return true;
   if (op.expires === null) {
     const deadline = deps.exc.exchangeDeadline(g.grant);
     if (deadline) {
