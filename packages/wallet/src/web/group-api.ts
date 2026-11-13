@@ -879,7 +879,7 @@ export class GroupCredentials {
    */
   async unblind(grant: string, hab: Hab, options: GroupUnblindOptions): Promise<UnblindOutcome> {
     const { states, timeoutMs = WALLET_TIMEOUTS.unblind, proposer } = options;
-    const { hby, runtime } = this.#scope.parts;
+    const { runtime } = this.#scope.parts;
     const ops = runtime.operations?.unblinding;
     if (!ops) throw new ValidationError("This wallet's runtime has no Unblind owner.");
     const input = runtime.exc.retainedInput(grant)?.serder;
