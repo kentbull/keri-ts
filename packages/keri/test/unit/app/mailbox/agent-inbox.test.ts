@@ -1,5 +1,5 @@
 /** An agent keeps a third party's raw mail for the identifiers that authorized it as `agent`, and nothing else. */
-import { collectPayload, concatBytes, Diger, framePayload, parseBytes, Prefixer, Vrsn_2_0 } from "cesr-ts";
+import { collectPayload, concatBytes, Diger, framePayload, parseBytes, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
@@ -213,5 +213,34 @@ Deno.test("rejected raw message is not kept", async () => {
     assertEquals(arrival.decision?.kind, "reject");
     assertEquals(arrival.kept, 0);
     assertEquals(stored(fixture, member.pre, "/relay"), []);
+  });
+});
+
+Deno.test("an arrival the agent could not decode is not kept for pickup", async () => {
+  await inboxScenario(function*(fixture) {
+    const { member } = fixture;
+    // A prefix the agent has never seen: its rotation is escrowed out of order, from its prefix, sn and SAID alone.
+    const stranger = fixture.edge.makeHab("stranger");
+    stranger.rotate();
+    const rotation = [...stranger.db.replay(stranger.pre)!][1];
+    const [frame] = yield* call(() => parseBytes(rotation));
+    const junk = new SerderKERI({ sad: { ...frame.body.ked!, d: "", k: ["junk"] }, makify: true });
+    const poisoned = concatBytes(junk.raw, rotation.slice(frame.body.raw.length));
+    const [arrival] = yield* arrive(fixture, poisoned);
+    assertEquals(arrival.decision?.kind, "escrow");
+    assertEquals(arrival.decision?.kind === "escrow" && arrival.decision.reason, "ooo");
+    assertEquals(arrival.kept, 0);
+    assertEquals(stored(fixture, member.pre, "/replay"), []);
+  });
+});
+
+Deno.test("a raw exn whose route cannot key a mailbox topic is not kept", async () => {
+  await inboxScenario(function*(fixture) {
+    const { member, third } = fixture;
+    const route = `/${"r".repeat(2000)}`;
+    const wire = third.endorse(exchange(route, { value: "long" }, { sender: third.pre, recipient: member.pre })[0]);
+    const [arrival] = yield* arrive(fixture, wire);
+    assertEquals([arrival.decision?.kind, arrival.kept], ["accept", 0]);
+    assertEquals(stored(fixture, member.pre, route), []);
   });
 });

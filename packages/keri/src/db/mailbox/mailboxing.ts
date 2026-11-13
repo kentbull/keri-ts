@@ -16,13 +16,26 @@
 import { Diger, MtrDex } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { DatabaseNotOpenError } from "../../core/errors.ts";
-import type { StoreIdentity } from "../core/dber.ts";
+import { MAX_KEY_BYTES, type StoreIdentity } from "../core/dber.ts";
+import { onKey } from "../core/keys.ts";
 import type { LMDBerOptions } from "../core/lmdber.ts";
 import { type StoreFamily, StoreOwner } from "../core/store-owner.ts";
 import { CesrOnSuber, Suber } from "../subing.ts";
 
 /** Accepted topic key shapes for the mailbox ordering store. */
 type MailboxKeys = string | Uint8Array | Iterable<string | Uint8Array>;
+
+/**
+ * Whether `topic` can index a stored message: its `.tpcs` row key, `<topic>.<32 hex ordinal>`, fits the store's key
+ * limit (ADR-0015). A longer topic makes {@link Mailboxer.storeMsg} fail with `DatabaseKeyError`, a store fault, so a
+ * caller holding a topic another party chose checks it here before storing.
+ *
+ * @param topic Complete mailbox topic key, as `mailboxTopicKey` builds it.
+ * @returns True when a message can be stored under the topic.
+ */
+export function storableTopic(topic: string): boolean {
+  return onKey(topic, 0).length <= MAX_KEY_BYTES;
+}
 
 /**
  * Options for opening the dedicated mailbox environment.

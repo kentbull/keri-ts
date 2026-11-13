@@ -354,6 +354,30 @@ Deno.test("Poster with an unresolved relay fails with RelayUnresolvedError and s
   });
 });
 
+Deno.test("a relay whose location the HTTP client refuses reads as unresolved", async () => {
+  await withHabery(function*(hby) {
+    const relay = relayOf(hby, false);
+    // Accepted `/loc/scheme` admits a URL with credentials; no messenger can use it.
+    hby.db.locs.pin([relay.aid, "http"], { url: "http://user:secret@relay.test/" });
+    const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+    authorize(hby, sender.pre, relay);
+    const received: Received[] = [];
+    const postman = new Poster(hby, null, null, recordingHttp(received), systemClock, relay);
+    try {
+      assertEquals(relayEndpoint(hby, relay), null);
+      const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
+      const [outcome] = yield* deliverAll(postman, [
+        postman.send({ src: sender.pre, dest: recipient.pre, topic: "/credential", msg }, { notify: true }),
+      ]);
+      assert(outcome.kin === "failed");
+      assertInstanceOf(outcome.error, RelayUnresolvedError);
+      assertEquals(received, []);
+    } finally {
+      yield* postman.close();
+    }
+  });
+});
+
 /** The mailbox-admin collaborators of a composed runtime, as the wallet passes them. */
 function adminDeps(runtime: AgentRuntime): MailboxAdminDeps {
   return {

@@ -204,7 +204,11 @@ reported at Poster with routing context and the original error, without raw sour
 bytes. Cancellation/close report unconsumed failures once. No unused failure backlog,
 retry/discard API or automatic retry remains. A reported source has no owner-retained
 recovery history. Pending work depends on evts and active execution, not outcomes.
-Unexpected construction/storage/parser/cleanup errors publish/report then propagate.
+Unexpected construction/storage/cleanup errors publish/report then propagate. What
+the event itself causes fails only that event or target: its bytes are decoded once
+(`ParserError` -> `UnsendableMessageError`), a forwarded ordinary event must be one
+message, `PeerVersionError`, and a location no messenger can use (`messengerUrl`:
+refused by `isRequestableHttpUrl`, or TCP without a port) reads as no location.
 No final-packet cache, manual reply cursor or cross-batch fairness remains.
 The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) defines
 current behavior; Git and PR checks retain implementation evidence.
@@ -420,7 +424,12 @@ did.json opens no replay; broader lazy generation/export is deferred.
 
 Mailboxer lives above Habery. fwd stores the inner message under recipient
 authorization; reading requires current requester proof/threshold, not correlation
-alone. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
+alone. `ForwardHandler` decides the child once: verify refuses a `/fwd` whose recipient
+is not a prefix, whose topic is empty or not `storableTopic`, or whose child does not
+parse as exactly one complete message, so nothing is stored, relayed or ingested.
+`keepRawArrival` keeps only what the agent decoded (accept, escrow but not a KEL
+`ooo`/`duplicitous`, KRAM pending/missing, unverified reply, a receipt with no
+decision) and a storable topic. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
 HTTP(S), alongside all current KEL witnesses. TCP-only providers do not suppress
 witness polling. A shared provider AID has one worker and cursor even if authorized
 as both mailbox and witness; locally controlled providers use ordinary HTTP intake.
