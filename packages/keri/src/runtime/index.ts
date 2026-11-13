@@ -240,6 +240,7 @@ export {
   type ManagerReplayArgs,
   type ManagerRotateArgs,
   type ManagerSignArgs,
+  SignerNotHeldError,
   type SigningPath,
 } from "../app/identity/keeping.ts";
 export {
@@ -449,6 +450,7 @@ export {
   Signal,
   Signaler,
 } from "../app/notifications/signaling.ts";
+export { type SignerCondition, SignerConditions } from "../app/runtime/signer-conditions.ts";
 export { RawRecord } from "../core/records.ts";
 
 export {

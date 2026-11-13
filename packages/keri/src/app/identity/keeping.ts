@@ -441,6 +441,21 @@ function emptyLot(
 }
 
 /**
+ * No private key for `pub`: neither held (`Manager.hold`) nor stored in the Keeper. A custodial host releases
+ * its signers on purpose, so a background loop that needs one treats this as a condition to wait out, not as a
+ * failure of the runtime. The message is the one the Keeper has always used.
+ */
+export class SignerNotHeldError extends Error {
+  /** The qualified public key whose private key is missing. */
+  readonly pub: string;
+  constructor(pub: string) {
+    super(`Missing prikey in db for pubkey=${pub}`);
+    this.name = "SignerNotHeldError";
+    this.pub = pub;
+  }
+}
+
+/**
  * Key-management coordinator backed by `Keeper` state.
  *
  * Responsibilities:
@@ -472,6 +487,8 @@ export class Manager {
    * Never written to the Keeper and never consulted by `Keeper` rows.
    */
   private readonly held = new Map<string, Signer>();
+  /** Told after `hold()` borrows signers; a loop that waited for a missing signer resumes on it. */
+  private readonly holdListeners = new Set<() => void>();
 
   constructor(args: ManagerArgs) {
     const {
@@ -756,6 +773,17 @@ export class Manager {
       batch.set(signer.verfer.qb64, signer);
     }
     for (const [pub, signer] of batch) this.held.set(pub, signer);
+    for (const listener of [...this.holdListeners]) listener();
+  }
+
+  /**
+   * Be told after each `hold()`, so a background loop whose signer was released can resume at once.
+   *
+   * @returns A function that stops the notifications.
+   */
+  onHold(listener: () => void): () => void {
+    this.holdListeners.add(listener);
+    return () => this.holdListeners.delete(listener);
   }
 
   /**
@@ -779,7 +807,7 @@ export class Manager {
     if (held) return held;
     const signer = this.ks.pris.get(pub, this.signerDecrypter());
     if (!signer) {
-      throw new Error(`Missing prikey in db for pubkey=${pub}`);
+      throw new SignerNotHeldError(pub);
     }
     return signer;
   }

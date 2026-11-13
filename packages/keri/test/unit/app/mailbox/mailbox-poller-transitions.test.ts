@@ -15,8 +15,8 @@ Deno.test("nextPoll: a served poll resets the backoff and polls at once", () => 
   assertEquals(nextPoll({ backoffMs: 8_000 }, "served"), { state: { backoffMs: 0 }, action: { kind: "poll" } });
 });
 
-Deno.test("nextPoll: a refused, silent or unreachable mailbox doubles the wait up to the cap", () => {
-  for (const outcome of ["refused", "no-response", "unreachable"] as PollOutcome[]) {
+Deno.test("nextPoll: a refused, silent, unreachable or unsignable poll doubles the wait up to the cap", () => {
+  for (const outcome of ["refused", "no-response", "unreachable", "unsignable"] as PollOutcome[]) {
     let state: PollState = { backoffMs: 0 };
     const waits: number[] = [];
     for (let poll = 0; poll < 8; poll++) {
