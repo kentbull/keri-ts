@@ -189,15 +189,14 @@ Deno.test("delivery failures last no longer than the Grant deadline: the issuanc
   });
 });
 
-Deno.test("begin refuses another identifier's Grant and a repeat; status of an unknown Grant is refused", async () => {
+Deno.test("begin derives the issuer from the Grant and refuses a repeat or another store's Grant; status of an unknown Grant is refused", async () => {
   await run(function*() {
     const s = yield* scenario(2), ops = s.owner(), reg = yield* s.registry(0);
-    const [a, b] = s.issuer.habs;
     const prepared = yield* prepareIssuanceGrant(ops, {
       credential: reg.credential(),
       options: grantOptions(s),
     });
-    yield* refuses(() => beginIssuance(ops, prepared.grant), "exact unanchored pending");
+    yield* refuses(() => beginIssuance(s.holderOwner(), prepared.grant), "exact unanchored pending");
     yield* beginIssuance(ops, prepared.grant);
     yield* refuses(() => beginIssuance(ops, prepared.grant), "already begun");
     assertThrows(() => issuanceStatus(ops, "Eunknown"), ValidationError, "No issuance");
