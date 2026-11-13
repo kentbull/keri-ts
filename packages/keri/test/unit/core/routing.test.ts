@@ -95,6 +95,14 @@ for (const route of ["/end/role", "/loc/scheme"] as const) {
           const pointer = () => route === "/end/role" ? hby.db.eans.get(keys) : hby.db.lans.get(locKeys);
           const projection = () => route === "/end/role" ? hby.db.ends.get(keys) : hby.db.locs.get(locKeys);
           assertEquals(process(prior).kind, "accept");
+          // An accepted /end/role reply announces the saved role after its transaction commits.
+          assertEquals(
+            cues.toArray(),
+            route === "/end/role"
+              ? [{ kin: "endRoleSaved", cid: hab.pre, role: Roles.mailbox, eid: hab.pre, allowed: true }]
+              : [],
+          );
+          cues.clear();
           const previousProjection = projection();
           const previousSignatures = [...hby.db.ssgs.getTopItemIter([prior.said!], { topive: true })];
           const previousCigars = hby.db.scgs.get([prior.said!]).map(([verfer, cigar]) => [verfer.qb64, cigar.qb64]);
@@ -137,7 +145,20 @@ for (const route of ["/end/role", "/loc/scheme"] as const) {
           );
           assertEquals(hby.db.rpys.get([prior.said!]), null);
           assertEquals(hby.db.rpys.get([incoming.said!])?.said, incoming.said);
-          assertEquals(cues.toArray().map((cue) => cue.kin), transferable ? ["query"] : []);
+          // A refused replacement published nothing; the accepted one publishes its queries, then the saved role.
+          assertEquals(cues.toArray().map((cue) => cue.kin), [
+            ...(transferable ? ["query"] : []),
+            ...(route === "/end/role" ? ["endRoleSaved"] : []),
+          ]);
+          if (route === "/end/role") {
+            assertEquals(cues.toArray().at(-1), {
+              kin: "endRoleSaved",
+              cid: hab.pre,
+              role: Roles.mailbox,
+              eid: hab.pre,
+              allowed: false,
+            });
+          }
           cues.clear();
         } finally {
           cues.clear();

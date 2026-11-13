@@ -3,20 +3,22 @@ import type { SerderKERI } from "cesr-ts";
 import type { Baser } from "../../db/basing.ts";
 import { timestampFromMicros, timestampMicros } from "../../time/mod.ts";
 import { MsgCacheRecord, type MsgCacheRecordShape, TxnMsgCacheRecord } from "../records.ts";
+import { readDater, readDiger } from "../wire-fields.ts";
 import type { KramPolicy } from "./kram-policy.ts";
 
 /** At least one authenticator has verified; multi-key threshold completion is separate. */
 export type KramTimeAuthentication = { kind: "seal" | "single" } | { kind: "multi"; complete: boolean };
 /** Why replay or timeliness policy refused a message. */
-export type KramRefusalReason = "timestamp" | "replay" | "timeliness" | "unknownThread" | "lifetime";
+export type KramRefusalReason = "timestamp" | "exchangeId" | "replay" | "timeliness" | "unknownThread" | "lifetime";
 /** Refusals KRAM decides only after a current-key signature or anchored seal verified, so the sender is authenticated. */
 export type KramLateReason = Extract<KramRefusalReason, "timeliness" | "lifetime" | "unknownThread">;
 
 /**
  * Whether a drop reason means an authenticated message arrived too late or outside a live exchange.
  *
- * `timestamp`, `replay` and `authentication` are reachable by anyone who can post bytes (see kram-staging.ts),
- * so callers that report or signal a refusal to anyone beyond the log must restrict themselves to these three.
+ * `timestamp`, `exchangeId`, `replay` and `authentication` are reachable by anyone who can post bytes (see
+ * kram-staging.ts), so callers that report or signal a refusal to anyone beyond the log must restrict themselves to
+ * these.
  */
 export function isKramLateReason(reason: unknown): reason is KramLateReason {
   return reason === "timeliness" || reason === "lifetime" || reason === "unknownThread";
@@ -71,6 +73,11 @@ export function kramExchangeId(body: SerderKERI): string {
 /**
  * Inspect frozen message/xid routing and strict completed-message replay rules.
  * Only an incomplete multi-signature message retains partial state.
+ *
+ * The stamp and exchange id are remote-authored and become durable values: an exchange message's stamp can be stored
+ * as its thread opener (a Dater, which needs the fixed-width form), and the exchange id is a cache key part (a value
+ * that is not one qualified digest, such as one containing `.`, would make a key the pruner cannot split). Both are
+ * refused here, before any store write.
  */
 export function inspectKramReplay(db: Baser, body: SerderKERI): KramReplayInspection | KramTimeRefusal {
   const mdt = timestampMicros(body.stamp);
@@ -79,6 +86,8 @@ export function inspectKramReplay(db: Baser, body: SerderKERI): KramReplayInspec
   if (!sender || !said) throw new Error("KRAM replay inspection requires sender and message SAID");
   const key = [sender, said] as const;
   const xid = kramExchangeId(body);
+  if (xid && readDiger(xid)?.qb64 !== xid) return { kind: "drop", reason: "exchangeId" };
+  if (xid && !readDater(body.stamp)) return { kind: "drop", reason: "timestamp" };
   const cacheKey = xid ? [sender, xid, said] : key;
   const cache = xid ? db.tmsc.get(cacheKey) : db.msgc.get(cacheKey);
   const partial = db.pmkm.get(key) !== null;

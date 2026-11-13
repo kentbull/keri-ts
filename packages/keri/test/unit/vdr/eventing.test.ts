@@ -1651,3 +1651,86 @@ Deno.test("backed TEL observer rejects malformed thresholds instead of truncatin
     }
   });
 });
+
+Deno.test("registry and credential TSNs whose dt does not encode as a Dater are refused, not thrown", async () => {
+  await run(function*() {
+    const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = sender.makeHab("issuer");
+      const tvy = new Tevery({ db: sender.db, reger: source });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const credential = makeCredential(issuer.pre), iss = issue(credential.said!, vcp.pre!);
+      assertEquals(tvy.processEvent({ serder: iss, ...anchorTel(issuer, iss) }).kind, "accept");
+      const cues = new Deck<AgentCue>();
+      // The receiver lacks the issuer's KEL, so each notice goes straight to dependency escrow, which stores a Dater.
+      const owned = new Tevery({ db: hby.db, reger, rvy: new Revery(hby.db, { cues }) });
+      const est = sender.db.getEvtSerder(issuer.pre, sender.db.kels.getLast(issuer.pre, 0)!)!;
+      const notice = (route: string, data: Record<string, unknown>) => {
+        // A valid RFC3339 timestamp without the fixed-width fraction and offset Dater requires.
+        const serder = reply(route, data, { pre: issuer.pre, stamp: "2026-10-13T00:00:00Z" });
+        return {
+          serder,
+          diger: new Diger({ qb64: serder.said! }),
+          route: serder.route!,
+          aid: issuer.pre,
+          cigars: [],
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: issuer.pre }),
+              est.sner!,
+              new Diger({ qb64: est.said! }),
+              issuer.sign(serder.raw, true),
+            ),
+          ],
+        };
+      };
+      const registry = notice(`/tsn/registry/${issuer.pre}`, tvy.tevers.get(vcp.pre!)!.state().asDict());
+      assertEquals(owned.processReplyRegistryTxnState(registry).kind, "unverified");
+      const vcState = tvy.tevers.get(vcp.pre!)!.vcState(credential.said!)!.asDict();
+      assertEquals(
+        owned.processReplyCredentialTxnState(notice(`/tsn/credential/${issuer.pre}`, vcState)).kind,
+        "unverified",
+      );
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0, "a refused notice acquires no dependency escrow");
+      assertEquals(cues.length, 0);
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+      yield* source.close(true);
+      yield* sender.close(true);
+    }
+  });
+});
+
+Deno.test("a TEL event that does not verify or has a malformed s or ri is rejected before any escrow", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const tvy = new Tevery({ db: hby.db, reger });
+      // The registry inception is never processed, so an acceptable issuance would wait in out-of-order escrow.
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      const credential = makeCredential(issuer.pre), iss = issue(credential.said!, vcp.pre!);
+      const anchor = { seqner: ordinal(1), saider: new Diger({ qb64: issuer.kever!.said }) };
+      // A body whose `d` names another event: it parses, but its SAID does not verify.
+      const text = new TextDecoder().decode(iss.raw).replace(`"d":"${iss.said}"`, `"d":"${vcp.said}"`);
+      const forged = new SerderKERI({ raw: new TextEncoder().encode(text), verify: false });
+      const remake = (fields: Record<string, unknown>) =>
+        new SerderKERI({ sad: { ...iss.sad!, ...fields, d: "" }, makify: true });
+      for (const serder of [forged, remake({ s: "zz" }), remake({ s: "f".repeat(40) }), remake({ ri: "bad.prefix" })]) {
+        assertEquals(tvy.processEvent({ serder, ...anchor }).kind, "reject");
+      }
+      assertEquals([...reger.oots.getTopItemIter()].length, 0, "a refused event acquires no escrow row");
+      tvy.processEscrows();
+      assertEquals(tvy.processEvent({ serder: iss, ...anchor }).kind, "escrow", "the genuine event is still escrowed");
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});

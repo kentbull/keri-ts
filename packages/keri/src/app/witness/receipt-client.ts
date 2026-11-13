@@ -12,6 +12,7 @@ import { buildCesrRequest, CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE } fr
 import type { HttpClient, HttpStreamResponse } from "../transport/http-client.ts";
 import { HTTPMessenger } from "../transport/http-messenger.ts";
 import { requireTcpDialer } from "../transport/tcp-dialer.ts";
+import { TransportError } from "../transport/transport-error.ts";
 import { inspectReceiptMessage } from "./receipt-messages.ts";
 
 const WitnessReceiptPollAttempts = 20;
@@ -89,7 +90,14 @@ function preferredWitnessTransportUrl(
   return witnessHttpUrl(hab, witness) ?? witnessTcpUrl(hab, witness);
 }
 
+/** Terminal state of one witness delivery; `unreachable` carries only failures a remote party can cause. */
+export type WitnessDelivery =
+  | { kind: "delivered" }
+  | { kind: "unreachable"; witness: string; error: Error };
+
 /**
+ * Deliver one message to a witness, reporting remote failure as data.
+ *
  * Send via HTTP first; an explicit protocol processor processes same-socket TCP replies.
  * Without a protocol processor TCP reports local transmission only. Actual socket/parser
  * cleanup finishes before this borrowed protocol processor can be released.
@@ -101,7 +109,54 @@ function preferredWitnessTransportUrl(
  * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
  * @param protocol Optional same-socket reply processor; null selects transmit-only TCP.
  * @param auth Optional HTTP Authorization header value.
- * @throws Missing endpoint, peer refusal, transport/parser or cleanup failures propagate.
+ * @returns `unreachable` when the witness advertises no endpoint, refuses over HTTP, or the connection fails
+ * (`TransportError`); the caller decides whether to retry later. Parser, storage, programmer and cleanup
+ * failures still throw.
+ */
+export function* deliverWitnessMessage(
+  hab: Hab,
+  witness: string,
+  bytes: Uint8Array,
+  http: HttpClient,
+  clock: RuntimeClock,
+  protocol: ProtocolProcessor | null,
+  auth?: string,
+): Operation<WitnessDelivery> {
+  const url = preferredWitnessTransportUrl(hab, witness);
+  if (!url) {
+    return {
+      kind: "unreachable",
+      witness,
+      error: new ValidationError(`Unable to find a valid endpoint for witness ${witness}.`),
+    };
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "tcp:") {
+      yield* requireTcpDialer(http).messenger(url, clock, protocol).send(bytes, {
+        replies: Boolean(protocol),
+        local: true,
+      });
+      return { kind: "delivered" };
+    }
+
+    const outcome = yield* new HTTPMessenger(url, http, {
+      destination: witness,
+      headers: auth ? { Authorization: auth } : undefined,
+    }).send(bytes);
+    if (outcome.kind === "refuse") return { kind: "unreachable", witness, error: outcome.error };
+    return { kind: "delivered" };
+  } catch (error) {
+    if (!(error instanceof TransportError)) throw error;
+    return { kind: "unreachable", witness, error };
+  }
+}
+
+/**
+ * Send one message to a witness for callers that require delivery.
+ *
+ * @throws The delivery's remote failure (missing endpoint, peer refusal, transport) and any local failure.
  */
 export function* sendWitnessMessage(
   hab: Hab,
@@ -112,27 +167,8 @@ export function* sendWitnessMessage(
   protocol: ProtocolProcessor | null,
   auth?: string,
 ): Operation<void> {
-  const url = preferredWitnessTransportUrl(hab, witness);
-  if (!url) {
-    throw new ValidationError(
-      `Unable to find a valid endpoint for witness ${witness}.`,
-    );
-  }
-
-  const parsed = new URL(url);
-  if (parsed.protocol === "tcp:") {
-    yield* requireTcpDialer(http).messenger(url, clock, protocol).send(bytes, {
-      replies: Boolean(protocol),
-      local: true,
-    });
-    return;
-  }
-
-  const outcome = yield* new HTTPMessenger(url, http, {
-    destination: witness,
-    headers: auth ? { Authorization: auth } : undefined,
-  }).send(bytes);
-  if (outcome.kind === "refuse") throw outcome.error;
+  const delivery = yield* deliverWitnessMessage(hab, witness, bytes, http, clock, protocol, auth);
+  if (delivery.kind === "unreachable") throw delivery.error;
 }
 
 function isKeripyContentTypeRejection(

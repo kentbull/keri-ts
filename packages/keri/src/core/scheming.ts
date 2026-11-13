@@ -119,14 +119,18 @@ function parseSchemaJson(raw: Uint8Array): JsonObject {
   return parsed;
 }
 
+/**
+ * Decode credential data for validation. The bytes are a remote credential's body, which need not be JSON (a CBOR or
+ * MGPK ACDC); data that does not decode fails validation as a `ValidationError`, like KERIpy's `json.loads` failure.
+ */
 function parseSchemaData(raw: Uint8Array | string | unknown): unknown {
-  if (raw instanceof Uint8Array) {
-    return JSON.parse(new TextDecoder().decode(raw));
+  if (!(raw instanceof Uint8Array) && typeof raw !== "string") return raw;
+  try {
+    return JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new ValidationError(`Credential data is not JSON: ${error.message}`);
   }
-  if (typeof raw === "string") {
-    return JSON.parse(raw);
-  }
-  return raw;
 }
 
 function verifySchemaSaid(sed: JsonObject, kind: Kind): Saider {

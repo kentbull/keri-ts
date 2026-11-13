@@ -5,6 +5,7 @@ import {
   schemaCompilationCount,
   validateSchema,
 } from "../../../src/acdc/scheming.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import type { Baser } from "../../../src/db/basing.ts";
 
@@ -55,6 +56,14 @@ Deno.test("Schemer verifies payloads against the schema document", () => {
     Error,
     "Credential failed schema validation",
   );
+});
+
+Deno.test("credential bytes that are not JSON fail schema validation as a validation error", () => {
+  const schemer = new Schemer({ sed: schemaSed() });
+  // A remote CBOR or MGPK credential body: verify must refuse it, never throw the JSON parser's SyntaxError.
+  for (const raw of [new Uint8Array([0xa1, 0x61, 0x64, 0x60]), "not json"]) {
+    assertThrows(() => schemer.verify(raw), ValidationError, "Credential data is not JSON");
+  }
 });
 
 Deno.test("v2 schema validation applies the 71438328 profile and only local static resources", () => {

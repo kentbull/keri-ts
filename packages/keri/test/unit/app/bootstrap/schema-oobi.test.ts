@@ -43,6 +43,19 @@ Deno.test("schema reference parsing supports bare, sad, oobi, and did forms", ()
   });
 });
 
+Deno.test("a remote schema reference that is not a URL names no cached schema instead of throwing", async () => {
+  // `http://` passes the http prefix test but does not parse; a credential's `s` is remote-authored.
+  assertEquals(parseSchemaReference("http://"), { kind: "oobi", url: "http://" });
+  await run(function*(): Operation<void> {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      assertEquals(resolveCachedSchema(hby, "http://"), null);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Oobiery resolves application/schema+json data OOBIs", async () => {
   await run(function*(): Operation<void> {
     const hby = yield* createHabery({

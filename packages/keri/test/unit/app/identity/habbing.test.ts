@@ -32,7 +32,7 @@ import { type Poster, type PosterEvent, type PosterMsg } from "../../../../src/a
 import { introduce } from "../../../../src/app/delivery/introducing.ts";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../../src/app/identity/delegating.ts";
-import { eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../../src/app/identity/habbing.ts";
+import { eventPayloadMessage, eventReplayMessage, type Habery, SIGNER } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
@@ -573,6 +573,126 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
   } finally {
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+function delegationFixture(hby: Habery) {
+  const opts = { transferable: true, icount: 1, isith: "1", ncount: 1, nsith: "1", toad: 0 };
+  const delegator = hby.makeHab("delegator", undefined, opts);
+  const proxy = hby.makeHab("proxy", undefined, opts);
+  return { delegator, proxy, opts };
+}
+
+Deno.test("a delegator that cannot take the request does not end the delegating loop and the workflow is retained", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `delegator-down-${crypto.randomUUID()}`, temp: true });
+    try {
+      const { delegator, proxy, opts } = delegationFixture(hby);
+      const delegate = hby.makeHab("delegate", undefined, { ...opts, delpre: delegator.pre });
+      let delegatorDown = true;
+      const postman = {
+        send(evt: PosterMsg) {
+          return { ...evt, kin: "msg" };
+        },
+        *wait(evt: PosterEvent) {
+          return delegatorDown
+            ? {
+              kin: "failed",
+              evt,
+              deliveries: [],
+              error: new ValidationError(`No end roles for ${evt.dest} to send raw CESR payload.`),
+            }
+            : { kin: "sent", evt, deliveries: ["mock"] };
+        },
+      } as unknown as Poster;
+      const coordinator = new Anchorer(
+        hby,
+        postman,
+        { enqueue() {} },
+        null,
+        new NodeHttpClient(),
+        systemClock,
+      );
+      coordinator.beginLatest(delegate.pre, 0, { communicationHab: proxy });
+
+      for (let pass = 0; pass < 2; pass++) {
+        const kept = yield* coordinator.processAllOnce();
+        assertEquals(kept.map((r) => r.kind), ["keep"]);
+        assertEquals(hby.db.dpwe.cnt(), 1);
+        assertEquals(hby.db.dune.cnt(), 0);
+      }
+      delegatorDown = false;
+      const advanced = yield* coordinator.processAllOnce();
+      // The same pass then finds the delegator's approval still unanchored and keeps the dune row.
+      assertEquals(advanced.map((r) => r.kind), ["advance", "keep"]);
+      assertEquals(hby.db.dpwe.cnt(), 0);
+      assertEquals(hby.db.dune.cnt(), 1);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a delegate witness that refuses or is unreachable does not end the delegating loop and the publication is retained", async () => {
+  let status = 503;
+  const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, () => new Response("", { status }));
+  const closed = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  const closedPort = (closed.addr as Deno.NetAddr).port;
+  closed.close();
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name: `witness-down-${crypto.randomUUID()}`, temp: true });
+      try {
+        const { delegator, proxy, opts } = delegationFixture(hby);
+        const witness = hby.makeHab("publication-witness", undefined, { transferable: false });
+        const witnessed = hby.makeHab("witnessed-delegate", undefined, {
+          ...opts,
+          delpre: delegator.pre,
+          wits: [witness.pre],
+          toad: 1,
+        });
+        const event = witnessed.kever!.serder;
+        hby.db.wigs.put(dgKey(witnessed.pre, event.said!), witness.sign(event.raw, true));
+        delegator.interact({ data: [{ i: witnessed.pre, s: "0", d: event.said }] });
+        const postman = {
+          send(evt: PosterMsg) {
+            return { ...evt, kin: "msg" };
+          },
+          *wait(evt: PosterEvent) {
+            return { kin: "sent", evt, deliveries: ["mock"] };
+          },
+        } as unknown as Poster;
+        const coordinator = new Anchorer(hby, postman, { enqueue() {} }, null, new NodeHttpClient(), systemClock);
+        coordinator.beginLatest(witnessed.pre, 0, { communicationHab: proxy });
+        hby.db.dpwe.rem([witnessed.pre, "0"]);
+        hby.db.dune.pin([witnessed.pre, "0"], event);
+
+        const locate = (port: number) => hby.db.locs.pin([witness.pre, "http"], { url: `http://127.0.0.1:${port}` });
+        for (const port of [(server.addr as Deno.NetAddr).port, closedPort]) {
+          locate(port);
+          const kept = yield* coordinator.processAllOnce();
+          assertEquals(kept.map((r) => r.kind), ["keep"]);
+          assertEquals(hby.db.dune.cnt(), 1);
+          assertEquals(hby.db.dpub.cnt(), 0);
+        }
+        // A witness with no endpoint at all is the same retained outcome.
+        hby.db.locs.rem([witness.pre, "http"]);
+        assertEquals((yield* coordinator.processAllOnce()).map((r) => r.kind), ["keep"]);
+        assertEquals(hby.db.dune.cnt(), 1);
+
+        status = 200;
+        locate((server.addr as Deno.NetAddr).port);
+        // The same pass moves the published row on through dpub to completion.
+        assertEquals((yield* coordinator.processAllOnce()).map((r) => r.kind), ["advance", "complete"]);
+        assertEquals(hby.db.dune.cnt(), 0);
+        assertEquals(hby.db.dpub.cnt(), 0);
+        assertEquals(coordinator.complete(witnessed.pre, 0), true);
+      } finally {
+        yield* hby.close(true);
+      }
+    });
+  } finally {
+    await server.shutdown();
   }
 });
 

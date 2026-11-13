@@ -77,6 +77,7 @@ import {
   WellKnownAuthN,
   type WellKnownAuthNShape,
 } from "../core/records.ts";
+import { readEventSeal } from "../core/wire-fields.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { DBer, ScanOptions, StoreIdentity, Table } from "./core/dber.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
@@ -124,18 +125,9 @@ function isEventSealRecord(value: unknown): value is EventSealRecord {
     && (value as { d: unknown }).d instanceof Diger;
 }
 
+/** Accept an already-typed event seal, or read a raw `{i, s, d}` entry; null for other shapes or bad values. */
 function normalizeEventSeal(value: unknown): EventSealRecord | null {
-  if (isEventSealRecord(value)) {
-    return value;
-  }
-  if (!SealEvent.isSad(value)) {
-    return null;
-  }
-  try {
-    return SealEvent.fromSad(value);
-  } catch {
-    return null;
-  }
+  return isEventSealRecord(value) ? value : readEventSeal(value);
 }
 
 function eventSealsEqual(

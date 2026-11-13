@@ -19,7 +19,6 @@ import {
   parseBytes,
   parseSerder,
   Prefixer,
-  requireFlatFrame,
   SealEvent,
   SealKind,
   SealSource,
@@ -42,6 +41,7 @@ import {
   TransLastIdxSigGroup,
   TransReceiptQuadruple,
 } from "../../core/dispatch.ts";
+import { ValidationError } from "../../core/errors.ts";
 import { nestedIpexRoute, supportsNestedExchange } from "../../core/exchange/protocol-exchanging.ts";
 import { Kevery, type QueryEnvelope } from "../../core/kel/eventing.ts";
 import type { KeverDecision, QueryProcessDecision } from "../../core/kel/kever-decisions.ts";
@@ -664,7 +664,7 @@ function collectAttachments(group: AttachmentGroup, envelope: KeriDispatchEnvelo
  *
  * Only supported exchange routes, IPEX disclosure `xip`s and the v2 Unblind query retain parent-owned children; any
  * other frame with children is unsupported input. A remote frame is refused as one invalid message
- * (`ProtocolProcessor.dispatch`); {@link envelopeFromFrame} throws for it.
+ * (`ProtocolProcessor.dispatch`); {@link envelopeFromFrame} refuses it with a `ValidationError`.
  */
 export function hasUnsupportedNests(message: CesrFrame): boolean {
   if (!message.nests?.length) return false;
@@ -676,13 +676,23 @@ export function hasUnsupportedNests(message: CesrFrame): boolean {
   );
 }
 
-/** Project one complete frame for message routing without an intermediate event array. */
+/**
+ * Project one complete frame for message routing without an intermediate event array.
+ *
+ * Only completed consumers may retain parent-owned children through normalization. A frame with children no consumer
+ * owns is usually a remote child nested inside a parent (a BUP inside an Unblind query, an event inside a multisig or
+ * IPEX exchange): it is refused with a `ValidationError`, which the parent's processor reports as its own typed
+ * refusal (an invalid-message drop, a rejected escrow row), never a fault that ends the runtime.
+ */
 export function envelopeFromFrame(
   message: CesrFrame,
   local = false,
 ): KeriDispatchEnvelope {
-  // Only completed consumers may retain parent-owned children through normalization.
-  if (hasUnsupportedNests(message)) requireFlatFrame(message, "KERI runtime normalization");
+  if (hasUnsupportedNests(message)) {
+    throw new ValidationError(
+      `KERI runtime normalization does not yet support nested message trees (${message.body.ilk ?? "unknown"} frame).`,
+    );
+  }
   const serder = (message.body instanceof SerderKERI || message.body instanceof SerderACDC)
     ? message.body as SerderKERI
     : parseSerder(message.body.raw, smellageFromMessage(message)) as SerderKERI;

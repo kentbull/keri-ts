@@ -6,6 +6,7 @@ import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { inspectCesrStream } from "../../../../src/app/transport/cesr-http.ts";
+import { ValidationError } from "../../../../src/core/errors.ts";
 import { reply } from "../../../../src/core/protocol-eventing.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
 
@@ -14,7 +15,8 @@ const NESTED_REFUSAL = "KERI runtime normalization does not yet support nested m
 
 Deno.test("nested runtime boundaries reject unsupported trees before processing", async () => {
   const [frame] = await parseBytes(b(vectors.rows[0].qb64));
-  assertThrows(() => envelopeFromFrame(frame), Error, "nested message trees");
+  // A remote child nested where a flat message is required is the parent's typed refusal, not a runtime fault.
+  assertThrows(() => envelopeFromFrame(frame), ValidationError, "nested message trees");
   await assertRejects(() => inspectCesrStream(b(vectors.rows[0].qb64)), Error, "nested message trees");
   frame.nests![0].essrs = [new Texter({ raw: b("abc"), code: "4B" })];
   await run(function*() {
@@ -53,7 +55,7 @@ Deno.test("XIP child normalization belongs only to the existing IPEX disclosure 
   const [reference] = parseBytes(b(vectors.rows[0].qb64));
   for (const route of ["/fwd", "/multisig/icp", "/transaction", "/ipex/apply"]) {
     const body = exincept(route);
-    assertThrows(() => envelopeFromFrame({ ...reference, body }), Error, "nested message trees");
+    assertThrows(() => envelopeFromFrame({ ...reference, body }), ValidationError, "nested message trees");
   }
   for (const route of ["/ipex/offer", "/ipex/grant"]) {
     const body = exincept(route);
