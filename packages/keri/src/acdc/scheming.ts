@@ -1,7 +1,7 @@
 /** Authenticated local ACDC schema validation and static resource lookups; no network resolution. */
 import { Diger, dumps, ParserError, type SerderACDC } from "cesr-ts";
-import Ajv2020 from "npm:ajv@8.18.0/dist/2020.js";
 import { ValidationError } from "../core/errors.ts";
+import { checkSchemaDocument, type PreparedSchema, prepareSchemas } from "../core/json-schema.ts";
 import { Schemer } from "../core/scheming.ts";
 import type { Baser } from "../db/basing.ts";
 
@@ -31,14 +31,6 @@ interface Resource {
   schema: Schema;
   anchors: Map<string, Schema | boolean>;
 }
-/** Keep Deno's CommonJS constructor adaptation local, matching the existing Schemer adapter. */
-type Validator = {
-  validateSchema(schema: unknown): boolean;
-  addSchema(schema: unknown): void;
-  getSchema(key: string): (((data: unknown) => boolean) & { errors?: unknown }) | undefined;
-  errorsText(errors?: unknown): string;
-};
-const ValidatorCtor = Ajv2020 as unknown as new(options: { strict: boolean; validateFormats: boolean }) => Validator;
 const dialect = "https://json-schema.org/draft/2020-12/schema";
 const dynamic = ["$dynamicAnchor", "$dynamicRef", "$recursiveAnchor", "$recursiveRef"];
 const singles = [
@@ -232,14 +224,12 @@ class SchemaResources {
   }
 }
 
-/** A closure's validator and the compiled root function, kept so a retry does not compile again. */
+/** A closure prepared for validation, kept so a retry does not prepare it again. */
 interface CompiledSchema {
-  validator: Validator;
-  validate: SchemaFunction;
+  prepared: PreparedSchema;
 }
 /** A compiled schema, or the normal invalid outcome compiling it found. */
 type SchemaCompilation = CompiledSchema | SchemaValidation;
-type SchemaFunction = ((data: unknown) => boolean) & { errors?: unknown };
 /** Most closures kept per store; the oldest is evicted first. */
 const COMPILED_SCHEMA_BOUND = 256;
 /**
@@ -255,7 +245,7 @@ export function schemaCompilationCount(): number {
 }
 
 function isCompiled(value: SchemaCompilation): value is CompiledSchema {
-  return "validate" in value;
+  return "prepared" in value;
 }
 
 /** Compile an admitted closure once; regular-expression and duplicate-id refusals are normal invalid outcomes. */
@@ -285,27 +275,28 @@ function compileClosure(resources: SchemaResources, root: Resource): SchemaCompi
     for (const key of ["$async", "nullable", "dependencies", "additionalItems"]) delete result[key];
     return result;
   };
-  const validator = new ValidatorCtor({ strict: false, validateFormats: false });
   for (const schema of scopes.keys()) {
-    if (!validator.validateSchema(schema)) throw new InvalidSchema("Invalid Draft 2020-12 schema");
-  }
-  const copies = roots.map(copy);
-  let validate: SchemaFunction | undefined;
-  try {
-    for (const schema of copies) validator.addSchema(schema);
-    validate = validator.getSchema(uri(root.said));
-  } catch (error) {
-    if (error instanceof SyntaxError && error.message.includes("regular expression")) {
-      return { kind: "invalid", subject: "schema", reason: error.message };
+    try {
+      checkSchemaDocument(schema, "2020-12");
+    } catch {
+      throw new InvalidSchema("Invalid Draft 2020-12 schema");
     }
-    if (error instanceof Error && /^reference "urn:said:[^"]+" resolves to more than one schema$/.test(error.message)) {
+  }
+  const copies = roots.map(copy) as Schema[];
+  const head = copies.find((schema) => schema.$id === uri(root.said));
+  if (!head) throw new Error("Admitted schema was not registered");
+  let prepared: PreparedSchema;
+  try {
+    prepared = prepareSchemas([head, ...copies.filter((schema) => schema !== head)], "2020-12");
+  } catch (error) {
+    // A regular expression the engine refuses is a normal invalid outcome, reported with its own message.
+    if (error instanceof SyntaxError && error.message.includes("regular expression")) {
       return { kind: "invalid", subject: "schema", reason: error.message };
     }
     throw error;
   }
-  if (!validate) throw new Error("Admitted schema was not registered");
   compilations++;
-  return { validator, validate };
+  return { prepared };
 }
 
 /** Local static schema closure plus a synchronous Draft 2020-12 validator; legacy Schemer behavior is unchanged. */
@@ -333,9 +324,8 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
         store.set(root.said, compiled);
       }
     }
-    return compiled.validate(acdc.sad)
-      ? { kind: "valid" }
-      : { kind: "invalid", subject: "credential", reason: compiled.validator.errorsText(compiled.validate.errors) };
+    const outcome = compiled.prepared.validate(acdc.sad);
+    return outcome.valid ? { kind: "valid" } : { kind: "invalid", subject: "credential", reason: outcome.errors };
   } catch (error) {
     if (error instanceof InvalidSchema) return { kind: "invalid", subject: "schema", reason: error.message };
     throw error;

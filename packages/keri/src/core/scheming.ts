@@ -7,18 +7,10 @@
  * - raw schema bytes remain the stored value in `schema.`
  */
 import { DigDex, dumps, type Kind, Saider } from "cesr-ts";
-import Ajv from "npm:ajv@8.18.0";
-import Ajv2020 from "npm:ajv@8.18.0/dist/2020.js";
 import { ValidationError } from "./errors.ts";
+import { checkSchemaDocument, dialectOf, type PreparedSchema, prepareSchemas } from "./json-schema.ts";
 
 type JsonObject = Record<string, unknown>;
-type DataValidator = ((data: unknown) => boolean) & { errors?: unknown };
-type SchemaValidator = {
-  validateSchema(schema: unknown): boolean;
-  compile(schema: unknown): DataValidator;
-  errorsText(errors?: unknown): string;
-};
-type SchemaValidatorCtor = new(options: { strict: boolean }) => SchemaValidator;
 
 /** Constructor options for one schema SAD wrapper. */
 export interface SchemerInit {
@@ -43,6 +35,8 @@ export class Schemer {
   readonly sed: JsonObject;
   readonly kind: Kind;
   readonly saider: Saider;
+  /** Built by the first `verify`; the schema never changes, so it is prepared once. */
+  #prepared: PreparedSchema | undefined;
 
   constructor(init: SchemerInit) {
     const {
@@ -76,8 +70,12 @@ export class Schemer {
       throw new ValidationError("Schemer requires raw bytes or schema data.");
     }
 
-    if (verify && !isValidJsonSchema(this.sed)) {
-      throw new ValidationError("Invalid JSON Schema document.");
+    if (verify) {
+      try {
+        checkSchemaDocument(this.sed, dialectOf(this.sed));
+      } catch (cause) {
+        throw new ValidationError("Invalid JSON Schema document.", { cause });
+      }
     }
   }
 
@@ -94,13 +92,9 @@ export class Schemer {
   /** Validate one credential body against this schema. */
   verify(raw: Uint8Array | string | unknown): boolean {
     const data = parseSchemaData(raw);
-    const validator = schemaValidatorFor(this.sed);
-    const validate = validator.compile(this.sed);
-    if (!validate(data)) {
-      throw new ValidationError(
-        `Credential failed schema validation: ${validator.errorsText(validate.errors)}`,
-      );
-    }
+    const prepared = this.#prepared ??= prepareSchemas([this.sed], dialectOf(this.sed));
+    const outcome = prepared.validate(data);
+    if (!outcome.valid) throw new ValidationError(`Credential failed schema validation: ${outcome.errors}`);
     return true;
   }
 
@@ -154,24 +148,6 @@ function verifySchemaSaid(sed: JsonObject, kind: Kind): Saider {
   }
 
   return saider;
-}
-
-function isValidJsonSchema(schema: JsonObject): boolean {
-  try {
-    return schemaValidatorFor(schema).validateSchema(schema);
-  } catch {
-    return false;
-  }
-}
-
-function schemaValidatorFor(schema: JsonObject): SchemaValidator {
-  const dialect = typeof schema.$schema === "string" ? schema.$schema : "";
-  if (dialect.includes("2020-12")) {
-    const Ctor = Ajv2020 as unknown as SchemaValidatorCtor;
-    return new Ctor({ strict: false });
-  }
-  const Ctor = Ajv as unknown as SchemaValidatorCtor;
-  return new Ctor({ strict: false });
 }
 
 function isJsonObject(value: unknown): value is JsonObject {
