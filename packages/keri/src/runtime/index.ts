@@ -612,6 +612,7 @@ export {
   DatabaseNotOpenError,
   DatabaseOperationError,
   InvalidPathNameError,
+  KramRefusedError,
   PathError,
   PresentationClosedError,
   ValidationError,
@@ -640,6 +641,8 @@ export {
   noopLogger,
   setLogLevel,
 } from "../core/logger.ts";
+export type { KramStageRefusal } from "../core/mailbox/kram-staging.ts";
+export type { KramRefusalReason, KramTimeRefusal } from "../core/mailbox/kram-time.ts";
 export { DEFAULT_KRAM_CACHES, type KramConfig, Kramer, type KramRefusal } from "../core/mailbox/kraming.ts";
 export {
   CREDENTIAL_MAILBOX_TOPIC,
