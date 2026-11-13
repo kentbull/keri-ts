@@ -8,7 +8,7 @@ import { b } from "cesr-ts";
 import { assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
 import { indexedDbOpener, StoreLockHeldError } from "../../db-indexeddb.ts";
-import { DatabaseOperationError } from "../../src/core/errors.ts";
+import { DatabaseOperationError, PersistenceLatchedError } from "../../src/core/errors.ts";
 import { IndexedDbPersistence } from "../../src/db/core/indexeddb-persistence.ts";
 import { type Persistence, PersistenceQueue, WebDBer } from "../../src/db/core/webdber.ts";
 import { note } from "./notes.ts";
@@ -128,15 +128,19 @@ async function twoOpenersSameName(): Promise<void> {
     assertEquals(durable, ["1", "2", "second"], "disjoint rows from both survive; the last flush wins a shared key");
     assertEquals(text(first.getVal(t1, b("shared"))), "first", "the first opener's mirror keeps its own value");
 
-    // Delete the database while the second opener still holds a connection.
+    // Delete the database while the second opener still holds a connection. Its write must fail
+    // through every retry without reconnecting, latching its queue, and leave the database deleted.
     await run(() => first.close(true));
     second.setVal(t2, b("after-delete"), b("x"));
-    const outcome = await run(() => second.flushed()).then(
-      () => "write succeeded",
-      (error: Error) => `${error.name}: ${error.message}`,
+    const error = await assertRejects(() => run(() => second.flushed()));
+    note(`second opener's write after the first deleted the database: ${(error as Error).name}`);
+    assertInstanceOf(error, PersistenceLatchedError, "the failed write latches the second opener's queue");
+    assertInstanceOf(error.cause, DatabaseOperationError, "the cause is the lost connection");
+    assertEquals(
+      (await indexedDB.databases()).some((database) => database.name?.includes(name)),
+      false,
+      "a deleted database is not recreated",
     );
-    note(`second opener's write after the first deleted the database: ${outcome}`);
-    assertEquals(outcome.startsWith("DatabaseOperationError"), true, `a deleted database is not recreated: ${outcome}`);
   } finally {
     await run(() => second.close(true)).catch(() => undefined);
     await adapter(name).clear();
