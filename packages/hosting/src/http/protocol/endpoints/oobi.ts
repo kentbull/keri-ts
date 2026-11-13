@@ -99,13 +99,13 @@ export function handleOobiRoute(
     context.policy.hostedPrefixes,
     request.role,
   );
-  const hab = respondingHabAid ? runtime.hby.habs.get(respondingHabAid) : undefined;
-  if (!hab) {
-    if (hosted.kind === "ambiguous" && context.policy.hostedPrefixes) {
-      return textResponse("Ambiguous hosted endpoint path", 409);
-    }
-    return textResponse("Not Found", 404);
+  if (!respondingHabAid && hosted.kind === "ambiguous" && context.policy.hostedPrefixes) {
+    return textResponse("Ambiguous hosted endpoint path", 409);
   }
+  const hab = respondingHabAid
+    ? runtime.hby.habs.get(respondingHabAid)
+    : replaySourceHab(runtime, aid, context.policy.serviceHab, context.policy.hostedPrefixes);
+  if (!hab) return textResponse("Not Found", 404);
 
   const body = runtime.replyStreams.openNonEmpty(
     hab.replyToOobiMessages(aid, request.role, request.eid ? [request.eid] : []),
@@ -122,6 +122,32 @@ export function handleOobiRoute(
       "Oobi-Aid": aid,
     },
   });
+}
+
+/**
+ * The Hab that answers, on a relaying host, the OOBI of an identifier no local Hab is responsible for.
+ *
+ * A relaying agent is its edges' replay source: an edge asks it (with `/oobis`) to resolve a third party's OOBI and
+ * then reads the result here, so the agent serves the OOBI of any identifier whose accepted KEL it holds, as
+ * KERIpy's `OOBIEnd` does through its default Hab. The answer is that KEL with its receipts plus the replies the
+ * agent holds for the requested role; the edge verifies all of it. A host that does not relay keeps answering only
+ * for its own identifiers.
+ *
+ * @param runtime Runtime whose accepted state answers.
+ * @param aid Identifier the OOBI names.
+ * @param serviceHab The host's service habitat, when it has one.
+ * @param hostedPrefixes The host's hosted prefixes, when scoped.
+ * @returns The default Hab, or undefined when the host does not relay or holds no KEL for `aid`.
+ */
+function replaySourceHab(
+  runtime: AgentRuntime,
+  aid: string,
+  serviceHab?: Hab,
+  hostedPrefixes?: readonly string[],
+): Hab | undefined {
+  if (!runtime.relaying || !runtime.hby.db.getKever(aid)) return undefined;
+  const pre = defaultOobiAid(runtime, serviceHab, hostedPrefixes);
+  return pre ? runtime.hby.habs.get(pre) : undefined;
 }
 
 /**
