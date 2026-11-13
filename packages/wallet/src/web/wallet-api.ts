@@ -42,7 +42,6 @@ import {
   type IssuanceEndState,
   type IssuanceOperations,
   type IssuanceStatus,
-  issuanceStatus,
   type KelPublicationStatus,
   listGroupDisclosures,
   type MailboxStatus,
@@ -97,7 +96,11 @@ import {
 import {
   type AdmitDelivery,
   delivered,
+  recordFinished,
+  recordIssuance,
+  recordIssuedUpdate,
   type TimeoutOptions,
+  type TrackedIssuance,
   type TrackedIssuances,
   WALLET_TIMEOUTS,
   type WalletApiParts,
@@ -123,7 +126,8 @@ export function walletChangeSink(tracked: TrackedIssuances, forward: ChangeSinkS
       const grants = change.kind === "issuance" ? [change.id] : change.kind === "root" ? [...tracked.keys()] : [];
       for (const grant of grants) {
         try {
-          if (tracked.get(grant)?.()) tracked.delete(grant);
+          const issuance = tracked.get(grant);
+          if (issuance && recordFinished(grant, issuance)) tracked.delete(grant);
         } catch {
           // Recorded by the issuing call or the next change; see above.
         }
@@ -733,8 +737,7 @@ export class Credentials {
         );
         if (!acdc || index < 0) continue;
         try {
-          const update = updates[index];
-          wallet.recordIssued(acdc, update.said!, { blinder: custody.issuedOpening(update, credential) });
+          recordIssuedUpdate(wallet, custody, acdc, updates[index]);
         } catch (error) {
           // Evidence that does not prove the issuance stays out of the inventory; the next call tries again.
           if (!(error instanceof ValidationError)) throw error;
@@ -785,7 +788,7 @@ export class Credentials {
    * @throws ValidationError for an unknown or group identifier, or a credential the registry refuses.
    */
   async issue(options: IssueOptions): Promise<IssueResult> {
-    const { hby, runtime, wallet, inventory } = this.#scope.parts;
+    const { hby, runtime, wallet } = this.#scope.parts;
     const { pre, registry: name = `credential-${crypto.randomUUID()}`, timeoutMs = WALLET_TIMEOUTS.issue } = options;
     if (isLocalGroupHab(hby, this.#scope.hab(pre))) {
       if (!options.registry) {
@@ -796,7 +799,7 @@ export class Credentials {
     const hab = this.#scope.individual(pre), ops = this.owner();
     const recipient = options.recipient ?? options.credential.issuee;
     if (!recipient) throw new ValidationError("A recipient or an issuee is required.");
-    const { tracked } = this.#scope.parts;
+    const parts = this.#scope.parts, { tracked } = parts;
     return await this.#scope.go(function*(): Operation<IssueOutcome> {
       const regery = runtime.acdc!;
       const author = new WalletAuthor(
@@ -826,19 +829,8 @@ export class Credentials {
       }
       // The credential's derivation opening is read from the registry head the finished exchange leaves. The
       // registry took one DH exchange, so that head is this credential's update.
-      const record = (): IssuedCredential => {
-        const known = inventory.issued.get([credential.said!]);
-        if (known) return known;
-        const head = regery.store.headEvent(registry)!;
-        const custody = new RegistryCustody({ hby, hab, registry: regery.store, db: inventory });
-        return wallet.recordIssued(credential, head.said!, { blinder: custody.derivedOpening(head) });
-      };
-      tracked.set(grant, () => {
-        const status = issuanceStatus(ops, grant);
-        if (status.state === "active") return false;
-        if (status.state === "done") record();
-        return true;
-      });
+      const tracking: TrackedIssuance = { parts, hab, credential, registry };
+      tracked.set(grant, tracking);
       const waited = yield* waitForIssuance(ops, grant, { timeoutMs });
       const { status } = waited;
       if (waited.outcome === "timed-out") {
@@ -849,7 +841,7 @@ export class Credentials {
         const ended = status as EndedStatus;
         return { outcome: "ended", state: ended.state, reason: ended.reason, grant, credential: credential.said! };
       }
-      return { outcome: "issued", grant, credential: credential.said!, registry, issued: record() };
+      return { outcome: "issued", grant, credential: credential.said!, registry, issued: recordIssuance(tracking) };
     });
   }
 
