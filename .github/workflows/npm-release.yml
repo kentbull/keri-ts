@@ -18,7 +18,68 @@ env:
   DEPS_CACHE_KEY_PREFIX: release-deps-v6
 
 jobs:
+  # Decide before any runner builds: a recorded green stage-gate run on this exact content covering the
+  # package skips the release check; otherwise the check runs sharded like the PR gate (release-plan.ts).
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      check_needed: ${{ steps.plan.outputs.check_needed }}
+      check_shards: ${{ steps.plan.outputs.check_shards }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+
+      - name: look for a recorded green run of this commit
+        id: plan
+        env:
+          PACKAGE: ${{ inputs.package }}
+          GH_TOKEN: ${{ github.token }}
+        run: deno run --no-config --no-lock --allow-read --allow-write --allow-env --allow-net=api.github.com --allow-run=git scripts/ci/release-plan.ts
+
+  # Whole job skipped when the plan found a green run; one runner per unit shard otherwise.
+  check:
+    needs: plan
+    if: needs.plan.outputs.check_needed == 'true'
+    name: release check (${{ matrix.shard.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.check_shards) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: setup
+        uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: "false"
+          cache-key-extra: lmdb-v1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+
+      - name: rebuild LMDB-js for KERI compatibility
+        run: |
+          if [[ "${{ steps.setup.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
+            deno task setup:compat-lmdb
+            deno run -A scripts/ci/report-lmdb-runtime.ts
+          fi
+
+      - name: run this shard of the package-owned release check
+        env:
+          UNIT_TARGETS: ${{ matrix.shard.targets }}
+        run: deno run -A scripts/ci/pr-test-scope.ts run-unit
+
   artifact:
+    needs: [plan, check]
+    # Runs after a green check or after the plan skipped it; never after a failed or cancelled check.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.check.result == 'success' || needs.check.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
@@ -114,22 +175,6 @@ jobs:
             deno task setup:compat-lmdb
             deno run -A scripts/ci/report-lmdb-runtime.ts
           fi
-
-      - name: run the package-owned release check
-        env:
-          PACKAGE: ${{ inputs.package }}
-        run: |
-          case "$PACKAGE" in
-            cesr) deno task test:cesr ;;
-            keri) deno task test:quality:keri:fast ;;
-            tufa) deno task test:quality:tufa && deno task test:verifier && deno task test:hosting ;;
-            verifier) deno task test:verifier ;;
-            hosting) deno task test:hosting ;;
-            wallet) deno task test:wallet ;;
-            registrar) deno task test:registrar ;;
-            observer) deno task test:observer ;;
-            multisync) deno test -A --filter "v2 KERI/ACDC bilateral group DH keeps custody with approved elected members" packages/keri/test/unit/acdc/dhking.test.ts ;;
-          esac
 
       - name: test package tooling
         run: deno task test:package-tools

@@ -2,8 +2,9 @@
 import { interop as interopOwners, required } from "./keri-test-suites.ts";
 
 const allUnits = ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "observer", "cesr", "ci-tools"] as const;
-const unitOwners = [...allUnits, ...required] as const;
-type UnitTarget = typeof unitOwners[number];
+/** `multisync` has no PR job; only the release check runs its one test. */
+const unitOwners = [...allUnits, ...required, "multisync"] as const;
+export type UnitTarget = typeof unitOwners[number];
 type InteropTarget = typeof interopOwners[number];
 
 /** Local credit is tied to source; CI targets retain the existing runner's isolation policy. */
@@ -52,6 +53,7 @@ export const unitShards: Record<string, readonly UnitTarget[]> = {
     "observer",
     "cesr",
     "ci-tools",
+    "multisync",
   ],
 };
 
@@ -179,6 +181,12 @@ function currentBody(value: unknown, head: string): string {
   return value.body ?? "";
 }
 
+/** The one test the unpublished multisync package's release check runs. */
+export const multisyncTest = {
+  name: "v2 KERI/ACDC bilateral group DH keeps custody with approved elected members",
+  file: "packages/keri/test/unit/acdc/dhking.test.ts",
+} as const;
+
 /** Execute selected unit owners through existing commands, without shell interpretation. */
 async function runUnit(): Promise<void> {
   const selected = unitTargets(JSON.parse(Deno.env.get("UNIT_TARGETS") ?? "[]"));
@@ -199,6 +207,8 @@ async function runUnit(): Promise<void> {
       ? ["task", "test:cesr"]
       : target === "ci-tools"
       ? ["task", "test:ci-tools"]
+      : target === "multisync"
+      ? ["test", "-A", "--filter", multisyncTest.name, multisyncTest.file]
       : ["run", "-A", "scripts/ci/run-keri-test-group.ts", target];
     const status = await new Deno.Command(Deno.execPath(), {
       args,
