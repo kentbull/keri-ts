@@ -1127,7 +1127,7 @@ export class Multiplexor {
     if (membership) {
       return { ok: false, said, reason: membership };
     }
-    const stray = this.strayReason(serder, request);
+    const stray = this.strayReason(serder, request, embeddedSaid);
     if (stray) return { ok: false, said, reason: stray };
 
     return {
@@ -1158,22 +1158,46 @@ export class Multiplexor {
   /**
    * Why a remote wrapper is not for this runtime's members, or null. It must be addressed to a member held here and,
    * for a proposal about a group, come from one of that group's signing members: a wrapper for a member the receiver
-   * does not hold, or from an identifier that is not in the group, is not stored, noticed or listed.
+   * does not hold, or from an identifier that is not in the group, is not stored, noticed or listed. The one exception
+   * is a rotation's proposed new member, accepted only once a current member's stored wrapper for the same event names
+   * it ({@link proposedByMember}).
    */
-  private strayReason(serder: SerderKERI, request: MultisigMembership | MultisigRejection): string | null {
+  private strayReason(
+    serder: SerderKERI,
+    request: MultisigMembership | MultisigRejection,
+    embeddedSaid: string,
+  ): string | null {
     const sender = serder.pre ?? "";
     if (this.isLocalHab(sender)) return null;
     const recipient = serder.sad?.rp;
     if (typeof recipient === "string" && recipient.length > 0 && !this.isLocalHab(recipient)) {
       return `Multisig wrapper is addressed to ${recipient}, which is not a local identifier.`;
     }
+    const proposed = request.kind === "rotate" && request.members.includes(sender)
+      && this.proposedByMember(embeddedSaid, sender);
     if (
       request.kind !== "reject" && request.kind !== "join" && this.isLocalGroup(request.group)
-      && !groupSigningMembers(this.hby, request.group).includes(sender)
+      && !proposed && !groupSigningMembers(this.hby, request.group).includes(sender)
     ) {
       return `Multisig wrapper sender ${sender} is not a signing member of group ${request.group}.`;
     }
     return null;
+  }
+
+  /**
+   * Whether a current member of the group (or a local identifier) already proposed or approved this exact rotation
+   * in a stored wrapper that names `sender` among its members. A rotation's proposed members answer it before they
+   * are signing members of the group, but a sender cannot certify itself: the wrapper it names itself in is not
+   * enough, a wrapper for the same event from a member the group already trusts must name it too.
+   */
+  private proposedByMember(embeddedSaid: string, sender: string): boolean {
+    return this.get(embeddedSaid).some(({ exn }) => {
+      const attrs = isRecord(exn.a) ? exn.a : {};
+      const from = typeof exn.i === "string" ? exn.i : "";
+      const gid = typeof attrs.gid === "string" ? attrs.gid : "";
+      const named = memberPrefixes(attrs.smids, attrs.rmids).includes(sender);
+      return named && (this.isLocalHab(from) || groupSigningMembers(this.hby, gid).includes(from));
+    });
   }
 
   /** Apply local habitat membership to an already decoded request. */
