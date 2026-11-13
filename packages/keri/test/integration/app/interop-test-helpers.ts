@@ -2017,3 +2017,9 @@ export async function writeAgentConfig(
     }\n`,
   );
 }
+
+/** Parse a fixture control answer; an empty body is a lost answer, never "no result" (fixtures answer `null`). */
+export function parseFixtureAnswer<T = unknown>(action: string, text: string): T {
+  if (text === "") throw new Error(`${action}: the fixture answered 200 with an empty body`);
+  return JSON.parse(text) as T;
+}

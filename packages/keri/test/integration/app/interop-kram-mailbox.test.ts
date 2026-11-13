@@ -24,6 +24,7 @@ import { messagize } from "../../../src/core/protocol-serialization.ts";
 import {
   createInteropContext,
   type InteropContext,
+  parseFixtureAnswer,
   randomPort,
   spawnChild,
   startKeriPyWitnessHarness,
@@ -89,7 +90,7 @@ async function control<T>(url: string, command: Command): Promise<T> {
   });
   const text = await response.text();
   assertEquals(response.status, 200, text);
-  return JSON.parse(text) as T;
+  return parseFixtureAnswer<T>(command.action, text);
 }
 
 /** Construct the KRAM query controls independently of controller/witness setup. */
