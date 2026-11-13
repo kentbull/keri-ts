@@ -792,13 +792,16 @@ export class Manager {
    * Unheld pubs are ignored. Afterwards a request for a released key resolves
    * from stored keys only and fails as any missing key does. This drops
    * references; zeroing a signer's seed stays the host's job.
+   *
+   * @returns The public keys whose held signers were dropped, in the order asked (all held ones without `pubs`).
    */
-  release(pubs?: readonly string[]): void {
+  release(pubs?: readonly string[]): string[] {
     if (pubs === undefined) {
+      const released = [...this.held.keys()];
       this.held.clear();
-      return;
+      return released;
     }
-    for (const pub of pubs) this.held.delete(pub);
+    return pubs.filter((pub) => this.held.delete(pub));
   }
 
   /** Resolve one signer by qualified public key: held first, then the Keeper's `pris.`. */

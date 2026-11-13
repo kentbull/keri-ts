@@ -439,6 +439,13 @@ export class IssuanceOperations {
     return bound.map(op => op.grant);
   }
 
+  /** Grants of the live operations, and of those found resumable and not yet adopted, whose habitat is `pre`. */
+  grantsOf(pre: string): string[] {
+    const grants = [...this.live.values()].filter(op => op.hab.pre === pre).map(op => op.grant);
+    for (const found of this.stale) if (found.hab.pre === pre) grants.push(found.grant);
+    return [...new Set(grants)];
+  }
+
   /** Drop the live entry and the DH approval; a missing approval means the owner already closed. */
   private release(op: LiveIssuance): void {
     this.live.delete(partyKey(op.grant, op.role));

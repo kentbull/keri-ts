@@ -873,7 +873,12 @@ Deno.test("joinGroupHab replaces a local member that left the accepted key state
     } as unknown as AgentRuntime;
 
     const replaced = replaceGroupMember(runtime, { group: gid, member: fresh, smids: next, rmids: next });
-    assertEquals(replaced, { previous: a.hab.pre, issuance: ["Gmember", "Gcustodian"], unblinding: ["Umember"] });
+    const { previousMember, ...ended_ } = replaced;
+    assertEquals(ended_, { previous: a.hab.pre, issuance: ["Gmember", "Gcustodian"], unblinding: ["Umember"] });
+    // The old member still records groups h and p, so it is kept, and the result says why.
+    assertEquals(previousMember.kind, "kept");
+    assert(previousMember.kind === "kept" && previousMember.reason.includes("recorded local member of group"));
+    assert(a.hby.habs.has(a.hab.pre!));
     assertEquals([...held], ["other-group", "unblind-other"], "ended operations leave no held row; others stay");
     const ended = (issuance as unknown as { ended: Map<string, { state: string; reason: string }> }).ended;
     assertEquals(ended.get(partyKey("Gmember", "holder"))?.state, "abandoned");
@@ -1283,13 +1288,13 @@ Deno.test("replaceGroupMember prompts poller, publisher and replicator", async (
       kelPublisher: spy("publisher"),
       rootReplicator: spy("replicator"),
     } as unknown as AgentRuntime;
-    replaceGroupMember(runtime, { group: gid, member: fresh, smids: next });
+    replaceGroupMember(runtime, { group: gid, member: fresh, smids: next, keepPrevious: true });
     assertEquals(prompted, [`poller:${gid}`, `publisher:${gid}`, `replicator:${gid}`]);
     // A runtime without a root replicator (no IPEX) is replaced all the same.
     const { a: other, fresh: replacement, gid: group, next: members2 } = yield* rotatedOutMember();
     replaceGroupMember(
       { ...runtime, hby: other.hby, rootReplicator: null } as unknown as AgentRuntime,
-      { group, member: replacement, smids: members2 },
+      { group, member: replacement, smids: members2, keepPrevious: true },
     );
     assertEquals(other.hby.db.getHab(group)!.mid, replacement.pre);
   });
@@ -1321,7 +1326,7 @@ Deno.test("expired KEL budget re-arms after member replacement", async () => {
       kelPublisher: publisher,
       rootReplicator: null,
     } as unknown as AgentRuntime;
-    replaceGroupMember(runtime, { group: gid, member: fresh, smids: next });
+    replaceGroupMember(runtime, { group: gid, member: fresh, smids: next, keepPrevious: true });
     assertEquals((yield* publisher.processDue()).map(result => result.outcome), ["told"]);
     assertEquals(publisher.statusOf(gid).map(entry => entry.state), ["published"]);
     assertEquals(a.hby.db.kpub.get([gid, "alpha"])?.m, fresh.kever!.lastEst.d, "the new member's head is recorded");
@@ -1350,7 +1355,7 @@ Deno.test("root copies re-derive for the new sender", async () => {
       kelPublisher: { prompt() {} },
       rootReplicator: replicator,
     } as unknown as AgentRuntime;
-    replaceGroupMember(runtime, { group: gid, member: fresh, smids: next });
+    replaceGroupMember(runtime, { group: gid, member: fresh, smids: next, keepPrevious: true });
     replicator.sweep();
     assertEquals(owed(), [a.hab.pre!, b.hab.pre!, c.hab.pre!].sort(), "the new sender owes the old member, not itself");
   });

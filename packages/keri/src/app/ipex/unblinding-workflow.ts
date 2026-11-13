@@ -342,6 +342,11 @@ export class UnblindingOperations {
     return bound.map(op => op.grant);
   }
 
+  /** Grants of the live Unblind operations whose habitat is `pre`. */
+  grantsOf(pre: string): string[] {
+    return [...new Set([...this.live.values()].filter(op => op.hab.pre === pre).map(op => op.grant))];
+  }
+
   /** Drop the live entry and the owner's approval and frozen messages; delivered bytes stay the peer's. */
   private release(op: LiveUnblinding): void {
     this.live.delete(unblindingKey(op.grant, op.role));

@@ -198,6 +198,18 @@ export type GroupMailboxOutcome =
   | { outcome: "rejected"; reason: string; status: MailboxStatus }
   | { outcome: "timed-out"; timeoutMs: number; status: MailboxStatus };
 
+/** Inputs of {@link Groups.replaceMember}. */
+export interface ReplaceMemberOptions {
+  /** The wallet's identifier that becomes the local member. */
+  member: string;
+  /** The group's accepted signing members. */
+  smids: readonly string[];
+  /** The group's accepted rotation members; defaults to `smids`. */
+  rmids?: readonly string[];
+  /** Keep the old member as an identifier of this wallet instead of retiring it. Default false. */
+  keepPrevious?: boolean;
+}
+
 /** Group identifiers: propose events, join groups, observe the Counselor and add the group's mailbox. */
 export class Groups {
   readonly #scope: WalletScope;
@@ -293,21 +305,21 @@ export class Groups {
   /**
    * Make `member`, another identifier of this wallet, the local member of `group` after a rotation removed the
    * recorded one, and end the runtime's operations bound to the old member (issuance, Unblind, and the DH
-   * queries they hold). Creates no event and signs nothing. `smids` and `rmids` are the group's accepted members.
+   * queries they hold). Then the old member is retired (as `identifiers.retire`) unless `keepPrevious` is set
+   * or the runtime still needs it; `previousMember` in the result says which, and why it was kept. Creates no
+   * event and signs nothing. `smids` and `rmids` are the group's accepted members.
    *
    * @throws ValidationError when the group has no accepted state, the recorded member is still one of its
    * members, or `member` is not.
    */
-  replaceMember(
-    group: string,
-    options: { member: string; smids: readonly string[]; rmids?: readonly string[] },
-  ): ReplacedGroupMember {
+  replaceMember(group: string, options: ReplaceMemberOptions): ReplacedGroupMember {
     const hab = this.#scope.group(group), member = this.#scope.individual(options.member);
     return replaceGroupMember(this.#scope.parts.runtime, {
       group: hab.pre!,
       member,
       smids: options.smids,
       rmids: options.rmids,
+      keepPrevious: options.keepPrevious,
     });
   }
 

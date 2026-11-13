@@ -75,6 +75,7 @@ an app never calls `run(...)`.
 | `identifiers.incept(opts)`                   | `complete`, `incomplete` (with `reason`), `timed-out` |
 | `identifiers.rotate(pre, opts)`              | as `incept`                                           |
 | `identifiers.complete(pre, opts)`            | as `incept`; retries receipts and the delegation wait |
+| `identifiers.retire(pre)`                    | synchronous `RetiredIdentifier`; see below            |
 | `oobis.resolve(url, opts)`                   | `resolved`, `failed`, `timed-out`                     |
 | `mailboxes.add / remove(pre, mailbox, opts)` | `authorized` / `revoked`, `rejected`, `timed-out`     |
 | `credentials.pending(pre?)`                  | pure read of Grants awaiting consent                  |
@@ -359,6 +360,30 @@ Group work is a set of explicit library calls plus the `Counselor`.
   custodian is the old member and every live Unblind that holds it; ending releases their held
   `heldq`/`heldu` rows. They are not carried over: start a new proposal. Group IPEX messages and
   presentations keep no member binding and run on. An exchange the old member led is not resumed.
+  Last, the call retires the old member (`retireIdentifier`, below) unless `keepPrevious` is set or
+  the runtime still needs it. The result's `previousMember` says which: `{ kind: "retired", retired }`
+  or `{ kind: "kept", reason }`. A kept member does not fail the replacement; it is kept when it is
+  still a member of another local group, a delegator, a registry issuer, or has live work, and the
+  reason names which. After a replacement that retired the old member, `health()` reads `ok` once
+  the poller's and publisher's next tocks have run, with no special case.
+- **Retiring an identifier.** `retireIdentifier(runtime, pre)` (the wallet's `identifiers.retire`)
+  retires a local single-signature identifier: `Habery.retireHab` deletes its `habs.` record, its
+  name and the Keeper's stored keys, and the runtime then releases its held signers, stops its
+  mailbox poll workers (they halt on the poller's next tock and leave no signer condition), deletes
+  its mailbox poll cursors (`tops.`) and its KEL publisher rows (`kpub.`), and prompts the poller and
+  the publisher. It makes no event and signs nothing. `retireIdentifierRefusal(runtime, pre)` is the
+  pure read behind it: before any write it refuses a group, a local group's member, a local
+  habitat's delegator, a registry issuer, an identifier with a pending delegated event or pinned as a
+  delegation proxy, the habitat of a live issuance or Unblind, the source of a queued Poster event,
+  the signer of a queued query, and the querier's configured signer. What retirement keeps, so
+  BADA/RUN acceptance and replay protection still hold: the KEL and its attachments, `states.` and
+  key-state notices, every accepted reply the identifier authored or that names it (end-role and
+  location records, reply SADs, date-times, signatures and seal couples), transaction-state notices,
+  KRAM cache rows, stored exchanges and credentials, and Keeper `rroots.` rows. The identifier is
+  afterwards an ordinary remote one. Retirement is one-way: the retired name cannot be reused with
+  the same salt and namespace (the Keeper refuses an inception that derives the retired keys), and
+  the seeds of salt-derived keys stay derivable from the Keeper's root salt and the name, so
+  deleting them is not secret erasure.
 
 ## Mailboxes and rotation
 

@@ -226,6 +226,8 @@ export class MailboxPoller {
           this.clock,
           function* deliverThenAdvanceCursor(message) {
             yield* call(() => onBatch({ pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] }));
+            // A subject retired during this poll keeps no cursor: its worker halts on the next tock.
+            if (!self.hby.habs.has(target.targetPre)) return;
             self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
           },
         )
