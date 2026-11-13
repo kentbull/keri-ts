@@ -21,7 +21,7 @@ Related: [store contract (ADR-0015)](../../adr/adr-0015-pluggable-store-contract
 | `keri-ts/db/lmdb`      | LMDB backend                                                                                | no      |
 | `keri-ts/runtime/node` | TCP and local files                                                                         | no      |
 | `@keri-ts/wallet`      | `Wallet` inventory, `WalletAuthor`, `RegistryCustody`, `WalletDiscloser`, `openWalletBaser` | yes     |
-| `@keri-ts/wallet/web`  | The root surface plus `openWebWallet` and the wallet-level API                              | yes     |
+| `@keri-ts/wallet/web`  | The root surface plus `openWebWallet`, `recoverWebWallet` and the wallet-level API          | yes     |
 | `@keri-ts/wallet/lmdb` | `createWalletBaser` (LMDB inventory)                                                        | no      |
 
 Entries marked "yes" carry a `browser` export condition; the npm bundle gate
@@ -44,7 +44,32 @@ mailbox), and `operationStores.derived` is the wallet's `derived-updates.` table
 
 `close()` stops the runtime, flushes and closes every store, then releases the lock, and rejects
 with every failure after all steps ran. After a latched persistence failure, `close()` then
-`openWebWallet()` loads the last durable state.
+`openWebWallet()` loads the last durable state; `recoverWebWallet` does that for you.
+
+### Recovering a wallet
+
+Call `recoverWebWallet(wallet, { open, group?, attempts? })` when `health()` reports `latched` (or
+`persistenceStatus()` reads `latched`): a latched composition never commits again (ADR-0015 rule 3), so
+recovery is a new composition. The wallet never recovers by itself; the call is the host's decision.
+
+It closes the given handle (a latched or closed handle is expected and fine), opens again with `open`
+(the same `OpenWebWalletOptions`, held signers included), retrying a failed open up to `attempts`
+times (default 3, 250 ms apart), and returns a **new** `WebWallet` in `{ wallet, rejoin, skipped }`.
+Drop the old handle: its `health()` reads `closed`, and its calls fail with `WalletStoppedError`
+(workflow calls, `readPersisted`) or `DatabaseNotOpenError` (synchronous reads of its closed stores).
+When every open fails it throws `WalletRecoveryError`, whose `cause` is the last failure.
+
+A reopen restores the durable prefix: every commit made durable before the latch, and nothing after
+it. With `group` (`{ oobi, group, alias, member, memberOobis, timeoutMs? }`, `member` being the local
+single-signature member) and no local record of the group, it resolves the co-members' OOBIs and calls
+`groups.rejoin`; `rejoin` is that typed result. Otherwise `rejoin` is null and `skipped` says why:
+`no-group`, `group-recorded`, or `member-missing`.
+
+`member-missing` means a wiped store: the member itself is gone, and only the host holds what adopts
+it again. The host re-adopts the member with `wallet.hby.makeSignedHab(alias, undefined, { serder, sigers })` from the member's signed inception, holds its signer (`heldSigners` at open, or
+`hby.mgr.hold`), resolves the co-members' OOBIs and calls `groups.rejoin`. Credentials, registry state
+and exchanges then come back by ordinary KERI replay from a co-member, which `recoverWebWallet` does
+not request.
 
 ### Held signers at open
 

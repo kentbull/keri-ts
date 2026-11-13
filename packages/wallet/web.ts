@@ -60,6 +60,16 @@ export {
   type WebWalletHost,
   type WebWalletSecret,
 } from "./src/web/open-web-wallet.ts";
+export {
+  RECOVER_ATTEMPTS,
+  RECOVER_RETRY_DELAY_MS,
+  type RecoveredWebWallet,
+  type RecoverGroupOptions,
+  type RecoverSkip,
+  recoverWebWallet,
+  type RecoverWebWalletOptions,
+  WalletRecoveryError,
+} from "./src/web/recover-web-wallet.ts";
 export type { TimedResult, TimeoutOptions, Work } from "./src/web/surface.ts";
 export {
   type AdmitDelivery,
