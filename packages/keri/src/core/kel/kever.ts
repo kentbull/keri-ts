@@ -19,6 +19,7 @@ import type { AgentCue } from "../cues.ts";
 import { DispatchOrdinal } from "../dispatch.ts";
 import { ValidationError } from "../errors.ts";
 import { KeyStateRecord } from "../records.ts";
+import { readEventSeal } from "../wire-fields.ts";
 import type {
   AttachmentDecision,
   AttachmentEscrow,
@@ -1825,21 +1826,24 @@ export class Kever {
     return this.db.getState(pre)?.di || null;
   }
 
-  /** Return the zero-based index of the matching event seal or `-1`. */
+  /**
+   * Return the zero-based index of the matching event seal among the candidate's event-shaped seals, or `-1`.
+   *
+   * The candidate is an accepted delegator event, which is remote-authored: its `a` may hold any seal shape and
+   * undecodable values. Like KERIpy, the index counts entries with the `{i, s, d}` field shape; other shapes and
+   * malformed values never match (`readEventSeal`).
+   */
   private eventAnchorSealIndex(
     candidate: SerderKERI,
     serder: SerderKERI,
   ): number {
-    for (const [index, seal] of candidate.eventSeals.entries()) {
-      if (
-        seal.i.qb64 === serder.pre
+    return candidate.seals.filter((raw) => SealEvent.isSad(raw)).findIndex((raw) => {
+      const seal = readEventSeal(raw);
+      return seal !== null
+        && seal.i.qb64 === serder.pre
         && seal.s.numh === serder.snh
-        && seal.d.qb64 === serder.said
-      ) {
-        return index;
-      }
-    }
-    return -1;
+        && seal.d.qb64 === serder.said;
+    });
   }
 
   /**

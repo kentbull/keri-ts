@@ -9,6 +9,7 @@ import type { SerderKERI } from "cesr-ts";
 import type { Baser } from "../../db/basing.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { ValidationError } from "../errors.ts";
+import { readEventSeal } from "../wire-fields.ts";
 
 /**
  * `pending` evidence can still arrive; `refused` is fixed by inception and
@@ -19,11 +20,17 @@ export type DelegationAncestry =
   | { kind: "pending"; reason: string }
   | { kind: "refused"; reason: string };
 
-/** Whether one accepted delegator event carries the exact `{i,s,d}` seal of a delegated inception. */
+/**
+ * Whether one accepted delegator event carries the exact `{i,s,d}` seal of a delegated inception.
+ *
+ * The delegator's seals are remote-authored and unchecked at acceptance; other shapes and undecodable values are
+ * skipped (`readEventSeal`), never thrown.
+ */
 function approves(event: SerderKERI, dip: SerderKERI): boolean {
-  return event.eventSeals.some((seal) =>
-    seal.i.qb64 === dip.pre && seal.s.numh === dip.snh && seal.d.qb64 === dip.said
-  );
+  return event.seals.some((raw) => {
+    const seal = readEventSeal(raw);
+    return seal !== null && seal.i.qb64 === dip.pre && seal.s.numh === dip.snh && seal.d.qb64 === dip.said;
+  });
 }
 
 /**

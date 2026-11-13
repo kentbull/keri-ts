@@ -6,7 +6,7 @@ import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../s
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../../src/app/protocol/parsering.ts";
 import { AnchorQuerier, KeyStateNoticer, SeqNoQuerier } from "../../../../src/app/queries/querying.ts";
-import { WitnessInquisitor } from "../../../../src/app/queries/witness-inquisitor.ts";
+import { UNADDRESSED_QUERY_PASS_LIMIT, WitnessInquisitor } from "../../../../src/app/queries/witness-inquisitor.ts";
 import {
   createAgentRuntime,
   runAgentRuntimeUntil,
@@ -644,4 +644,58 @@ Deno.test("query command fails its deadline when accepted evidence never arrives
   } finally {
     await Deno.remove(headDirPath, { recursive: true });
   }
+});
+
+Deno.test("a query that can never be addressed leaves the queue after a bounded number of passes", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const signer = hby.makeHab("signer");
+    const messages: Uint8Array[] = [];
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, null, signer);
+    try {
+      // A subject this store has no KEL for has no attester; any remote party can cause such requests.
+      const unknown = "EBfdlu8R27Fbx-ehrqwImnK-8Cm79sqbAQ4MmvEAYqao";
+      inquisitor.enqueue({ pre: unknown, route: "logs", q: {} });
+      const queued = inquisitor.pending.peekHead();
+      for (let pass = 1; pass < UNADDRESSED_QUERY_PASS_LIMIT; pass++) yield* inquisitor.deliverOnce();
+      assertStrictEquals(inquisitor.pending.peekHead(), queued, "the same record rotates until the bound");
+      yield* inquisitor.deliverOnce();
+      assertEquals([inquisitor.pending.length, messages.length], [0, 0]);
+    } finally {
+      yield* inquisitor.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a TCP query location without a port or a TCP dialer is unreachable, not a delivery fault", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const signer = hby.makeHab("signer"), subject = hby.makeHab("subject");
+    const messages: Uint8Array[] = [];
+    try {
+      hby.db.ends.pin([subject.pre, Roles.controller, subject.pre], { allowed: true });
+      // Remote-advertised locations: a portless TCP URL, then a valid one on a host (this one) with no TCP dialer.
+      for (const url of ["tcp://controller.test", "tcp://controller.test:5632"]) {
+        const inquisitor = new WitnessInquisitor(
+          hby,
+          protocolFixture(hby),
+          queryHttp(messages),
+          systemClock,
+          null,
+          signer,
+        );
+        try {
+          hby.db.locs.pin([subject.pre, "tcp"], { url });
+          inquisitor.enqueue({ pre: subject.pre, src: subject.pre, route: "logs", q: {} });
+          yield* inquisitor.deliverOnce();
+          assertEquals([inquisitor.pending.length, messages.length], [1, 0], url);
+        } finally {
+          yield* inquisitor.close();
+        }
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });

@@ -1,6 +1,6 @@
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { call, run } from "effection";
-import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { runTufa } from "../../../../../tufa/test/test-helpers.ts";
 import { telEventStatus } from "../../../../src/app/credentials/tel-completion.ts";
 import { publishPendingTel } from "../../../../src/app/credentials/tel-publishing.ts";
@@ -62,9 +62,8 @@ Deno.test("TEL publication resumes receipt and dissemination escrows across reop
       assertEquals(observer.vdr!.tvy.tevers.has(regk), false);
 
       refuseReceipts = true;
-      yield* call(() =>
-        assertRejects(() => run(() => publishPendingTel(issuerHby, publication, receiptor, http, systemClock)))
-      );
+      // A witness that withholds its receipt ends only that target; the escrow stays for the next pass.
+      yield* publishPendingTel(issuerHby, publication, receiptor, http, systemClock);
       assertEquals(publication.complete(regk), false);
       assertEquals(publication.pendingReceipts().length, 1);
       assertEquals(telAttempts, 0);
@@ -75,16 +74,27 @@ Deno.test("TEL publication resumes receipt and dissemination escrows across reop
 
       refuseReceipts = false;
       refuseTel = true;
-      yield* call(() =>
-        assertRejects(() => run(() => publishPendingTel(issuerHby, resumed.publication, receiptor, http, systemClock)))
-      );
+      // A witness that refuses the TEL publication ends only that target; the publication retries.
+      yield* publishPendingTel(issuerHby, resumed.publication, receiptor, http, systemClock);
       assertEquals(resumed.publication.complete(regk), false);
       assertEquals(resumed.publication.pendingReceipts().length, 0);
       assertEquals(resumed.publication.pendingPublications().length, 1);
       assertEquals(telEventStatus(resumed, regk, 0), { state: "active", phase: "awaitingPublication" });
       assertEquals(observer.vdr!.tvy.tevers.has(regk), false);
+      assertEquals(telAttempts > 0, true);
       yield* reger.close();
       yield* reger.reopen();
+
+      // A witness that is unreachable ends only that target as well; its publication stays pending.
+      const located = issuerHby.db.locs.get([witness.pre, Schemes.http])!;
+      const closed = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+      const closedPort = (closed.addr as Deno.NetAddr).port;
+      closed.close();
+      issuerHby.db.locs.pin([witness.pre, Schemes.http], { ...located, url: `http://127.0.0.1:${closedPort}` });
+      const unreachable = new Regery(issuerHby, { reger });
+      yield* publishPendingTel(issuerHby, unreachable.publication, receiptor, http, systemClock);
+      assertEquals(unreachable.publication.pendingPublications().length, 1);
+      issuerHby.db.locs.pin([witness.pre, Schemes.http], located);
 
       refuseTel = false;
       const recovered = new Regery(issuerHby, { reger });

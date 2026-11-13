@@ -30,11 +30,25 @@ import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { CesrHttpRefusal } from "../transport/cesr-egress.ts";
 import { type HttpClient, isRequestableHttpUrl } from "../transport/http-client.ts";
 import { HTTPMessenger } from "../transport/http-messenger.ts";
+import { messengerUrl } from "../transport/messengering.ts";
 import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
 
 /** First eligible role used by KERIpy WitnessInquisitor before random endpoint selection. */
 const QUERY_ROLE_PRIORITY = [Roles.controller, Roles.agent, Roles.witness];
+
+/**
+ * Delivery passes an ordinary request may rotate with a ready signer but no reachable attester before it is dropped:
+ * about five minutes at the protocol tock. Any remote party can cause such requests (every unverified reply signed by
+ * an unknown prefix yields a `query` cue), so without a bound they would rotate in the queue forever.
+ */
+export const UNADDRESSED_QUERY_PASS_LIMIT = 9_600;
+
+/**
+ * A request as this sender queues it: a copy of the caller's request plus the delivery passes in which its signer could
+ * sign but no attester could be addressed. The count lives on the queued record itself; nothing else tracks it.
+ */
+type QueuedQueryRequest = QueryRequest & { unaddressedPasses: number };
 
 /**
  * Copy only the owned query-body level without erasing its route/payload relationship.
@@ -115,7 +129,9 @@ function queryAttesters(hab: Hab, pre: string): string[] {
  */
 function preferredLocation(urls: Record<string, string>): string | null {
   for (const url of [urls[Schemes.https], urls[Schemes.http]]) if (url && isRequestableHttpUrl(url)) return url;
-  return urls[Schemes.tcp] ?? null;
+  // A TCP location without a valid port is refused by the TCP messenger; it is no location here.
+  const tcp = urls[Schemes.tcp];
+  return tcp && messengerUrl({ tcp }) ? tcp : null;
 }
 
 /**
@@ -211,7 +227,7 @@ export class WitnessInquisitor {
   /** Joins active request/parser cleanup before owned queues are cleared. */
   private outputJoined?: Promise<void>;
   /** Unsigned query instructions awaiting an available signer/endpoint. */
-  private readonly requests = new Deck<QueryRequest>();
+  private readonly requests = new Deck<QueuedQueryRequest>();
   /** Inspect deferred work without exposing queue mutation outside its owner. */
   get pending(): Pick<Deck<QueryRequest>, "length" | "empty" | "peekHead"> {
     return this.requests;
@@ -287,6 +303,7 @@ export class WitnessInquisitor {
       ...request,
       ...copyQuery(request),
       wits: request.wits ? [...request.wits] : undefined,
+      unaddressedPasses: 0,
     });
   }
 
@@ -370,7 +387,16 @@ export class WitnessInquisitor {
         const packet = self.prepareRequest(request);
         self.requests.pull();
         if (!packet) {
-          self.requests.append(request);
+          // A signer that cannot sign yet, or a relay not yet usable, is local state that waits; a ready signer with no
+          // reachable attester counts toward the bound.
+          if (!self.relay && self.configuredHab(request.signer)?.canSign()) request.unaddressedPasses++;
+          if (request.unaddressedPasses >= UNADDRESSED_QUERY_PASS_LIMIT) {
+            consoleLogger.warn(
+              `Dropping ${request.route} query for ${request.pre}: no reachable attester after ${request.unaddressedPasses} passes.`,
+            );
+          } else {
+            self.requests.append(request);
+          }
           continue;
         }
         active.signal.throwIfAborted();
@@ -481,7 +507,8 @@ export class WitnessInquisitor {
       const url = resolveQueryDestinationUrl(hab, request.pre, destination, {
         explicitWitness: request.wits?.includes(destination) ?? false,
       });
-      return url ? [{ destination, url }] : [];
+      // A TCP location on a host without a TCP dialer cannot be sent to: it is unreachable, not a fault.
+      return url && (this.http.tcp || !url.startsWith("tcp:")) ? [{ destination, url }] : [];
     });
     const selected = reachable[Math.floor(Math.random() * reachable.length)];
     if (!selected) return null;

@@ -123,3 +123,19 @@ Deno.test("intake cues nothing for a local envelope", async () => {
     });
   });
 });
+
+Deno.test("an exchange message with a stamp Dater cannot encode or a malformed exchange id is dropped before any write", async () => {
+  await run(function*() {
+    yield* receiver(function*({ kramer, db, exn }) {
+      // A valid RFC3339 stamp without the fixed-width fraction would become this thread's stored opener Dater.
+      const short = exn("2026-10-13T12:00:00Z", { xid: XID });
+      assertEquals(kramer.intake(short.envelope), { kind: "drop", reason: "timestamp" });
+      // An exchange id that is not one qualified digest is a cache key part the pruner could not split.
+      const dotted = exn(at(0), { xid: `${XID}.extra` });
+      assertEquals(kramer.intake(dotted.envelope), { kind: "drop", reason: "exchangeId" });
+      assertEquals([...db.tmsc.getTopItemIter()].length, 0, "a refused message leaves no cache row");
+      kramer.prune();
+      assertEquals(kramer.cues.length, 0, "both are reachable without authentication and keep only the log line");
+    });
+  });
+});

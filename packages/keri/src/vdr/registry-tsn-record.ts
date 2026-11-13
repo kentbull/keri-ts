@@ -1,14 +1,10 @@
-import { Diger, Prefixer } from "cesr-ts";
 import { RegStateRecord } from "../core/records.ts";
+import { readDiger, readPrefixer } from "../core/wire-fields.ts";
 import { timestampMicros } from "../time/mod.ts";
 
 /** Require the entire qualified prefix, not a valid prefix followed by untrusted suffix bytes. */
 export function qualifiedPrefix(value: unknown): value is string {
-  try {
-    return typeof value === "string" && new Prefixer({ qb64: value }).qb64 === value;
-  } catch {
-    return false;
-  }
+  return readPrefixer(value)?.qb64 === value;
 }
 
 /** Validate unknown notice fields and return the existing record with every field required. */
@@ -34,11 +30,7 @@ export function registryRecord(data: unknown): Required<RegStateRecord> | null {
     || typeof minor !== "number" || !Number.isSafeInteger(minor) || minor < 0
     || !backers.every(qualifiedPrefix) || !config.every((item) => typeof item === "string")
   ) return null;
-  try {
-    if (new Diger({ qb64: data.d }).qb64 !== data.d) return null;
-  } catch {
-    return null;
-  }
+  if (readDiger(data.d)?.qb64 !== data.d) return null;
   // Keep required-field types while constructing the existing record; these arrays are fresh owned copies.
   return Object.assign(new RegStateRecord(), {
     vn: [major, minor],

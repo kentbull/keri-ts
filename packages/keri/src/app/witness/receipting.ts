@@ -22,12 +22,15 @@ import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { chunkBytes } from "../transport/byte-source.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { processMessages } from "../transport/message-source.ts";
+import { TransportError } from "../transport/transport-error.ts";
 import {
+  deliverWitnessMessage,
   getWitnessReceiptEndpoint,
   pollWitnessReceipt,
   postWitnessReceiptEndpoint,
-  sendWitnessMessage,
+  type WitnessDelivery,
   witnessHttpUrl,
+  type WitnessReceiptEndpointResponse,
   witnessTcpUrl,
 } from "./receipt-client.ts";
 import { buildDetachedReceiptMessage } from "./receipt-messages.ts";
@@ -39,6 +42,18 @@ export type WitnessAuthMap = Record<string, string>;
 export interface WitnessReceiptRunResult {
   readonly witnesses: readonly string[];
   readonly statuses: Readonly<Record<string, number>>;
+}
+
+/**
+ * One receipt attempt's outcome. `incomplete` names the first witness that is unreachable, refused,
+ * left the receipt escrowed or returned no valid receipt; the caller decides whether to retry.
+ */
+export type WitnessReceiptOutcome =
+  | { kind: "receipted"; result: WitnessReceiptRunResult }
+  | { kind: "incomplete"; witness: string; error: Error };
+
+function incomplete(witness: string, error: Error): WitnessReceiptOutcome {
+  return { kind: "incomplete", witness, error };
 }
 
 /** Build one `loc/scheme` replay bundle for witness introductions. */
@@ -107,12 +122,25 @@ export class Receiptor {
     this.gvrsn = gvrsn;
   }
   /** Submit the latest or specified event to all witnesses and gather receipts. */
-  *receipt(pre: string, { sn, auths = {}, allowTcp = false }: {
+  *receipt(pre: string, options: {
     sn?: number;
     auths?: WitnessAuthMap;
     /** Generic WitnessReceiptor permits TCP; explicit receipt endpoints remain HTTP-only. */
     allowTcp?: boolean;
   } = {}): Operation<WitnessReceiptRunResult> {
+    const outcome = yield* this.attempt(pre, options);
+    if (outcome.kind === "incomplete") throw outcome.error;
+    return outcome.result;
+  }
+  /**
+   * Submit like `receipt`, but report a witness that is unreachable, refuses, or does not receipt as
+   * `incomplete` data. Local faults (unknown local AID, missing key state, storage) still throw.
+   */
+  *attempt(pre: string, { sn, auths = {}, allowTcp = false }: {
+    sn?: number;
+    auths?: WitnessAuthMap;
+    allowTcp?: boolean;
+  } = {}): Operation<WitnessReceiptOutcome> {
     return yield* call(() => this.receiptOnce(pre, { sn, auths }, allowTcp));
   }
   /**
@@ -126,7 +154,7 @@ export class Receiptor {
   private *receiptOnce(pre: string, { sn, auths }: {
     sn?: number;
     auths: WitnessAuthMap;
-  }, allowTcp: boolean): Operation<WitnessReceiptRunResult> {
+  }, allowTcp: boolean): Operation<WitnessReceiptOutcome> {
     const hab = this.hby.habs.get(pre) ?? null;
     if (!hab) {
       throw new ValidationError(`${pre} not a valid local AID.`);
@@ -144,12 +172,13 @@ export class Receiptor {
     );
     const witnesses = this.hby.db.acceptedEventWitnesses(serder)!;
     if (witnesses.length === 0) {
-      return { witnesses: [], statuses: {} };
+      return { kind: "receipted", result: { witnesses: [], statuses: {} } };
     }
 
     if (serder.ilk === Ilks.rot || serder.ilk === Ilks.drt) {
       for (const witness of serder.adds) {
-        yield* this.catchup(pre, witness);
+        const caughtUp = yield* this.replayHistory(hab, witness);
+        if (caughtUp.kind === "unreachable") return incomplete(witness, caughtUp.error);
       }
     }
     const receiptGroups = new Map<string, readonly Siger[]>();
@@ -164,41 +193,64 @@ export class Receiptor {
     for (const witness of witnesses) {
       if (kever.delegated) {
         for (const dmsg of this.hby.db.cloneDelegation(kever, this.gvrsn)) {
-          yield* sendWitnessMessage(hab, witness, this.selected(dmsg), this.http, this.clock, this.protocol);
+          const delivery = yield* deliverWitnessMessage(
+            hab,
+            witness,
+            this.selected(dmsg),
+            this.http,
+            this.clock,
+            this.protocol,
+          );
+          if (delivery.kind === "unreachable") return incomplete(witness, delivery.error);
         }
       }
 
       if (allowTcp && !witnessHttpUrl(hab, witness) && witnessTcpUrl(hab, witness)) {
-        yield* sendWitnessMessage(hab, witness, this.selected(message), this.http, this.clock, this.protocol);
+        const delivery = yield* deliverWitnessMessage(
+          hab,
+          witness,
+          this.selected(message),
+          this.http,
+          this.clock,
+          this.protocol,
+        );
+        if (delivery.kind === "unreachable") return incomplete(witness, delivery.error);
         statuses[witness] = 200;
       } else {
         // A single receipt attempt owns its response until parsing and collection finish.
-        let response = yield* call(() =>
-          postWitnessReceiptEndpoint(
-            hab,
-            witness,
-            message,
-            this.http,
-            auths[witness],
-            this.gvrsn,
-          )
-        );
-        if (response.kind === "escrow") {
-          response = yield* pollWitnessReceipt(
-            hab,
-            witness,
-            pre,
-            eventSn,
-            said,
-            this.http,
-            this.gvrsn,
+        let response: WitnessReceiptEndpointResponse;
+        try {
+          response = yield* call(() =>
+            postWitnessReceiptEndpoint(
+              hab,
+              witness,
+              message,
+              this.http,
+              auths[witness],
+              this.gvrsn,
+            )
           );
+          if (response.kind === "escrow") {
+            response = yield* pollWitnessReceipt(
+              hab,
+              witness,
+              pre,
+              eventSn,
+              said,
+              this.http,
+              this.gvrsn,
+            );
+          }
+        } catch (error) {
+          if (!(error instanceof TransportError)) throw error;
+          return incomplete(witness, error);
         }
         statuses[witness] = response.status;
         if (response.kind !== "accepted") {
           const detail = response.kind === "reject" ? response.message : "receipt remained escrowed";
-          throw new ValidationError(
-            `Witness ${witness} failed to receipt ${pre}:${eventSn.toString(16)}: ${detail}`,
+          return incomplete(
+            witness,
+            new ValidationError(`Witness ${witness} failed to receipt ${pre}:${eventSn.toString(16)}: ${detail}`),
           );
         }
         yield* processMessages((signal) => chunkBytes(response.body, { signal }), this.protocol, this.kvy, {
@@ -210,7 +262,10 @@ export class Receiptor {
       const index = witnesses.indexOf(witness);
       const wigers = this.hby.db.wigs.get(dgKey(pre, said)).filter((siger) => siger.index === index);
       if (wigers.length === 0) {
-        throw new ValidationError(`Witness ${witness} did not receipt ${pre}:${eventSn.toString(16)}.`);
+        return incomplete(
+          witness,
+          new ValidationError(`Witness ${witness} did not receipt ${pre}:${eventSn.toString(16)}.`),
+        );
       }
       receiptGroups.set(witness, wigers);
     }
@@ -248,10 +303,18 @@ export class Receiptor {
             genusify: true,
           }),
       );
-      yield* sendWitnessMessage(hab, witness, concatBytes(...parts), this.http, this.clock, this.protocol);
+      const delivery = yield* deliverWitnessMessage(
+        hab,
+        witness,
+        concatBytes(...parts),
+        this.http,
+        this.clock,
+        this.protocol,
+      );
+      if (delivery.kind === "unreachable") return incomplete(witness, delivery.error);
     }
 
-    return { witnesses, statuses };
+    return { kind: "receipted", result: { witnesses, statuses } };
   }
   /**
    * Query a stored witness receipt and apply it to local state when found.
@@ -310,15 +373,32 @@ export class Receiptor {
     if (!hab) {
       throw new ValidationError(`${pre} not a valid local AID.`);
     }
+    const delivery = yield* this.replayHistory(hab, witness);
+    if (delivery.kind === "unreachable") throw delivery.error;
+  }
+
+  /** Replay a delegated inception's delegation chain and the KEL to one witness, stopping at the first failure. */
+  private *replayHistory(hab: Hab, witness: string): Operation<WitnessDelivery> {
     const kever = hab.kever;
-    if (kever?.delegated) {
-      for (const msg of this.hby.db.cloneDelegation(kever, this.gvrsn)) {
-        yield* sendWitnessMessage(hab, witness, this.selected(msg), this.http, this.clock, this.protocol);
-      }
+    const db = this.hby.db;
+    const gvrsn = this.gvrsn;
+    const pre = hab.pre!;
+    const messages = (function*() {
+      if (kever?.delegated) yield* db.cloneDelegation(kever, gvrsn);
+      yield* db.clonePreIter(pre, 0, gvrsn);
+    })();
+    for (const msg of messages) {
+      const delivery = yield* deliverWitnessMessage(
+        hab,
+        witness,
+        this.selected(msg),
+        this.http,
+        this.clock,
+        this.protocol,
+      );
+      if (delivery.kind === "unreachable") return delivery;
     }
-    for (const msg of this.hby.db.clonePreIter(pre, 0, this.gvrsn)) {
-      yield* sendWitnessMessage(hab, witness, this.selected(msg), this.http, this.clock, this.protocol);
-    }
+    return { kind: "delivered" };
   }
   /** Complete streams select their framing before the body; detached receipt headers retain their existing enclosure. */
   private selected(message: Uint8Array): Uint8Array {
