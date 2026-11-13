@@ -133,6 +133,23 @@ Changed:
 - The CORS preflight allows the `CESR-Genus` and `Authorization` request headers.
 - `FetchHttpClient` requests can be cancelled in WebKit.
 
+## Patch releases 2.2.1 and 2.2.2
+
+2.2.1 and 2.2.2 fix defects found by qualification; read their notes:
+[2.2.1](../../versioning/2.2.1-release-notes.md) and
+[2.2.2](../../versioning/2.2.2-release-notes.md). 2.2.2 changes types a 2.2.0 caller may
+already use:
+
+- The IPEX disclosure options take `priorSaid` only; `prior` is a type error and is refused
+  with a `ValidationError` when untyped.
+- A wallet group's `credentials.present` requires `verb`.
+- `unblindingStatus` returns `interrupted` for a discloser that has not begun, where it threw.
+- The issuance and Unblind operation tables are private; use `liveOf`, `endedOf` and
+  `settledOf`.
+- `settleProposedRotation` takes a `ProposedRotation`.
+- Schemas are validated by `@cfworker/json-schema`: `$dynamicRef` and an unknown `$schema`
+  are refused.
+
 ## Known limits
 
 See [Known limits in 2.2.0](../../design-docs/runtime/WALLET_LIBRARY_GUIDE.md#known-limits-in-220).
