@@ -1,36 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Everything runs in Linux containers on named volumes. The host holds only
+# this script, its logs, and the sources piped in with `git archive`.
+# Tufa, KERIpy, Sally, the Sally hook and the vLEI schema server share the
+# network namespace of the Tufa container, so every endpoint is 127.0.0.1.
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORKSPACE_ROOT="$(cd "${ROOT_DIR}/../../.." && pwd)"
 KERIPY_INTEROP_REPO="${KERIPY_INTEROP_REPO:-https://github.com/kentbull/keripy.git}"
 KERIPY_INTEROP_COMMIT="${KERIPY_INTEROP_COMMIT:-98b88cf73a746813a8719f05264400467a474c05}"
 KERIPY_INTEROP_INSTALL="git+${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}"
-KERIPY_INTEROP_CACHE_ROOT="${KERIPY_INTEROP_CACHE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/tufa-interop/keripy/${KERIPY_INTEROP_COMMIT}}"
-KERIPY_INTEROP_VENV="${KERIPY_INTEROP_VENV:-${KERIPY_INTEROP_CACHE_ROOT}/venv}"
-KLI_CMD="${KLI_CMD:-}"
+KERIPY_BASE_IMAGE="${KERIPY_BASE_IMAGE:-python:3.14-slim}"
+KERIPY_IMAGE="${KERIPY_IMAGE:-local/keripy-interop:src-${KERIPY_INTEROP_COMMIT:0:12}}"
+TUFA_TEST_IMAGE="${TUFA_TEST_IMAGE:-local/keri-ts-test:latest}"
 
 RUN_ID="${RUN_ID:-vlei-tufa-sally-$(date +%Y%m%d%H%M%S)-$RANDOM}"
-RUN_DIR="${RUN_DIR:-${TMPDIR:-/tmp}/${RUN_ID}}"
-LOG_DIR="${RUN_DIR}/logs"
+SUFFIX="${RUN_ID##*-}"
+HOST_RUN_DIR="${HOST_RUN_DIR:-${TMPDIR:-/tmp}/${RUN_ID}}"
+LOG_DIR="${HOST_RUN_DIR}/logs"
+RUN_DIR="/work/run"
+TUFA_REPO_DIR="/work/repo"
 TUFA_HEAD="${RUN_DIR}/tufa"
-KLI_CONFIG_DIR="${RUN_DIR}/keripy-config"
-TUFA_NPM_PREFIX="${TUFA_NPM_PREFIX:-${RUN_DIR}/npm-prefix}"
-TUFA_INSTALL_MODE="${TUFA_INSTALL_MODE:-tarball}"
-TUFA_BIN="${TUFA_BIN:-}"
-CESR_TARBALL_PATH="${CESR_TARBALL_PATH:-}"
-KERI_TARBALL_PATH="${KERI_TARBALL_PATH:-}"
-TUFA_TARBALL_PATH="${TUFA_TARBALL_PATH:-}"
-VERIFIER_TARBALL_PATH="${VERIFIER_TARBALL_PATH:-}"
-HOSTING_TARBALL_PATH="${HOSTING_TARBALL_PATH:-}"
+KLI_CONFIG_DIR="/work/keripy-config"
+TUFA_CONTAINER="tufa-sally-tufa-${SUFFIX}"
+KERIPY_CONTAINER="tufa-sally-keripy-${SUFFIX}"
+WORK_VOLUME="tufa-sally-work-${SUFFIX}"
+KERIPY_WORK_VOLUME="tufa-sally-keripy-work-${SUFFIX}"
+KERIPY_STATE_VOLUME="tufa-sally-keripy-state-${SUFFIX}"
+DENO_CACHE_VOLUME="${DENO_CACHE_VOLUME:-tufa-sally-deno-cache}"
+SALLY_CONF_VOLUME="tufa-sally-conf-${SUFFIX}"
+SALLY_VAR_VOLUME="tufa-sally-var-${SUFFIX}"
 KERI_BASE="${KERI_BASE:-${RUN_ID}}"
 KEEP_RUN_DIR="${KEEP_RUN_DIR:-true}"
 SALLY_VLEI_IMAGE="${SALLY_VLEI_IMAGE:-gleif/vlei:1.0.3}"
-SALLY_IMAGE="${SALLY_IMAGE:-gleif/sally:0.9.0}"
-SALLY_BASE_IMAGE="${SALLY_BASE_IMAGE:-gleif/sally:0.9.0}"
-SALLY_BUILD_LOCAL="${SALLY_BUILD_LOCAL:-false}"
+# 0.9.0 lacks --salt, --incept-file and --direct, which this script needs.
+SALLY_IMAGE="${SALLY_IMAGE:-gleif/sally:1.0.11}"
 SALLY_LOGLEVEL="${SALLY_LOGLEVEL:-DEBUG}"
-SALLY_COUNTER_PROFILE="${SALLY_COUNTER_PROFILE:-legacy}"
+SALLY_GVRSN="${SALLY_GVRSN:-1.0}"
+# Sally 0.9.0 and the pinned KERIpy are KERI 1.0 peers; Tufa defaults new KELs to 2.0.
+KERI_VERSION="${KERI_VERSION:-1.0}"
 SALLY_NAME="${SALLY_NAME:-sally}"
 SALLY_ALIAS="${SALLY_ALIAS:-${SALLY_NAME}}"
 SALLY_CONFIG_FILE="${SALLY_CONFIG_FILE:-${SALLY_NAME}}"
@@ -46,10 +53,13 @@ VLEI_RULES_COMMIT="${VLEI_RULES_COMMIT:-294b5ba6a325b39a209bfd58f6751d17dde56296
 VLEI_RULES_RAW_BASE="${VLEI_RULES_RAW_BASE:-https://raw.githubusercontent.com/WebOfTrust/signifypy/${VLEI_RULES_COMMIT}}"
 VLEI_SCHEMA_DIR="${VLEI_SCHEMA_DIR:-}"
 VLEI_RULES_DIR="${VLEI_RULES_DIR:-}"
-MATERIALIZED_VLEI_SCHEMA_DIR="${VLEI_SCHEMA_DIR}"
-MATERIALIZED_VLEI_RULES_DIR="${VLEI_RULES_DIR}"
+MATERIALIZED_VLEI_SCHEMA_DIR="${RUN_DIR}/vlei/schema"
+MATERIALIZED_VLEI_RULES_DIR="${RUN_DIR}/vlei/rules"
 
-TUFACMD=()
+TUFACMD=(deno run --allow-all --unstable-ffi "${TUFA_REPO_DIR}/packages/tufa/mod.ts")
+SALLY_VLEI_PORT=7723
+SALLY_HOOK_PORT=9923
+SALLY_PORT=9723
 
 QVI_SCHEMA="EBfdlu8R27Fbx-ehrqwImnK-8Cm79sqbAQ4MmvEAYqao"
 LE_SCHEMA="ENPXp1vQzRF6JwIuS-mp2U8Uf1MoADoP_GqQ62VsDZWY"
@@ -72,8 +82,7 @@ WES_OOBI="http://127.0.0.1:5644/oobi/${WES_PRE}/controller"
 PIDS=()
 PID_NAMES=()
 DOCKER_CONTAINERS=()
-RESERVED_DOCKER_PORTS=()
-DOCKER_NETWORK=""
+VOLUMES=()
 
 log() {
   printf '[vlei-tufa-sally] %s\n' "$*" >&2
@@ -115,12 +124,14 @@ cleanup() {
   for container in "${DOCKER_CONTAINERS[@]:-}"; do
     docker rm -f "${container}" >/dev/null 2>&1 || true
   done
-  if [[ -n "${DOCKER_NETWORK}" ]]; then
-    docker network rm "${DOCKER_NETWORK}" >/dev/null 2>&1 || true
-  fi
 
   if [[ "${KEEP_RUN_DIR}" != "true" ]]; then
-    rm -rf "${RUN_DIR}"
+    for volume in "${VOLUMES[@]:-}"; do
+      [[ -n "${volume}" ]] || continue
+      docker volume rm "${volume}" >/dev/null 2>&1 || true
+    done
+  else
+    log "kept volumes: ${VOLUMES[*]:-none}"
   fi
 }
 trap cleanup EXIT
@@ -146,25 +157,45 @@ capture() {
   printf -v "${__var}" '%s' "$__capture_out"
 }
 
-can_run_command() {
-  "$@" >/dev/null 2>&1
+docker_image_exists() {
+  docker image inspect "$1" >/dev/null 2>&1
+}
+
+# Run a command inside the Tufa container, from the extracted repository.
+in_tufa() {
+  docker exec -w "${TUFA_REPO_DIR}" "${TUFA_CONTAINER}" "$@"
+}
+
+# Write stdin to a file inside the Tufa container.
+put_file() {
+  docker exec -i "${TUFA_CONTAINER}" bash -c 'mkdir -p "$(dirname "$1")" && cat >"$1"' _ "$1"
+}
+
+kli() {
+  docker exec "${KERIPY_CONTAINER}" kli "$@"
 }
 
 download_file() {
   local url="$1"
   local target="$2"
-  [[ -f "${target}" ]] && return 0
-  mkdir -p "$(dirname "${target}")"
+  in_tufa test -f "${target}" && return 0
+  in_tufa mkdir -p "$(dirname "${target}")"
   log "download ${url} -> ${target}"
-  curl -fsSL "${url}" -o "${target}"
+  in_tufa curl -fsSL "${url}" -o "${target}"
+}
+
+copy_dir_in() {
+  local source="$1"
+  local target="$2"
+  in_tufa mkdir -p "${target}"
+  docker cp "${source}/." "${TUFA_CONTAINER}:${target}"
 }
 
 prepare_vlei_fixtures() {
   if [[ -n "${VLEI_SCHEMA_DIR}" ]]; then
-    MATERIALIZED_VLEI_SCHEMA_DIR="${VLEI_SCHEMA_DIR}"
-    log "using override vLEI schema dir: ${MATERIALIZED_VLEI_SCHEMA_DIR}"
+    log "copying override vLEI schema dir: ${VLEI_SCHEMA_DIR}"
+    copy_dir_in "${VLEI_SCHEMA_DIR}" "${MATERIALIZED_VLEI_SCHEMA_DIR}"
   else
-    MATERIALIZED_VLEI_SCHEMA_DIR="${RUN_DIR}/vlei/schema"
     log "materializing vLEI schemas from ${VLEI_SCHEMA_REPO}@${VLEI_SCHEMA_COMMIT}"
     download_file "${VLEI_SCHEMA_RAW_BASE}/qualified-vLEI-issuer-vLEI-credential.json" \
       "${MATERIALIZED_VLEI_SCHEMA_DIR}/qualified-vLEI-issuer-vLEI-credential.schema.json"
@@ -181,10 +212,9 @@ prepare_vlei_fixtures() {
   fi
 
   if [[ -n "${VLEI_RULES_DIR}" ]]; then
-    MATERIALIZED_VLEI_RULES_DIR="${VLEI_RULES_DIR}"
-    log "using override vLEI rules dir: ${MATERIALIZED_VLEI_RULES_DIR}"
+    log "copying override vLEI rules dir: ${VLEI_RULES_DIR}"
+    copy_dir_in "${VLEI_RULES_DIR}" "${MATERIALIZED_VLEI_RULES_DIR}"
   else
-    MATERIALIZED_VLEI_RULES_DIR="${RUN_DIR}/vlei/rules"
     log "materializing vLEI rules from ${VLEI_RULES_REPO}@${VLEI_RULES_COMMIT}"
     download_file "${VLEI_RULES_RAW_BASE}/scripts/data/rules.json" \
       "${MATERIALIZED_VLEI_RULES_DIR}/rules.json"
@@ -193,138 +223,50 @@ prepare_vlei_fixtures() {
   fi
 }
 
-python_supports_314() {
-  local python="$1"
-  local version major minor
-  if ! version="$("${python}" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)"; then
-    return 1
-  fi
-  major="${version%%.*}"
-  minor="${version#*.}"
-  [[ "${major}" =~ ^[0-9]+$ && "${minor}" =~ ^[0-9]+$ ]] || return 1
-  (( major > 3 || (major == 3 && minor >= 14) ))
-}
-
-resolve_python314() {
-  local candidates=()
-  local pyenv_python candidate
-  [[ -z "${KERIPY_INTEROP_PYTHON:-}" ]] || candidates+=("${KERIPY_INTEROP_PYTHON}")
-  if can_run_command pyenv which python; then
-    pyenv_python="$(pyenv which python)"
-    [[ -z "${pyenv_python}" ]] || candidates+=("${pyenv_python}")
-  fi
-  candidates+=(python3.14 python3)
-  for candidate in "${candidates[@]}"; do
-    if python_supports_314 "${candidate}"; then
-      printf '%s\n' "${candidate}"
-      return 0
-    fi
-  done
-  fail "KERIpy interop requires Python >= 3.14. Tried: ${candidates[*]}"
-}
-
-can_use_kli() {
-  local kli="$1"
-  [[ -x "${kli}" ]] || return 1
-  "${kli}" --help >/dev/null 2>&1
-}
-
-prepare_pinned_keripy() {
-  if [[ -n "${KLI_CMD}" ]]; then
-    can_use_kli "${KLI_CMD}" || fail "KLI_CMD is not executable/runnable: ${KLI_CMD}"
-    log "using override KLI command: ${KLI_CMD}"
+# Build the pinned KERIpy image from a Dockerfile on stdin; no build context.
+ensure_keripy_image() {
+  if docker_image_exists "${KERIPY_IMAGE}"; then
+    log "using cached KERIpy image ${KERIPY_IMAGE}"
     return 0
   fi
-
-  if [[ -n "${KERIPY_DIR:-}" ]]; then
-    KLI_CMD="${KERIPY_DIR}/venv/bin/kli"
-    can_use_kli "${KLI_CMD}" || fail "KERIPY_DIR did not provide runnable KLI: ${KLI_CMD}"
-    log "using override KERIpy dir: ${KERIPY_DIR}"
-    return 0
-  fi
-
-  local marker="${KERIPY_INTEROP_CACHE_ROOT}/PIN"
-  local kli="${KERIPY_INTEROP_VENV}/bin/kli"
-  if [[ -f "${marker}" ]] && [[ "$(tr -d '\r\n' <"${marker}")" == "${KERIPY_INTEROP_COMMIT}" ]] && can_use_kli "${kli}"; then
-    KLI_CMD="${kli}"
-    log "using cached pinned KERIpy ${KERIPY_INTEROP_COMMIT}: ${KLI_CMD}"
-    return 0
-  fi
-
-  local python
-  python="$(resolve_python314)"
-  rm -rf "${KERIPY_INTEROP_VENV}"
-  mkdir -p "${KERIPY_INTEROP_CACHE_ROOT}"
-  log "creating pinned KERIpy venv with ${python}: ${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}"
-  run "${python}" -m venv "${KERIPY_INTEROP_VENV}"
-  if can_run_command uv --version; then
-    run uv pip install --python "${KERIPY_INTEROP_VENV}/bin/python" "${KERIPY_INTEROP_INSTALL}"
-  else
-    run "${KERIPY_INTEROP_VENV}/bin/python" -m pip install --upgrade pip setuptools wheel
-    run "${KERIPY_INTEROP_VENV}/bin/python" -m pip install "${KERIPY_INTEROP_INSTALL}"
-  fi
-  can_use_kli "${kli}" || fail "Pinned KERIpy install did not produce runnable KLI: ${kli}"
-  printf '%s\n' "${KERIPY_INTEROP_COMMIT}" >"${marker}"
-  KLI_CMD="${kli}"
+  log "building ${KERIPY_IMAGE}: ${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}"
+  docker build -t "${KERIPY_IMAGE}" - <<DOCKER
+FROM ${KERIPY_BASE_IMAGE}
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git build-essential libsodium23 curl \
+ && rm -rf /var/lib/apt/lists/*
+# \`kli witness demo\` reads scripts/keri/cf/main/*.json relative to its working
+# directory, so keep the pinned source tree and run KERIpy from it.
+RUN git init -q /keripy \
+ && git -C /keripy fetch -q --depth 1 "${KERIPY_INTEROP_REPO}" "${KERIPY_INTEROP_COMMIT}" \
+ && git -C /keripy checkout -q FETCH_HEAD \
+ && pip install --no-cache-dir /keripy
+WORKDIR /keripy
+DOCKER
 }
 
-pack_package_tarball() {
-  local package_dir="$1"
-  local __result_var="$2"
-  local tarball
-  tarball="$(cd "${package_dir}" && npm pack --silent | tail -n1)"
-  printf -v "${__result_var}" '%s/%s' "${package_dir}" "${tarball}"
-}
+# Start the Tufa and KERIpy containers on named volumes and copy the committed
+# HEAD of this repository into the Tufa container. The Tufa container owns the
+# network namespace the other containers join.
+start_tool_containers() {
+  VOLUMES+=("${WORK_VOLUME}" "${KERIPY_WORK_VOLUME}" "${KERIPY_STATE_VOLUME}" "${SALLY_CONF_VOLUME}" "${SALLY_VAR_VOLUME}")
+  DOCKER_CONTAINERS+=("${TUFA_CONTAINER}" "${KERIPY_CONTAINER}")
+  run docker run -d --init --name "${TUFA_CONTAINER}" \
+    -v "${WORK_VOLUME}:/work" \
+    -v "${DENO_CACHE_VOLUME}:/deno-cache" \
+    -e DENO_DIR=/deno-cache \
+    "${TUFA_TEST_IMAGE}" sleep infinity
+  run docker run -d --init --name "${KERIPY_CONTAINER}" \
+    --network "container:${TUFA_CONTAINER}" \
+    -v "${KERIPY_WORK_VOLUME}:/work" \
+    -v "${KERIPY_STATE_VOLUME}:/usr/local/var/keri" \
+    "${KERIPY_IMAGE}" sleep infinity
 
-prepare_tufa_command() {
-  if [[ -n "${TUFA_BIN}" ]]; then
-    [[ -x "${TUFA_BIN}" ]] || fail "TUFA_BIN is not executable: ${TUFA_BIN}"
-    TUFACMD=("${TUFA_BIN}")
-    log "using override Tufa binary: ${TUFA_BIN}"
-    return 0
-  fi
-
-  case "${TUFA_INSTALL_MODE}" in
-    source)
-      TUFACMD=(deno run --allow-all --unstable-ffi "${ROOT_DIR}/packages/tufa/mod.ts")
-      log "using source Tufa command: ${TUFACMD[*]}"
-      return 0
-      ;;
-    tarball)
-      ;;
-    *)
-      fail "Unknown TUFA_INSTALL_MODE=${TUFA_INSTALL_MODE}; expected tarball or source"
-      ;;
-  esac
-
-  require_cmd npm
-  require_cmd node
-  if [[ -z "${CESR_TARBALL_PATH}" || -z "${KERI_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" || -z "${VERIFIER_TARBALL_PATH}" || -z "${HOSTING_TARBALL_PATH}" ]]; then
-    run deno task npm:build:all
-  fi
-  [[ -n "${CESR_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/cesr/npm" CESR_TARBALL_PATH
-  [[ -n "${KERI_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/keri/npm" KERI_TARBALL_PATH
-  [[ -n "${TUFA_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/tufa/npm" TUFA_TARBALL_PATH
-  [[ -n "${VERIFIER_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/verifier/npm" VERIFIER_TARBALL_PATH
-  [[ -n "${HOSTING_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/hosting/npm" HOSTING_TARBALL_PATH
-  [[ -f "${HOSTING_TARBALL_PATH}" ]] || fail "Hosting tarball not found: ${HOSTING_TARBALL_PATH}"
-  [[ -f "${VERIFIER_TARBALL_PATH}" ]] || fail "Verifier tarball not found: ${VERIFIER_TARBALL_PATH}"
-  [[ -f "${CESR_TARBALL_PATH}" ]] || fail "CESR tarball not found: ${CESR_TARBALL_PATH}"
-  [[ -f "${KERI_TARBALL_PATH}" ]] || fail "keri-ts tarball not found: ${KERI_TARBALL_PATH}"
-  [[ -f "${TUFA_TARBALL_PATH}" ]] || fail "Tufa tarball not found: ${TUFA_TARBALL_PATH}"
-
-  mkdir -p "${TUFA_NPM_PREFIX}"
-  log "installing Tufa tarballs into ${TUFA_NPM_PREFIX}"
-  run npm install -g --prefix "${TUFA_NPM_PREFIX}" --force \
-    "${CESR_TARBALL_PATH}" \
-    "${KERI_TARBALL_PATH}" \
-    "${VERIFIER_TARBALL_PATH}" \
-    "${HOSTING_TARBALL_PATH}" \
-    "${TUFA_TARBALL_PATH}"
-  TUFACMD=("${TUFA_NPM_PREFIX}/bin/tufa")
-  [[ -x "${TUFACMD[0]}" ]] || fail "Tarball install did not produce executable ${TUFACMD[0]}"
-  export PATH="${TUFA_NPM_PREFIX}/bin:${PATH}"
-  log "using tarball-installed Tufa command: ${TUFACMD[0]}"
+  log "copying committed HEAD $(git -C "${ROOT_DIR}" rev-parse --short HEAD) into ${TUFA_CONTAINER}"
+  docker exec "${TUFA_CONTAINER}" mkdir -p "${TUFA_REPO_DIR}" "${RUN_DIR}"
+  git -C "${ROOT_DIR}" archive --format=tar HEAD | docker exec -i "${TUFA_CONTAINER}" tar -x -C "${TUFA_REPO_DIR}"
+  in_tufa deno install >/dev/null 2>&1 || true
+  run in_tufa deno task setup:compat-lmdb
 }
 
 start_bg() {
@@ -384,7 +326,7 @@ wait_http() {
   local timeout="${2:-60}"
   local deadline=$((SECONDS + timeout))
   while (( SECONDS < deadline )); do
-    if curl -fsS "${url}" >/dev/null 2>&1; then
+    if in_tufa curl -fsS "${url}" >/dev/null 2>&1; then
       return 0
     fi
     sleep 0.5
@@ -392,44 +334,27 @@ wait_http() {
   fail "timed out waiting for ${url}"
 }
 
-docker_image_exists() {
-  docker image inspect "$1" >/dev/null 2>&1
+wait_container_log() {
+  local container="$1"
+  local pattern="$2"
+  local timeout="${3:-60}"
+  local deadline=$((SECONDS + timeout))
+  while (( SECONDS < deadline )); do
+    if docker logs "${container}" 2>&1 | grep -qF "${pattern}"; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  docker logs "${container}" >&2 || true
+  fail "timed out waiting for ${pattern} in ${container} logs"
 }
 
-ensure_sally_image() {
-  if [[ "${SALLY_BASE_IMAGE}" == w3c-crosswalk/isomer-python* ]]; then
-    fail "SALLY_BASE_IMAGE must not use w3c-crosswalk/isomer-python; use a gleif/sally image or another public Sally artifact"
-  fi
-
-  if docker_image_exists "${SALLY_IMAGE}"; then
-    return 0
-  fi
-
-  if [[ "${SALLY_BUILD_LOCAL}" != "true" ]]; then
-    run docker pull "${SALLY_IMAGE}"
-    return 0
-  fi
-
-  if ! docker_image_exists "${SALLY_BASE_IMAGE}"; then
-    run docker pull "${SALLY_BASE_IMAGE}"
-  fi
-
-  local dockerfile="${RUN_DIR}/sally-local.Dockerfile"
-  cat >"${dockerfile}" <<DOCKER
-FROM ${SALLY_BASE_IMAGE}
-WORKDIR /sally
-COPY setup.py README.md LICENSE ./
-COPY src/ src/
-RUN pip install -e . --no-deps
-DOCKER
-  run docker build -t "${SALLY_IMAGE}" -f "${dockerfile}" "${WORKSPACE_ROOT}/verifier/apps/sally"
-}
-
+# Pick a port that nothing in the shared container network namespace uses.
 random_port() {
   local port
   for _ in {1..50}; do
     port=$((49152 + RANDOM % 16384))
-    if ! lsof -ti "tcp:${port}" >/dev/null 2>&1; then
+    if ! in_tufa bash -c "exec 3<>/dev/tcp/127.0.0.1/${port}" >/dev/null 2>&1; then
       printf '%s\n' "${port}"
       return 0
     fi
@@ -437,49 +362,8 @@ random_port() {
   fail "could not allocate an unused local port"
 }
 
-docker_port_is_listed() {
-  local port="$1"
-  docker ps --format '{{.Ports}}' 2>/dev/null | grep -Eq "(^|[, ])([0-9.]+|\\[::\\]|:::):${port}->"
-}
-
-docker_can_publish_port() {
-  local port="$1"
-  local probe="tufa-port-probe-${RUN_ID##*-}-${port}"
-  docker rm -f "${probe}" >/dev/null 2>&1 || true
-  if ! docker run -d --rm --name "${probe}" -p "${port}:9" --entrypoint /bin/sh "${SALLY_IMAGE}" -c 'sleep 2' >/dev/null 2>&1; then
-    docker rm -f "${probe}" >/dev/null 2>&1 || true
-    return 1
-  fi
-  docker rm -f "${probe}" >/dev/null 2>&1 || true
-}
-
-docker_port_is_reserved() {
-  local port="$1"
-  local reserved
-  for reserved in "${RESERVED_DOCKER_PORTS[@]:-}"; do
-    [[ "${reserved}" != "${port}" ]] || return 0
-  done
-  return 1
-}
-
-random_docker_port() {
-  local port
-  for _ in {1..80}; do
-    port="$(random_port)"
-    if docker_port_is_reserved "${port}" || docker_port_is_listed "${port}"; then
-      continue
-    fi
-    if docker_can_publish_port "${port}"; then
-      RESERVED_DOCKER_PORTS+=("${port}")
-      printf '%s\n' "${port}"
-      return 0
-    fi
-  done
-  fail "could not allocate a Docker-publishable local port"
-}
-
 tufa() {
-  "${TUFACMD[@]}" "$@"
+  in_tufa "${TUFACMD[@]}" "$@"
 }
 
 tufa_store() {
@@ -557,7 +441,7 @@ incept_tufa_aid() {
   local alias="$2"
   shift 2
   local witnesses=("$@")
-  local args=(incept -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" -tf -t 2 --receipt-endpoint)
+  local args=(incept -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" -tf -t 2 --version "${KERI_VERSION}" --receipt-endpoint)
   local wit
   for wit in "${witnesses[@]}"; do
     args+=(-w "${wit}")
@@ -635,11 +519,11 @@ multisig_round() {
     --arg b "${pre2}" \
     --argjson wits "$(printf '%s\n' "${witnesses[@]}" | jq -R . | jq -s .)" \
     '{aids: [$a, $b], isith: "2", nsith: "2", toad: 2, wits: $wits}' \
-    >"${cfg}"
+    | put_file "${cfg}"
 
-  run tufa multisig incept -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${member1}" -g "${group}" -f "${cfg}" --approval-timeout 1
-  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" -g "${group}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
-  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" -g "${group}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
+  run tufa multisig incept -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${member1}" -g "${group}" -f "${cfg}" --version "${KERI_VERSION}" --approval-timeout 1
+  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" -g "${group}" -Y --approval-timeout 120 --receipt-endpoint
+  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" -g "${group}" -Y --approval-timeout 120 --receipt-endpoint
 }
 
 delegated_qvi_multisig_round() {
@@ -653,7 +537,7 @@ delegated_qvi_multisig_round() {
     --arg delpre "${GEDA_PRE}" \
     --argjson wits "$(printf '%s\n' "${QVI_WITS[@]}" | jq -R . | jq -s .)" \
     '{aids: [$a, $b], isith: "2", nsith: "2", toad: 2, wits: $wits, delpre: $delpre}' \
-    >"${cfg}"
+    | put_file "${cfg}"
 
   geda_wit_oobis="$(witness_oobis geda1 geda)"
   resolve_oobi_lines qvi1 geda "${geda_wit_oobis}"
@@ -661,53 +545,62 @@ delegated_qvi_multisig_round() {
 
   qvi1_log="${LOG_DIR}/qvi-delegated-incept-qvi1.log"
   start_cmd_bg qvi1_pid qvi-delegated-incept-qvi1 "${qvi1_log}" \
-    tufa multisig incept -n qvi1 --head-dir "${TUFA_HEAD}" -a qvi-m1 -g qvi -f "${cfg}" --proxy qvi-m1 --approval-timeout 120
+    tufa multisig incept -n qvi1 --head-dir "${TUFA_HEAD}" -a qvi-m1 -g qvi -f "${cfg}" --version "${KERI_VERSION}" --proxy qvi-m1 --approval-timeout 120
 
   qvi2_log="${LOG_DIR}/qvi-delegated-join-qvi2.log"
   start_cmd_bg qvi2_pid qvi-delegated-join-qvi2 "${qvi2_log}" \
-    tufa multisig join -n qvi2 --head-dir "${TUFA_HEAD}" -g qvi -Y --poll-turns 120 --poll-budget-ms 2000 --receipt-endpoint --proxy qvi-m2
+    tufa multisig join -n qvi2 --head-dir "${TUFA_HEAD}" -g qvi -Y --approval-timeout 120 --receipt-endpoint --proxy qvi-m2
 
-  run tufa delegate confirm -n geda1 --head-dir "${TUFA_HEAD}" -a geda --interact --auto
-  run tufa multisig join -n geda2 --head-dir "${TUFA_HEAD}" -g geda -Y --poll-turns 120 --poll-budget-ms 2000 --receipt-endpoint
-  run tufa multisig join -n geda1 --head-dir "${TUFA_HEAD}" -g geda -Y --poll-turns 120 --poll-budget-ms 2000 --receipt-endpoint
-  run tufa delegate confirm -n geda1 --head-dir "${TUFA_HEAD}" -a geda --interact --auto
-  run tufa delegate confirm -n geda2 --head-dir "${TUFA_HEAD}" -a geda --interact --auto
+  run tufa delegate confirm -n geda1 --head-dir "${TUFA_HEAD}" -a geda --interact --auto --timeout 120
+  run tufa multisig join -n geda2 --head-dir "${TUFA_HEAD}" -g geda -Y --approval-timeout 120 --receipt-endpoint
+  run tufa multisig join -n geda1 --head-dir "${TUFA_HEAD}" -g geda -Y --approval-timeout 120 --receipt-endpoint
   wait_cmd_bg "${qvi2_pid}" "${qvi2_log}"
   wait_cmd_bg "${qvi1_pid}" "${qvi1_log}"
   qvi_pre="$(sed -n '/^{/p' "${qvi1_log}" | tail -1 | jq -r '.group // empty')"
   [[ -n "${qvi_pre}" && "${qvi_pre}" != "null" ]] || fail "unable to parse delegated QVI prefix"
   anchor_file="${RUN_DIR}/qvi-delegation-anchor.json"
-  jq -n --arg i "${qvi_pre}" '{i: $i, s: "0", d: $i}' >"${anchor_file}"
+  jq -n --arg i "${qvi_pre}" '{i: $i, s: "0", d: $i}' | put_file "${anchor_file}"
   run tufa query -n qvi1 --head-dir "${TUFA_HEAD}" -a qvi-m1 --prefix "${GEDA_PRE}" --anchor "${anchor_file}"
   run tufa query -n qvi2 --head-dir "${TUFA_HEAD}" -a qvi-m2 --prefix "${GEDA_PRE}" --anchor "${anchor_file}"
   assert_delegated_from qvi1 qvi-m1 "${qvi_pre}" "${GEDA_PRE}"
   assert_delegated_from qvi2 qvi-m2 "${qvi_pre}" "${GEDA_PRE}"
 }
 
+# The proposing member's command waits for the other members, so the proposer runs in
+# the background while the others join; the proposer never `join`s its own proposal.
 registry_round() {
   local store1="$1"
   local store2="$2"
   local group="$3"
   local registry="$4"
-  run tufa vc registry incept -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" --registry-name "${registry}" --usage "${registry}"
-  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
-  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
+  local propose_log propose_pid
+  propose_log="${LOG_DIR}/registry-${registry}-${store1}.log"
+  start_cmd_bg propose_pid "registry-${registry}-${store1}" "${propose_log}" \
+    tufa vc registry incept -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" --registry-name "${registry}" --usage "${registry}" --timeout 120
+  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --approval-timeout 120 --receipt-endpoint
+  wait_cmd_bg "${propose_pid}" "${propose_log}"
   run tufa vc registry status -n "${store1}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}"
   run tufa vc registry status -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}"
 }
 
+# `multisig rpy` proposes the endpoint role and waits for the other members to join it.
+# Resolve the mailbox first: `oobi resolve` waits for the whole runtime to go quiet,
+# and a pending group proposal keeps it busy.
 multisig_mailbox_add_round() {
   local store1="$1"
   local store2="$2"
   local group="$3"
   local mailbox_oobi="$4"
   local mailbox_alias="$5"
-  resolve_oobi "${store1}" "${mailbox_oobi}" "${mailbox_alias}"
-  run tufa mailbox add -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" -w "${mailbox_alias}" --multisig-mode propose
-  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" -Y --poll-turns 80 --poll-budget-ms 2000
-  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" -Y --poll-turns 80 --poll-budget-ms 2000
+  local propose_log propose_pid
   resolve_oobi "${store1}" "${mailbox_oobi}" "${mailbox_alias}"
   resolve_oobi "${store2}" "${mailbox_oobi}" "${mailbox_alias}"
+
+  propose_log="${LOG_DIR}/${group}-mailbox-rpy-${store1}.log"
+  start_cmd_bg propose_pid "${group}-mailbox-rpy-${store1}" "${propose_log}" \
+    tufa multisig rpy -n "${store1}" --head-dir "${TUFA_HEAD}" -g "${group}" --eid "${mailbox_oobi##*/}" --role mailbox --approval-timeout 120
+  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" -Y --approval-timeout 120
+  wait_cmd_bg "${propose_pid}" "${propose_log}"
   run tufa mailbox add -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" -w "${mailbox_alias}" --multisig-mode complete
   run tufa mailbox add -n "${store2}" --head-dir "${TUFA_HEAD}" -a "${group}" -w "${mailbox_alias}" --multisig-mode complete
 }
@@ -723,14 +616,15 @@ credential_round() {
   local data_file="$8"
   local edges_file="${9:-}"
   local rules_file="${10:-}"
-  local output args
-  args=(vc create -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" --registry-name "${registry}" --schema "${schema}" --recipient "${recipient}" --data "@${data_file}")
+  local output args propose_log propose_pid
+  args=(vc create -n "${store1}" --head-dir "${TUFA_HEAD}" -a "${group}" --registry-name "${registry}" --schema "${schema}" --recipient "${recipient}" --data "@${data_file}" --timeout 120)
   [[ -n "${edges_file}" ]] && args+=(--edges "@${edges_file}")
   [[ -n "${rules_file}" ]] && args+=(--rules "@${rules_file}")
-  capture output tufa "${args[@]}"
-  printf '%s\n' "${output}"
-  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
-  run tufa multisig join -n "${store1}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --poll-turns 80 --poll-budget-ms 2000 --receipt-endpoint
+  propose_log="${LOG_DIR}/credential-${schema}-${store1}.log"
+  start_cmd_bg propose_pid "credential-${schema}-${store1}" "${propose_log}" tufa "${args[@]}"
+  run tufa multisig join -n "${store2}" --head-dir "${TUFA_HEAD}" --registry-name "${registry}" -Y --approval-timeout 120 --receipt-endpoint
+  wait_cmd_bg "${propose_pid}" "${propose_log}"
+  output="$(cat "${propose_log}")"
   printf -v "${__said_var}" '%s' "$(json_field "${output}" '.said')"
 }
 
@@ -741,7 +635,7 @@ poll_saved() {
   local out
   local i
   for i in $(seq 1 30); do
-    capture out tufa ipex poll -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" --poll-turns 8 --poll-budget-ms 2000
+    capture out tufa ipex poll -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" --timeout 8
     printf '%s\n' "${out}"
     if printf '%s\n' "${out}" | awk '/^\{/ { line=$0 } END { print line }' | jq -e --arg said "${said}" '.saved | index($said)' >/dev/null 2>&1; then
       return 0
@@ -758,9 +652,12 @@ grant_group_credential() {
   local recipient="$4"
   local said="$5"
   log "starting group IPEX grant ${said} from ${group} to ${recipient}"
-  run tufa ipex grant -n "${issuer1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${recipient}" --said "${said}" --approval-timeout 0
-  run tufa ipex join -n "${issuer2}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000
-  run tufa ipex join -n "${issuer1}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000
+  local propose_log propose_pid
+  propose_log="${LOG_DIR}/grant-${said}-${issuer1}.log"
+  start_cmd_bg propose_pid "grant-${said}-${issuer1}" "${propose_log}" \
+    tufa ipex grant -n "${issuer1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${recipient}" --said "${said}" --approval-timeout 120
+  run tufa ipex join -n "${issuer2}" --head-dir "${TUFA_HEAD}" --auto --approval-timeout 120
+  wait_cmd_bg "${propose_pid}" "${propose_log}"
 }
 
 present_group_to_sally() {
@@ -770,10 +667,13 @@ present_group_to_sally() {
   local said="$4"
   local expected="$5"
   log "presenting ${expected} ${said} from ${group} to Sally"
-  run tufa ipex grant -n "${holder1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${SALLY_PRE}" --said "${said}" --approval-timeout 0 --counter-profile "${SALLY_COUNTER_PROFILE}"
-  run tufa ipex join -n "${holder2}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000 --counter-profile "${SALLY_COUNTER_PROFILE}"
-  run tufa ipex join -n "${holder1}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000 --counter-profile "${SALLY_COUNTER_PROFILE}"
-  wait_hook "${expected}"
+  local propose_log propose_pid
+  propose_log="${LOG_DIR}/present-${said}-${holder1}.log"
+  start_cmd_bg propose_pid "present-${said}-${holder1}" "${propose_log}" \
+    tufa ipex grant -n "${holder1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${SALLY_PRE}" --said "${said}" --approval-timeout 120 --gvrsn "${SALLY_GVRSN}"
+  run tufa ipex join -n "${holder2}" --head-dir "${TUFA_HEAD}" --auto --approval-timeout 120 --gvrsn "${SALLY_GVRSN}"
+  wait_cmd_bg "${propose_pid}" "${propose_log}"
+  wait_hook "${expected}" "${said}"
 }
 
 present_single_to_sally() {
@@ -781,86 +681,80 @@ present_single_to_sally() {
   local alias="$2"
   local said="$3"
   local expected="$4"
-  run tufa ipex grant -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" -r "${SALLY_PRE}" --said "${said}" --counter-profile "${SALLY_COUNTER_PROFILE}"
-  wait_hook "${expected}"
+  run tufa ipex grant -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" -r "${SALLY_PRE}" --said "${said}" --gvrsn "${SALLY_GVRSN}"
+  wait_hook "${expected}" "${said}"
 }
 
+# The stock `sally hook demo` only prints each posted webhook body, so a presentation is
+# recorded once the credential SAID shows up in the hook container's log.
 wait_hook() {
   local expected="$1"
-  local holder i body
-  case "${expected}" in
-    QVI) holder="${QVI_PRE}" ;;
-    LE) holder="${LE_PRE}" ;;
-    OOR) holder="${OOR_PRE}" ;;
-    *) fail "unknown Sally hook type ${expected}" ;;
-  esac
+  local said="$2"
+  local i
   for i in $(seq 1 90); do
-    if body="$(curl -fsS "http://127.0.0.1:${SALLY_HOOK_PORT}/?holder=${holder}" 2>/dev/null)"; then
-      printf '%s\n' "${body}" | jq -e --arg typ "${expected}" '.type == $typ' >/dev/null 2>&1 && return 0
+    if docker logs "${SALLY_HOOK_CONTAINER}" 2>&1 | grep -qF "${said}"; then
+      return 0
     fi
     sleep 1
   done
-  if [[ -n "${body:-}" ]]; then
-    log "last Sally hook response for ${expected}: ${body}"
-  fi
   capture_docker_logs
   docker logs "${SALLY_HOOK_CONTAINER}" >&2 || true
   docker logs "${SALLY_CONTAINER}" >&2 || true
-  fail "Sally hook did not record ${expected}"
+  fail "Sally hook did not record ${expected} credential ${said}"
 }
 
 assert_sally_oobi_endpoint_replies() {
   local bytes="${RUN_DIR}/sally-oobi.cesr"
   local annotated="${RUN_DIR}/sally-oobi.annotated"
+  local annotated_text
 
   log "verifying Sally OOBI includes signed endpoint replies"
-  if ! curl -fsS -o "${bytes}" "${SALLY_OOBI}"; then
+  if ! in_tufa curl -fsS -o "${bytes}" "${SALLY_OOBI}"; then
     capture_docker_logs
     fail "unable to fetch Sally OOBI ${SALLY_OOBI}"
   fi
-  if ! "${TUFACMD[@]}" annotate --in "${bytes}" --out "${annotated}" --pretty; then
+  if ! tufa annotate --in "${bytes}" --out "${annotated}" --pretty; then
     capture_docker_logs
     fail "unable to annotate Sally OOBI ${SALLY_OOBI}"
   fi
+  annotated_text="$(in_tufa cat "${annotated}")"
 
-  if ! grep -Eq '"r"[[:space:]]*:[[:space:]]*"/loc/scheme"' "${annotated}"; then
-    sed -n '1,220p' "${annotated}" >&2 || true
+  if ! grep -Eq '"r"[[:space:]]*:[[:space:]]*"/loc/scheme"' <<<"${annotated_text}"; then
+    printf '%s\n' "${annotated_text}" | sed -n '1,220p' >&2
     capture_docker_logs
     fail "Sally OOBI ${SALLY_OOBI} is missing /loc/scheme"
   fi
-  if ! grep -Eq '"url"[[:space:]]*:[[:space:]]*"http://127\.0\.0\.1:'"${SALLY_PORT}"'/"' "${annotated}"; then
-    sed -n '1,220p' "${annotated}" >&2 || true
+  if ! grep -Eq '"url"[[:space:]]*:[[:space:]]*"http://127\.0\.0\.1:'"${SALLY_PORT}"'/"' <<<"${annotated_text}"; then
+    printf '%s\n' "${annotated_text}" | sed -n '1,220p' >&2
     capture_docker_logs
     fail "Sally /loc/scheme does not advertise host-reachable curl http://127.0.0.1:${SALLY_PORT}/"
   fi
-  if ! grep -Eq '"r"[[:space:]]*:[[:space:]]*"/end/role/add"' "${annotated}"; then
-    sed -n '1,220p' "${annotated}" >&2 || true
+  if ! grep -Eq '"r"[[:space:]]*:[[:space:]]*"/end/role/add"' <<<"${annotated_text}"; then
+    printf '%s\n' "${annotated_text}" | sed -n '1,220p' >&2
     capture_docker_logs
     fail "Sally OOBI ${SALLY_OOBI} is missing /end/role/add"
   fi
-  if ! grep -Eq '"role"[[:space:]]*:[[:space:]]*"controller"' "${annotated}"; then
-    sed -n '1,220p' "${annotated}" >&2 || true
+  if ! grep -Eq '"role"[[:space:]]*:[[:space:]]*"controller"' <<<"${annotated_text}"; then
+    printf '%s\n' "${annotated_text}" | sed -n '1,220p' >&2
     capture_docker_logs
     fail "Sally /end/role/add does not advertise the controller role"
   fi
 }
 
+ensure_sally_image() {
+  docker_image_exists "${SALLY_IMAGE}" || run docker pull "${SALLY_IMAGE}"
+}
+
 start_sally_stack() {
-  local conf_dir="${RUN_DIR}/sally-conf"
+  # Staging directory on the host only as a `docker cp` source; it is never mounted.
+  local conf_dir="${HOST_RUN_DIR}/sally-conf"
   local conf_cf_dir="${conf_dir}/keri/cf"
-  local sally_var="${RUN_DIR}/sally-var"
-  mkdir -p "${conf_cf_dir}" "${sally_var}"
+  mkdir -p "${conf_cf_dir}"
   ensure_sally_image
-  SALLY_VLEI_PORT="$(random_docker_port)"
-  SALLY_HOOK_PORT="$(random_docker_port)"
-  SALLY_PORT="$(random_docker_port)"
-  log "Sally ports vLEI=${SALLY_VLEI_PORT} hook=${SALLY_HOOK_PORT} server=${SALLY_PORT}"
-  local suffix="${RUN_ID##*-}"
-  DOCKER_NETWORK="tufa-sally-${suffix}"
-  SALLY_VLEI_CONTAINER="tufa-vlei-${suffix}"
-  SALLY_HOOK_CONTAINER="tufa-sally-hook-${suffix}"
-  SALLY_CONTAINER="tufa-sally-${suffix}"
-  DOCKER_CONTAINERS=("${SALLY_CONTAINER}" "${SALLY_HOOK_CONTAINER}" "${SALLY_VLEI_CONTAINER}")
+  SALLY_VLEI_CONTAINER="tufa-vlei-${SUFFIX}"
+  SALLY_HOOK_CONTAINER="tufa-sally-hook-${SUFFIX}"
+  SALLY_CONTAINER="tufa-sally-${SUFFIX}"
+  DOCKER_CONTAINERS+=("${SALLY_CONTAINER}" "${SALLY_HOOK_CONTAINER}" "${SALLY_VLEI_CONTAINER}")
 
   [[ "${SALLY_NAME}" == "${SALLY_ALIAS}" ]] || fail "Sally name ${SALLY_NAME} must match alias ${SALLY_ALIAS} for deterministic config loading"
   [[ "${SALLY_CONFIG_FILE}" == "${SALLY_NAME}" ]] || fail "Sally config file ${SALLY_CONFIG_FILE} must match name/alias ${SALLY_NAME}"
@@ -874,22 +768,22 @@ start_sally_stack() {
   },
   "iurls": [],
   "durls": [
-    "http://${SALLY_VLEI_CONTAINER}:7723/oobi/${OOR_SCHEMA}",
-    "http://${SALLY_VLEI_CONTAINER}:7723/oobi/${ECR_AUTH_SCHEMA}",
-    "http://${SALLY_VLEI_CONTAINER}:7723/oobi/${OOR_AUTH_SCHEMA}",
-    "http://${SALLY_VLEI_CONTAINER}:7723/oobi/${LE_SCHEMA}",
-    "http://${SALLY_VLEI_CONTAINER}:7723/oobi/${QVI_SCHEMA}",
-    "http://${SALLY_VLEI_CONTAINER}:7723/oobi/${ECR_SCHEMA}"
+    "http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${OOR_SCHEMA}",
+    "http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${ECR_AUTH_SCHEMA}",
+    "http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${OOR_AUTH_SCHEMA}",
+    "http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${LE_SCHEMA}",
+    "http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${QVI_SCHEMA}",
+    "http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${ECR_SCHEMA}"
   ]
 }
 JSON
   cat >"${conf_dir}/schema-oobis.txt" <<SCHEMAOOBIS
-http://${SALLY_VLEI_CONTAINER}:7723/oobi/${OOR_SCHEMA}
-http://${SALLY_VLEI_CONTAINER}:7723/oobi/${ECR_AUTH_SCHEMA}
-http://${SALLY_VLEI_CONTAINER}:7723/oobi/${OOR_AUTH_SCHEMA}
-http://${SALLY_VLEI_CONTAINER}:7723/oobi/${LE_SCHEMA}
-http://${SALLY_VLEI_CONTAINER}:7723/oobi/${QVI_SCHEMA}
-http://${SALLY_VLEI_CONTAINER}:7723/oobi/${ECR_SCHEMA}
+http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${OOR_SCHEMA}
+http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${ECR_AUTH_SCHEMA}
+http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${OOR_AUTH_SCHEMA}
+http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${LE_SCHEMA}
+http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${QVI_SCHEMA}
+http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${ECR_SCHEMA}
 SCHEMAOOBIS
   cat >"${conf_dir}/sally-incept-no-wits.json" <<'JSON'
 {
@@ -909,28 +803,29 @@ sally server start --name "${SALLY_NAME}" --alias "${SALLY_ALIAS}" --passcode "$
 SH
   chmod +x "${conf_dir}/entry-point.sh"
 
-  run docker network create "${DOCKER_NETWORK}"
-  run docker run -d --rm --name "${SALLY_VLEI_CONTAINER}" --network "${DOCKER_NETWORK}" -p "${SALLY_VLEI_PORT}:7723" \
+  run docker run -d --rm --name "${SALLY_VLEI_CONTAINER}" --network "container:${TUFA_CONTAINER}" \
     "${SALLY_VLEI_IMAGE}" vLEI-server -s /vLEI/schema -c /vLEI/credentials -o /vLEI/oobis
   wait_http "http://127.0.0.1:${SALLY_VLEI_PORT}/oobi/${QVI_SCHEMA}" 120
 
-  run docker run -d --rm --name "${SALLY_HOOK_CONTAINER}" --network "${DOCKER_NETWORK}" -p "${SALLY_HOOK_PORT}:9923" \
-    "${SALLY_IMAGE}" sally hook demo
-  wait_http "http://127.0.0.1:${SALLY_HOOK_PORT}/health" 120
+  run docker run -d --rm --name "${SALLY_HOOK_CONTAINER}" --network "container:${TUFA_CONTAINER}" \
+    --entrypoint sally "${SALLY_IMAGE}" hook demo
+  wait_container_log "${SALLY_HOOK_CONTAINER}" "listening on ${SALLY_HOOK_PORT}" 120
 
-  run docker run -d --rm --name "${SALLY_CONTAINER}" --network "${DOCKER_NETWORK}" -p "${SALLY_PORT}:9723" \
-    -v "${conf_dir}:/sally/conf" \
-    -v "${sally_var}:/usr/local/var/keri" \
+  run docker create --name "${SALLY_CONTAINER}" --network "container:${TUFA_CONTAINER}" \
+    -v "${SALLY_CONF_VOLUME}:/sally/conf" \
+    -v "${SALLY_VAR_VOLUME}:/usr/local/var/keri" \
     -e "SALLY_NAME=${SALLY_NAME}" \
     -e "SALLY_ALIAS=${SALLY_ALIAS}" \
     -e "SALLY_CONFIG_FILE=${SALLY_CONFIG_FILE}" \
     -e "SALLY_SALT=${SALLY_SALT}" \
     -e "SALLY_PASSCODE=${SALLY_PASSCODE}" \
     -e "SALLY_LOGLEVEL=${SALLY_LOGLEVEL}" \
-    -e "WEBHOOK_HOST=http://${SALLY_HOOK_CONTAINER}:9923/" \
+    -e "WEBHOOK_HOST=http://127.0.0.1:${SALLY_HOOK_PORT}/" \
     -e "GEDA_PRE=${GEDA_PRE}" \
     --entrypoint /bin/bash \
     "${SALLY_IMAGE}" /sally/conf/entry-point.sh
+  run docker cp "${conf_dir}/." "${SALLY_CONTAINER}:/sally/conf"
+  run docker start "${SALLY_CONTAINER}"
   wait_http "http://127.0.0.1:${SALLY_PORT}/health" 120
 
   local i logs observed_sally_pre
@@ -944,27 +839,28 @@ SH
   [[ "${observed_sally_pre}" == "${SALLY_PRE}" ]] || fail "Sally AID ${observed_sally_pre} did not match expected deterministic AID ${SALLY_PRE}"
   SALLY_OOBI="http://127.0.0.1:${SALLY_PORT}/oobi/${SALLY_PRE}/controller"
   log "Sally AID ${SALLY_PRE}"
-  log "Sally delivery counter profile ${SALLY_COUNTER_PROFILE}"
+  log "Sally delivery attachment genus ${SALLY_GVRSN}"
   assert_sally_oobi_endpoint_replies
 }
 
 main() {
   require_cmd jq
-  require_cmd curl
+  require_cmd git
   require_cmd docker
-  require_cmd deno
-  mkdir -p "${RUN_DIR}" "${LOG_DIR}" "${TUFA_HEAD}" "${KLI_CONFIG_DIR}/keri/cf"
-  log "run dir: ${RUN_DIR}"
+  mkdir -p "${HOST_RUN_DIR}" "${LOG_DIR}"
+  log "host log dir: ${LOG_DIR}"
+  ensure_keripy_image
+  start_tool_containers
+  in_tufa mkdir -p "${TUFA_HEAD}"
+  docker exec "${KERIPY_CONTAINER}" mkdir -p "${KLI_CONFIG_DIR}/keri/cf"
   prepare_vlei_fixtures
-  prepare_pinned_keripy
-  prepare_tufa_command
   log "KERIpy source ${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMMIT}"
-  log "KLI command ${KLI_CMD}"
+  log "KERIpy image ${KERIPY_IMAGE}"
   log "Tufa command ${TUFACMD[*]}"
   log "Sally image ${SALLY_IMAGE}"
 
   log "starting KERIpy demo witnesses"
-  start_bg kli-witness-demo "${LOG_DIR}/kli-witness-demo.log" "${KLI_CMD}" witness demo --base "${KERI_BASE}"
+  start_bg kli-witness-demo "${LOG_DIR}/kli-witness-demo.log" kli witness demo --base "${KERI_BASE}"
   wait_http "${WAN_OOBI}" 90
 
   local tw1_http tw1_tcp tw2_http tw2_tcp tw1_log tw2_log
@@ -976,8 +872,8 @@ main() {
   run tufa init -n tw2 --head-dir "${TUFA_HEAD}" --nopasscode
   tw1_log="${LOG_DIR}/tufa-witness-tw1.log"
   tw2_log="${LOG_DIR}/tufa-witness-tw2.log"
-  start_bg tufa-witness-tw1 "${tw1_log}" "${TUFACMD[@]}" witness start -n tw1 -a tw1 --head-dir "${TUFA_HEAD}" -u "http://127.0.0.1:${tw1_http}/" --tcp-url "tcp://127.0.0.1:${tw1_tcp}/" -H "${tw1_http}" -T "${tw1_tcp}"
-  start_bg tufa-witness-tw2 "${tw2_log}" "${TUFACMD[@]}" witness start -n tw2 -a tw2 --head-dir "${TUFA_HEAD}" -u "http://127.0.0.1:${tw2_http}/" --tcp-url "tcp://127.0.0.1:${tw2_tcp}/" -H "${tw2_http}" -T "${tw2_tcp}"
+  start_bg tufa-witness-tw1 "${tw1_log}" tufa witness start --version "${KERI_VERSION}" -n tw1 -a tw1 --head-dir "${TUFA_HEAD}" -u "http://127.0.0.1:${tw1_http}/" --tcp-url "tcp://127.0.0.1:${tw1_tcp}/" -H "${tw1_http}" -T "${tw1_tcp}"
+  start_bg tufa-witness-tw2 "${tw2_log}" tufa witness start --version "${KERI_VERSION}" -n tw2 -a tw2 --head-dir "${TUFA_HEAD}" -u "http://127.0.0.1:${tw2_http}/" --tcp-url "tcp://127.0.0.1:${tw2_tcp}/" -H "${tw2_http}" -T "${tw2_tcp}"
   local tw1_pid tw2_pid
   tw1_pid="${PIDS[$((${#PIDS[@]} - 2))]}"
   tw2_pid="${PIDS[$((${#PIDS[@]} - 1))]}"
@@ -993,7 +889,7 @@ main() {
   log "starting LE KERIpy mailbox"
   local le_mbx_port le_mbx_log
   le_mbx_port="$(random_port)"
-  cat >"${KLI_CONFIG_DIR}/keri/cf/le-mbx.json" <<JSON
+  docker exec -i "${KERIPY_CONTAINER}" tee "${KLI_CONFIG_DIR}/keri/cf/le-mbx.json" >/dev/null <<JSON
 {
   "le-relay": {
     "dt": "2026-06-08T00:00:00.000000+00:00",
@@ -1001,13 +897,13 @@ main() {
   }
 }
 JSON
-  run "${KLI_CMD}" init -n le-mbx -b "${KERI_BASE}" --nopasscode --config-dir "${KLI_CONFIG_DIR}" --config-file le-mbx
+  run kli init -n le-mbx -b "${KERI_BASE}" --nopasscode --config-dir "${KLI_CONFIG_DIR}" --config-file le-mbx
   le_mbx_log="${LOG_DIR}/keripy-le-mailbox.log"
-  start_bg keripy-le-mailbox "${le_mbx_log}" "${KLI_CMD}" mailbox start -n le-mbx -b "${KERI_BASE}" -a le-relay --config-dir "${KLI_CONFIG_DIR}" --config-file le-mbx -H "${le_mbx_port}"
+  start_bg keripy-le-mailbox "${le_mbx_log}" kli mailbox start -n le-mbx -b "${KERI_BASE}" -a le-relay --config-dir "${KLI_CONFIG_DIR}" --config-file le-mbx -H "${le_mbx_port}"
   wait_http "http://127.0.0.1:${le_mbx_port}/health" 90
-  capture LE_MAILBOX_PRE "${KLI_CMD}" aid -n le-mbx -b "${KERI_BASE}" -a le-relay
+  capture LE_MAILBOX_PRE kli aid -n le-mbx -b "${KERI_BASE}" -a le-relay
   LE_MAILBOX_PRE="$(printf '%s\n' "${LE_MAILBOX_PRE}" | awk 'NF { line=$0 } END { print line }')"
-  capture LE_MAILBOX_OOBI "${KLI_CMD}" oobi generate -n le-mbx -b "${KERI_BASE}" -a le-relay -r mailbox
+  capture LE_MAILBOX_OOBI kli oobi generate -n le-mbx -b "${KERI_BASE}" -a le-relay -r mailbox
   LE_MAILBOX_OOBI="$(printf '%s\n' "${LE_MAILBOX_OOBI}" | awk 'NF { line=$0 } END { print line }')"
 
   log "starting OOR tufa mailbox"
@@ -1015,7 +911,7 @@ JSON
   oor_mbx_port="$(random_port)"
   run tufa init -n oor-mbx --head-dir "${TUFA_HEAD}" --nopasscode
   oor_mbx_log="${LOG_DIR}/tufa-oor-mailbox.log"
-  start_bg tufa-oor-mailbox "${oor_mbx_log}" "${TUFACMD[@]}" mailbox start -n oor-mbx -a oor-relay --head-dir "${TUFA_HEAD}" -u "http://127.0.0.1:${oor_mbx_port}/" --datetime "2026-06-08T00:00:00.000000+00:00" --port "${oor_mbx_port}"
+  start_bg tufa-oor-mailbox "${oor_mbx_log}" tufa mailbox start --version "${KERI_VERSION}" -n oor-mbx -a oor-relay --head-dir "${TUFA_HEAD}" -u "http://127.0.0.1:${oor_mbx_port}/" --datetime "2026-06-08T00:00:00.000000+00:00" --port "${oor_mbx_port}"
   local oor_mbx_pid
   oor_mbx_pid="${PIDS[$((${#PIDS[@]} - 1))]}"
   wait_for_log "${oor_mbx_log}" 'Mailbox OOBI' 90 "${oor_mbx_pid}"
@@ -1130,33 +1026,33 @@ JSON
   rules="$(rules_path rules.json)"
   oor_rules="$(rules_path oor-rules.json)"
 
-  printf '{"LEI":"%s"}\n' "${LE_LEI}" >"${RUN_DIR}/qvi-data.json"
+  printf '{"LEI":"%s"}\n' "${LE_LEI}" | put_file "${RUN_DIR}/qvi-data.json"
   credential_round QVI_CRED geda1 geda2 geda vLEI-external "${QVI_SCHEMA}" "${QVI_PRE}" "${RUN_DIR}/qvi-data.json" "" "${rules}"
   grant_group_credential geda1 geda2 geda "${QVI_PRE}" "${QVI_CRED}"
   poll_saved qvi1 qvi "${QVI_CRED}"
   poll_saved qvi2 qvi "${QVI_CRED}"
 
-  jq -n --arg n "${QVI_CRED}" --arg s "${QVI_SCHEMA}" '{d:"", qvi:{n:$n, s:$s}}' >"${RUN_DIR}/qvi-edge.json"
+  jq -n --arg n "${QVI_CRED}" --arg s "${QVI_SCHEMA}" '{d:"", qvi:{n:$n, s:$s}}' | put_file "${RUN_DIR}/qvi-edge.json"
   saidify_file "${RUN_DIR}/qvi-edge.json"
-  printf '{"LEI":"%s"}\n' "${LE_LEI}" >"${RUN_DIR}/le-data.json"
+  printf '{"LEI":"%s"}\n' "${LE_LEI}" | put_file "${RUN_DIR}/le-data.json"
   credential_round LE_CRED qvi1 qvi2 qvi vLEI-qvi "${LE_SCHEMA}" "${LE_PRE}" "${RUN_DIR}/le-data.json" "${RUN_DIR}/qvi-edge.json" "${rules}"
   grant_group_credential qvi1 qvi2 qvi "${LE_PRE}" "${LE_CRED}"
   poll_saved le1 le "${LE_CRED}"
   poll_saved le2 le "${LE_CRED}"
 
-  jq -n --arg n "${LE_CRED}" --arg s "${LE_SCHEMA}" '{d:"", le:{n:$n, s:$s}}' >"${RUN_DIR}/le-edge.json"
+  jq -n --arg n "${LE_CRED}" --arg s "${LE_SCHEMA}" '{d:"", le:{n:$n, s:$s}}' | put_file "${RUN_DIR}/le-edge.json"
   saidify_file "${RUN_DIR}/le-edge.json"
   jq -n --arg aid "${OOR_PRE}" --arg lei "${LE_LEI}" --arg name "${PERSON_NAME}" --arg role "${PERSON_OOR}" \
-    '{AID:$aid, LEI:$lei, personLegalName:$name, officialRole:$role}' >"${RUN_DIR}/oor-auth-data.json"
+    '{AID:$aid, LEI:$lei, personLegalName:$name, officialRole:$role}' | put_file "${RUN_DIR}/oor-auth-data.json"
   credential_round OOR_AUTH_CRED le1 le2 le vLEI-internal "${OOR_AUTH_SCHEMA}" "${QVI_PRE}" "${RUN_DIR}/oor-auth-data.json" "${RUN_DIR}/le-edge.json" "${rules}"
   grant_group_credential le1 le2 le "${QVI_PRE}" "${OOR_AUTH_CRED}"
   poll_saved qvi1 qvi "${OOR_AUTH_CRED}"
   poll_saved qvi2 qvi "${OOR_AUTH_CRED}"
 
-  jq -n --arg n "${OOR_AUTH_CRED}" --arg s "${OOR_AUTH_SCHEMA}" '{d:"", auth:{n:$n, s:$s, o:"I2I"}}' >"${RUN_DIR}/oor-auth-edge.json"
+  jq -n --arg n "${OOR_AUTH_CRED}" --arg s "${OOR_AUTH_SCHEMA}" '{d:"", auth:{n:$n, s:$s, o:"I2I"}}' | put_file "${RUN_DIR}/oor-auth-edge.json"
   saidify_file "${RUN_DIR}/oor-auth-edge.json"
   jq -n --arg lei "${LE_LEI}" --arg name "${PERSON_NAME}" --arg role "${PERSON_OOR}" \
-    '{LEI:$lei, personLegalName:$name, officialRole:$role}' >"${RUN_DIR}/oor-data.json"
+    '{LEI:$lei, personLegalName:$name, officialRole:$role}' | put_file "${RUN_DIR}/oor-data.json"
   credential_round OOR_CRED qvi1 qvi2 qvi vLEI-qvi "${OOR_SCHEMA}" "${OOR_PRE}" "${RUN_DIR}/oor-data.json" "${RUN_DIR}/oor-auth-edge.json" "${oor_rules}"
   grant_group_credential qvi1 qvi2 qvi "${OOR_PRE}" "${OOR_CRED}"
   poll_saved oor oor "${OOR_CRED}"
@@ -1176,7 +1072,8 @@ JSON
   grep -q "${LE_CRED}" "${LOG_DIR}/sally-hook.log" || fail "hook logs do not mention LE credential"
   grep -q "${OOR_CRED}" "${LOG_DIR}/sally-hook.log" || fail "hook logs do not mention OOR credential"
 
-  jq -n \
+  local report
+  report="$(jq -n \
     --arg runDir "${RUN_DIR}" \
     --arg geda "${GEDA_PRE}" \
     --arg qvi "${QVI_PRE}" \
@@ -1187,8 +1084,11 @@ JSON
     --arg leCred "${LE_CRED}" \
     --arg oorAuthCred "${OOR_AUTH_CRED}" \
     --arg oorCred "${OOR_CRED}" \
-    '{status:"ok", runDir:$runDir, aids:{geda:$geda,qvi:$qvi,le:$le,oor:$oor,sally:$sally}, credentials:{qvi:$qviCred,le:$leCred,oorAuth:$oorAuthCred,oor:$oorCred}}' \
-    | tee "${RUN_DIR}/vlei-tufa-sally-report.json"
+    '{status:"ok", runDir:$runDir, aids:{geda:$geda,qvi:$qvi,le:$le,oor:$oor,sally:$sally}, credentials:{qvi:$qviCred,le:$leCred,oorAuth:$oorAuthCred,oor:$oorCred}}')"
+  printf '%s\n' "${report}" | put_file "${RUN_DIR}/vlei-tufa-sally-report.json"
+  printf '%s\n' "${report}"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
