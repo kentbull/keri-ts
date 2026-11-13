@@ -74,7 +74,7 @@ import {
 import { call, type Operation, race } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
-import { Dhke, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
+import { Dhke, grantTransactionId, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
@@ -256,10 +256,17 @@ export interface IssuanceBegun {
   xid: string;
 }
 
-/** Issuer input: a Grant prepared by `prepareIssuanceGrant`, or a fresh credential to prepare and select. */
-export type BeginIssuanceInput =
-  | { hab: Hab; grant: string; auths?: WitnessAuthMap }
-  | { hab: Hab; credential: SerderACDC; options: IssuanceGrantOptions; auths?: WitnessAuthMap };
+/** A fresh credential and how its Grant is addressed; the issuer is its registry's identifier. */
+export interface GrantDraft {
+  credential: SerderACDC;
+  options: IssuanceGrantOptions;
+}
+
+/** A Grant taken into local pending issuance and the wire a host may deliver or file itself. */
+export interface PreparedGrant {
+  grant: string;
+  wire: Uint8Array;
+}
 
 const EXPIRED = "The selected Grant reached its original exchange deadline";
 const EXPIRED_LATE =
@@ -617,8 +624,8 @@ export class IssuanceOperations {
 }
 
 /** Whether the clock has reached a Grant deadline in microseconds since the epoch. */
-function reached(deps: Pick<IssuanceDeps, "clock">, expires: bigint | null): boolean {
-  return expires !== null && BigInt(deps.clock.now()) * 1000n >= expires;
+function reached(clock: RuntimeClock, expires: bigint | null): boolean {
+  return expires !== null && BigInt(clock.now()) * 1000n >= expires;
 }
 
 /**
@@ -636,12 +643,12 @@ function resumable(deps: IssuanceDeps, hab: Hab, grant: string, role: IssuanceRo
 }
 
 /** The v2 Grant behind `grant` and the local parties to it, or null when it is not a Grant this runtime is party to. */
-function grantParties(deps: IssuanceDeps, grant: string) {
-  const db = deps.hby.db, serder = db.exns.get([grant]) ?? db.epse.get([grant]);
+function grantParties(hby: Habery, grant: string) {
+  const db = hby.db, serder = db.exns.get([grant]) ?? db.epse.get([grant]);
   if (!serder || serder.said !== grant || serder.route !== "/ipex/grant" || serder.pvrsn.major < 2) return null;
   const sender = serder.pre, recipient = serder.sad?.ri;
-  const issuer = typeof sender === "string" ? deps.hby.habs.get(sender) : undefined;
-  const holder = typeof recipient === "string" ? deps.hby.habs.get(recipient) : undefined;
+  const issuer = typeof sender === "string" ? hby.habs.get(sender) : undefined;
+  const holder = typeof recipient === "string" ? hby.habs.get(recipient) : undefined;
   return issuer || holder ? { serder, issuer, holder } : null;
 }
 
@@ -652,7 +659,7 @@ function grantParties(deps: IssuanceDeps, grant: string) {
 function resumableGrants(deps: IssuanceDeps): Resumable[] {
   const found: Resumable[] = [];
   for (const [[grant]] of [...deps.hby.db.epse.getTopItemIter()]) {
-    const parties = grantParties(deps, grant);
+    const parties = grantParties(deps.hby, grant);
     if (!parties) continue;
     if (parties.issuer && resumable(deps, parties.issuer, grant, "issuer")) {
       found.push({ hab: parties.issuer, grant, role: "issuer" });
@@ -678,21 +685,17 @@ function orphaned(deps: IssuanceDeps, hab: Hab, grant: string): ["interrupted", 
  * without approving DH or generating a root. A host may deliver or file the
  * returned wire itself and begin later with the Grant SAID.
  */
-export function* prepareIssuanceGrant(
-  ops: IssuanceOperations,
-  { hab, credential, options }: { hab: Hab; credential: SerderACDC; options: IssuanceGrantOptions },
-): Operation<{ grant: string; wire: Uint8Array }> {
-  const { deps, discloser } = ops;
+export function* prepareIssuanceGrant(ops: IssuanceOperations, draft: GrantDraft): Operation<PreparedGrant> {
+  const { deps, discloser } = ops, { credential, options } = draft;
+  const hab = credential.regid ? deps.rgy.regs.get(credential.regid)?.hab : undefined;
+  if (!hab) throw new ValidationError("Fresh issuance requires the issuer's managed local registry");
   requireIndividual(deps, hab);
-  if (!credential.regid || deps.rgy.regs.get(credential.regid)?.hab !== hab) {
-    throw new ValidationError("Fresh issuance requires the selected issuer's managed local registry");
-  }
   hab.mgr.requireRegistryRootAccess();
   const prepared = yield* discloser.prepareIssuanceGrantBody(hab.pre!, credential, options);
   const wire = concatBytes(discloser.proofSupport(prepared.raw, hab), exchangeWire(hab, prepared.exn, prepared.nests));
   yield* deps.reactor.processBytes(wire, { local: true });
   yield* deps.protocol.processEscrowsOnce();
-  const xid = prepared.exn.ilk === "xip" ? prepared.exn.said! : prepared.exn.sad!.x as string;
+  const xid = grantTransactionId(prepared.exn);
   if (!deps.exc.pendingGrant(prepared.exn.said!, { xid, sender: hab.pre!, recipient: options.recipient })) {
     throw new ValidationError("Fresh Grant did not reach authenticated pending issuance");
   }
@@ -745,8 +748,8 @@ function* grantWires(retained: ExchangeInput): Operation<{ raw: Uint8Array; gran
 }
 
 /**
- * The issuer's one "issue this credential" consent. Signs the Grant when given
- * a credential, approves the DH exchange, signs the query and records the
+ * The issuer's one "issue this credential" consent for a prepared Grant ({@link prepareIssuanceGrant}); the
+ * issuer is the Grant's sender. Approves the DH exchange, signs the query and records the
  * authorisation, including the later KEL signature that anchors the registry
  * update, in memory. Returns after local commit; `processOnce` does the rest.
  *
@@ -754,9 +757,13 @@ function* grantWires(retained: ExchangeInput): Operation<{ raw: Uint8Array; gran
  * unanchored pending issuance, an unmanaged registry, a group identifier, or
  * an issuance already begun or completed.
  */
-export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInput): Operation<IssuanceBegun> {
-  const { deps } = ops, { hab, auths } = input;
-  const grant = "grant" in input ? input.grant : (yield* prepareIssuanceGrant(ops, input)).grant;
+export function* beginIssuance(
+  ops: IssuanceOperations,
+  grant: string,
+  auths?: WitnessAuthMap,
+): Operation<IssuanceBegun> {
+  const { deps } = ops, hab = grantParties(deps.hby, grant)?.issuer;
+  if (!hab) throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "issuer");
   const { raw, grantWire } = yield* grantWires(retained);
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant), query = dh.start(grant);
@@ -782,6 +789,18 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
 }
 
 /**
+ * The issuer's one consent to issue a fresh credential: signs the Grant ({@link prepareIssuanceGrant}) and begins
+ * the issuance ({@link beginIssuance}) in one step.
+ */
+export function* proposeIssuance(
+  ops: IssuanceOperations,
+  draft: GrantDraft,
+  auths?: WitnessAuthMap,
+): Operation<IssuanceBegun> {
+  return yield* beginIssuance(ops, (yield* prepareIssuanceGrant(ops, draft)).grant, auths);
+}
+
+/**
  * Pure read of one issuance: what ended in this process, the live table, and otherwise what the protocol
  * stores prove (see the module doc for the table and what a reload loses). A pending Grant no live
  * operation holds reads `interrupted` (or `expired` once the Grant deadline has passed); that is a
@@ -790,15 +809,15 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
  * @throws ValidationError when `grant` is not a v2 Grant this runtime's identifiers are party to.
  */
 export function issuanceStatus(
-  ops: Pick<IssuanceOperations, "deps" | "live" | "ended">,
+  ops: IssuanceOperations,
   grant: string,
 ): IssuanceStatus {
   const { deps } = ops, ended = ops.ended.get(grant), live = ops.live.get(grant);
   if (ended) return { state: ended.state, role: ended.role, reason: ended.reason };
-  if (live && !reached(deps, live.expires)) {
+  if (live && !reached(deps.clock, live.expires)) {
     return { state: "active", role: live.role, phase: live.phase, deadline: live.deadline ?? undefined };
   }
-  const parties = grantParties(deps, grant);
+  const parties = grantParties(deps.hby, grant);
   if (!parties) throw new ValidationError("No issuance was begun for this Grant");
   const { serder, issuer, holder } = parties, db = deps.hby.db;
   if (deps.exc.complete(grant)) {
@@ -813,7 +832,7 @@ export function issuanceStatus(
   const lifetime = deps.exc.exchangeDeadline(serder) ?? undefined;
   const deadline = lifetime, expires = lifetime ? timestampMicros(lifetime) : null;
   if (!group && (!deadline || expires === null)) throw new ValidationError("No issuance was begun for this Grant");
-  if (reached(deps, expires)) {
+  if (reached(deps.clock, expires)) {
     const credential = deps.exc.retainedInput(grant)?.nests?.[0]?.body;
     const registry = credential instanceof SerderACDC ? credential.regid : undefined;
     const late = role === "holder" && registry && deps.rgy.store.headEvent(registry)?.ilk === "bup";
@@ -855,7 +874,7 @@ export interface PendingGrant {
 export function pendingIssuanceGrants(ops: IssuanceOperations, { hab }: { hab?: Hab } = {}): PendingGrant[] {
   const { deps } = ops, found: PendingGrant[] = [];
   for (const [[grant]] of [...deps.hby.db.epse.getTopItemIter()]) {
-    const holder = grantParties(deps, grant)?.holder;
+    const holder = grantParties(deps.hby, grant)?.holder;
     if (!holder || (hab && holder.pre !== hab.pre)) continue;
     try {
       const status = issuanceStatus(ops, grant);
@@ -885,7 +904,7 @@ export function pendingIssuanceGrants(ops: IssuanceOperations, { hab }: { hab?: 
 export function pendingGroupGrants(ops: IssuanceOperations, { group }: { group?: Hab } = {}): PendingGrant[] {
   const { deps } = ops, found: PendingGrant[] = [];
   for (const [[grant]] of [...deps.hby.db.epse.getTopItemIter()]) {
-    const parties = grantParties(deps, grant), holder = parties?.holder;
+    const parties = grantParties(deps.hby, grant), holder = parties?.holder;
     if (!parties || !holder || !isLocalGroupHab(deps.hby, holder) || (group && holder.pre !== group.pre)) continue;
     try {
       const status = issuanceStatus(ops, grant);
@@ -919,7 +938,7 @@ function heldRoot(deps: IssuanceDeps, hab: Hab, grant: string): boolean {
 export interface IssuanceWaitOptions {
   /** Wall-clock budget. */
   timeoutMs: number;
-  clock?: Pick<RuntimeClock, "now">;
+  clock?: RuntimeClock;
   /** Settle on this instead of any non-active state, e.g. a holder stopping where it needs the Admit consent. */
   until?: (status: IssuanceStatus) => boolean;
 }
@@ -929,7 +948,7 @@ export interface IssuanceWaitOptions {
  * worker and drives nothing: someone else must call `processOnce`.
  */
 export function* waitForIssuance(
-  ops: Pick<IssuanceOperations, "deps" | "live" | "ended">,
+  ops: IssuanceOperations,
   grant: string,
   { timeoutMs, clock = ops.deps.clock, until = (status) => status.state !== "active" }: IssuanceWaitOptions,
 ): Operation<WaitResult<IssuanceStatus>> {
@@ -939,15 +958,14 @@ export function* waitForIssuance(
 }
 
 /**
- * The holder's consent to the DH exchange for one pending Grant addressed to `hab`. Approves DH and records the
+ * The holder's consent to the DH exchange for one pending Grant addressed to a local identifier. Approves DH and records the
  * consent; `processOnce` then answers the issuer's query, waits for its registry update and finishes the Grant.
  * Admitting the credential is a separate consent ({@link admitIssuance}).
  */
-export function approveIssuanceExchange(
-  ops: IssuanceOperations,
-  { hab, grant }: { hab: Hab; grant: string },
-): IssuanceBegun {
-  const { deps } = ops, { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "holder");
+export function approveIssuanceExchange(ops: IssuanceOperations, grant: string): IssuanceBegun {
+  const { deps } = ops, hab = grantParties(deps.hby, grant)?.holder;
+  if (!hab) throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
+  const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "holder");
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant);
   ops.ended.delete(grant);
   ops.live.set(grant, {
@@ -972,10 +990,19 @@ export function approveIssuanceExchange(
 /** A signed Admit already accepted locally; delivery is the next, separate step. */
 export interface IssuanceAdmit {
   admit: SerderKERI;
+  /** The holder that signed it, the sender of the delivery. */
+  src: string;
   /** Support and Admit bytes, in delivery order. */
   wire: Uint8Array;
   /** The issuer the Admit answers. */
   dest: string;
+}
+
+/** Choices of an Admit. */
+export interface AdmitOptions {
+  message?: string;
+  gvrsn?: Versionage;
+  auths?: WitnessAuthMap;
 }
 
 /**
@@ -983,18 +1010,11 @@ export interface IssuanceAdmit {
  * a Grant finished by this module and for any other accepted v2 Grant. Returns
  * before delivery so an embedder can record its own inventory first; see {@link deliverIssuanceAdmit}.
  *
- * @throws ValidationError for a Grant that is not accepted and addressed to `hab`, an admitted Grant, or a group identifier.
+ * @throws ValidationError for a Grant that is not accepted and addressed to a local identifier, an admitted Grant, or a group identifier.
  */
-export function* admitIssuance(
-  deps: AdmitDeps,
-  { hab, grant, message = "", gvrsn, auths }: {
-    hab: Hab;
-    grant: string;
-    message?: string;
-    gvrsn?: Versionage;
-    auths?: WitnessAuthMap;
-  },
-): Operation<IssuanceAdmit> {
+export function* admitIssuance(deps: AdmitDeps, grant: string, options: AdmitOptions = {}): Operation<IssuanceAdmit> {
+  const { message = "", gvrsn, auths } = options, hab = grantParties(deps.hby, grant)?.holder;
+  if (!hab) throw new ValidationError("Admit requires an accepted v2 Grant addressed to a local identifier");
   if (deps.hby.db.erpy.get([grant])) throw new ValidationError("Issuance cannot be admitted in its state");
   const prepared = yield* new IpexAdmitter(deps.hby, deps.rgy.store, deps.exc).prepareAdmit(grant, hab.pre!, {
     consent: true,
@@ -1008,16 +1028,12 @@ export function* admitIssuance(
   yield* deps.protocol.processEscrowsOnce();
   if (!deps.exc.complete(prepared.admit.said!)) throw new ValidationError("Local ACDC v2 Admit was not accepted.");
   deps.changes?.push({ kind: "issuance", id: grant });
-  return { admit: prepared.admit, wire, dest: prepared.admit.sad!.ri as string };
+  return { admit: prepared.admit, src: hab.pre!, wire, dest: prepared.admit.sad!.ri as string };
 }
 
 /** Deliver an accepted Admit; needs the host's delivery worker. Returns the destinations reached. */
-export function* deliverIssuanceAdmit(
-  deps: Pick<AdmitDeps, "delivery">,
-  hab: Hab,
-  { dest, wire }: IssuanceAdmit,
-): Operation<string[]> {
-  return yield* deps.delivery.deliver({ src: hab.pre!, dest, msg: wire });
+export function* deliverIssuanceAdmit(delivery: IssuanceDelivery, admitted: IssuanceAdmit): Operation<string[]> {
+  return yield* delivery.deliver({ src: admitted.src, dest: admitted.dest, msg: admitted.wire });
 }
 
 /**
@@ -1028,10 +1044,7 @@ export function* deliverIssuanceAdmit(
  *
  * @throws ValidationError for an Admit no local identifier signed or whose retained factors no longer authenticate.
  */
-export function* rebuildIssuanceAdmit(
-  deps: Pick<AdmitDeps, "hby" | "rgy" | "exc" | "receiptor">,
-  admit: string,
-): Operation<IssuanceAdmit> {
+export function* rebuildIssuanceAdmit(deps: AdmitDeps, admit: string): Operation<IssuanceAdmit> {
   const retained = deps.exc.retainedInput(admit), serder = retained?.serder;
   const hab = serder?.pre ? deps.hby.habs.get(serder.pre) : undefined;
   if (!retained || !serder || serder.route !== "/ipex/admit" || !hab || typeof serder.sad?.ri !== "string") {
@@ -1040,7 +1053,12 @@ export function* rebuildIssuanceAdmit(
   const support = retained.sourceSeals?.length
     ? new IpexDiscloser(deps.hby, deps.rgy.store, deps.exc, deps.receiptor).kel(hab)
     : new Uint8Array();
-  return { admit: serder, wire: concatBytes(support, yield* storedExchangeWire(retained)), dest: serder.sad.ri };
+  return {
+    admit: serder,
+    src: hab.pre!,
+    wire: concatBytes(support, yield* storedExchangeWire(retained)),
+    dest: serder.sad.ri,
+  };
 }
 
 /**

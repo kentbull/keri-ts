@@ -130,9 +130,9 @@ Deno.test("the disclosee consents; the discloser answers on its own and the owne
     const requester = f.mk(f.observer), responder = f.mk(f.presenter);
     const g = f.grant.said!, deadline = f.observer.runtime.exc.exchangeDeadline(f.grant);
     assertThrows(
-      () => requestUnblind(responder, { hab: f.sender, grant: g, states: STATES }),
+      () => requestUnblind(responder, g, { states: STATES }),
       ValidationError,
-      "Only the disclosee",
+      "not a presentation party",
     );
     assertEquals(
       pendingPresentations(requester).map((p) => [p.grant, p.disclosee, p.presenter, p.status.state]),
@@ -141,7 +141,7 @@ Deno.test("the disclosee consents; the discloser answers on its own and the owne
     );
     assertEquals(pendingPresentations(requester, { hab: f.sender }), [], "only Grants addressed to that identifier");
     assertEquals(pendingPresentations(responder), [], "the presenter has no Grant addressed to it");
-    const begun = requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    const begun = requestUnblind(requester, g, { states: STATES });
     assertEquals(begun.role, "requester");
     assertEquals(unblindingStatus(requester, g), {
       state: "active",
@@ -172,7 +172,7 @@ Deno.test("an authenticated query for a live Grant the discloser sent is answere
   await run(function*() {
     const f = yield* fixture();
     const requester = f.mk(f.observer), g = f.grant.said!;
-    requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    requestUnblind(requester, g, { states: STATES });
     yield* requester.processOnce();
     assertEquals(f.sent[0].dest, f.sender.pre, "the signed query went to the discloser");
     // The discloser never approved: its owner appeared at the query and holds the reply for delivery.
@@ -194,7 +194,7 @@ Deno.test("a reloaded discloser answers the request it accepted before the resta
   await run(function*() {
     const f = yield* fixture();
     const requester = f.mk(f.observer), g = f.grant.said!;
-    requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    requestUnblind(requester, g, { states: STATES });
     yield* requester.processOnce();
     // The discloser's process restarts: owners and driver are gone, the stores are not.
     f.presenter.runtime.ipex!.release(f.sender.pre!);
@@ -213,7 +213,7 @@ Deno.test("no reply after the Grant's deadline, and none for a Grant this identi
   await run(function*() {
     const f = yield* fixture();
     const requester = f.mk(f.observer), g = f.grant.said!;
-    requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    requestUnblind(requester, g, { states: STATES });
     yield* requester.processOnce();
     const owner = f.presenter.runtime.ipex!.unblind(f.sender);
     const wire = f.sent[0].msg;
@@ -242,7 +242,7 @@ Deno.test("a reloaded owner reads interrupted; an expired Grant reads expired; n
   await run(function*() {
     const f = yield* fixture(), g = f.grant.said!;
     const requester = f.mk(f.observer);
-    requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    requestUnblind(requester, g, { states: STATES });
     const reloaded = f.mk(f.observer);
     assertEquals(unblindingStatus(reloaded, g).state, "interrupted", "the pure read already knows");
     yield* reloaded.processOnce();
@@ -250,7 +250,7 @@ Deno.test("a reloaded owner reads interrupted; an expired Grant reads expired; n
     assertEquals(f.sent.length, 0);
 
     const other = yield* fixture(), og = other.grant.said!, ops = other.mk(other.observer);
-    requestUnblind(ops, { hab: other.verifier, grant: og, states: STATES });
+    requestUnblind(ops, og, { states: STATES });
     other.s.clock.skew = Number(timestampMicros(other.observer.runtime.exc.exchangeDeadline(other.grant))! / 1000n)
       - Date.now() + 1;
     assertEquals(unblindingStatus(ops, og).state, "expired");
@@ -263,7 +263,7 @@ Deno.test("a reloaded owner reads interrupted; an expired Grant reads expired; n
 Deno.test("abandon is local and final", async () => {
   await run(function*() {
     const f = yield* fixture(), g = f.grant.said!, requester = f.mk(f.observer);
-    requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    requestUnblind(requester, g, { states: STATES });
     abandonUnblinding(requester, g, "changed my mind");
     assertEquals(unblindingStatus(requester, g), { state: "abandoned", role: "requester", reason: "changed my mind" });
     assertEquals((yield* waitForUnblinding(requester, g, { timeoutMs: 100 })).outcome, "settled");
@@ -271,7 +271,7 @@ Deno.test("abandon is local and final", async () => {
     assertEquals(f.sent.length, 0);
     assertThrows(() => unblindingStatus(requester, "Eunknown"), ValidationError, "No Unblind was begun");
     assertThrows(
-      () => requestUnblind(requester, { hab: f.verifier, grant: "Eunknown", states: STATES }),
+      () => requestUnblind(requester, "Eunknown", { states: STATES }),
       ValidationError,
       "authenticated retained Grant",
     );
@@ -300,7 +300,7 @@ Deno.test("an aged Unblind query is re-dated and accepted instead of resent as a
       clock: f.s.clock,
     });
     const responder = f.mk(f.presenter), g = f.grant.said!;
-    requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    requestUnblind(requester, g, { states: STATES });
     yield* requester.processOnce();
     yield* sleep(2200); // past the resend interval and the window
     lose = false;

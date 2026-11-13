@@ -7,9 +7,20 @@
  * ends holding the registry root with exactly one copy sent, by the runtime's replicator.
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
-import { Diger, NumberPrimitive, parseBytes, Prefixer, type SerderACDC, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import {
+  collectPayload,
+  Diger,
+  framePayload,
+  NumberPrimitive,
+  parseBytes,
+  Prefixer,
+  type SerderACDC,
+  type SerderKERI,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { call, ensure, type Operation, run, sleep, spawn } from "effection";
 import { assert, assertEquals, assertExists, assertNotEquals, assertThrows } from "jsr:@std/assert";
+import { loadNests } from "../../../../db.ts";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import type { RegBaser } from "../../../../src/acdc/regbasing.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
@@ -25,6 +36,7 @@ import {
   groupIssuanceProposals,
   proposeGroupIssuance,
 } from "../../../../src/app/ipex/group-issuance.ts";
+import { exchangeWire } from "../../../../src/app/ipex/ipex-discloser.ts";
 import {
   admitIssuance,
   approveIssuanceExchange,
@@ -34,6 +46,7 @@ import {
   issuanceStatus,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
+import { MULTISIG_EXN_ROUTE, multisigExnBody } from "../../../../src/app/multisig/grouping.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
@@ -268,6 +281,30 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       assertEquals(listed.map((p) => [p.grant, p.proposer, p.recipient, p.complete]), [
         [grant, lead.member.pre, holder.hab.pre, false],
       ]);
+      // A proposal the elected custodian did not sign is refused at consent, not left to stall DH.
+      const stored = groupIssuanceProposals(ops(peer))[0];
+      const original = loadNests(peer.hby.db, stored.wrapper)[0];
+      const draftGrant = original.body as SerderKERI;
+      const unsigned = parseBytes(exchangeWire(peer.hab, draftGrant))[0];
+      unsigned.nests = original.nests;
+      const wrapperBody = multisigExnBody(
+        peer.member.pre!,
+        { route: MULTISIG_EXN_ROUTE, attrs: { gid: peer.hab.pre! } },
+        draftGrant,
+        { version: Vrsn_2_0 },
+      );
+      const forgedParent = parseBytes(peer.member.endorse(wrapperBody, { gvrsn: Vrsn_2_0 }))[0];
+      forgedParent.nests = [unsigned];
+      const forged = yield* call(() => collectPayload(framePayload(forgedParent)));
+      let refusedForged = "";
+      try {
+        yield* approveGroupIssuance(ops(peer), grant, { proposal: forged, coordinator: coordinator.said! });
+      } catch (error) {
+        refusedForged = (error as Error).message;
+      }
+      assert(refusedForged.includes("elected custodian's signature"), refusedForged);
+      assertEquals(ops(peer).live.has(grant), false, "a refused proposal records nothing");
+
       yield* approveGroupIssuance(ops(peer), grant, { coordinator: coordinator.said! });
       assertEquals((issuanceStatus(ops(peer), grant) as { phase: string }).phase, "awaitingGrantSignatures");
       assertEquals(sentCopies, []);
@@ -292,7 +329,7 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
         "exchange",
         "receiving the Grant does not approve DH",
       );
-      approveIssuanceExchange(ops(holder), { hab: holder.hab, grant });
+      approveIssuanceExchange(ops(holder), grant);
 
       // The registry update is a separate consent: the member approves the custodian's proposal.
       let bup: SerderKERI | undefined;
@@ -364,8 +401,8 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       assertEquals(issuanceStatus(ops(lead), grant), done);
 
       // --- the holder admits, a separate consent ---
-      const admitted = yield* admitIssuance(ops(holder).deps, { hab: holder.hab, grant });
-      const reached = yield* deliverIssuanceAdmit(ops(holder).deps, holder.hab, admitted);
+      const admitted = yield* admitIssuance(ops(holder).deps, grant);
+      const reached = yield* deliverIssuanceAdmit(ops(holder).deps.delivery, admitted);
       assertNotEquals(reached.length, 0);
       assertEquals(issuanceStatus(ops(holder), grant), { state: "done", role: "holder", phase: "admitted" });
       yield* until(() => lead.runtime.exc.complete(admitted.admit.said!), "the issuer group to accept the Admit");

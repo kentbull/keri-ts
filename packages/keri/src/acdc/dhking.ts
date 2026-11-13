@@ -143,10 +143,21 @@ interface GrantScope {
   registries: readonly string[];
 }
 
+/**
+ * The DH transaction id of a Grant: its own SAID when it opens the exchange (`xip`), and otherwise the exchange it
+ * continues (`x`). The one definition, so the owner and any workflow that names the transaction agree.
+ */
+export function grantTransactionId(grant: SerderKERI): string {
+  return grant.ilk === "xip" ? grant.said! : grant.sad!.x as string;
+}
+
+/** The parties and transaction a Grant names. */
+type GrantParties = Pick<GrantScope, "issuer" | "issuee" | "xid">;
+
 /** The parties and transaction of a Grant `hab` takes part in, or null when it is not a DH party of it. */
-function grantParties(hab: Hab, input: ExchangeInput): Pick<GrantScope, "issuer" | "issuee" | "xid"> | null {
+function grantParties(hab: Hab, input: ExchangeInput): GrantParties | null {
   const message = input.serder, issuer = message.pre!, issuee = message.sad!.ri;
-  const xid = message.ilk === "xip" ? message.said : message.sad!.x;
+  const xid = grantTransactionId(message);
   return typeof xid === "string" && typeof issuee === "string" && issuer !== issuee
       && [issuer, issuee].includes(hab.pre!)
     ? { issuer, issuee, xid }

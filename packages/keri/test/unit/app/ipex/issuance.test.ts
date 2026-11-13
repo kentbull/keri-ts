@@ -15,6 +15,7 @@ import {
   type IssuanceStatus,
   issuanceStatus,
   prepareIssuanceGrant,
+  proposeIssuance,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
@@ -59,7 +60,7 @@ Deno.test("issuance completes: Grant, query, reply, anchored BUP, finish, proof 
     const hab = s.issuer.habs[0], reg = yield* s.registry(0);
     ops = s.owner();
     const credential = reg.credential();
-    const begun = yield* beginIssuance(ops, { hab, credential, options: grantOptions(s) });
+    const begun = yield* proposeIssuance(ops, { credential, options: grantOptions(s) });
     grant = begun.grant;
     assertEquals(issuanceStatus(ops, grant), {
       state: "active",
@@ -99,11 +100,7 @@ Deno.test("issuance completes: Grant, query, reply, anchored BUP, finish, proof 
 Deno.test("the query is resent each second, freshly dated with the same keys, until DH completes", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);
-    const { grant } = yield* beginIssuance(ops, {
-      hab: s.issuer.habs[0],
-      credential: reg.credential(),
-      options: grantOptions(s),
-    });
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     const queries = () => s.log.filter((m) => text(m.msg).includes("/ipex/dhke"));
     yield* ops.processOnce();
     yield* ops.processOnce();
@@ -122,7 +119,7 @@ Deno.test("the query is resent each second, freshly dated with the same keys, un
 Deno.test("issuing.py: a Grant past its original exchange deadline reads expired and nothing more is signed or sent", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
-    const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     yield* ops.processOnce();
     const sent = s.log.length, sn = hab.kever!.sn;
     s.clock.skew = pastDeadline(s.issuer, grant);
@@ -139,7 +136,7 @@ Deno.test("issuing.py: a Grant past its original exchange deadline reads expired
 Deno.test("a holder that never replies leaves the wait timed-out; abandon is local and final", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
-    const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     yield* ops.processOnce();
     const waited = yield* waitForIssuance(ops, grant, { timeoutMs: 150 });
     assertEquals(waited.outcome, "timed-out");
@@ -165,7 +162,7 @@ Deno.test("a holder that never replies leaves the wait timed-out; abandon is loc
 Deno.test("a failed delivery is retried with backoff and the issuance goes on once the transport recovers", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
-    const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     s.fail.on = true;
     yield* ops.processOnce();
     assertEquals(issuanceStatus(ops, grant).state, "active", "the first failure does not end the issuance");
@@ -183,7 +180,7 @@ Deno.test("a failed delivery is retried with backoff and the issuance goes on on
 Deno.test("delivery failures last no longer than the Grant deadline: the issuance then reads expired", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
-    const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     s.fail.on = true;
     yield* ops.processOnce();
     s.clock.skew = pastDeadline(s.issuer, grant);
@@ -192,18 +189,16 @@ Deno.test("delivery failures last no longer than the Grant deadline: the issuanc
   });
 });
 
-Deno.test("begin refuses another identifier's Grant and a repeat; status of an unknown Grant is refused", async () => {
+Deno.test("begin derives the issuer from the Grant and refuses a repeat or another store's Grant; status of an unknown Grant is refused", async () => {
   await run(function*() {
     const s = yield* scenario(2), ops = s.owner(), reg = yield* s.registry(0);
-    const [a, b] = s.issuer.habs;
     const prepared = yield* prepareIssuanceGrant(ops, {
-      hab: a,
       credential: reg.credential(),
       options: grantOptions(s),
     });
-    yield* refuses(() => beginIssuance(ops, { hab: b, grant: prepared.grant }), "exact unanchored pending");
-    yield* beginIssuance(ops, { hab: a, grant: prepared.grant });
-    yield* refuses(() => beginIssuance(ops, { hab: a, grant: prepared.grant }), "already begun");
+    yield* refuses(() => beginIssuance(s.holderOwner(), prepared.grant), "exact unanchored pending");
+    yield* beginIssuance(ops, prepared.grant);
+    yield* refuses(() => beginIssuance(ops, prepared.grant), "already begun");
     assertThrows(() => issuanceStatus(ops, "Eunknown"), ValidationError, "No issuance");
   });
 });
@@ -212,9 +207,9 @@ Deno.test("reload mid-exchange: interrupted; a new Grant replaces the holder's u
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), holderOps = s.holderOwner(), reg = yield* s.registry(0);
     const hab = s.issuer.habs[0], holderHab = s.holder.habs[0];
-    const first = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
+    const first = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     yield* ops.processOnce();
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant: first.grant }); // retains the root on replying
+    approveIssuanceExchange(holderOps, first.grant); // retains the root on replying
     const lateReply = s.holder.runtime.ipex!.dhke(holderHab).outgoing.pull()!;
     const firstRoot = holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!;
 
@@ -232,18 +227,18 @@ Deno.test("reload mid-exchange: interrupted; a new Grant replaces the holder's u
     assertEquals(issuanceStatus(reloaded, first.grant).state, "interrupted");
 
     // A NEW Grant on the same registry begins on the issuer ...
-    const second = yield* beginIssuance(reloaded, { hab, credential: reg.credential(), options: grantOptions(s) });
+    const second = yield* proposeIssuance(reloaded, { credential: reg.credential(), options: grantOptions(s) });
     yield* reloaded.processOnce();
     assertEquals(issuanceStatus(reloaded, second.grant).state, "active");
     // ... the holder's first exchange is still live there, so resuming it is preferred and the consent is refused ...
     assertThrows(
-      () => approveIssuanceExchange(holderOps, { hab: holderHab, grant: second.grant }),
+      () => approveIssuanceExchange(holderOps, second.grant),
       ValidationError,
       "Another live DH operation uses this registry",
     );
     // ... until the user abandons it: the root was never used, so the second exchange may replace it.
     abandonIssuance(holderOps, first.grant, "superseded by a new Grant");
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant: second.grant });
+    approveIssuanceExchange(holderOps, second.grant);
     assert(holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64 !== firstRoot.qb64);
     for (let i = 0; i < 40 && issuanceStatus(reloaded, second.grant).state === "active"; i++) {
       yield* reloaded.processOnce();
@@ -264,9 +259,9 @@ Deno.test("reload after DH completed but before the anchor: interrupted, nothing
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), holderOps = s.holderOwner(), reg = yield* s.registry(0);
     const hab = s.issuer.habs[0], holderHab = s.holder.habs[0];
-    const first = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
+    const first = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     yield* ops.processOnce();
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant: first.grant });
+    approveIssuanceExchange(holderOps, first.grant);
     yield* holderOps.processOnce(); // the reply reaches the issuer: DH is complete on both sides
     const oldRoot = hab.mgr.getRegistryRoot(hab.pre!, reg.regid)!.qb64;
     assert(oldRoot, "the issuer retained the root");
@@ -279,11 +274,11 @@ Deno.test("reload after DH completed but before the anchor: interrupted, nothing
     assertEquals(s.issuer.rgy.store.headEvent(reg.regid)!.ilk, "rip");
 
     // A new Grant begins over the unused root; the old root stays until the new exchange retains its own.
-    const second = yield* beginIssuance(reloaded, { hab, credential: reg.credential(), options: grantOptions(s) });
+    const second = yield* proposeIssuance(reloaded, { credential: reg.credential(), options: grantOptions(s) });
     assertEquals(hab.mgr.getRegistryRoot(hab.pre!, reg.regid)!.qb64, oldRoot);
     yield* reloaded.processOnce();
     abandonIssuance(holderOps, first.grant, "superseded by a new Grant");
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant: second.grant });
+    approveIssuanceExchange(holderOps, second.grant);
     for (let i = 0; i < 40 && issuanceStatus(reloaded, second.grant).state === "active"; i++) {
       yield* reloaded.processOnce();
       yield* holderOps.processOnce();
@@ -301,7 +296,7 @@ Deno.test("reload after DH completed but before the anchor: interrupted, nothing
 Deno.test("late and duplicate DH traffic after completion is harmless", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
-    const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     yield* ops.processOnce();
     holderApproves(s, grant);
     const replies: Uint8Array[] = [];
@@ -334,7 +329,7 @@ Deno.test("two identifiers issue concurrently on one owner without crossing", as
     const grants: string[] = [];
     for (const [i, hab] of s.issuer.habs.entries()) {
       grants.push(
-        (yield* beginIssuance(ops, { hab, credential: regs[i].credential(), options: grantOptions(s, i) })).grant,
+        (yield* proposeIssuance(ops, { credential: regs[i].credential(), options: grantOptions(s, i) })).grant,
       );
     }
     yield* ops.processOnce();
@@ -377,11 +372,7 @@ Deno.test("a query the peer never got is replaced by a freshly dated one, which 
       },
     });
     const reg = yield* s.registry(0);
-    const { grant } = yield* beginIssuance(ops, {
-      hab: s.issuer.habs[0],
-      credential: reg.credential(),
-      options: grantOptions(s),
-    });
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     yield* ops.processOnce();
     holderApproves(s, grant); // the Grant arrived; the query did not
     yield* sleep(350); // past the 100 ms resend interval and the 300 ms window
@@ -397,11 +388,7 @@ Deno.test("a query the peer never got is replaced by a freshly dated one, which 
 Deno.test("a peer that took the query and lost it before consenting still answers it from the persisted copy", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);
-    const { grant } = yield* beginIssuance(ops, {
-      hab: s.issuer.habs[0],
-      credential: reg.credential(),
-      options: grantOptions(s),
-    });
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     yield* ops.processOnce(); // Grant and query reach the holder, which retains the query for its consent
     const holderDh = s.holder.runtime.ipex!.dhke(s.holder.habs[0]);
     holderDh.close(); // the process that held it ends: KRAM keeps the replay record, the persisted query stays
@@ -415,11 +402,7 @@ Deno.test("a peer that took the query and lost it before consenting still answer
 Deno.test("a fresh query that reaches a peer holding a persisted one replaces it, and consent answers the latest", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);
-    const { grant } = yield* beginIssuance(ops, {
-      hab: s.issuer.habs[0],
-      credential: reg.credential(),
-      options: grantOptions(s),
-    });
+    const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
     yield* ops.processOnce();
     const holderDh = s.holder.runtime.ipex!.dhke(s.holder.habs[0]);
     holderDh.close();

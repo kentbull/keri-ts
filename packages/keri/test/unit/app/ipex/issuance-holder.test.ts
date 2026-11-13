@@ -19,6 +19,7 @@ import {
   issuanceStatus,
   pendingIssuanceGrants,
   prepareIssuanceGrant,
+  proposeIssuance,
   rebuildIssuanceAdmit,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
@@ -40,8 +41,7 @@ function* refuses(op: () => Operation<unknown>, message: string): Operation<void
 function* started(s: Scenario) {
   const issuerOps = s.owner(), holderOps = s.holderOwner(), reg = yield* s.registry(0);
   const [issuerHab, holderHab] = [s.issuer.habs[0], s.holder.habs[0]];
-  const { grant } = yield* beginIssuance(issuerOps, {
-    hab: issuerHab,
+  const { grant } = yield* proposeIssuance(issuerOps, {
     credential: reg.credential(),
     options: { recipient: holderHab.pre!, message: "Issue" },
   });
@@ -65,7 +65,7 @@ Deno.test("holder: consent, exchange, wait for the registry update, finish, then
       "awaitingExchangeConsent",
       "exchange",
     ]);
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    approveIssuanceExchange(holderOps, grant);
     assertEquals(
       issuanceStatus(holderOps, grant).state === "active" && "phase" in issuanceStatus(holderOps, grant),
       true,
@@ -93,13 +93,13 @@ Deno.test("holder: consent, exchange, wait for the registry update, finish, then
     assertEquals(waited.outcome, "settled");
 
     // Admit is its own consent: it signs, accepts locally, records, and is delivered separately.
-    const admitted = yield* admitIssuance(holderOps.deps, { hab: holderHab, grant, message: "Accepted" });
+    const admitted = yield* admitIssuance(holderOps.deps, grant, { message: "Accepted" });
     assertEquals(issuanceStatus(holderOps, grant), { state: "done", role: "holder", phase: "admitted" });
     assert(s.holder.runtime.exc.complete(admitted.admit.said!));
     assertEquals(s.issuer.runtime.exc.complete(admitted.admit.said!), false, "not delivered yet");
     const rebuilt = yield* rebuildIssuanceAdmit(holderOps.deps, admitted.admit.said!);
     assertEquals([rebuilt.wire, rebuilt.dest, rebuilt.admit.said], [admitted.wire, admitted.dest, admitted.admit.said]);
-    assertEquals(yield* deliverIssuanceAdmit(holderOps.deps, holderHab, admitted), [s.issuer.habs[0].pre]);
+    assertEquals(yield* deliverIssuanceAdmit(holderOps.deps.delivery, admitted), [s.issuer.habs[0].pre]);
     assertEquals(s.issuer.hby.db.erpy.get([grant])!.qb64, admitted.admit.said);
     assert(s.holderChanges.some((c) => c.id === grant));
   });
@@ -118,7 +118,7 @@ Deno.test("pending Grants are listed for the holder before consent, with no stat
     }]);
     assertEquals(pendingIssuanceGrants(holderOps, { hab: issuerHab }), [], "only grants addressed to that identifier");
     assertEquals(pendingIssuanceGrants(issuerOps), [], "the issuer's own Grant is not pending consent for it");
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    approveIssuanceExchange(holderOps, grant);
     assertEquals(pendingIssuanceGrants(holderOps), [], "consent removes it from the list");
   });
 });
@@ -126,7 +126,7 @@ Deno.test("pending Grants are listed for the holder before consent, with no stat
 Deno.test("holder reload before it answered: consent is asked again, no reply is sent, and nothing can be admitted", async () => {
   await run(function*() {
     const s = yield* scenario(), { holderOps, grant, holderHab, reg } = yield* started(s);
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    approveIssuanceExchange(holderOps, grant);
     // As if the process ended before the holder answered: approval retains at once when the query is waiting.
     holderHab.mgr.ks.rroots.rem([holderHab.pre!, reg.regid]);
     s.holder.runtime.ipex!.release(holderHab.pre!);
@@ -137,7 +137,7 @@ Deno.test("holder reload before it answered: consent is asked again, no reply is
     assertEquals(s.log.length, sent);
     let refused = "";
     try {
-      yield* admitIssuance(reloaded.deps, { hab: holderHab, grant });
+      yield* admitIssuance(reloaded.deps, grant);
     } catch (error) {
       refused = (error as Error).message;
     }
@@ -148,7 +148,7 @@ Deno.test("holder reload before it answered: consent is asked again, no reply is
 Deno.test("holder expiry and abandon end the exchange locally", async () => {
   await run(function*() {
     const s = yield* scenario(), { holderOps, grant, holderHab } = yield* started(s);
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    approveIssuanceExchange(holderOps, grant);
     s.clock.skew = pastDeadline(s.holder, grant);
     assertEquals(issuanceStatus(holderOps, grant).state, "expired");
     const sent = s.log.length;
@@ -156,7 +156,7 @@ Deno.test("holder expiry and abandon end the exchange locally", async () => {
     assertEquals([issuanceStatus(holderOps, grant).state, s.log.length], ["expired", sent]);
 
     const other = yield* scenario(), second = yield* started(other);
-    approveIssuanceExchange(second.holderOps, { hab: second.holderHab, grant: second.grant });
+    approveIssuanceExchange(second.holderOps, second.grant);
     abandonIssuance(second.holderOps, second.grant, "declined");
     assertEquals(issuanceStatus(second.holderOps, second.grant), {
       state: "abandoned",
@@ -171,17 +171,17 @@ Deno.test("holder expiry and abandon end the exchange locally", async () => {
 
 Deno.test("holder refusals: another party's Grant, a repeat, an unaccepted Grant and an unknown Grant", async () => {
   await run(function*() {
-    const s = yield* scenario(), { holderOps, grant, issuerHab, holderHab } = yield* started(s);
+    const s = yield* scenario(), { issuerOps, holderOps, grant, issuerHab, holderHab } = yield* started(s);
     assertThrows(
-      () => approveIssuanceExchange(holderOps, { hab: issuerHab, grant }),
+      () => approveIssuanceExchange(issuerOps, grant), // the Grant is not addressed to any identifier of the issuer's store
       ValidationError,
       "exact unanchored",
     );
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
-    assertThrows(() => approveIssuanceExchange(holderOps, { hab: holderHab, grant }), ValidationError, "already begun");
+    approveIssuanceExchange(holderOps, grant);
+    assertThrows(() => approveIssuanceExchange(holderOps, grant), ValidationError, "already begun");
     let refused = "";
     try {
-      yield* admitIssuance(holderOps.deps, { hab: holderHab, grant }); // DH has not finished: the Grant is not accepted
+      yield* admitIssuance(holderOps.deps, grant); // DH has not finished: the Grant is not accepted
     } catch (error) {
       refused = (error as Error).message;
     }
@@ -193,17 +193,17 @@ Deno.test("holder refusals: another party's Grant, a repeat, an unaccepted Grant
 Deno.test("Admit of an accepted Grant reads admitted from the stored Admit, and cannot repeat", async () => {
   await run(function*() {
     const s = yield* scenario(), { issuerOps, holderOps, grant, holderHab } = yield* started(s);
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    approveIssuanceExchange(holderOps, grant);
     yield* exchange(
       issuerOps,
       holderOps,
       () => issuanceStatus(holderOps, grant).state === "active" && "needs" in issuanceStatus(holderOps, grant),
     );
-    yield* admitIssuance(holderOps.deps, { hab: holderHab, grant });
+    yield* admitIssuance(holderOps.deps, grant);
     assertEquals(issuanceStatus(s.holderOwner(), grant), { state: "done", role: "holder", phase: "admitted" });
     let refused = "";
     try {
-      yield* admitIssuance(holderOps.deps, { hab: holderHab, grant });
+      yield* admitIssuance(holderOps.deps, grant);
     } catch (error) {
       refused = (error as Error).message;
     }
@@ -214,7 +214,7 @@ Deno.test("Admit of an accepted Grant reads admitted from the stored Admit, and 
 /** The holder has consented and answered, and the issuer has the reply: both retained the same root, nothing is anchored. */
 function* bothRetained(s: Scenario) {
   const begun = yield* started(s);
-  approveIssuanceExchange(begun.holderOps, { hab: begun.holderHab, grant: begun.grant });
+  approveIssuanceExchange(begun.holderOps, begun.grant);
   yield* begun.holderOps.processOnce(); // the holder's reply reaches the issuer
   const { issuerHab, holderHab, reg } = begun;
   assert(
@@ -246,8 +246,8 @@ Deno.test("holder away while the issuer anchors: the next pass completes it, not
     assertEquals(ready.state === "active" && [ready.phase, ready.needs], ["awaitingAdmitConsent", "admit"]);
     assert(s.holder.runtime.exc.complete(grant));
     assertEquals([s.log.length, holderHab.kever!.sn], [sent, sn], "nothing sent, no KEL event signed");
-    const admitted = yield* admitIssuance(reloaded.deps, { hab: holderHab, grant });
-    yield* deliverIssuanceAdmit(reloaded.deps, holderHab, admitted);
+    const admitted = yield* admitIssuance(reloaded.deps, grant);
+    yield* deliverIssuanceAdmit(reloaded.deps.delivery, admitted);
     assertEquals(s.issuer.hby.db.erpy.get([grant])!.qb64, admitted.admit.said);
   });
 });
@@ -356,16 +356,15 @@ Deno.test("two live Grants on one registry cannot both take its root", async () 
   await run(function*() {
     const s = yield* scenario(), { issuerOps, grant, issuerHab, holderHab, reg } = yield* started(s);
     const other = yield* prepareIssuanceGrant(issuerOps, {
-      hab: issuerHab,
       credential: reg.credential(),
       options: { recipient: holderHab.pre!, message: "Issue again" },
     });
     yield* refuses(
-      () => beginIssuance(issuerOps, { hab: issuerHab, grant: other.grant }),
+      () => beginIssuance(issuerOps, other.grant),
       "Another live DH operation uses this registry",
     );
     abandonIssuance(issuerOps, grant, "starting over");
-    yield* beginIssuance(issuerOps, { hab: issuerHab, grant: other.grant });
+    yield* beginIssuance(issuerOps, other.grant);
   });
 });
 
@@ -387,15 +386,14 @@ Deno.test("a second interruption before the new exchange retains its root leaves
     const reloaded = s.owner({ delivery });
     abandonIssuance(holderOps, first.grant, "starting over");
     hold = true;
-    const second = yield* beginIssuance(reloaded, {
-      hab: issuerHab,
+    const second = yield* proposeIssuance(reloaded, {
       credential: reg.credential(),
       options: { recipient: holderHab.pre!, message: "Issue again" },
     });
     yield* reloaded.processOnce(); // the Grant arrives, the query is held back
     assertEquals(held.length, 1);
     const oldRoot = holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64;
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant: second.grant });
+    approveIssuanceExchange(holderOps, second.grant);
     assertEquals(
       holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64,
       oldRoot,
@@ -406,7 +404,7 @@ Deno.test("a second interruption before the new exchange retains its root leaves
     s.holder.runtime.ipex!.release(holderHab.pre!);
     const holderAgain = s.holderOwner();
     assertEquals(holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64, oldRoot);
-    approveIssuanceExchange(holderAgain, { hab: holderHab, grant: second.grant });
+    approveIssuanceExchange(holderAgain, second.grant);
     hold = false;
     s.clock.skew += 1100; // the issuer resends its unchanged query
     for (let i = 0; i < 40 && issuanceStatus(reloaded, second.grant).state === "active"; i++) {
@@ -423,7 +421,10 @@ Deno.test("a staged or accepted update keeps the refusal of a second exchange on
     const s = yield* scenario(), first = yield* bothRetained(s), { issuerOps, issuerHab, holderHab, reg } = first;
     const options = { recipient: holderHab.pre!, message: "Issue again" };
     const credential = s.issuer.runtime.exc.retainedInput(first.grant)!.nests![0].body as SerderACDC;
-    const pending = yield* prepareIssuanceGrant(issuerOps, { hab: issuerHab, credential: reg.credential(), options });
+    const pending = yield* prepareIssuanceGrant(issuerOps, {
+      credential: reg.credential(),
+      options,
+    });
     abandonIssuance(issuerOps, first.grant, "starting over");
     // A staged update was derived from the held root, so that root is no longer unused.
     const custody = new RegistryCustody({
@@ -443,7 +444,7 @@ Deno.test("a staged or accepted update keeps the refusal of a second exchange on
     assertEquals([...s.issuer.rgy.store.baser.maes.getTopItemIter(reg.regid)].length, 1);
     const root = issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64;
     yield* refuses(
-      () => beginIssuance(issuerOps, { hab: issuerHab, grant: pending.grant }),
+      () => beginIssuance(issuerOps, pending.grant),
       "a DH-issued registry must not have a custody root",
     );
     assertEquals(issuerHab.mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64, root);
@@ -454,7 +455,6 @@ Deno.test("once the update is accepted a new exchange on that registry is refuse
   await run(function*() {
     const s = yield* scenario(), first = yield* bothRetained(s), { issuerOps, issuerHab, holderHab, reg } = first;
     const pending = yield* prepareIssuanceGrant(issuerOps, {
-      hab: issuerHab,
       credential: reg.credential(),
       options: { recipient: holderHab.pre!, message: "Issue again" },
     }); // a second Grant, pending while the registry is still fresh
@@ -465,7 +465,6 @@ Deno.test("once the update is accepted a new exchange on that registry is refuse
     yield* refuses(
       () =>
         prepareIssuanceGrant(issuerOps, {
-          hab: issuerHab,
           credential: reg.credential(),
           options: { recipient: holderHab.pre!, message: "Too late" },
         }),
@@ -493,19 +492,22 @@ Deno.test("an honest issuer cannot send a second Grant after anchoring, and a ho
       first = yield* bothRetained(s),
       { issuerOps, holderOps, issuerHab, holderHab, reg } = first;
     const options = { recipient: holderHab.pre!, message: "Issue again" };
-    const second = yield* prepareIssuanceGrant(issuerOps, { hab: issuerHab, credential: reg.credential(), options });
+    const second = yield* prepareIssuanceGrant(issuerOps, {
+      credential: reg.credential(),
+      options,
+    });
     // A second Grant is prepared and in hand while the registry is fresh; then the first update is anchored but
     // the holder is away from it. The issuer cannot send the second Grant: its registry is no longer fresh.
     yield* issuerOps.processOnce();
     assertEquals(s.issuer.rgy.store.headEvent(reg.regid)!.ilk, "bup");
-    yield* refuses(() => beginIssuance(issuerOps, { hab: issuerHab, grant: second.grant }), "fresh");
+    yield* refuses(() => beginIssuance(issuerOps, second.grant), "fresh");
     // Even a Grant forced onto the holder (a dishonest issuer) cannot take the root: the first exchange is live.
     yield* s.holder.runtime.reactor.processBytes(second.wire);
     yield* s.holder.runtime.protocol.processEscrowsOnce();
     assertEquals(s.holder.runtime.exc.retainedInput(second.grant, { pending: true }) !== null, true);
     const root = holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64;
     assertThrows(
-      () => approveIssuanceExchange(holderOps, { hab: holderHab, grant: second.grant }),
+      () => approveIssuanceExchange(holderOps, second.grant),
       ValidationError,
     );
     assertEquals(holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64, root);
@@ -518,7 +520,7 @@ Deno.test("status after a reopen equals status before, for issuer and holder at 
     const reopened = () => [s.owner(), s.holderOwner()] as const;
     // Holder before consent: the pending Grant alone proves it.
     assertEquals(issuanceStatus(reopened()[1], grant), issuanceStatus(holderOps, grant));
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    approveIssuanceExchange(holderOps, grant);
     yield* holderOps.processOnce(); // answers; the root is retained and the issuer anchors on its next pass
     s.holder.runtime.ipex!.release(holderHab.pre!);
     assertEquals(issuanceStatus(reopened()[1], grant).state, "active");
@@ -536,7 +538,7 @@ Deno.test("status after a reopen equals status before, for issuer and holder at 
     }
     assertEquals(issuanceStatus(reopened()[0], grant), { state: "done", role: "issuer", phase: "issued" });
     // Holder admitted.
-    yield* admitIssuance(fresh.deps, { hab: holderHab, grant });
+    yield* admitIssuance(fresh.deps, grant);
     assertEquals(issuanceStatus(reopened()[1], grant), issuanceStatus(fresh, grant));
     assertEquals(issuanceStatus(reopened()[1], grant), { state: "done", role: "holder", phase: "admitted" });
     assert(issuerHab.pre);

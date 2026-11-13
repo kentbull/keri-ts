@@ -142,6 +142,37 @@ interface RawMessage {
   readonly raw: Uint8Array;
 }
 
+/** The signed replay hint of a child whose attachments use a different genus. */
+export interface ChildGenusAttrs {
+  cgvrsn?: readonly [number, number];
+}
+
+/** A child's pathed attachment and the genus to read it with. */
+export interface ChildEvidence {
+  attachment: Uint8Array;
+  genus: Versionage;
+}
+
+/** A stored wrapper EXN and the paths of its nested parts. */
+export interface StoredMultisigExn {
+  exn: Record<string, unknown>;
+  paths: Record<string, string>;
+}
+
+/** A membership the route's attributes do not decode to. */
+export interface MultisigRejection {
+  kind: "reject";
+  reason: string;
+}
+
+/** Owners a `Multiplexor` borrows; each is optional. */
+export interface MultiplexorOptions {
+  notifier?: Notifier | null;
+  exchanger?: Exchanger;
+  registry?: RegistryObserver;
+  messageKevery?: Kevery;
+}
+
 export interface MultisigBuilderOptions {
   /** Destination bound into a recipient-specific proposal wrapper. */
   recipient?: string;
@@ -154,6 +185,12 @@ export interface MultisigBuilderOptions {
   gvrsn?: Versionage | null;
   kind?: Kind;
 }
+
+/** Builder options of a message whose protocol version the builder fixes (v2). */
+export type MultisigVersionedOptions = Omit<MultisigBuilderOptions, "version" | "pvrsn">;
+
+/** Builder options of a nested body, whose child genus the child itself carries. */
+export type MultisigBodyOptions = Omit<MultisigBuilderOptions, "childGvrsn">;
 
 /** Unsigned wrapper plus supplemental path/child bytes; enclose these with parent signatures when sending v2. */
 export type MultisigMessage = readonly [serder: SerderKERI, attachments: Uint8Array];
@@ -458,7 +495,7 @@ export function* multisigQueryExn(
   group: string | Hab,
   member: Hab,
   qry: Uint8Array | RawMessage,
-  options: Omit<MultisigBuilderOptions, "version" | "pvrsn"> = {},
+  options: MultisigVersionedOptions = {},
 ): Operation<MultisigMessage> {
   return yield* prepareMultisigEventExn(
     member.pre,
@@ -479,7 +516,7 @@ export function* multisigIpexProofExn(
   group: string | Hab,
   member: Hab,
   grant: Uint8Array | RawMessage,
-  options: Omit<MultisigBuilderOptions, "version" | "pvrsn"> = {},
+  options: MultisigVersionedOptions = {},
 ): Operation<MultisigMessage> {
   return yield* prepareMultisigEventExn(
     member.pre,
@@ -513,7 +550,7 @@ export function multisigExnBody(
   sender: string,
   proposal: MultisigEventProposal,
   child: SerderKERI,
-  options: Omit<MultisigBuilderOptions, "childGvrsn"> = {},
+  options: MultisigBodyOptions = {},
 ): SerderKERI {
   const { route, attrs } = proposal;
   const pvrsn = options.pvrsn ?? options.version ?? Vrsn_2_0;
@@ -562,7 +599,7 @@ function v2CoordinationChild(route: string, child: SerderKERI, group: unknown): 
 export function multisigChildGenusAttrs(
   child: Serder,
   genus: Versionage,
-): { cgvrsn?: readonly [number, number] } {
+): ChildGenusAttrs {
   return !child.gvrsn && (genus.major !== child.pvrsn.major || genus.minor !== child.pvrsn.minor)
     ? { cgvrsn: [genus.major, genus.minor] }
     : {};
@@ -713,12 +750,7 @@ export class Multiplexor {
   /** Reuse durable group membership and separate child processors without sharing parent proof state. */
   constructor(
     hby: Habery,
-    { notifier, exchanger, registry, messageKevery }: {
-      notifier?: Notifier | null;
-      exchanger?: Exchanger;
-      registry?: RegistryObserver;
-      messageKevery?: Kevery;
-    } = {},
+    { notifier, exchanger, registry, messageKevery }: MultiplexorOptions = {},
   ) {
     this.hby = hby;
     this.notifier = notifier ?? null;
@@ -1043,8 +1075,8 @@ export class Multiplexor {
   }
 
   /** Return all stored wrapper EXNs for one embedded payload SAID. */
-  get(embeddedSaid: string): Array<{ exn: Record<string, unknown>; paths: Record<string, string> }> {
-    const exns: Array<{ exn: Record<string, unknown>; paths: Record<string, string> }> = [];
+  get(embeddedSaid: string): StoredMultisigExn[] {
+    const exns: StoredMultisigExn[] = [];
     for (const saider of this.hby.db.meids.get([embeddedSaid])) {
       const exn = this.hby.db.exns.get([saider.qb64]);
       if (!exn?.ked) {
@@ -1107,7 +1139,7 @@ export function multisigChildEvidence(
   wrapper: SerderKERI,
   label: string,
   child: Serder,
-): { attachment: Uint8Array; genus: Versionage } {
+): ChildEvidence {
   const attachment = multisigPathedAttachment(hby, wrapper.said!, label);
   const hint = attachment.length ? childGenusHint(wrapper.ked?.a) : undefined;
   return { attachment, genus: child.gvrsn ?? hint ?? child.pvrsn };
@@ -1187,7 +1219,7 @@ function payloadSection(ked: Record<string, unknown>): Record<string, unknown> {
 }
 
 /** Decode only membership fields; handler registration owns supported route selection. */
-function multisigMembership(route: string, value: unknown): MultisigMembership | { kind: "reject"; reason: string } {
+function multisigMembership(route: string, value: unknown): MultisigMembership | MultisigRejection {
   const attrs = isRecord(value) ? value : {};
   if (route === MULTISIG_ICP_ROUTE) {
     return { kind: "join", members: memberPrefixes(attrs.smids, attrs.rmids) };

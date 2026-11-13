@@ -5,7 +5,7 @@
 import { parseBytes } from "cesr-ts";
 import { type Operation, run, sleep, spawn } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
-import { beginIssuance, issuanceStatus } from "../../../../src/app/ipex/issuance.ts";
+import { beginIssuance, issuanceStatus, proposeIssuance } from "../../../../src/app/ipex/issuance.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import type { DoerPacing } from "../../../../src/app/runtime/doing.ts";
 import { operationOwnersDo, OWNER_TOCK_MS } from "../../../../src/app/runtime/operation-owners.ts";
@@ -54,8 +54,7 @@ Deno.test("a DH query that arrives before any explicit dhke(hab) call finds its 
   await run(function*() {
     const s = yield* scenario(1, undefined, false);
     const reg = yield* s.registry(0), ops = s.owner();
-    yield* beginIssuance(ops, {
-      hab: s.issuer.habs[0],
+    yield* proposeIssuance(ops, {
       credential: reg.credential(),
       options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
     });
@@ -168,8 +167,7 @@ Deno.test("an operation begun between tocks is picked up on the next tock, with 
     yield* sleep(50);
     assertEquals(passes, 1, "the one-time sweep, then idle");
     const reg = yield* s.registry(0);
-    yield* beginIssuance(issuance, {
-      hab: s.issuer.habs[0],
+    yield* proposeIssuance(issuance, {
       credential: reg.credential(),
       options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
     });
@@ -193,8 +191,7 @@ Deno.test("a delivery that throws is retried, not failed, and the loop keeps ser
       })
     );
     const reg = yield* s.registry(0);
-    const { grant } = yield* beginIssuance(operations!.issuance, {
-      hab: s.issuer.habs[0],
+    const { grant } = yield* proposeIssuance(operations!.issuance, {
       credential: reg.credential(),
       options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
     });

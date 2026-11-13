@@ -103,6 +103,31 @@ import {
   storedGroupMessage,
 } from "./multisig-messaging.ts";
 
+/** What an ACDC v2 registry approval reuses or discloses. */
+export interface AcdcV2ApprovalOptions {
+  anchor?: SerderKERI;
+  opening?: RegistryDisclosure;
+  resume?: boolean;
+}
+
+/** The seal of a KEL event that anchors a TEL event: its sequence number and SAID. */
+interface SourceSeal {
+  seqner: NumberPrimitive;
+  saider: Diger;
+}
+
+/** The seal of a credential's TEL event in a group KEL: issuer, sequence number and SAID. */
+interface TelCredentialSeal extends SourceSeal {
+  prefixer: Prefixer;
+}
+
+/** The attributes of an endpoint-role reply. */
+interface RpyAttrs {
+  cid: string;
+  role: string;
+  eid: string;
+}
+
 /** Approve one exact ACDC v2 TEL/anchor through existing member signing and ordinary processors.
  * A returned wrapper records consent, not quorum/witness/TEL completion; retry the accepted-state owners.
  * `resume` reuses this member's recorded anchor signatures after a crash instead of signing again.
@@ -112,7 +137,7 @@ export function* approveAcdcV2Registry(
   protocol: ProtocolProcessor,
   group: Hab,
   event: SerderACDC,
-  { anchor, opening, resume }: { anchor?: SerderKERI; opening?: RegistryDisclosure; resume?: boolean } = {},
+  { anchor, opening, resume }: AcdcV2ApprovalOptions = {},
 ): Operation<MultisigMessage> {
   const registry = protocol.registry, member = localGroupMember(hby, group.pre);
   if (!registry || group.db !== hby.db || registry.db !== hby.db) {
@@ -971,11 +996,11 @@ function registerRegistry(
   }
 }
 
-function sourceSeal(serder: SerderKERI): { seqner: NumberPrimitive; saider: Diger } {
+function sourceSeal(serder: SerderKERI): SourceSeal {
   return { seqner: ordinal(serder.sn ?? 0), saider: new Diger({ qb64: requireSerderSaid(serder, "anchor event") }) };
 }
 
-function telCredentialSeal(serder: SerderKERI): { prefixer: Prefixer; seqner: NumberPrimitive; saider: Diger } {
+function telCredentialSeal(serder: SerderKERI): TelCredentialSeal {
   return {
     prefixer: new Prefixer({ qb64: requireSerderPrefix(serder, "credential TEL event") }),
     seqner: ordinal(serder.sn ?? 0),
@@ -1018,7 +1043,7 @@ function telAccepted(reger: Reger, pre: string, sn: number, eventSaid: string): 
   return reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
 }
 
-function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string } {
+function rpyAttrs(serder: SerderKERI): RpyAttrs {
   const attrs: unknown = serder.ked?.a;
   if (
     !attrs || typeof attrs !== "object"

@@ -12,6 +12,7 @@ import {
   beginIssuance,
   type IssuanceOperations,
   issuanceStatus,
+  proposeIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
 import { admitAndDeliver, receiveIssuance } from "../../../../src/app/ipex/receive-issuance.ts";
 import { type Scenario, scenario } from "./issuance-fixtures.ts";
@@ -20,8 +21,7 @@ import { type Scenario, scenario } from "./issuance-fixtures.ts";
 function* begun(s: Scenario) {
   const issuerOps = s.owner(), holderOps = s.holderOwner(), reg = yield* s.registry(0);
   const [issuerHab, holderHab] = [s.issuer.habs[0], s.holder.habs[0]];
-  const { grant } = yield* beginIssuance(issuerOps, {
-    hab: issuerHab,
+  const { grant } = yield* proposeIssuance(issuerOps, {
     credential: reg.credential(),
     options: { recipient: holderHab.pre!, message: "Issue" },
   });
@@ -43,7 +43,6 @@ Deno.test("receiveIssuance approves, waits, admits, runs the host step before de
     const order: string[] = [];
     const task = yield* spawn(() =>
       receiveIssuance(holderOps, {
-        hab: holderHab,
         grant,
         message: "Accepted",
         timeoutMs: 5000,
@@ -66,17 +65,17 @@ Deno.test("receiveIssuance approves, waits, admits, runs the host step before de
 Deno.test("receiveIssuance times out with the status it read, and calling again resumes the same exchange", async () => {
   await run(function*() {
     const s = yield* scenario(), { issuerOps, holderOps, grant, holderHab } = yield* begun(s);
-    const first = yield* receiveIssuance(holderOps, { hab: holderHab, grant, timeoutMs: 20 });
+    const first = yield* receiveIssuance(holderOps, { grant, timeoutMs: 20 });
     assert(first.outcome === "timed-out");
     assertEquals(first.timeoutMs, 20);
     assertEquals(first.status.state, "active");
-    const resumed = yield* spawn(() => receiveIssuance(holderOps, { hab: holderHab, grant, timeoutMs: 5000 }));
+    const resumed = yield* spawn(() => receiveIssuance(holderOps, { grant, timeoutMs: 5000 }));
     yield* drive(issuerOps, holderOps, () => issuanceStatus(holderOps, grant).state !== "active", 60);
     const second = yield* resumed;
     assert(second.outcome === "admitted");
     assertEquals(second.delivery.state, "delivered");
     // Admitted already: a third call reports it and does not sign or send again.
-    const third = yield* receiveIssuance(holderOps, { hab: holderHab, grant, timeoutMs: 20 });
+    const third = yield* receiveIssuance(holderOps, { grant, timeoutMs: 20 });
     assert(third.outcome === "admitted");
     assertEquals([third.admit, third.admitted, third.delivery.state], [second.admit, undefined, "undelivered"]);
   });
@@ -85,10 +84,10 @@ Deno.test("receiveIssuance times out with the status it read, and calling again 
 Deno.test("receiveIssuance reports an exchange that ended", async () => {
   await run(function*() {
     const s = yield* scenario(), { holderOps, grant, holderHab } = yield* begun(s);
-    const timedOut = yield* receiveIssuance(holderOps, { hab: holderHab, grant, timeoutMs: 20 });
+    const timedOut = yield* receiveIssuance(holderOps, { grant, timeoutMs: 20 });
     assert(timedOut.outcome === "timed-out");
     abandonIssuance(holderOps, grant, "changed my mind");
-    const ended = yield* receiveIssuance(holderOps, { hab: holderHab, grant, timeoutMs: 20 });
+    const ended = yield* receiveIssuance(holderOps, { grant, timeoutMs: 20 });
     assert(ended.outcome === "ended");
     assertEquals(ended.status.state, "abandoned");
   });
@@ -97,14 +96,14 @@ Deno.test("receiveIssuance reports an exchange that ended", async () => {
 Deno.test("admitAndDeliver leaves delivery to the caller when told, and the Admit is still accepted", async () => {
   await run(function*() {
     const s = yield* scenario(), { issuerOps, holderOps, grant, holderHab } = yield* begun(s);
-    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    approveIssuanceExchange(holderOps, grant);
     yield* drive(
       issuerOps,
       holderOps,
       () => issuanceStatus(holderOps, grant).state !== "active" || "needs" in issuanceStatus(holderOps, grant),
       60,
     );
-    const done = yield* admitAndDeliver(holderOps.deps, { hab: holderHab, grant, deliver: false });
+    const done = yield* admitAndDeliver(holderOps.deps, { grant, deliver: false });
     assertEquals(done.delivery.state, "undelivered");
     assert(done.admitted.wire.length > 0);
     assert(s.holder.runtime.exc.complete(done.admitted.admit.said!));

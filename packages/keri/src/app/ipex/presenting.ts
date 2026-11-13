@@ -141,12 +141,12 @@ export interface PresentationDeps {
 }
 
 /** Body options of a selecting message, plus the presentation registry that carries a Grant's proof. */
-export type PresentationOptions = IpexV2BodyOptions & {
+export interface PresentationOptions extends IpexV2BodyOptions {
   priorSaid?: string;
   auths?: WitnessAuthMap;
   /** Alias of a local registry whose presented-state update this Grant anchors. */
   presentationRegistry?: string;
-};
+}
 
 /** What the user presents. Selecting verbs name a credential view; replies name the exchange they answer. */
 export type PresentationInput =
@@ -179,8 +179,8 @@ export interface PresentationBegun {
   wire: Uint8Array;
 }
 
-/** One delivery in progress; exists only while it is live in this process. */
-interface LivePresentation {
+/** A signed exchange to deliver: what the sender, the recipient and the transport need. */
+interface QueuedPresentation {
   /** SAID of the signed exchange. */
   readonly said: string;
   readonly verb: PresentationVerb;
@@ -191,6 +191,10 @@ interface LivePresentation {
   readonly wire: Uint8Array;
   /** The exchange's original deadline (ISO 8601), for an exchange that has one. */
   readonly deadline?: string;
+}
+
+/** One delivery in progress; exists only while it is live in this process. */
+interface LivePresentation extends QueuedPresentation {
   readonly expires: bigint | null;
   /** The signed bytes, delivered with retry; a failure waits for a later pass instead of ending the delivery. */
   readonly outbox: DeliveryOutbox;
@@ -215,9 +219,9 @@ function message(error: unknown): string {
 }
 
 /** Whether the exchange's deadline has passed; an exchange without one never lapses. */
-function lapsed(deps: Pick<PresentationDeps, "clock">, deadline: string | null | undefined): boolean {
+function lapsed(clock: RuntimeClock, deadline?: string): boolean {
   const expiry = timestampMicros(deadline);
-  return expiry !== null && BigInt(deps.clock.now()) * 1000n >= expiry;
+  return expiry !== null && BigInt(clock.now()) * 1000n >= expiry;
 }
 
 /** The live deliveries table and its driver. One per host runtime; every identifier may present through it. */
@@ -470,10 +474,7 @@ export function* present(
   return { said, recipient, wire };
 }
 
-function queue(
-  ops: PresentationOperations,
-  op: Pick<LivePresentation, "said" | "verb" | "hab" | "src" | "recipient" | "wire" | "deadline">,
-): void {
+function queue(ops: PresentationOperations, op: QueuedPresentation): void {
   const outbox = new DeliveryOutbox(ops.deps.retry);
   outbox.enqueue({ src: op.src ?? op.hab.pre!, dest: op.recipient, msg: op.wire });
   ops.settled.delete(op.said);
@@ -499,7 +500,7 @@ function signed(deps: PresentationDeps, said: string) {
  * @throws ValidationError when `said` is not a presentation exchange a local identifier signed.
  */
 export function presentationStatus(
-  ops: Pick<PresentationOperations, "deps" | "live" | "settled">,
+  ops: PresentationOperations,
   said: string,
 ): PresentationStatus {
   const { deps } = ops, ended = ops.settled.get(said), live = ops.live.get(said);
@@ -510,7 +511,7 @@ export function presentationStatus(
   };
   if (ended && ended.state !== "done") return { state: ended.state, verb: ended.verb, reason: ended.reason };
   if (ended) return answered(ended.verb, ended.deliveries);
-  if (live && !lapsed(deps, live.deadline)) {
+  if (live && !lapsed(deps.clock, live.deadline)) {
     return {
       state: "active",
       verb: live.verb,
@@ -522,7 +523,9 @@ export function presentationStatus(
   }
   const { serder, verb } = signed(deps, said);
   if (deps.hby.db.erpy.get([said])) return answered(verb);
-  if (lapsed(deps, deps.exc.exchangeDeadline(serder))) return { state: "expired", verb, reason: EXPIRED };
+  if (lapsed(deps.clock, deps.exc.exchangeDeadline(serder) ?? undefined)) {
+    return { state: "expired", verb, reason: EXPIRED };
+  }
   return { state: "interrupted", verb, reason: RESEND };
 }
 
@@ -530,7 +533,7 @@ export function presentationStatus(
 export interface PresentationWaitOptions {
   /** Wall-clock budget. */
   timeoutMs: number;
-  clock?: Pick<RuntimeClock, "now">;
+  clock?: RuntimeClock;
   /** Settle on this instead of any non-active state. */
   until?: (status: PresentationStatus) => boolean;
 }
@@ -540,7 +543,7 @@ export interface PresentationWaitOptions {
  * nothing: someone else must call `processOnce`.
  */
 export function* waitForPresentation(
-  ops: Pick<PresentationOperations, "deps" | "live" | "settled">,
+  ops: PresentationOperations,
   said: string,
   { timeoutMs, clock = ops.deps.clock, until = (status) => status.state !== "active" }: PresentationWaitOptions,
 ): Operation<WaitResult<PresentationStatus>> {
@@ -589,7 +592,7 @@ export function* resendPresentation(
   if (status.state === "active") throw new ValidationError("This presentation is already being delivered");
   if (deps.hby.db.erpy.get([said])) throw new ValidationError("The peer already answered this presentation");
   const deadline = deps.exc.exchangeDeadline(serder) ?? undefined;
-  if (lapsed(deps, deadline)) throw new ValidationError(EXPIRED);
+  if (lapsed(deps.clock, deadline)) throw new ValidationError(EXPIRED);
   const retained = deps.exc.retainedInput(said);
   if (!retained) throw new ValidationError("The signed exchange no longer authenticates from stored factors");
   const discloser = discloserFor(deps, hab);

@@ -1,0 +1,7 @@
+---
+"keri-ts": minor
+"@keri-ts/tufa": minor
+"@keri-ts/wallet": minor
+---
+
+The remaining owner functions take plain signatures and derive the identifier from the Grant. Single-signature issuance: `prepareIssuanceGrant(ops, draft)` (the issuer is the credential registry's identifier), `beginIssuance(ops, grant, auths?)`, the new `proposeIssuance(ops, draft, auths?)` (prepare, then begin) and `approveIssuanceExchange(ops, grant)`; `BeginIssuanceInput` is removed, and `GrantDraft` and `PreparedGrant` name the draft and the prepared Grant. `admitIssuance(deps, grant, options?)` derives the holder from the Grant (`AdmitOptions`), `IssuanceAdmit` carries the sending holder, and `deliverIssuanceAdmit(delivery, admitted)` no longer takes a habitat. `receiveIssuance` and `admitAndDeliver` lose their `hab` input. Unblind: `requestUnblind(ops, grant, options?)` and `answerUnblind(ops, grant, options)` derive the party (the Grant's recipient, or its sender for an answer) and take `UnblindingOptions` (`states`, `proposer`); `UnblindingRequest` is removed. Group IPEX: `approveGroupIpex(ops, said, options?)`, and `GroupIpexProposalInput`, `GroupAdmitInput`, `GroupAdmitBegun` and `GroupIpexApproveOptions` name what the functions take. The status and wait functions of the issuance, group IPEX, presentation and Unblind owners take the owner itself instead of a `Pick` of it, `PresentationOptions` is an interface, and the multisig builders and the Multiplexor take named option types. `grantTransactionId` is the one definition of a Grant's DH transaction id.

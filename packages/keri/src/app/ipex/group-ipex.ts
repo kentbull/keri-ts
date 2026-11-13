@@ -299,6 +299,17 @@ export class GroupIpexOperations {
   }
 }
 
+/** A group-authored message to propose. */
+export interface GroupIpexProposalInput {
+  hab: Hab;
+  exn: SerderKERI;
+  /** The message's nested evidence, framed as in the candidate wire. */
+  nests?: Uint8Array;
+  gvrsn?: Versionage;
+  /** False when the caller takes the completed message itself (a file) and the lead must not send it. */
+  deliver?: boolean;
+}
+
 /**
  * The proposer's consent to a group-authored v2 IPEX message: signs this member's contribution to the exact
  * `exn` body, accepts it locally and records the operation. Publishing the wrapper to the other members is
@@ -309,15 +320,7 @@ export class GroupIpexOperations {
  */
 export function* proposeGroupIpex(
   ops: GroupIpexOperations,
-  { hab, exn, nests = new Uint8Array(), gvrsn = Vrsn_2_0, deliver = true }: {
-    hab: Hab;
-    exn: SerderKERI;
-    /** The message's nested evidence, framed as in the candidate wire. */
-    nests?: Uint8Array;
-    gvrsn?: Versionage;
-    /** False when the caller takes the completed message itself (a file) and the lead must not send it. */
-    deliver?: boolean;
-  },
+  { hab, exn, nests = new Uint8Array(), gvrsn = Vrsn_2_0, deliver = true }: GroupIpexProposalInput,
 ): Operation<GroupIpexBegun> {
   const { hby, protocol } = ops.deps;
   if (!isLocalGroupHab(hby, hab)) throw new ValidationError("Group IPEX requires a local group identifier");
@@ -359,6 +362,21 @@ export function proposeGroupIpexAfter(
   return ops.begin(exn.said, hab, gvrsn, null, deliver, prerequisite);
 }
 
+/** An Admit of an accepted Grant a group holder proposes. */
+export interface GroupAdmitInput {
+  hab: Hab;
+  /** SAID of the accepted Grant. */
+  grant: string;
+  message?: string;
+  gvrsn?: Versionage;
+  deliver?: boolean;
+}
+
+/** A proposed Admit and the Grant it answers. */
+export interface GroupAdmitBegun extends GroupIpexBegun {
+  grant: string;
+}
+
 /**
  * A group holder's consent to admit an accepted Grant: freezes the Admit body (explicit consent, exact prior
  * authentication and current root truth), then proposes it as {@link proposeGroupIpex} does. The other members list
@@ -366,14 +384,8 @@ export function proposeGroupIpexAfter(
  */
 export function* proposeGroupAdmit(
   ops: GroupIpexOperations,
-  { hab, grant, message = "", gvrsn = Vrsn_2_0, deliver }: {
-    hab: Hab;
-    grant: string;
-    message?: string;
-    gvrsn?: Versionage;
-    deliver?: boolean;
-  },
-): Operation<GroupIpexBegun & { grant: string }> {
+  { hab, grant, message = "", gvrsn = Vrsn_2_0, deliver }: GroupAdmitInput,
+): Operation<GroupAdmitBegun> {
   const { hby, rgy, exc } = ops.deps;
   if (!isLocalGroupHab(hby, hab)) throw new ValidationError("Group IPEX requires a local group identifier");
   const admit = yield* new IpexAdmitter(hby, rgy.store, exc).prepareAdmitBody(grant, hab.pre!, {
@@ -385,7 +397,7 @@ export function* proposeGroupAdmit(
 }
 
 /** Stored v2 IPEX proposals of `hab` (or of every local group) that were proposed by a member, newest unordered. */
-export function groupIpexProposals(ops: Pick<GroupIpexOperations, "deps">, hab?: Hab): GroupIpexProposal[] {
+export function groupIpexProposals(ops: GroupIpexOperations, hab?: Hab): GroupIpexProposal[] {
   const { hby, exc } = ops.deps, found: GroupIpexProposal[] = [];
   for (const [, wrapper] of hby.db.exns.getTopItemIter()) {
     if (wrapper.route !== MULTISIG_EXN_ROUTE || wrapper.pvrsn.major !== 2) continue;
@@ -410,6 +422,12 @@ export function groupIpexProposals(ops: Pick<GroupIpexOperations, "deps">, hab?:
   return found;
 }
 
+/** Choices of a member's approval. */
+export interface GroupIpexApproveOptions {
+  /** False when the caller takes the completed message itself and the lead must not send it. */
+  deliver?: boolean;
+}
+
 /**
  * A member's consent to a stored group IPEX proposal: verifies the exact stored wrapper, signs or reuses this
  * member's contribution and accepts it locally, and records the operation. Publishing it, collecting the other
@@ -423,7 +441,8 @@ export function groupIpexProposals(ops: Pick<GroupIpexOperations, "deps">, hab?:
  */
 export function* approveGroupIpex(
   ops: GroupIpexOperations,
-  { said, deliver = true }: { said: string; deliver?: boolean },
+  said: string,
+  { deliver = true }: GroupIpexApproveOptions = {},
 ): Operation<GroupIpexBegun> {
   const { hby, protocol } = ops.deps;
   if (ops.live.has(said)) throw new ValidationError("A group IPEX message was already begun for this SAID");
@@ -447,7 +466,7 @@ export function abandonGroupIpex(ops: GroupIpexOperations, said: string, reason 
  * @throws ValidationError when no stored proposal or accepted message of a local group has this SAID.
  */
 export function groupIpexStatus(
-  ops: Pick<GroupIpexOperations, "deps" | "live" | "ended">,
+  ops: GroupIpexOperations,
   said: string,
 ): GroupIpexStatus {
   const ended = ops.ended.get(said), live = ops.live.get(said);
@@ -465,14 +484,14 @@ export function groupIpexStatus(
 export interface GroupIpexWaitOptions {
   /** Wall-clock budget. */
   timeoutMs: number;
-  clock?: Pick<RuntimeClock, "now">;
+  clock?: RuntimeClock;
   /** Settle on this instead of any non-active state. */
   until?: (status: GroupIpexStatus) => boolean;
 }
 
 /** Observe until the message is accepted and delivered, or ended, or the budget expires. Starts no worker. */
 export function* waitForGroupIpex(
-  ops: Pick<GroupIpexOperations, "deps" | "live" | "ended">,
+  ops: GroupIpexOperations,
   said: string,
   { timeoutMs, clock = ops.deps.clock, until = (status) => status.state !== "active" }: GroupIpexWaitOptions,
 ): Operation<WaitResult<GroupIpexStatus>> {
