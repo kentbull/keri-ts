@@ -20,7 +20,7 @@ import { Kever } from "../../core/kel/kever.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { servingHost } from "../mailbox/forward-handler.ts";
 import { type DispatchResult, queryEnvelopeFromDispatch } from "../protocol/parsering.ts";
-import { queryAttesters } from "./witness-inquisitor.ts";
+import { addressableAttesters } from "./witness-inquisitor.ts";
 
 /**
  * The requester of a query whose attached signatures satisfy its current signing threshold, or null.
@@ -51,8 +51,8 @@ function authenticatedRequester(hby: Habery, query: QueryEnvelope): string | nul
  * - its subject `q.i` is not a prefix of this Habery;
  * - its requester is authenticated (see {@link authenticatedRequester}) and served by a local host under the shared
  *   `servingHost` rule (an accepted mailbox or agent end role naming the host);
- * - the host can name an attester for the subject now ({@link queryAttesters}), so the request resolves on the
- *   querier's next pass instead of waiting in its queue.
+ * - the host can address an attester for the subject now ({@link addressableAttesters}: one with an accepted
+ *   location), so the request is sent on the querier's next pass instead of waiting in its queue.
  *
  * The cue is `{ route: "logs", q: {} }` for the subject, signed by the serving host: one full replay from the
  * attester covers both routes, since `ksn` is answered from the same key state. A `tels` query is not refreshed:
@@ -74,6 +74,6 @@ export function relayRefreshCue(hby: Habery, result: DispatchResult, mailboxAid:
   if (!requester) return null;
   const host = servingHost(hby, { sender: requester, origin: null }, mailboxAid);
   const hab = host ? hby.habs.get(host) : undefined;
-  if (!hab || queryAttesters(hab, subject).length === 0) return null;
+  if (!hab || addressableAttesters(hab, subject).length === 0) return null;
   return { kin: "query", pre: subject, route: "logs", q: {}, signer: hab.pre };
 }

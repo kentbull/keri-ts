@@ -17,7 +17,6 @@ import { concatBytes } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { QueryCue, QueryInstruction, QueryRequest } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
-import { ValidationError } from "../../core/errors.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import { Roles } from "../../core/roles.ts";
 import { Schemes } from "../../core/schemes.ts";
@@ -96,7 +95,7 @@ function soleHab(hby: Habery): Hab | null {
  * @param pre Subject AID whose accepted endpoint roles are consulted.
  * @returns Eligible attester AIDs, or an empty array for an unknown subject or a subject with no such endpoint.
  */
-export function queryAttesters(hab: Hab, pre: string): string[] {
+function queryAttesters(hab: Hab, pre: string): string[] {
   if (!hab.db.getKever(pre)) return [];
   const ends = hab.endsFor(pre);
   for (const role of QUERY_ROLE_PRIORITY) {
@@ -141,6 +140,18 @@ function resolveQueryDestinationUrl(
   }
 
   return null;
+}
+
+/**
+ * The attesters of an ordinary query for `pre` that can be sent to now: those {@link queryAttesters} selects that also
+ * have an accepted location.
+ *
+ * @param hab Local habitat whose accepted-state store is read.
+ * @param pre Subject AID whose accepted endpoint roles and locations are consulted.
+ * @returns Addressable attester AIDs of the first eligible role; empty when none can be reached now.
+ */
+export function addressableAttesters(hab: Hab, pre: string): string[] {
+  return queryAttesters(hab, pre).filter((aid) => resolveQueryDestinationUrl(hab, pre, aid) !== null);
 }
 
 /** One attempt's signed query packet captured before asynchronous transport. */
@@ -439,21 +450,32 @@ export class WitnessInquisitor {
    * Resolve/sign one selected query and introduction immediately before its attempt.
    *
    * @param request Deferred unsigned request; nested query values must remain immutable.
-   * @returns Prepared packet, or null when signer/attester evidence is unresolved or the signer cannot sign yet.
-   * @throws A selected attester with no endpoint URL throws; source removal remains with the caller.
+   * The attester is chosen at random among the eligible ones (the explicit `src`, the `wits` overrides, or the first
+   * eligible endpoint role) that have an accepted location. An attester without one is never promoted to another
+   * role; when none of the eligible attesters can be reached the request is unresolved, like a signer that cannot sign
+   * yet, so no endpoint condition ends the delivery loop or fails a caller's pass.
+   *
+   * @param request Deferred unsigned request; nested query values must remain immutable.
+   * @returns Prepared packet, or null when signer/attester evidence is unresolved, no eligible attester has an
+   *   accepted location, or the signer cannot sign yet.
    */
   private prepareRequest(request: QueryRequest): QueryDelivery | null {
     const hab = this.configuredHab(request.signer);
     // A signer that cannot sign yet leaves the request unresolved: it goes to the tail, and the next pass tries again.
     if (!hab || !hab.canSign()) return null;
     if (this.relay) return this.prepareRelayRequest(hab, request, this.relay);
-    const attesters = request.src ? [] : this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits });
-    const destination = request.src ?? attesters[Math.floor(Math.random() * attesters.length)];
-    if (!destination) return null;
-    const url = resolveQueryDestinationUrl(hab, request.pre, destination, {
-      explicitWitness: request.wits?.includes(destination) ?? false,
+    const eligible = request.src
+      ? [request.src]
+      : this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits });
+    const reachable = eligible.flatMap((destination) => {
+      const url = resolveQueryDestinationUrl(hab, request.pre, destination, {
+        explicitWitness: request.wits?.includes(destination) ?? false,
+      });
+      return url ? [{ destination, url }] : [];
     });
-    if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
+    const selected = reachable[Math.floor(Math.random() * reachable.length)];
+    if (!selected) return null;
+    const { destination, url } = selected;
     const message = hab.query(request.pre, destination, copyQuery(request));
     const intro = introduce(hab, destination);
     return { url, body: concatBytes(intro, message), destination };
