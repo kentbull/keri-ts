@@ -13,6 +13,11 @@ from pathlib import Path
 import signal
 import sys
 
+import keripy_fast_timing
+
+# Test-only timing overrides; a no-op unless KERI_TEST_FAST=1.
+keripy_fast_timing.apply()
+
 from keri.app.configing import Configer
 from keri.app.directing import runController
 from keri.app.habbing import Habery, HaberyDoer

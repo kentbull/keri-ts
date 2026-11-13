@@ -83,6 +83,15 @@ function jobs(suite: TestSuite): number {
   return Math.min(requested, suite.jobs ?? 1);
 }
 
+/**
+ * Default for KERI_TEST_FAST, which shortens KERIpy poll intervals
+ * (scripts/ci/keripy_fast_timing.py). On for every target except `qualification`,
+ * which runs stock KERIpy timing; an exported KERI_TEST_FAST overrides either.
+ */
+function fastDefault(): string {
+  return Deno.args[0] === "qualification" ? "0" : "1";
+}
+
 /** Select the concrete owner's peer without allowing main setup to replace the candidate. */
 export function keripySuiteEnvironment(name: string, inherited: Record<string, string>): Record<string, string> {
   const env = { ...inherited, ...suites[name]?.env };
@@ -139,7 +148,7 @@ async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
     const child = new Deno.Command(executable, {
       args,
       cwd: packageDir,
-      env: { DENO_JOBS: String(jobs(suite)), ...env },
+      env: { DENO_JOBS: String(jobs(suite)), KERI_TEST_FAST: fastDefault(), ...env },
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",

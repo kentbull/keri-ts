@@ -7,9 +7,13 @@ installed ``kli`` console script instead passes that value to ``sys.exit``.
 import importlib
 import sys
 
+import keripy_fast_timing
+
 
 def main():
     """Import the independently verified CLI module and preserve console semantics."""
+    # Test-only timing overrides; a no-op unless KERI_TEST_FAST=1.
+    keripy_fast_timing.apply()
     module = importlib.import_module(sys.argv.pop(1))
     sys.argv[0] = "kli"
     return module.main()
