@@ -28,6 +28,9 @@ export const packages = {
 } as const;
 export type Package = keyof typeof packages;
 const order = Object.keys(packages) as Package[];
+/** Files a tag must contain for the train to release it: the shared workflow runs them from the tag's checkout. */
+export const toolingFiles = ["scripts/ci/release-plan.ts", "scripts/ci/release-train.ts"] as const;
+
 /** Stage jobs `release-train.yml` defines; a deeper graph must add a stage there. */
 export const maxStages = 6;
 
@@ -111,6 +114,7 @@ export interface Sources {
   commit(tag: string): Promise<string>;
   onMaster(commit: string): Promise<boolean>;
   file(tag: string, path: string): Promise<string>;
+  hasFile(tag: string, path: string): Promise<boolean>;
   registry(npmName: string): Promise<{ latest: string | null; versions: string[] }>;
 }
 
@@ -158,6 +162,13 @@ export async function planTrain(
       throw new Error(
         `${packages[id]}@${version} is below npm latest ${published.latest}; refusing to move latest backwards.`,
       );
+    }
+    for (const path of toolingFiles) {
+      if (!(await sources.hasFile(tag, path))) {
+        throw new Error(
+          `${tag} predates the release tooling (${path} is missing). The train and the green-run release check work for tags at or after the commit that added them; release this tag with its own package workflow.`,
+        );
+      }
     }
     candidates.push({ package: id, tag, commit, version, dependencies, waitFor });
   }
@@ -220,6 +231,14 @@ export const liveSources: Sources = {
     }
   },
   file: (tag, path) => git("show", `${tag}:${path}`),
+  hasFile: async (tag, path) => {
+    try {
+      await git("cat-file", "-e", `${tag}:${path}`);
+      return true;
+    } catch {
+      return false;
+    }
+  },
   registry,
 };
 

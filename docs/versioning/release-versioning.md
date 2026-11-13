@@ -114,6 +114,12 @@ workflows, which are unchanged and still release one package when its tag is pus
   provenance, the publish environment and the artifact smoke tests are the same, and
   the GitHub release is created for the package tag also when the run is not a tag push.
 
+Limit: the shared workflow runs `scripts/ci/release-plan.ts` and `release-train.ts`
+from the tag's own checkout, so the train and the green-run release check work for
+tags at or after the commit that added them. The plan refuses an older tag that it
+would release, with a message naming the missing file; release such a tag with its
+own package workflow.
+
 Use the train to release several packages at once or a whole version bump; use a
 single package workflow (push its tag) for one package. The train never creates or
 moves tags.

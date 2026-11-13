@@ -53,13 +53,19 @@ Deno.test("versions and tags order semantically", () => {
 
 /** Sources where every package sits at one commit and one version. */
 function sources(
-  overrides: { published?: Record<string, string[]>; latest?: Record<string, string>; master?: boolean } = {},
+  overrides: {
+    published?: Record<string, string[]>;
+    latest?: Record<string, string>;
+    master?: boolean;
+    missing?: string[];
+  } = {},
 ): Sources {
   const names = Object.keys(graph) as Package[];
   return {
     tags: () => Promise.resolve(names.map((id) => `${id}-v1.0.0`)),
     commit: () => Promise.resolve("c".repeat(40)),
     onMaster: () => Promise.resolve(overrides.master ?? true),
+    hasFile: (_tag, path) => Promise.resolve(!(overrides.missing ?? []).includes(path)),
     file: (_tag, path) => {
       const id = path.split("/")[1];
       return Promise.resolve(path.endsWith("package.json") ? JSON.stringify({ version: "1.0.0" }) : read(id));
@@ -102,4 +108,11 @@ Deno.test("a dry run keeps an explicitly named tag that npm already has", async 
   const plan = await planTrain({ tufa: "tufa-v1.0.0" }, sources({ published: named }), true);
   assertEquals(plan.resolved.map((item) => item.package), ["tufa"]);
   assertEquals((await planTrain({ tufa: "tufa-v1.0.0" }, sources({ published: named }), false)).resolved, []);
+});
+
+Deno.test("a tag older than the release tooling is refused, but only when it would be released", async () => {
+  const missing = ["scripts/ci/release-train.ts"];
+  await assertRejects(() => planTrain({}, sources({ missing })), Error, "predates the release tooling");
+  const named = Object.fromEntries(Object.values(packages).map((name) => [name, ["1.0.0"]]));
+  assertEquals((await planTrain({}, sources({ missing, published: named }))).resolved, []);
 });
