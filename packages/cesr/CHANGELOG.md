@@ -1,5 +1,12 @@
 # cesr-ts
 
+## 2.2.1
+
+### Patch Changes
+
+- 5480120: Constructing any `AppError`, `ValidationError` or other keri-ts error threw a `TypeError` in a browser bundle. `AppError` (and cesr-ts's `ParserError`) set their name from `new.target.name`, which the npm build rewrites into a call that needs `_dnt.polyfills.js`, and the browser entries never load it, so a routine error stopped the runtime that raised it. Every error class now names itself with a string literal, which also survives a minifier that mangles class names. The browser bundle gate now fails if anything a browser entry reaches contains the `import-meta-ponyfill` call.
+- 4d3ce74: A browser wallet under a strict Content-Security-Policy (`script-src 'self' 'wasm-unsafe-eval'`, no `'unsafe-eval'`) can now pin and validate schemas. Ajv compiled each schema with `new Function`, so `new Schemer` failed with "Invalid JSON Schema document." and Grant and Offer intake with it; the real `EvalError` was swallowed. Schema validation now interprets schemas with `@cfworker/json-schema` in every environment, with no code generation. It keeps what Ajv did here: `format` never rejects, schema documents are checked against their dialect's meta-schema (embedded as data), an invalid `pattern` fails when the schema is prepared, and the per-SAID prepared-validator cache is unchanged. The one new refusal is a schema using `$dynamicRef`, which the engine cannot interpret. "Invalid JSON Schema document." now carries the reason as its `cause`. cesr-ts takes cbor-x from its no-eval build, whose default build probes `new Function` at load, and the browser bundle gate now fails if any bundled code contains `new Function(` or a direct `eval(`.
+
 ## 2.2.0
 
 ### Minor Changes
