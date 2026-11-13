@@ -18,6 +18,7 @@ import type { Mailboxer } from "../../db/mailbox/mailboxing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { mailboxTopicKey, preferredUrl } from "../mailbox/mailboxing.ts";
 import { transportMailboxTopic } from "../mailbox/topic-routing.ts";
+import { localGroupMember } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { abortable } from "../runtime/abortable.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
@@ -632,6 +633,9 @@ export class Poster {
       if (!stored) throw new Error("Mailbox publication did not complete");
       return { kind: "stored" };
     }
+    // A group cannot sign the wrapper alone: one member's signature does not meet a threshold above one, and the
+    // host would escrow the wrapper. The local member wraps; the payload keeps whatever signatures it carries.
+    const signer = this.hby.db.groups.has(hab.pre!) ? localGroupMember(this.hby, hab.pre!) : hab;
     const msgs: Uint8Array[] = [];
     if (evt.kin === "stream") {
       // Prepare every frame before opening the one selected relay attempt.
@@ -642,14 +646,14 @@ export class Poster {
       msgs.push(evt.msg);
     }
     // The provider reads the envelope, so it must read v2 whenever the envelope or child is v2.
-    if ((hab.kelVersion.major >= 2 || msgs.some(wireNeedsV2)) && knownV1Peer(this.hby, endpoint.eid)) {
+    if ((signer.kelVersion.major >= 2 || msgs.some(wireNeedsV2)) && knownV1Peer(this.hby, endpoint.eid)) {
       throw new PeerVersionError(
         `Refusing a v2 envelope for provider ${endpoint.eid}, whose latest accepted event is v1.`,
       );
     }
     const forwarded: Uint8Array[] = [];
-    for (const message of msgs) forwarded.push(yield* buildForwardedDelivery(hab, { recipient, topic, message }));
-    const intro = introduce(hab, endpoint.eid);
+    for (const message of msgs) forwarded.push(yield* buildForwardedDelivery(signer, { recipient, topic, message }));
+    const intro = introduce(signer, endpoint.eid);
     let message = concatBytes(intro, ...forwarded);
     if (evt.kin === "stream") {
       const frames = parseBytes(message);

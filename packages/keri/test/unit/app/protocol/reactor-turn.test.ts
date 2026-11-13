@@ -7,6 +7,7 @@ import {
   Diger,
   parseBytes,
   Prefixer,
+  SealLast,
   Texter,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
@@ -30,7 +31,9 @@ import type { AgentCue, ReplayCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
-import { messageAttachmentGroups } from "../../../../src/core/protocol-serialization.ts";
+import { incept, query } from "../../../../src/core/protocol-eventing.ts";
+import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
+import { makeNowIso8601 } from "../../../../src/time/mod.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
 import { httpClient } from "../../../support/http-client.ts";
 
@@ -250,6 +253,48 @@ Deno.test("a mailbox poll for a group is authorized when signed by a current mem
       assertEquals(authorized(alice), true, "a member signs the group's poll with its own keys");
       assertEquals(authorized(bob), true);
       assertEquals(authorized(outsider), false, "a key outside the group's key list cannot read its mailbox");
+
+      // Current behaviour pending a design decision: a member that rotated its own keys ahead of the group no
+      // longer signs with a group key, so its poll is refused (the alternative is for the member to sign the
+      // group's poll with its contributed group key). The other member is still served.
+      alice.rotate();
+      assertEquals(authorized(alice), false);
+      assertEquals(authorized(bob), true);
+      assertEquals(authorized(outsider), false);
+
+      // Listing a group key in one's own inception proves nothing: an identifier of keys [own, group key] with
+      // threshold 1, signing with its own key alone, is refused.
+      const attacker = hby.makeHab("attacker");
+      const [ownKey] = attacker.kever!.verfers;
+      const forged = incept([ownKey.qb64, group.kever!.verfers[0].qb64], {
+        isith: "1",
+        nsith: "1",
+        ndigs: attacker.kever!.ndigs,
+        toad: 0,
+      });
+      const accepted = hby.kevery.processEvent({
+        serder: forged,
+        sigers: attacker.sign(forged.raw, true),
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: true,
+      });
+      assertEquals(accepted.kind, "accept");
+      const forgedQuery = query("mbx", { i: group.pre, src: group.pre, topics: { "/reply": 0 } }, {
+        pre: forged.pre!,
+        stamp: makeNowIso8601(),
+      });
+      const endorsed = messagize(forgedQuery, {
+        sigers: attacker.sign(forgedQuery.raw, true),
+        seal: SealLast.fromTuple([new Prefixer({ qb64: forged.pre! })]),
+      });
+      assertEquals(
+        protocol.kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(envelopeFromFrame(parseBytes(endorsed)[0]))),
+        false,
+        "a group key listed in the requester's inception is not possession of it",
+      );
     } finally {
       yield* hby.close(true);
     }

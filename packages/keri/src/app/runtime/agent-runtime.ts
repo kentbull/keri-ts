@@ -39,7 +39,7 @@ import { loadIpexHandlers } from "../ipex/ipexing.ts";
 import { ForwardHandler } from "../mailbox/forward-handler.ts";
 import { KelPublisher, kelPublisherDo } from "../mailbox/kel-publisher.ts";
 import { MailboxDirector } from "../mailbox/mailbox-director.ts";
-import { type MailboxPollBatch, MailboxPoller } from "../mailbox/mailbox-poller.ts";
+import { type MailboxPollBatch, MailboxPoller, type MailboxPollingTimeoutPolicy } from "../mailbox/mailbox-poller.ts";
 import { mailboxerOptionsForHabery } from "../mailbox/mailboxing.ts";
 import { mailboxTopicForRoute } from "../mailbox/topic-routing.ts";
 import { Counselor } from "../multisig/counseling.ts";
@@ -189,6 +189,11 @@ export interface AgentRuntimeOptions {
   notifier?: Notifier;
   /** Construct a provider mailbox store. Omitted leaves it absent; injected mailboxer stays borrowed. */
   enableMailboxStore?: boolean;
+  /**
+   * Header and poll-window overrides, in milliseconds, for this runtime's mailbox poller. Omitted values keep
+   * the poller defaults; a short `maxPollDurationMs` makes polls turn over quickly for an embedder or test.
+   */
+  mailboxPolling?: Partial<MailboxPollingTimeoutPolicy>;
   /** Borrowed legacy registry store; the runtime creates its processors and never closes this store. */
   reger?: Reger;
   /** An injected v2 manager and its backing store remain caller-owned. */
@@ -434,6 +439,7 @@ export function* createAgentRuntime(
     {
       onPolled: (pre, mailbox) => kelPublisher.prompt(pre, mailbox),
       onUnauthorized: (pre, mailbox) => kelPublisher.repair(pre, mailbox),
+      timeouts: options.mailboxPolling,
     },
   );
   for (
