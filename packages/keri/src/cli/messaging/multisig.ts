@@ -103,11 +103,32 @@ function* resealAfterRotation(
   runtime: AgentRuntime,
   group: string,
   rotation: string,
+  since: number,
 ): Operation<RootCopyOutcome[]> {
-  const replicating = runtime.rootReplicator;
-  if (!hby.habs.get(group) || !replicating) return [];
+  const replicating = runtime.rootReplicator, root = runtime.registryRoot;
+  if (!hby.habs.get(group) || !replicating || !root) return [];
   replicating.prompt(group);
-  return (yield* replicating.processOnce()).map(rootCopyLine);
+  const results = yield* replicating.processOnce();
+  const lines = results.map(rootCopyLine);
+  // The runtime's loop may have sent a copy since the rotation cue prompted it, before this pass: such a copy reads
+  // from the sent marker as transmitted, so the report does not depend on which of the two sent first.
+  const attempted = new Set(
+    results.filter(result => result.group === group).map(result => `${result.registry}/${result.recipient}`),
+  );
+  const sender = localGroupMember(hby, group).pre, from = new Date(since).toISOString();
+  for (const [[, registry, recipient], marker] of [...hby.db.rrsn.getTopItemIter([group])]) {
+    if (attempted.has(`${registry}/${recipient}`) || marker.dt < from) continue;
+    if (marker.key !== root.contributor(group, recipient!)) continue;
+    lines.push({
+      phase: "root_copy",
+      gid: group,
+      registry: registry!,
+      sender,
+      recipient: recipient!,
+      transmitted: true,
+    });
+  }
+  return lines;
 }
 
 interface MultisigBaseArgs {
@@ -291,6 +312,7 @@ export function* multisigJoinCommand(
   const name = requireText(commandArgs.name, "Name");
 
   return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+    const since = runtime.clock.now();
     const deadline = approvalDeadline(commandArgs);
     const joined = yield* joinProposal(approvalDeps(hby, runtime), {
       group: commandArgs.group,
@@ -303,7 +325,7 @@ export function* multisigJoinCommand(
       inputs: () => ({ fallbackAfterMs: 0 }),
     });
     if (!joined) {
-      const local = yield* completeLocalGroupEvent(hby, runtime, commandArgs, deadline);
+      const local = yield* completeLocalGroupEvent(hby, runtime, commandArgs, deadline, since);
       if (!local) {
         throw new ValidationError("No matching stored multisig proposal was available to join.");
       }
@@ -331,7 +353,7 @@ export function* multisigJoinCommand(
     if (!event) return result;
     // No scheduling point separates the approval from here, so the Counselor has not yet used its defaults.
     supplyDelegationProxy(hby, runtime, event, commandArgs.proxy);
-    return yield* finishJoinedEvent(hby, runtime, result, event, commandArgs);
+    return yield* finishJoinedEvent(hby, runtime, result, event, commandArgs, since);
   });
 }
 
@@ -416,6 +438,7 @@ export function* multisigRotateCommand(
   const options = mergeRotateOptions(commandArgs);
 
   return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+    const since = runtime.clock.now();
     const groupHab = requireGroupHab(hby, group);
     const sent = yield* proposeGroupRotation(
       proposeDeps(hby, runtime),
@@ -440,7 +463,7 @@ export function* multisigRotateCommand(
       // The proposer's own acceptance must commit the rotated membership as a joiner's does.
       settleProposedRotation({ hby }, sent);
       delegationPhase = yield* finishAcceptedEvent(hby, runtime, sent.event, commandArgs);
-      rootCopies = yield* resealAfterRotation(hby, runtime, sent.group, sent.event.said);
+      rootCopies = yield* resealAfterRotation(hby, runtime, sent.group, sent.event.said, since);
     }
     return { ...groupEventResult(hby, sent, accepted), delegationPhase, rootCopies };
   });
@@ -613,11 +636,12 @@ function* finishJoinedEvent(
   result: ApprovalResult,
   event: GroupEventRef,
   args: MultisigJoinArgs,
+  since: number,
 ): Operation<MultisigJoinResult> {
   if (!result.accepted) return result;
   yield* finishAcceptedEvent(hby, runtime, event, args);
   if (result.route !== MULTISIG_ROT_ROUTE) return result;
-  return { ...result, rootCopies: yield* resealAfterRotation(hby, runtime, result.group, result.embedded) };
+  return { ...result, rootCopies: yield* resealAfterRotation(hby, runtime, result.group, result.embedded, since) };
 }
 
 /** Resume a locally authored group event named by `--group` when no proposal was left to join. */
@@ -626,6 +650,7 @@ function* completeLocalGroupEvent(
   runtime: AgentRuntime,
   args: MultisigJoinArgs,
   deadline: number,
+  since: number,
 ): Operation<MultisigJoinResult | null> {
   if (!args.group || args.said) return null;
   const groupHab = hby.habByName(args.group) ?? hby.habs.get(args.group);
@@ -646,7 +671,7 @@ function* completeLocalGroupEvent(
     deliveries: [],
     messages: [],
   };
-  return yield* finishJoinedEvent(hby, runtime, result, event, args);
+  return yield* finishJoinedEvent(hby, runtime, result, event, args, since);
 }
 
 function chooseRegistryName(args: MultisigJoinArgs, regk: string): string {
