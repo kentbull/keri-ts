@@ -73,3 +73,17 @@ export class DatabaseKeyError extends DatabaseError {
 export class DatabaseOperationError extends DatabaseError {
   override readonly name: string = "DatabaseOperationError";
 }
+
+/**
+ * A browser composition's persistence queue gave up on a write after its retries (ADR-0015 rule 3), so it accepts
+ * no more commits and reports this from every later commit, flush and close. The cause is the write's first failure.
+ * The latch is terminal for that composition; recovery is closing it and opening a new one.
+ */
+export class PersistenceLatchedError extends DatabaseOperationError {
+  override readonly name: string = "PersistenceLatchedError";
+}
+
+/** A task passed to `PersistenceQueue.read` failed. Only its caller sees it; the queue does not latch. */
+export class PersistenceReadError extends DatabaseOperationError {
+  override readonly name: string = "PersistenceReadError";
+}

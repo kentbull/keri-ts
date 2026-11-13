@@ -10,6 +10,7 @@ import {
   type StoreLockManager,
   StoreLockUnsupportedError,
 } from "../../../db-indexeddb.ts";
+import { PersistenceLatchedError } from "../../../src/core/errors.ts";
 import type { WebDBer } from "../../../src/db/core/webdber.ts";
 
 const keyRange = IDBKeyRange as unknown as typeof globalThis.IDBKeyRange;
@@ -113,8 +114,10 @@ Deno.test("close then reopen in one page re-acquires, and a close that fails sti
   assertEquals(await run(() => store.reopen()), true, "reopening an open store keeps its lock");
   assertEquals(locks.held.size, 1);
 
-  opener.queue.enqueue(() => Promise.reject(new Error("write lost")));
-  await assertRejects(() => run(() => store.close()), Error, "write lost");
+  const lost = new Error("write lost");
+  opener.queue.enqueue(() => Promise.reject(lost));
+  const error = await assertRejects(() => run(() => store.close()), PersistenceLatchedError);
+  assertEquals(error.cause, lost);
   assertEquals(locks.held.size, 0, "the lock is released although close failed");
 
   const next = indexedDbOpener({ factory: new IDBFactory() as unknown as IDBFactory, keyRange, locks });

@@ -2,7 +2,7 @@
 import { concatBytes, Counter, MtrDex, Saider, type SerderKERI, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
-import { type Habery, openHabery, Schemer } from "keri-ts/runtime";
+import { type Habery, openHabery, PersistenceLatchedError, PersistenceReadError, Schemer } from "keri-ts/runtime";
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
 import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
@@ -198,10 +198,14 @@ Deno.test("a failed write latches; close reports it and reopen sees exactly the 
   first.inventory.credentials.pin(["durable"], "yes");
   await run(() => first.opener.queue.flushed());
   assertEquals(first.health(), { status: "ok" });
+  assertEquals(first.persistenceStatus(), "healthy");
+  assertEquals(await first.readPersisted(() => Promise.resolve("after the durable pin")), "after the durable pin");
 
   p.poison.on = true;
   first.inventory.credentials.pin(["lost"], "no");
-  await assertRejects(() => run(() => first.opener.queue.flushed()));
+  await assertRejects(() => run(() => first.opener.queue.flushed()), PersistenceLatchedError);
+  assertEquals(first.persistenceStatus(), "latched");
+  await assertRejects(() => first.readPersisted(() => Promise.reject(new Error("read"))), PersistenceReadError);
   const health = first.health();
   assertEquals(health.status, "latched");
   assertInstanceOf((health as { cause: unknown }).cause, DOMException);

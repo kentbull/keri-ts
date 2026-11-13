@@ -11,7 +11,7 @@
  * which `openWebWallet()` with the same name loads exactly the durable prefix.
  */
 import { call, createScope, type Operation, run, spawn, suspend } from "effection";
-import type { WebStoreOpener } from "keri-ts/db";
+import type { PersistenceStatus, WebStoreOpener } from "keri-ts/db";
 import { indexedDbOpener, type IndexedDbOpenerOptions } from "keri-ts/db/indexeddb";
 import {
   type AgentRuntime,
@@ -163,10 +163,24 @@ export interface WebWallet extends WalletApi {
    */
   readonly storage: Promise<PersistentStorageResult>;
   /**
-   * Whether persistence is still accepting commits. After one failed write every store of the
-   * composition refuses commits; reads continue. Recover with `close()` then `openWebWallet()`.
+   * Whether persistence is still accepting commits. A failed write is retried in place for about half a
+   * second; if it still fails, every store of the composition refuses commits and reads continue.
+   * Recover with `close()` then `openWebWallet()`.
    */
   health(): WebWalletHealth;
+  /**
+   * The composition's persistence queue now: `healthy`, `retrying` while a failed write is retried in
+   * place (later commits wait behind it), or `latched` once it gave up, which `health()` reports with
+   * the cause.
+   */
+  persistenceStatus(): PersistenceStatus;
+  /**
+   * Run `task` on the composition's persistence queue, after every commit made before this call is
+   * durable, and resolve with its result; for reading what the stores persisted. A throwing `task`
+   * rejects only this call, with `PersistenceReadError`, and never latches the wallet. After a latch it
+   * still runs, against the durable prefix only.
+   */
+  readPersisted<T>(task: () => Promise<T>): Promise<T>;
   /**
    * Stop the runtime, flush and close every store, then release the lock, in that order, even
    * if one step fails. Rejects with the failures after all steps ran. Idempotent.
@@ -175,7 +189,7 @@ export interface WebWallet extends WalletApi {
 }
 
 /** What the composition hands back once it is running. */
-type Composed = Omit<WebWallet, "health" | "close" | keyof WalletApi> & {
+type Composed = Omit<WebWallet, "health" | "persistenceStatus" | "readPersisted" | "close" | keyof WalletApi> & {
   readonly flush: () => Operation<void>;
   readonly changes: ChangeSink;
   readonly tracked: TrackedIssuances;
@@ -416,6 +430,8 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
       }
       return { status: "ok" };
     },
+    persistenceStatus: () => parts.opener.queue.status(),
+    readPersisted: (task) => parts.opener.queue.read(task),
     close: () =>
       closing ??= (async () => {
         lifecycle?.page.removeEventListener("pagehide", onHide);

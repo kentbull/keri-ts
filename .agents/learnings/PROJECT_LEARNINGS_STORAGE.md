@@ -8,7 +8,7 @@ protocol evidence, transactions and actual resource cleanup.
 `DBer` contract and browser durability; `LMDBer`, `MemStore` and `WebDBer` implement it and
 LMDB remains the parity reference. Nested transactions are savepoints. Browser stores commit
 to their mirrors synchronously and share one prefix-durable queue per composition;
-the first persistence failure latches, and the browser HttpClient waits on `flushed()`.
+a failed write retries in place and then latches, and the browser HttpClient waits on `flushed()`.
 `BaseDBer` owns the ordinal, IoSet and IoDup families over backend row primitives.
 Wrappers hold opaque `Table` handles; only LMDB-specific code may call `lmdbTable()`.
 Dupsort `scanKeys` yields each key once, unlike entry `scan`; use `seekVal` to seek
@@ -40,9 +40,12 @@ outermost commit's changes, and `loadContents` installs a snapshot. A batch hold
 row identity's first prior state against its latest, so a savepoint rollback, which pops
 the undo log, can never leak into one; a commit ending where it began writes nothing.
 One `PersistenceQueue` per composition is a promise chain outside Effection, so halting
-a waiter cannot cancel a write. The first failure latches every store on that queue:
-commits already in the mirror stay readable, later transactions throw, and recovery is a
-new composition loading the durable prefix. An unwritten table rides the next batch, or
+a waiter cannot cancel a write. A failed task is retried in place on a short fixed schedule,
+holding the head so nothing overtakes it (every queued task is re-runnable); one that still
+fails latches every store on that queue with `PersistenceLatchedError`: commits already in
+the mirror stay readable, later transactions throw, and recovery is a new composition
+loading the durable prefix. `read(task)` runs in queue order and never latches; `status()`
+reports `healthy`, `retrying` or `latched`. An unwritten table rides the next batch, or
 a table-only batch at `flushed` or `close`, so its dupsort flag persists.
 
 `IndexedDbPersistence` keeps all logical tables in one `rows` object store (keys
