@@ -1,7 +1,7 @@
 ---
 "@keri-ts/wallet": patch
 "keri-ts": patch
-"tufa": patch
+"@keri-ts/tufa": patch
 ---
 
 A browser wallet delivers through its agent unless it opts out. **Breaking:** `OpenWebWalletOptions` now requires
