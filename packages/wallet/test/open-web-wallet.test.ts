@@ -2,13 +2,22 @@
 import { concatBytes, Counter, MtrDex, Saider, type SerderKERI, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
-import { type Habery, openHabery, Schemer } from "keri-ts/runtime";
+import {
+  type ChangeSink,
+  type Habery,
+  openHabery,
+  processCuesOnce,
+  type RuntimeChange,
+  Schemer,
+} from "keri-ts/runtime";
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
 import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
-import { incept } from "../../keri/src/core/protocol-eventing.ts";
+import { exchange, incept } from "../../keri/src/core/protocol-eventing.ts";
+import { messagize } from "../../keri/src/core/protocol-serialization.ts";
 import { dgKey } from "../../keri/src/db/core/keys.ts";
 import { MemStoreOpener } from "../../keri/src/db/core/memstore.ts";
+import { makeNowIso8601 } from "../../keri/src/time/mod.ts";
 import { walletChangeSink } from "../src/web/wallet-api.ts";
 import {
   openWebWallet,
@@ -590,5 +599,40 @@ Deno.test("wallet health is ok after replacing and retiring a member", async () 
   } finally {
     await w.close();
     for (const hby of others) await run(() => hby.close(true));
+  }
+});
+
+Deno.test("a host change sink receives kramRefused for a late peer message", async () => {
+  const changes: RuntimeChange[] = [];
+  const host: ChangeSink = { push: (change) => void changes.push(change) };
+  const wallet = await page().open({ name: "receiver", runtime: { operationStores: { changes: host } } });
+  const peer = await page().open({ name: "peer" });
+  try {
+    const sender = await peer.identifiers.incept({ alias: "sender" });
+    // The receiver knows the sender's key state, as it would after resolving the sender's OOBI.
+    for (const wire of peer.hby.db.clonePreIter(sender.pre, 0, Vrsn_2_0)) {
+      await run(function*() {
+        yield* wallet.runtime.reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire));
+      });
+    }
+    // Three days old is far outside the wallet's 24 hour lag.
+    const stamp = makeNowIso8601(new Date(Date.now() - 3 * 86_400_000));
+    const body = exchange("/wallet/late", { sender: sender.pre, stamp });
+    const signed = messagize(body, { sigers: peer.hby.habByName("sender")!.sign(body.raw, true), gvrsn: Vrsn_2_0 });
+    await run(function*() {
+      yield* wallet.runtime.reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), signed));
+      yield* processCuesOnce(wallet.runtime);
+    });
+    assertEquals(changes.length, 1);
+    const [change] = changes;
+    assertEquals(change.kind, "kramRefused");
+    assert(change.kind === "kramRefused");
+    assertEquals(change.id, body.said);
+    assertEquals(change.refusal.sender, sender.pre);
+    assertEquals(change.refusal.reason, "timeliness");
+    assertEquals(change.refusal.route, "/wallet/late");
+  } finally {
+    await wallet.close();
+    await peer.close();
   }
 });

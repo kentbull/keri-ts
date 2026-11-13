@@ -11,7 +11,8 @@ import {
   drainWitnessCues,
   type HostedRouteResolution,
   isCesrContentType,
-  type KramRefusalReason,
+  isKramLateReason,
+  type KramLateReason,
   requestBytes,
   rethrowCleanupFailure,
   ValidationError,
@@ -26,23 +27,6 @@ const NONE_HOSTED_ROUTE: HostedRouteResolution = {
   endpoint: null,
   relativePath: null,
 };
-
-/** KRAM refusals that are safe to report to the sender of a non-query message. */
-type KramLateReason = Extract<KramRefusalReason, "timeliness" | "lifetime" | "unknownThread">;
-
-/**
- * Whether a drop reason means the message arrived too late or outside a live exchange.
- *
- * Only `timeliness`, `lifetime` and `unknownThread` are reported (as 422), because KRAM decides them solely
- * after a current-key signature or anchored seal verified (kram-staging.ts); the sender is therefore
- * authenticated. Accepted and replayed messages both still answer 204, so the status is not a replay
- * oracle for an unauthenticated prober, and no deadline or clock detail is disclosed. Every other drop or
- * pending decision (`replay`, `authentication`, `missing`, `pending`, `timestamp`) keeps the 204 ack.
- * Divergence: KERIpy `HttpEnd.on_post` (indirecting.py) always answers 204.
- */
-function isKramLateReason(reason: unknown): reason is KramLateReason {
-  return reason === "timeliness" || reason === "lifetime" || reason === "unknownThread";
-}
 
 /** Classify generic POST/PUT CESR ingress after all explicit HTTP routes. */
 export function classifyGenericCesrIngressRoute(
@@ -218,7 +202,13 @@ function* ingest(
 ): Operation<Response> {
   const runtime = context.runtime!;
   let seen = false;
-  let late: KramRefusalReason | undefined;
+  // Only `timeliness`, `lifetime` and `unknownThread` are reported to the sender (as 422), because KRAM decides
+  // them solely after a current-key signature or anchored seal verified (kram-staging.ts); the sender is therefore
+  // authenticated. Accepted and replayed messages both still answer 204, so the status is not a replay
+  // oracle for an unauthenticated prober, and no deadline or clock detail is disclosed. Every other drop or
+  // pending decision (`replay`, `authentication`, `missing`, `pending`, `timestamp`) keeps the 204 ack.
+  // Divergence: KERIpy `HttpEnd.on_post` (indirecting.py) always answers 204.
+  let late: KramLateReason | undefined;
   let query: { serder: SerderKERI; mailbox: boolean; authorized: boolean; transportOnly?: boolean } | undefined;
   // Close and join the request parser before publishing a mailbox response.
   yield* call(function*() {

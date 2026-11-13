@@ -11,6 +11,7 @@
  * infrastructure failures throw.
  */
 import { action, type Operation, sleep } from "npm:effection@^3.6.0";
+import type { KramRefusedCue } from "../../core/cues.ts";
 import type { Signaler } from "../notifications/signaling.ts";
 import { type RuntimeClock, systemClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -36,11 +37,26 @@ export interface WorkflowChange {
 }
 
 /**
- * Receiver of change identities. Owners publish after their commit and never
- * depend on what the sink does with it; a sink must not throw into a workflow.
+ * A remote message this receiver's KRAM refused after its sender authenticated. Unlike a
+ * {@link WorkflowChange} there is no status to re-read, so the facts ride along. `id` is the
+ * refused message SAID. Transient: nothing durable backs it.
+ */
+export interface KramRefusedChange {
+  kind: "kramRefused";
+  id: string;
+  refusal: KramRefusedCue;
+}
+
+/** Everything a {@link ChangeSink} receives. */
+export type RuntimeChange = WorkflowChange | KramRefusedChange;
+
+/**
+ * Receiver of changes. Owners publish after their commit and never depend on what the sink does with it; a
+ * sink must not throw into a workflow. A workflow change is an identity to re-read; the one exception is
+ * {@link KramRefusedChange}, which carries its facts.
  */
 export interface ChangeSink {
-  push(change: WorkflowChange): void;
+  push(change: RuntimeChange): void;
 }
 
 /**
@@ -55,25 +71,28 @@ export type WaitResult<S, Timed extends object = { timeoutMs: number }> =
 
 /** In-memory sink that records changes in order. */
 export class MemoryChangeSink implements ChangeSink {
-  readonly changes: WorkflowChange[] = [];
-  push(change: WorkflowChange): void {
-    this.changes.push({ kind: change.kind, id: change.id });
+  readonly changes: RuntimeChange[] = [];
+  push(change: RuntimeChange): void {
+    this.changes.push(change.kind === "kramRefused" ? change : { kind: change.kind, id: change.id });
   }
 }
 
 /**
  * Back a sink with the host's transient `Signaler`. Publishing needs no polling:
  * `push` is a synchronous append that collapses repeats of one workflow into a
- * single signal (collapse key `kind:id`). Delivery is pull-based, though: the
+ * single signal (collapse key `kind:id`). A {@link KramRefusedChange} adds its refusal fields to the signal
+ * attributes, so a resent message collapses by SAID. Delivery is pull-based, though: the
  * Signaler has no subscriber hook, so the consumer must read `signaler.list()`.
  * A closed or failing Signaler drops the change instead of throwing: a hint must
  * never break the workflow that published it.
  */
 export function signalerChangeSink(signaler: Pick<Signaler, "push">): ChangeSink {
   return {
-    push: ({ kind, id }) => {
+    push: (change) => {
+      const { kind, id } = change;
       try {
-        signaler.push({ id }, `/workflow/${kind}`, { ckey: `${kind}:${id}` });
+        const attrs = change.kind === "kramRefused" ? { id, ...change.refusal } : { id };
+        signaler.push(attrs, `/workflow/${kind}`, { ckey: `${kind}:${id}` });
       } catch {
         // Dropped on purpose; consumers re-read status and tolerate a missed hint.
       }
