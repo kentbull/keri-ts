@@ -101,7 +101,10 @@ interface LiveGroupIpex {
 /** What an accepted operation of this process sent: the member wrappers it published and the completed message's deliveries. */
 export interface GroupIpexOutcome {
   messages: GroupSendResult["messages"];
+  /** Destinations that took this member's wrappers. */
   deliveries: string[];
+  /** Destinations that took the completed message; empty unless this member is the elected lead. */
+  sent: string[];
 }
 
 /** What a consent returned. */
@@ -258,7 +261,8 @@ export class GroupIpexOperations {
     this.live.delete(op.said);
     this.outcomes.set(op.said, {
       messages: op.publication?.messages ?? [],
-      deliveries: [...(op.publication?.deliveries ?? []), ...op.deliveries],
+      deliveries: op.publication?.deliveries ?? [],
+      sent: op.deliveries,
     });
     this.deps.changes?.push({ kind: "ipex", id: op.said });
   }

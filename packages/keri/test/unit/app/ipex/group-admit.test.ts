@@ -217,7 +217,7 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
     yield* until(() => issuer.runtime.exc.complete(admit), "the issuer to accept the completed Admit");
     assertExists(issuer.hby.db.erpy.get([grant]));
     assertEquals(
-      holders.filter((side) => side.runtime.operations!.groupIpex.outcomes.get(admit)?.deliveries.length).length,
+      holders.filter((side) => side.runtime.operations!.groupIpex.outcomes.get(admit)?.sent.length).length,
       1,
       "exactly the elected lead delivered the completed Admit",
     );

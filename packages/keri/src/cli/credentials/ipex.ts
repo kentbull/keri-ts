@@ -589,7 +589,7 @@ export function* joinIpexProposal(
         approved: true,
         lead: runtime.exc.lead(hby.habs.get(group)!, said),
         messages: outcome?.messages ?? [],
-        deliveries: outcome?.deliveries ?? [],
+        deliveries: [...(outcome?.deliveries ?? []), ...(outcome?.sent ?? [])],
       },
     };
   }

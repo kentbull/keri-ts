@@ -109,7 +109,7 @@ function* acdcV2GroupDisclosure(
     accepted: true,
     status: "multisig-complete",
     messages: outcome?.messages ?? [],
-    deliveries: outcome?.deliveries ?? [],
+    deliveries: [...(outcome?.deliveries ?? []), ...(outcome?.sent ?? [])],
   };
 }
 
