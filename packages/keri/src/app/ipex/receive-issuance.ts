@@ -15,7 +15,6 @@ import type { Versionage } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { race } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import type { Hab } from "../identity/habbing.ts";
 import { waitOnClock } from "../runtime/workflow-contract.ts";
 import type { WitnessAuthMap } from "../witness/receipting.ts";
 import {
@@ -42,8 +41,7 @@ export type AdmitDeliveryOutcome = { state: "delivered"; to: string[] } | { stat
 
 /** Inputs of {@link admitAndDeliver}. */
 export interface AdmitAndDeliverInput {
-  hab: Hab;
-  /** SAID of the accepted Grant. */
+  /** SAID of the accepted Grant; the holder is its recipient. */
   grant: string;
   message?: string;
   gvrsn?: Versionage;
@@ -72,8 +70,8 @@ const NOT_DELIVERED = "Delivery was not requested.";
  * @throws ValidationError as {@link admitIssuance} does, and whatever `onAdmitted` throws.
  */
 export function* admitAndDeliver(deps: AdmitDeps, input: AdmitAndDeliverInput): Operation<AdmitAndDeliverOutcome> {
-  const { hab, grant, message, gvrsn, auths, onAdmitted } = input;
-  const admitted = yield* admitIssuance(deps, { hab, grant, message, gvrsn, auths });
+  const { grant, message, gvrsn, auths, onAdmitted } = input;
+  const admitted = yield* admitIssuance(deps, grant, { message, gvrsn, auths });
   // The host's record precedes delivery: whatever happens to the network, its consent is on record.
   if (onAdmitted) yield* onAdmitted(admitted);
   if (input.deliver === false) return { admitted, delivery: { state: "undelivered", reason: NOT_DELIVERED } };
@@ -85,7 +83,7 @@ export function* admitAndDeliver(deps: AdmitDeps, input: AdmitAndDeliverInput): 
   try {
     const delivery = yield* race([
       (function*(): Operation<AdmitDeliveryOutcome> {
-        return { state: "delivered", to: yield* deliverIssuanceAdmit(deps, hab, admitted) };
+        return { state: "delivered", to: yield* deliverIssuanceAdmit(deps.delivery, admitted) };
       })(),
       (function*(): Operation<AdmitDeliveryOutcome> {
         yield* waitOnClock(deps.clock, budget);
@@ -139,7 +137,7 @@ export interface TimedOutIssuance {
 }
 
 /**
- * The individual holder's whole path for a Grant addressed to `hab`: approve the DH exchange when it is pending,
+ * The individual holder's whole path for a Grant addressed to a local identifier: approve the DH exchange when it is pending,
  * wait for the issuer to finish it, then admit and deliver ({@link admitAndDeliver}).
  *
  * @throws ValidationError for a Grant that is not addressed to a local identifier, one this runtime issued, or a
@@ -149,10 +147,10 @@ export function* receiveIssuance(
   ops: IssuanceOperations,
   input: ReceiveIssuanceInput,
 ): Operation<ReceiveIssuanceOutcome> {
-  const { hab, grant, timeoutMs } = input, { deps } = ops;
+  const { grant, timeoutMs } = input, { deps } = ops;
   const first = issuanceStatus(ops, grant);
   if (first.role === "issuer") throw new ValidationError("This Grant was issued by this runtime.");
-  if (first.state === "active" && first.needs === "exchange") approveIssuanceExchange(ops, { hab, grant });
+  if (first.state === "active" && first.needs === "exchange") approveIssuanceExchange(ops, grant);
   const waited = yield* waitForIssuance(ops, grant, {
     timeoutMs,
     until: (status) => status.state !== "active" || status.needs === "admit",

@@ -45,7 +45,7 @@ import {
 import { call, type Operation } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { RegistryCustody } from "../../acdc/custody.ts";
-import { Dhke } from "../../acdc/dhking.ts";
+import { Dhke, grantTransactionId } from "../../acdc/dhking.ts";
 import { vet } from "../../acdc/regeventing.ts";
 import { RegistryRoot } from "../../acdc/salting.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -83,10 +83,16 @@ import { proposeRegistryEvent, type RegistryProposeDeps } from "../multisig/prop
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import { exchangeWire, type IssuanceGrantOptions } from "./ipex-discloser.ts";
 import { acceptedRegistryEvidence } from "./ipex-node-authentication.ts";
-import type { IssuanceBegun, IssuanceDeps, IssuanceOperations, IssuanceRole, LiveIssuance } from "./issuance.ts";
+import {
+  type GrantDraft,
+  ISSUANCE_QUERY_RESEND_MS,
+  type IssuanceBegun,
+  type IssuanceDeps,
+  type IssuanceOperations,
+  type IssuanceRole,
+  type LiveIssuance,
+} from "./issuance.ts";
 
-/** Milliseconds between resends of the complete group query, as the individual path and KERIpy do. */
-const QUERY_RESEND_MS = 1000;
 /** Milliseconds between scans of the stored wrappers for the final proof. */
 const PROOF_SCAN_MS = 1000;
 /** How many of the group's latest accepted events {@link deriveGroupCustody} considers as coordinators. */
@@ -102,12 +108,6 @@ export interface GroupIssuanceDeps {
   readonly mux: Pick<Multiplexor, "addChildHandler" | "removeChildHandler">;
   /** Collaborators of the custodian's registry update proposal. */
   readonly registry: RegistryProposeDeps;
-}
-
-/** The Grant a custodian prepares for a fresh credential: the credential and how its Grant is addressed. */
-export interface GroupGrantDraft {
-  credential: SerderACDC;
-  options: IssuanceGrantOptions;
 }
 
 /** A prepared Grant and the proposal the other issuer members consent to. */
@@ -340,7 +340,7 @@ function receivedRootCopy(hby: Habery, group: string, member: string, registries
  */
 export function* prepareGroupIssuance(
   ops: IssuanceOperations,
-  draft: GroupGrantDraft,
+  draft: GrantDraft,
   coordinator?: string,
 ): Operation<PreparedGroupGrant> {
   const { deps, discloser } = ops, { credential, options } = draft;
@@ -503,7 +503,7 @@ export function* approveGroupIssuance(
  */
 export function* proposeGroupIssuance(
   ops: IssuanceOperations,
-  draft: GroupGrantDraft,
+  draft: GrantDraft,
   options: GroupConsentOptions = {},
 ): Operation<IssuanceBegun> {
   const prepared = yield* prepareGroupIssuance(ops, draft, options.coordinator);
@@ -658,7 +658,7 @@ export class GroupIssuance {
 
   /** DH transaction id: the opening Grant's SAID, or the transaction a continuation Grant joins. */
   get xid(): string {
-    return this.grant.ilk === "xip" ? this.grant.said! : this.grant.sad!.x as string;
+    return grantTransactionId(this.grant);
   }
 
   /** The other party: the holder (issuer role) or the issuer (holder role). */
@@ -933,7 +933,7 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
   }
   if (g.query && deps.clock.now() >= g.nextQuery && !dh.complete(xid)) {
     yield* send(g.grant.sad!.ri as string, g.query, "credential");
-    g.nextQuery = deps.clock.now() + QUERY_RESEND_MS;
+    g.nextQuery = deps.clock.now() + (deps.queryResendMs ?? ISSUANCE_QUERY_RESEND_MS);
   }
   if (!lead || !dh.complete(xid)) return false;
   const { rgy, receiptor, derived, hby } = deps, registry = op.registry;

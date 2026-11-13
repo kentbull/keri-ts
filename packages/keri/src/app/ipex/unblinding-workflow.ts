@@ -137,13 +137,10 @@ export interface UnblindingBegun {
   role: UnblindingRole;
 }
 
-/** The party and ordinary-state vocabulary a consent step acts for. */
-export interface UnblindingRequest {
-  hab: Hab;
+/** Choices of a consent to Unblind; the party is the live Grant's recipient (request) or sender (answer). */
+export interface UnblindingOptions {
   /** A group requires the current signing member that authors the query (disclosee) or the reply (discloser). */
   proposer?: string;
-  /** SAID of the live Grant. */
-  grant: string;
   /** Ordinary state labels the owner treats as the credential-state vocabulary; omitted uses the owner's default. */
   states?: readonly string[];
 }
@@ -156,9 +153,9 @@ function message(error: unknown): string {
 }
 
 /** Whether the Grant's deadline has passed. */
-function lapsed(deps: Pick<UnblindingDeps, "clock">, deadline: string | null): boolean {
+function lapsed(clock: RuntimeClock, deadline: string | null): boolean {
   const expiry = timestampMicros(deadline);
-  return expiry !== null && BigInt(deps.clock.now()) * 1000n >= expiry;
+  return expiry !== null && BigInt(clock.now()) * 1000n >= expiry;
 }
 
 const INTERRUPTED =
@@ -450,8 +447,15 @@ export class UnblindingOperations {
 }
 
 /** The exact live Grant the local party may consent to, with its deadline and role. */
-function selectGrant(ops: UnblindingOperations, { hab, grant, proposer }: UnblindingRequest) {
+function selectGrant(ops: UnblindingOperations, grant: string, role: UnblindingRole, proposer?: string) {
   const { deps } = ops;
+  if (ops.live.has(grant)) throw new ValidationError("Unblind was already begun for this Grant");
+  const input = deps.exc.retainedInput(grant);
+  if (!input) throw new ValidationError("Unblind requires an authenticated retained Grant");
+  const sender = input.serder.pre, recipient = input.serder.sad?.ri;
+  const party = role === "requester" ? recipient : sender;
+  const hab = typeof party === "string" ? deps.hby.habs.get(party) : undefined;
+  if (!hab) throw new ValidationError("Local habitat is not a presentation party");
   if (isLocalGroupHab(deps.hby, hab)) {
     if (!deps.group) throw new ValidationError("This Unblind owner was composed without group collaborators");
     if (!proposer || !groupSigningMembers(deps.hby, hab.pre!).includes(proposer)) {
@@ -460,38 +464,26 @@ function selectGrant(ops: UnblindingOperations, { hab, grant, proposer }: Unblin
   } else if (proposer !== undefined) {
     throw new ValidationError("Individual Unblind has no proposer");
   }
-  if (ops.live.has(grant)) throw new ValidationError("Unblind was already begun for this Grant");
-  const input = deps.exc.retainedInput(grant);
-  if (!input) throw new ValidationError("Unblind requires an authenticated retained Grant");
-  const sender = input.serder.pre, recipient = input.serder.sad?.ri;
-  if (hab.pre !== sender && hab.pre !== recipient) {
-    throw new ValidationError("Local habitat is not a presentation party");
-  }
   const deadline = deps.exc.exchangeDeadline(input.serder), expires = timestampMicros(deadline);
   if (!deadline || expires === null) throw new ValidationError("Missing or corrupt presentation deadline");
   if (BigInt(deps.clock.now()) * 1000n >= expires) throw new ValidationError("Original presentation deadline expired");
-  return {
-    input,
-    deadline,
-    expires,
-    role: (recipient === hab.pre ? "requester" : "responder") as UnblindingRole,
-    peer: sender!,
-  };
+  return { hab, input, deadline, expires, peer: sender! };
+}
+
+/** What a consent produced: the live operation to record (null when nothing remains to do) and what it selected. */
+interface Consent {
+  op: LiveUnblinding | null;
+  begun: UnblindingBegun;
 }
 
 function consent(
   ops: UnblindingOperations,
-  request: UnblindingRequest,
-  role: UnblindingRole = "requester",
-): { op: LiveUnblinding | null; begun: UnblindingBegun } {
-  const { deps } = ops, { hab, grant } = request;
-  const selected = selectGrant(ops, request);
-  if (selected.role !== role) {
-    throw new ValidationError(
-      role === "requester" ? "Only the disclosee requests Unblind" : "Only the discloser answers",
-    );
-  }
-  const owner = deps.unblinds.unblind(hab), xid = owner.approve(grant, { states: request.states });
+  grant: string,
+  role: UnblindingRole,
+  options: UnblindingOptions,
+): Consent {
+  const { deps } = ops, selected = selectGrant(ops, grant, role, options.proposer), { hab } = selected;
+  const owner = deps.unblinds.unblind(hab), xid = owner.approve(grant, { states: options.states });
   const begun = { grant, xid, role };
   // A current authenticated view needs no empty auxiliary query or new proof writes.
   if (role === "requester" && deps.exc.complete(grant)) {
@@ -516,7 +508,7 @@ function consent(
       expires: selected.expires,
       queryAt: deps.clock.now(),
       nextQuery: 0,
-      group: request.proposer ? new GroupUnblind(localGroupMember(deps.hby, hab.pre!), request.proposer) : undefined,
+      group: options.proposer ? new GroupUnblind(localGroupMember(deps.hby, hab.pre!), options.proposer) : undefined,
       phase: role === "requester" ? "awaitingReply" : "proving",
       outbox: new DeliveryOutbox(deps.retry),
       finished: false,
@@ -530,20 +522,24 @@ function consent(
  * query over the missing accepted public suffix and records it. Returns after local commit; `processOnce`
  * sends and resends it. A Grant whose proofs are already current reads `done` at once.
  *
- * @throws ValidationError for a group identifier, a Grant that is not live and addressed to `hab`, or an
- * Unblind already begun for it.
+ * @throws ValidationError for a Grant that is not live and addressed to a local identifier, a group without a
+ * current signing member as proposer, or an Unblind already begun for it.
  */
-export function requestUnblind(ops: UnblindingOperations, request: UnblindingRequest): UnblindingBegun {
-  const { op, begun } = consent(ops, request);
+export function requestUnblind(
+  ops: UnblindingOperations,
+  grant: string,
+  options: UnblindingOptions = {},
+): UnblindingBegun {
+  const { op, begun } = consent(ops, grant, "requester", options);
   if (op) {
     if (op.group) {
       registerUnblindRoutes(ops);
       // Only the proposer authors the threshold query; the other members contribute to it when it arrives.
-      if (op.group.member.pre === request.proposer) op.owner.start(request.grant);
-    } else op.query = op.owner.start(request.grant);
-    ops.settled.delete(request.grant);
-    ops.live.set(request.grant, op);
-    ops.deps.changes?.push({ kind: "unblinding", id: request.grant });
+      if (op.group.member.pre === options.proposer) op.owner.start(grant);
+    } else op.query = op.owner.start(grant);
+    ops.settled.delete(grant);
+    ops.live.set(grant, op);
+    ops.deps.changes?.push({ kind: "unblinding", id: grant });
     ops.deps.wake?.();
   }
   return begun;
@@ -558,16 +554,20 @@ export function requestUnblind(ops: UnblindingOperations, request: UnblindingReq
  * @throws ValidationError for an individual identifier, a Grant the group did not send, a proposer that is not a
  * current signing member, or an Unblind already begun.
  */
-export function answerUnblind(ops: UnblindingOperations, request: UnblindingRequest): UnblindingBegun {
+export function answerUnblind(
+  ops: UnblindingOperations,
+  grant: string,
+  options: UnblindingOptions = {},
+): UnblindingBegun {
   const { deps } = ops;
-  if (!isLocalGroupHab(deps.hby, request.hab)) {
+  if (!options.proposer) {
     throw new ValidationError("An individual discloser answers an authenticated query without consent");
   }
-  const { op, begun } = consent(ops, request, "responder");
+  const { op, begun } = consent(ops, grant, "responder", options);
   registerUnblindRoutes(ops);
-  ops.settled.delete(request.grant);
-  ops.live.set(request.grant, op!);
-  deps.changes?.push({ kind: "unblinding", id: request.grant });
+  ops.settled.delete(grant);
+  ops.live.set(grant, op!);
+  deps.changes?.push({ kind: "unblinding", id: grant });
   deps.wake?.();
   return begun;
 }
@@ -643,7 +643,7 @@ function registerUnblindRoutes(ops: UnblindingOperations): void {
  * operation for it is live or remembered.
  */
 export function unblindingStatus(
-  ops: Pick<UnblindingOperations, "deps" | "live" | "settled">,
+  ops: UnblindingOperations,
   grant: string,
 ): UnblindingStatus {
   const { deps } = ops, settled = ops.settled.get(grant), live = ops.live.get(grant);
@@ -652,7 +652,7 @@ export function unblindingStatus(
       ? { state: "done", role: settled.role }
       : { state: settled.state, role: settled.role, reason: settled.reason };
   }
-  if (live && !lapsed(deps, live.deadline)) {
+  if (live && !lapsed(deps.clock, live.deadline)) {
     return { state: "active", role: live.role, phase: live.phase, deadline: live.deadline };
   }
   const input = deps.exc.retainedInput(grant), recipient = input?.serder.sad?.ri;
@@ -667,7 +667,7 @@ export function unblindingStatus(
   }
   const deadline = deps.exc.exchangeDeadline(input.serder);
   if (!deadline) throw new ValidationError("No Unblind was begun for this Grant");
-  if (lapsed(deps, deadline)) return { state: "expired", role: "requester", reason: EXPIRED };
+  if (lapsed(deps.clock, deadline)) return { state: "expired", role: "requester", reason: EXPIRED };
   return { state: "interrupted", role: "requester", reason: INTERRUPTED };
 }
 
@@ -675,7 +675,7 @@ export function unblindingStatus(
 export interface UnblindingWaitOptions {
   /** Wall-clock budget. */
   timeoutMs: number;
-  clock?: Pick<RuntimeClock, "now">;
+  clock?: RuntimeClock;
 }
 
 /**
@@ -683,7 +683,7 @@ export interface UnblindingWaitOptions {
  * someone else must call `processOnce`.
  */
 export function* waitForUnblinding(
-  ops: Pick<UnblindingOperations, "deps" | "live" | "settled">,
+  ops: UnblindingOperations,
   grant: string,
   { timeoutMs, clock = ops.deps.clock }: UnblindingWaitOptions,
 ): Operation<WaitResult<UnblindingStatus>> {

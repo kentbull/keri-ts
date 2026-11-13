@@ -235,7 +235,6 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
         let done;
         try {
           done = yield* admitAndDeliver(deps, {
-            hab,
             grant: said,
             message,
             gvrsn,

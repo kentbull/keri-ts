@@ -69,8 +69,8 @@ export function* runUnblind(
   const run = function*() {
     // The disclosee consents explicitly; an individual discloser only listens and its owner answers an
     // authenticated query, while each member of a discloser group consents to contribute to the one reply.
-    const request = { hab, grant, states, proposer };
-    const begun = requester ? requestUnblind(ops, request) : group ? answerUnblind(ops, request) : null;
+    const options = { states, proposer };
+    const begun = requester ? requestUnblind(ops, grant, options) : group ? answerUnblind(ops, grant, options) : null;
     const outcome = yield* withRuntimeWorkers(runtime, { hab: member, pollMailbox: true }, function*() {
       const stop = runtime.clock.now() + timeoutMs;
       while (!begun && !ops.live.has(grant) && !ops.settled.has(grant)) {

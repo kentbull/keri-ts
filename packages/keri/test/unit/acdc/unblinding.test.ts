@@ -67,7 +67,7 @@ function* libraryUnblind(
   const ops = runtime.operations!.unblinding, group = isLocalGroupHab(runtime.hby, hab);
   const member = group ? localGroupMember(runtime.hby, hab.pre!) : hab;
   const requester = runtime.exc.retainedInput(grant)?.serder.sad?.ri === hab.pre;
-  const request = { hab, grant, states, proposer };
+  const options = { states, proposer };
   const hosted = listen === undefined ? null : yield* spawn(() =>
     startServer(listen, consoleLogger, runtime, {
       hostname: "127.0.0.1",
@@ -76,7 +76,7 @@ function* libraryUnblind(
     })
   );
   try {
-    const begun = requester ? requestUnblind(ops, request) : group ? answerUnblind(ops, request) : null;
+    const begun = requester ? requestUnblind(ops, grant, options) : group ? answerUnblind(ops, grant, options) : null;
     const host = yield* spawn(() => runAgentRuntime(runtime, { hab: member, pollMailbox: true }));
     try {
       const stop = Date.now() + timeoutMs;

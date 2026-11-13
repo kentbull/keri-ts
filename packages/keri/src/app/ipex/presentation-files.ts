@@ -22,6 +22,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
+import { grantTransactionId } from "../../acdc/dhking.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { messageAttachmentGroups } from "../../core/protocol-serialization.ts";
@@ -147,7 +148,7 @@ function retained(deps: PresentationFileDeps, said: string): CesrFrame {
 }
 /** Require issuer authority for every selected registry node, including retryably unknown current openings. */
 function requireScope(deps: PresentationFileDeps, frame: CesrFrame): void {
-  const body = frame.body as SerderKERI, xid = body.ilk === "xip" ? body.said! : body.sad!.x as string;
+  const body = frame.body as SerderKERI, xid = grantTransactionId(body);
   const context = deps.exc.presentationContext(body.said!, {
     xid,
     sender: body.pre!,
