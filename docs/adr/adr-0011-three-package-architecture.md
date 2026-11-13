@@ -97,15 +97,30 @@ The supported package entrypoints are:
 - `packages/keri/mod.ts`
 - `packages/keri/runtime.ts`
 - `packages/keri/db.ts`
-- `packages/keri/db-lmdb.ts`
+- `packages/keri/db-lmdb.ts` (Node-only)
+- `packages/keri/db-indexeddb.ts` (`keri-ts/db/indexeddb`, browser-safe; the store seam of
+  [ADR-0015](adr-0015-pluggable-store-contract.md))
+- `packages/keri/runtime-web.ts` (`keri-ts/runtime/web`, browser host duties: output barrier, store
+  lock, persistence request)
+- `packages/keri/runtime-node.ts` (`keri-ts/runtime/node`, Node-only TCP and local files)
 - `packages/keri/cli.ts` (separate command-helper boundary consumed by Tufa)
 - `packages/tufa/mod.ts`
 - `packages/hosting/mod.ts` (HTTP host/app/protocol operations and data)
 - `packages/verifier/mod.ts` (verifier application operations and data)
+- `packages/wallet/mod.ts` (`@keri-ts/wallet`, browser-safe inventory, authoring, custody and
+  disclosure), `packages/wallet/web.ts` (`@keri-ts/wallet/web`, adds `openWebWallet` and the
+  wallet-level API) and `packages/wallet/lmdb.ts` (`@keri-ts/wallet/lmdb`, Node-only
+  `createWalletBaser`)
+
+Browser-safe entrypoints carry a `browser` export condition and are bundled by the esbuild gate;
+Node-only ones (`keri-ts/cli`, `keri-ts/db/lmdb`, `keri-ts/runtime/node`, `@keri-ts/wallet/lmdb`)
+carry none. Held signers and pre-signed habitats
+([ADR-0016](adr-0016-held-signers-and-presigned-habs.md)) are part of the `keri-ts/runtime`
+surface.
 
 The runtime barrel names supported operations and data explicitly; module
-wildcards must not silently expand that contract. npm exposes the named root,
-runtime, db and cli entrypoints, with no app/core/db/vdr implementation patterns.
+wildcards must not silently expand that contract. npm exposes the named
+entrypoints above, with no app/core/db/vdr implementation patterns.
 Installed-package checks use those same named surfaces.
 
 Internal implementation zones remain internal unless deliberately exported:
