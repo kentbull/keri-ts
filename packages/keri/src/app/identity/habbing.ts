@@ -2447,28 +2447,10 @@ export class Habery {
    * key rows other than `pres.` where KERIpy keeps them all.
    */
   retireHab(pre: string): RetiredHab {
-    const record = this.db.getHab(pre);
-    if (!record?.name) {
-      throw new ValidationError(`${pre} is not a local habitat.`);
-    }
-    if (record.mid || this.db.groups.has(pre)) {
-      throw new ValidationError(`${pre} is a group habitat; retiring group habitats is not supported.`);
-    }
-    for (const [key, local] of this.db.getHabItemIter()) {
-      const hid = local.hid || key;
-      if (hid === pre) continue;
-      if (local.mid === pre) {
-        throw new ValidationError(`${pre} is the recorded local member of group ${hid}.`);
-      }
-      if (local.mid && isAcceptedGroupMember(this.db, hid, pre)) {
-        throw new ValidationError(`${pre} is an accepted member of local group ${hid}.`);
-      }
-      if (this.db.getKever(hid)?.delpre === pre) {
-        throw new ValidationError(`${pre} is the delegator of local habitat ${hid}.`);
-      }
-    }
-
-    const name = record.name;
+    const refusal = this.retireRefusal(pre);
+    if (refusal) throw new ValidationError(refusal);
+    const record = this.db.getHab(pre)!;
+    const name = record.name!;
     const ns = record.domain ?? "";
     const keys = this.db.transaction(() => {
       this.db.habs.rem(pre);
@@ -2481,6 +2463,28 @@ export class Habery {
     const deferred = this.deferredReconfigure.indexOf(pre);
     if (deferred >= 0) this.deferredReconfigure.splice(deferred, 1);
     return { pre, name, domain: record.domain, keys };
+  }
+
+  /**
+   * Why {@link retireHab} would refuse `pre`, or null when it would retire it. A pure read: the refusals listed
+   * on `retireHab`, in the same order, so a caller can decide between retiring and keeping without a throw.
+   */
+  retireRefusal(pre: string): string | null {
+    const record = this.db.getHab(pre);
+    if (!record?.name) return `${pre} is not a local habitat.`;
+    if (record.mid || this.db.groups.has(pre)) {
+      return `${pre} is a group habitat; retiring group habitats is not supported.`;
+    }
+    for (const [key, local] of this.db.getHabItemIter()) {
+      const hid = local.hid || key;
+      if (hid === pre) continue;
+      if (local.mid === pre) return `${pre} is the recorded local member of group ${hid}.`;
+      if (local.mid && isAcceptedGroupMember(this.db, hid, pre)) {
+        return `${pre} is an accepted member of local group ${hid}.`;
+      }
+      if (this.db.getKever(hid)?.delpre === pre) return `${pre} is the delegator of local habitat ${hid}.`;
+    }
+    return null;
   }
 
   /** Creates this Habery's sidecar stores. */
