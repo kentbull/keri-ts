@@ -131,7 +131,14 @@ Deno.test("queued and cue queries never substitute an ambient identity for an ex
     const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
     seedControllerEndpoint(hby, subject.pre);
-    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, ambient);
+    const inquisitor = new WitnessInquisitor(
+      hby,
+      protocolFixture(hby),
+      queryHttp(messages),
+      systemClock,
+      null,
+      ambient,
+    );
     try {
       const request = { pre: subject.pre, signer: selected.pre, src: subject.pre, route: "logs" as const, q: {} };
       inquisitor.enqueue(request);
@@ -166,7 +173,7 @@ Deno.test("query pass skips an unsignable signer and delivers the next request",
     });
     const messages: Uint8Array[] = [];
     seedControllerEndpoint(hby, subject.pre);
-    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, stored);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, null, stored);
     try {
       inquisitor.enqueue({ pre: subject.pre, signer: keyless.pre, src: subject.pre, route: "logs", q: {} });
       inquisitor.enqueue({ pre: subject.pre, signer: stored.pre, src: subject.pre, route: "ksn", q: {} });
@@ -371,7 +378,7 @@ Deno.test("query preparation preserves a failed head and limits delivery to its 
     const hab = hby.makeHab("sender");
     seedControllerEndpoint(hby, hab.pre);
     const messages: Uint8Array[] = [];
-    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, hab);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, null, hab);
     const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
     const sign = hab.query, fault = new Error("signing failed");
     try {
@@ -410,7 +417,7 @@ Deno.test("anchor queries ask all eligible attesters once and stop on accepted s
       second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
     for (const attester of [first, second]) seedControllerEndpoint(hby, attester.pre);
     const messages: Uint8Array[] = [];
-    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, hab);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, null, hab);
     const seal = { i: hab.pre, s: "0", d: hab.pre };
     const anchor = yield* spawn(() =>
       new AnchorQuerier(hby.db, inquisitor, hab.pre, seal, { wits: [first.pre, second.pre] }).queryDo()
@@ -479,7 +486,14 @@ Deno.test("ordinary inquiries randomly choose within the first eligible role and
       hby.db.locs.pin([peer.pre, "http"], { url: `http://peer-${idx}.query.test/` });
     });
     const messages: Uint8Array[] = [], urls: string[] = [];
-    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages, urls), systemClock, signer);
+    const inquisitor = new WitnessInquisitor(
+      hby,
+      protocolFixture(hby),
+      queryHttp(messages, urls),
+      systemClock,
+      null,
+      signer,
+    );
     const random = Math.random;
     try {
       for (const fraction of [0, 0.999]) {
@@ -520,7 +534,7 @@ Deno.test("selected roles keep missing locations visible instead of promoting an
     hby.db.ends.pin([subject.pre, Roles.agent, agent.pre], { allowed: true });
     hby.db.locs.pin([agent.pre, "http"], { url: "http://agent.query.test/" });
     const messages: Uint8Array[] = [];
-    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, signer);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, null, signer);
     try {
       inquisitor.enqueue({ pre: subject.pre, route: "logs", q: {} });
       assertEquals(subject.endsFor(subject.pre)[Roles.controller], { [subject.pre]: {} });

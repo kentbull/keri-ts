@@ -142,7 +142,7 @@ function* poll(
   ms = 20_000,
 ): Operation<{ messages: number; cursor: number | undefined }> {
   const director = new MailboxDirector(s.hby, { topics: [topic] });
-  const poller = new MailboxPoller(s.hby, director, http, systemClock);
+  const poller = new MailboxPoller(s.hby, director, http, systemClock, null);
   let messages = 0;
   const worker = yield* spawn(() =>
     poller.pollDo(function*(batch) {

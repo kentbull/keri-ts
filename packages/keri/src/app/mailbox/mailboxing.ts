@@ -21,6 +21,7 @@ import { Roles } from "../../core/roles.ts";
 import type { Baser } from "../../db/basing.ts";
 import { openOwner } from "../../db/core/store-owner.ts";
 import { Mailboxer, type MailboxerOptions } from "../../db/mailbox/mailboxing.ts";
+import type { Relay } from "../delivery/relaying.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 
 /**
@@ -140,6 +141,16 @@ export function authorizedMailboxes(db: Baser, pre: string): string[] {
   return eids;
 }
 
+/** One mailbox provider to poll: its AID, its HTTP(S) URL and the worker key that names the pair. */
+export interface MailboxPollEndpoint {
+  /** Stable worker key, `eid:url`. */
+  readonly key: string;
+  /** Provider AID the poll query is addressed to. */
+  readonly eid: string;
+  /** Preferred HTTP(S) URL of the provider. */
+  readonly url: string;
+}
+
 /**
  * Enumerate authorized mailbox providers and the subject's current KEL witnesses.
  *
@@ -148,14 +159,25 @@ export function authorizedMailboxes(db: Baser, pre: string): string[] {
  * remain eligible for HTTP polling; provider storage is never scanned directly.
  * Missing HTTP(S) locations produce no poll target until a location is available.
  *
+ * With a relay (an edge runtime) the relay is the only provider: witnesses and other mailboxes are not polled, and
+ * the relay is polled once the subject has authorized it as mailbox (for a group, the group's own row, since the
+ * relay stores the group's messages under that authorization). Until then the subject has no poll target; the
+ * runtime prompts the poller when the role is accepted.
+ *
  * @param hab Mailbox subject habitat supplying accepted roles and current witnesses.
+ * @param relay The agent this runtime polls through; null polls authorized mailboxes and witnesses.
  * @returns One HTTPS-preferred HTTP target per provider AID, with stable worker keys.
  */
-export function mailboxPollEndpoints(hab: Hab): Array<{ key: string; eid: string; url: string }> {
-  const eids = new Set<string>(authorizedMailboxes(hab.db, hab.pre));
-  for (const eid of hab.kever?.wits ?? []) eids.add(eid);
+export function mailboxPollEndpoints(hab: Hab, relay: Relay | null): MailboxPollEndpoint[] {
+  const eids = new Set<string>();
+  if (relay) {
+    if (authorizedMailboxes(hab.db, hab.pre).includes(relay.aid)) eids.add(relay.aid);
+  } else {
+    for (const eid of authorizedMailboxes(hab.db, hab.pre)) eids.add(eid);
+    for (const eid of hab.kever?.wits ?? []) eids.add(eid);
+  }
 
-  const endpoints: Array<{ key: string; eid: string; url: string }> = [];
+  const endpoints: MailboxPollEndpoint[] = [];
   for (const eid of eids) {
     const urls = hab.fetchUrls(eid);
     const url = urls.https ?? urls.http;

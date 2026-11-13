@@ -267,9 +267,11 @@ export interface AgentRuntimeOptions {
   grantWalk?: AcdcWalkPolicy;
   /**
    * The agent this runtime sends, queries and polls through, which makes it an edge. Every HTTP and TCP request
-   * is refused unless it goes to the relay's OOBI origin or an accepted relay location, and Poster forwards every
-   * message to the relay. The relay's OOBI is queued when its location is not yet accepted. Omitted, the runtime
-   * is a forwarder and delivers directly.
+   * is refused unless it goes to the relay's OOBI origin or an accepted relay location. Poster forwards every
+   * message to the relay, every query is addressed to the relay, and the relay is the only mailbox polled. Each
+   * needs a mailbox end role naming the relay: from the wrapper or query signer (a group's local member) to send,
+   * and from the polled subject (a group itself) to poll. The relay's OOBI
+   * is queued when its location is not yet accepted. Omitted, the runtime is a forwarder and delivers directly.
    */
   relay?: Relay;
 }
@@ -493,6 +495,7 @@ export function* createAgentRuntime(
     mailboxDirector,
     http,
     clock,
+    options.relay ?? null,
     { polls: kelPublisher.polls, timeouts: options.mailboxPolling },
   );
   for (
@@ -507,7 +510,7 @@ export function* createAgentRuntime(
     mailboxDirector.registerTopic(topic);
   }
   const querying = yield* resource<WitnessInquisitor>(function*(provide) {
-    const inquisitor = new WitnessInquisitor(hby, protocol, http, clock);
+    const inquisitor = new WitnessInquisitor(hby, protocol, http, clock, options.relay ?? null);
     try {
       yield* provide(inquisitor);
     } finally {
@@ -515,23 +518,16 @@ export function* createAgentRuntime(
     }
   });
   const delegating = new Anchorer(hby, postman, querying, protocol, http, clock);
-  // Group receipting reaches TCP-only witnesses as `WitnessReceiptor` does, as KERIpy's Counselor does.
-  const groupReceiptor = new Receiptor(hby, protocol, http, clock);
+  // Only a runtime with operations owners and a registry root has a root replicator to drain this deck.
+  const groupChanges = registryRoot && ipex ? new Deck<string>() : undefined;
   const counselor = new Counselor(
     hby,
-    {
-      receipt: (pre, options) => groupReceiptor.receipt(pre, { ...options, allowTcp: true }),
-      get: (pre, options) => groupReceiptor.get(pre, options),
-    },
+    new Receiptor(hby, protocol, http, clock),
     clock,
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
-    {
-      rotated: (cue) => {
-        kelPublisher.rotated.push(cue);
-        owned?.rootReplicator?.prompt(cue.pre);
-      },
-    },
+    kelPublisher.rotated,
+    groupChanges,
     options.counselorReceiptRetry,
     groupEventForwarding(hby, postman),
   );
@@ -549,6 +545,7 @@ export function* createAgentRuntime(
       registryRoot,
       mux,
       counselor,
+      groupChanges,
       retry: options.operationRetry,
       queryResendMs: options.issuanceQueryResendMs,
       changes: signaler ? signalerChangeSink(signaler) : undefined,
