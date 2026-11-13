@@ -13,13 +13,13 @@ import {
 } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
 import type { Kever } from "../../core/kel/kever.ts";
-import { Roles } from "../../core/roles.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { isAcceptedGroupMember } from "../multisig/group-members.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import { abortable } from "../runtime/abortable.ts";
+import { authorizedStoringHost, keepsForPickup, ownTraffic } from "./agent-inbox.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 
 /**
@@ -35,8 +35,11 @@ export interface ForwardRelaying {
 
 /** The single path one accepted `/fwd` takes, decided from accepted state in the turn that takes it. */
 type ForwardPath =
-  /** The recipient is a habitat of this Habery and the sender is served: process the child here. */
-  | { readonly kind: "ingest" }
+  /**
+   * The recipient is a habitat of this Habery, and the sender is served or this host keeps the recipient's mail for
+   * pickup: process the child here, and when `store`, also keep one copy in the recipient's mailbox topic.
+   */
+  | { readonly kind: "ingest"; readonly store: boolean }
   /** This host is the recipient's witness, mailbox or agent: store the child in its mailbox topic. */
   | { readonly kind: "store" }
   /** The sender is served and the recipient is remote: re-send the child as `host`. */
@@ -49,11 +52,19 @@ type ForwardPath =
  * This is the `keri-ts` mailbox-storage analogue to KERIpy's `ForwardHandler`.
  *
  * Paths, in order; exactly one runs for one `/fwd`:
- * - ingest (relaying only): the recipient is a habitat of this Habery and the
- *   `/fwd` sender is served. The child goes through this runtime's own byte
- *   ingress as remote input addressed to that habitat's endpoint, so signature,
- *   KRAM and escrow rules apply as for any received message. This is how an
- *   edge's group co-member hosted on the agent receives every group message.
+ * - ingest (relaying only): the recipient is a habitat of this Habery and
+ *   either the `/fwd` sender is served or this host keeps the recipient's mail
+ *   for pickup (`keepsForPickup`: a local group that authorized it as mailbox
+ *   or agent), whoever the sender is. The child goes through this runtime's own
+ *   byte ingress as remote input addressed to that habitat's endpoint, so
+ *   signature, KRAM and escrow rules apply as for any received message. This is
+ *   how an edge's group co-member hosted on the agent receives every group
+ *   message. When the host keeps mail for pickup and the child is not
+ *   `ownTraffic` (its originator is a local habitat, an agent principal of the
+ *   host, or a member of the group, i.e. the edge that would pick it up), it is
+ *   also stored once in the group's mailbox topic for its remote members: one
+ *   ingest, one stored copy. A third party's `/fwd` to the group is ingested and
+ *   stored; the edge's own is ingested only.
  * - store: the request-scoped mailbox AID passed with this message must
  *   currently be authorized for the addressed recipient (witness, mailbox or
  *   agent). A recipient this host stores for is never also relayed.
@@ -191,12 +202,31 @@ export class ForwardHandler implements ExchangeRouteHandler {
     mailboxAid: string | null | undefined,
   ): ForwardPath | null {
     const hby = this.mailboxDirector.hby;
-    if (this.relaying && hby.habs.has(recipient) && servingHost(hby, source, mailboxAid)) return { kind: "ingest" };
+    if (this.relaying && hby.habs.has(recipient)) {
+      const pickup = this.pickupHost(recipient, mailboxAid);
+      if (pickup || servingHost(hby, source, mailboxAid)) {
+        return { kind: "ingest", store: !!pickup && !ownTraffic(hby, source.origin, recipient, pickup) };
+      }
+    }
     if (this.canStoreRecipient(recipient, mailboxAid)) return { kind: "store" };
     // Nothing addressed to this Habery leaves through its own Poster; it would only loop back here.
     if (!this.relaying || hby.db.prefixes.has(recipient)) return null;
     const host = servingHost(hby, source, mailboxAid);
     return host ? { kind: "relay", host } : null;
+  }
+
+  /**
+   * Select the local host that keeps `recipient`'s mail for pickup, or null; any local habitat without
+   * request-scoped provenance, as {@link servingHost} does.
+   *
+   * @param recipient Final recipient AID named by the `/fwd` modifiers.
+   * @param mailboxAid Receiving hosted endpoint AID, or null when the request named none.
+   * @returns The local AID that keeps the recipient's mail for pickup, or null.
+   */
+  private pickupHost(recipient: string, mailboxAid: string | null | undefined): string | null {
+    const hby = this.mailboxDirector.hby;
+    const hosts = mailboxAid ? [mailboxAid] : [...hby.db.prefixes];
+    return hosts.find((host) => hby.habs.has(host) && keepsForPickup(hby, recipient, host)) ?? null;
   }
 
   /**
@@ -206,7 +236,8 @@ export class ForwardHandler implements ExchangeRouteHandler {
    * @param recipient Final recipient AID.
    * @param topic `/fwd` mailbox topic.
    * @param wire Complete child message, signed by its originator.
-   * @returns The ingest operation for a local recipient; storage and Poster admission complete synchronously.
+   * @returns The ingest operation for a local recipient; storage (including an ingested child's pickup copy, written
+   *   before ingest in the turn its authority was read) and Poster admission complete synchronously.
    */
   private deliver(path: ForwardPath, recipient: string, topic: string, wire: Uint8Array): void | Operation<void> {
     switch (path.kind) {
@@ -217,6 +248,7 @@ export class ForwardHandler implements ExchangeRouteHandler {
         this.relaying!.postman.send({ src: path.host, dest: recipient, topic, msg: wire });
         return;
       case "ingest":
+        if (path.store) this.mailboxDirector.publish(recipient, topic, wire);
         // Remote input at the recipient's own endpoint, never `local`: it must earn acceptance like any arrival.
         return this.relaying!.reactor.processBytes(wire, { mailboxAid: recipient });
     }
@@ -253,26 +285,7 @@ function hostCanStoreForwardRecipient(
   if (recipientKever.wits.includes(hostAid)) {
     return true;
   }
-  return authorizesHost(hby, recipient, hostAid);
-}
-
-/**
- * Whether `cid` has an accepted `mailbox` or `agent` end role naming `hostAid`: rows
- * `ends.[cid, mailbox, hostAid]` and `ends.[cid, agent, hostAid]`, allowed or enabled.
- *
- * @param hby Borrowed local habitat collection and accepted-state database.
- * @param cid Controller AID whose end-role authorization is read.
- * @param hostAid Endpoint AID the role must name.
- * @returns True when either row authorizes the host.
- */
-function authorizesHost(hby: Habery, cid: string, hostAid: string): boolean {
-  for (const role of [Roles.mailbox, Roles.agent]) {
-    const end = hby.db.ends.get([cid, role, hostAid]);
-    if (end?.allowed || end?.enabled) {
-      return true;
-    }
-  }
-  return false;
+  return authorizedStoringHost(hby, recipient, hostAid);
 }
 
 /**
@@ -317,10 +330,10 @@ export function servingHost(hby: Habery, source: ForwardSource, mailboxAid: stri
  */
 function servesSource(hby: Habery, source: ForwardSource, hostAid: string): boolean {
   if (!source.sender) return false;
-  if (authorizesHost(hby, source.sender, hostAid)) return true;
+  if (authorizedStoringHost(hby, source.sender, hostAid)) return true;
   return !!source.origin && source.origin !== source.sender
     && isAcceptedGroupMember(hby.db, source.origin, source.sender)
-    && authorizesHost(hby, source.origin, hostAid);
+    && authorizedStoringHost(hby, source.origin, hostAid);
 }
 
 /**

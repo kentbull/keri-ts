@@ -308,3 +308,79 @@ Deno.test("edge to agent to third-party mailbox delivers the signed child", asyn
     }
   });
 });
+
+Deno.test("raw message for a local group is processed and stored once", async () => {
+  const agentPort = reservePort();
+  await run(function*() {
+    const agentHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const edgeHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const agent = agentHby.makeHab("agent");
+      const colocated = agentHby.makeHab("colocated");
+      const member = edgeHby.makeHab("member");
+      const third = edgeHby.makeHab("third");
+      agentHby.db.locs.pin([agent.pre, "http"], { url: `http://127.0.0.1:${agentPort}/` });
+      yield* preload(agentHby, [...member.db.replay(member.pre)!, ...third.db.replay(third.pre)!]);
+      // The edge's group: its member on the edge and a co-member hosted on the agent; one of two signs.
+      const { hab: group } = agentHby.makeGroupHab(
+        "team",
+        colocated,
+        [colocated.pre, member.pre],
+        undefined,
+        undefined,
+        {
+          isith: "1",
+          nsith: "1",
+          toad: 0,
+        },
+      );
+      yield* preload(agentHby, [group.makeEndRole(agent.pre, Roles.agent, true)]);
+
+      const listening = Promise.withResolvers<void>();
+      let agentRuntime: AgentRuntime | undefined;
+      const agentHost = yield* spawn(() =>
+        runHostKernel(agentHby, {
+          enableMailboxStore: true,
+          enableRelay: false,
+          serviceHab: agent,
+          http: { port: agentPort, hostname: "127.0.0.1", onListen: () => listening.resolve() },
+          protocolPolicy: {},
+          companionHosts: [function*(runtime) {
+            agentRuntime = runtime;
+            yield* suspend();
+          }],
+        })
+      );
+      try {
+        yield* call(() => listening.promise);
+        // A KERIpy-style direct send: one bare signed exn naming the group, no `/fwd` and no topic.
+        const [serder] = exchange("/relay/check", { value: "for the group" }, {
+          sender: third.pre,
+          recipient: group.pre,
+        });
+        const wire = third.endorse(serder);
+        const status = yield* call(async () => {
+          const response = await fetch(`http://127.0.0.1:${agentPort}/`, {
+            method: "POST",
+            headers: { "content-type": "application/cesr", "CESR-DESTINATION": agent.pre },
+            body: new Blob([wire as Uint8Array<ArrayBuffer>]),
+          });
+          await response.body?.cancel();
+          return response.status;
+        });
+        assertEquals(status, 204);
+        // The co-member processed it as the agent's own input, and one copy waits for the group's remote member.
+        assertEquals(agentRuntime!.exc.complete(serder.said!), true);
+        const [frame] = yield* call(() => parseBytes(wire));
+        assertEquals(agentRuntime!.mailboxer!.getTopicMsgs(mailboxTopicKey(group.pre, "/relay")), [
+          yield* call(() => collectPayload(framePayload(frame))),
+        ]);
+      } finally {
+        yield* agentHost.halt();
+      }
+    } finally {
+      yield* edgeHby.close(true);
+      yield* agentHby.close(true);
+    }
+  });
+});

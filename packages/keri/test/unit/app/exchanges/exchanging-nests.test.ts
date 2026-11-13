@@ -231,6 +231,53 @@ Deno.test("forward handler delivers a served sender's child to a recipient local
   });
 });
 
+/**
+ * A third party the agent does not serve forwards a child for the edge's group, which authorized the agent under
+ * `role`; then the edge member, which the agent serves, forwards one too.
+ */
+function* groupPickup(fixture: RelayFixture, role: typeof Roles.mailbox | typeof Roles.agent): Operation<void> {
+  const { runtime, agent, colocated, sender: member, recipient: third } = fixture;
+  // The edge member and its co-member on the agent form the group; one of two signs.
+  const { hab: group } = runtime.hby.makeGroupHab(
+    "team",
+    colocated,
+    [colocated.pre, member.pre],
+    undefined,
+    undefined,
+    {
+      isith: "1",
+      nsith: "1",
+      toad: 0,
+    },
+  );
+  yield* settleRuntimeIngress(runtime, [
+    ...third.db.replay(third.pre)!,
+    member.makeEndRole(agent.pre, Roles.mailbox, true),
+    group.makeEndRole(agent.pre, role, true),
+  ]);
+  const nest = yield* call(() => child(third, "from a third party", Vrsn_2_0));
+  assertEquals((yield* runtime.exc.processEvent(forward(third, group, agent, nest))).kind, "accept");
+  // The co-member processed the child, and the group's remote member can pick up exactly one copy.
+  assertEquals(runtime.exc.complete(nest.body.said!), true);
+  assertEquals(runtime.hby.db.exchangeMeta.get([nest.body.said!])?.mailboxAid, group.pre);
+  const stored = yield* call(() => collectPayload(nestedPayload(nest, Vrsn_2_0)));
+  assertEquals(runtime.mailboxer!.getTopicMsgs(`${group.pre}/nested`), [stored]);
+  // The member's own child reaches the co-member too, but is not stored back for the member that sent it.
+  const own = yield* call(() => child(member, "from the edge member", Vrsn_2_0));
+  assertEquals((yield* runtime.exc.processEvent(forward(member, group, agent, own))).kind, "accept");
+  assertEquals(runtime.exc.complete(own.body.said!), true);
+  assertEquals(runtime.mailboxer!.getTopicMsgs(`${group.pre}/nested`), [stored]);
+  assertEquals([...runtime.postman.evts], []);
+}
+
+Deno.test("group named in a third party's /fwd is ingested once and stored once", async () => {
+  await relayScenario(false, (fixture) => groupPickup(fixture, Roles.mailbox));
+});
+
+Deno.test("group named in a third party's /fwd is ingested once and stored once under the agent role", async () => {
+  await relayScenario(false, (fixture) => groupPickup(fixture, Roles.agent));
+});
+
 Deno.test("a group member's forward is relayed on the group's authorization", async () => {
   await relayScenario(false, function*(fixture) {
     const { runtime, agent, edge, sender, recipient } = fixture;

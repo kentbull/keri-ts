@@ -2,6 +2,7 @@
  * What every namespace of the wallet-level API shares: the parts they read and drive, the budgets of the calls that
  * wait, and the one place an app's promise meets the runtime's scope.
  */
+import type { SerderACDC } from "cesr-ts";
 import { action, type Operation, race, run } from "effection";
 import {
   type AgentRuntime,
@@ -10,10 +11,12 @@ import {
   type Hab,
   type Habery,
   isLocalGroupHab,
+  issuanceStatus,
   type RuntimeClock,
   ValidationError,
 } from "keri-ts/runtime";
-import type { WalletBaser } from "../storing.ts";
+import { RegistryCustody } from "../custody.ts";
+import type { IssuedCredential, WalletBaser } from "../storing.ts";
 import type { Wallet } from "../wallet.ts";
 
 /** Thrown by a call made on a wallet that was closed, or whose runtime stopped. */
@@ -49,8 +52,65 @@ export interface WalletApiParts {
   assertRunning(): void;
 }
 
-/** Recorders of issuances in flight: a recorder returns true once the issuance is over and recorded. */
-export type TrackedIssuances = Map<string, () => boolean>;
+/**
+ * What the wallet needs to record one issuance in flight once its exchange ends. `registry` is the registry's
+ * SAID; its head event is the update that issued `credential`, and `hab` is the issuing identifier whose custody
+ * reads the update's opening. Plain data: {@link recordFinished} acts on it.
+ */
+export interface TrackedIssuance {
+  readonly parts: WalletApiParts;
+  readonly hab: Hab;
+  readonly credential: SerderACDC;
+  readonly registry: string;
+}
+
+/** Issuances in flight by Grant SAID; {@link walletChangeSink} gives each a try on the changes that can finish it. */
+export type TrackedIssuances = Map<string, TrackedIssuance>;
+
+/**
+ * Record the credential that an accepted registry `update` issued, with the opening its custody derives for it
+ * (the retained coordinates of an authored update, or the root-derived `issued` opening of a member's).
+ *
+ * @throws ValidationError when the evidence does not prove the issuance, or the opening cannot be read yet.
+ */
+export function recordIssuedUpdate(
+  wallet: Wallet,
+  custody: RegistryCustody,
+  credential: SerderACDC,
+  update: SerderACDC,
+): IssuedCredential {
+  return wallet.recordIssued(credential, update.said!, { blinder: custody.issuedOpening(update, credential.said!) });
+}
+
+/**
+ * Record a tracked issuance's credential from the registry head its finished exchange left. An inventory row that
+ * already exists is returned as it is.
+ *
+ * @throws ValidationError while the exact opening cannot be read yet (a member without the registry root copy).
+ */
+export function recordIssuance(issuance: TrackedIssuance): IssuedCredential {
+  const { parts: { hby, runtime, wallet, inventory }, hab, credential, registry } = issuance;
+  const known = inventory.issued.get([credential.said!]);
+  if (known) return known;
+  const store = runtime.acdc!.store;
+  const custody = new RegistryCustody({ hby, hab, registry: store, db: inventory });
+  return recordIssuedUpdate(wallet, custody, credential, store.headEvent(registry)!);
+}
+
+/**
+ * Record a tracked issuance if its exchange is over: nothing while it is active, the inventory row when it is
+ * done, nothing for one that ended without issuing.
+ *
+ * @returns true once the issuance is over and, if it issued, recorded, so the caller stops tracking it; false while
+ *   it is active.
+ * @throws ValidationError while the exact opening cannot be read yet; the caller tries again on a later change.
+ */
+export function recordFinished(grant: string, issuance: TrackedIssuance): boolean {
+  const status = issuanceStatus(issuance.parts.runtime.operations!.issuance, grant);
+  if (status.state === "active") return false;
+  if (status.state === "done") recordIssuance(issuance);
+  return true;
+}
 
 /** A workflow an app-level call runs: no arguments, one result. */
 export type Work<T> = () => Operation<T>;

@@ -40,7 +40,6 @@ export {
   type GroupUnblindOptions,
   type GroupWaitOptions,
   type IssuanceBegunNotice,
-  type IssuanceRecorder,
   type ProposalApproveOptions,
   type ProposalFacts,
   type ProposalFamily,

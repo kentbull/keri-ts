@@ -578,7 +578,9 @@ export class Poster {
    *
    * Controller and agent roles each retain all endpoints. An indirect role picks
    * one random provider, unless an explicitly composed store owns an eligible local
-   * AID. Empty location maps retain role selection and become execution failures.
+   * AID. An agent role whose endpoint is a local AID with a composed store is that
+   * same local store target (given a topic), as the hosted agent keeps the recipient's
+   * mail for pickup. Empty location maps retain role selection and become execution failures.
    * With a relay, the relay alone is the route (see {@link relayRoutes}).
    *
    * @param hab Local signing habitat borrowing accepted role/location state.
@@ -597,6 +599,12 @@ export class Poster {
     if (kin === "stream") roles.splice(1);
     return roles.map((role) => {
       const candidates = Object.entries(ends[role]);
+      // An agent hosted by this Habery keeps the recipient's mail itself: store it, never post to our own ingress.
+      const localAgent = role === Roles.agent && topic && this.mbx
+        && candidates.find(([eid]) => this.hby.db.prefixes.has(eid));
+      if (localAgent) {
+        return { kind: "forward", targets: [{ eid: localAgent[0], url: `local-mailbox:${localAgent[0]}`, urls: {} }] };
+      }
       if (role === Roles.controller || role === Roles.agent) {
         return {
           kind: "direct",

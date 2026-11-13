@@ -163,8 +163,8 @@ Configure `Receiptor(hby, protocol, http, clock, {gvrsn})` for the actual witnes
 independently of ACDC v2 IPEX genus. Its default remains 1.0; the known v2
 witness profile explicitly selects 2.0. For a group, `prepareGrantBody` freezes
 the same selected disclosure without signing. Complete any presentation BUP
-against that body before the first member approval; `attachPresentationProof`
-extends its proof without changing signed bodies. `prepareAcdcV2GroupIpex`
+against that body before the first member approval; the exported function
+`attachPresentationProof` extends its proof without changing signed bodies. `prepareAcdcV2GroupIpex`
 checks the exact selected graph before each new member signature. Recheck
 current graph use after threshold completion and before delivery or consent;
 protocol completion alone grants no use authority. Approved wrapper retries
