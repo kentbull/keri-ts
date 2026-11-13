@@ -158,6 +158,28 @@ export class RegistryCustody {
     return value;
   }
 
+  /**
+   * The opening of the accepted update that issued `credential`, for a holder of the registry root that did not
+   * author the update and so retained no coordinates (a group member that consented to it). The opening is derived
+   * from the credential and the `issued` state and must open the update's own commitment; it is then retained like
+   * an authored one. Only an unbound issuance update is derived here.
+   */
+  issuedOpening(event: SerderACDC, credential: string): RegistryDisclosure {
+    if (this.options.store.get(event.said!)) return this.derivedOpening(event);
+    if (event.ilk !== "bup" || !event.verify()) throw new ValidationError("Exact accepted blinded update is required");
+    const ordinal = Number(BigInt(`0x${event.sad!.n}`));
+    const stored = event.regid ? this.options.registry.seqEvent(event.regid, ordinal) : null;
+    if (!Number.isSafeInteger(ordinal) || !stored || !bytesEqual(stored.raw, event.raw)) {
+      throw new ValidationError("Exact accepted registry event is required");
+    }
+    const opening = this.derive(event.regid!, ordinal, credential, "issued");
+    if (!vetBlind(opening, event.sad!.b as string)) {
+      throw new ValidationError("The accepted update is not this credential's issuance");
+    }
+    this.retainDerivedUpdate(event, opening);
+    return opening;
+  }
+
   /** Reproduce only the exact accepted event, never today's head or a later credential's coordinates. */
   derivedOpening(event: SerderACDC): RegistryDisclosure {
     if (event.ilk !== "bup" || !event.verify()) throw new ValidationError("Exact accepted blinded update is required");

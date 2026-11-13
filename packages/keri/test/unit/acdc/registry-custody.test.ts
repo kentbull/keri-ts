@@ -67,6 +67,22 @@ Deno.test("RegistryCustody reproduces an accepted BUP opening from the Keeper ro
       assertThrows(() => custody.retainDerivedUpdate(update, proof), ValidationError, "Different derivation");
       store.rows.clear();
       assertThrows(() => custody.derivedOpening(update), ValidationError, "coordinates are unavailable");
+      // A member that consented to the update retained nothing: it derives the issuance opening from the credential.
+      assertThrows(
+        () =>
+          custody.issuedOpening(
+            update,
+            acdcmap(hab.pre, { regid: rip.said!, attribute: { d: "", i: hab.pre, n: "2" } }).said!,
+          ),
+        ValidationError,
+        "not this credential's issuance",
+      );
+      assert(vetBlind(custody.issuedOpening(update, credential.said!), proof.d.nonce));
+      assertEquals(store.rows.get(update.said!), { credential: credential.said!, state: "issued", bound: null });
+      assert(
+        vetBlind(custody.issuedOpening(update, credential.said!), proof.d.nonce),
+        "then it reads the retained row",
+      );
     } finally {
       yield* baser.close(true);
       yield* hby.close(true);
