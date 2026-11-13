@@ -324,6 +324,23 @@ Group work is a set of explicit library calls plus the `Counselor`.
   Grant contribution waits for it, phase `awaitingRegistryUpdate`), and proves with `requestUnblind` / `answerUnblind`
   naming a `proposer`. Root copies for the other members come from the runtime's `RootReplicator`, which derives what is
   owed from state and records sent copies in `rrsn.`; `RegistryRoot` publishes a `root` change when it retains one.
+- **Replacing the local member after a rotation.** A group habitat records one local member, the
+  habitat that signs, polls and contributes for it. Membership changes only by a rotation; the record
+  does not follow one. When a rotation removes the recorded member and another habitat of the same
+  Habery is now a member, `replaceGroupMember(runtime, { group, member, smids, rmids })` (the wallet's
+  `groups.replaceMember`) re-points the record and ends the work bound to the old member. It creates no
+  event and signs nothing. `Habery.joinGroupHab` does the record and refuses unless the group has
+  accepted key state, the recorded member is in neither its signing nor rotation members, and the new
+  member is in one of them; the caller's lists are never consulted for that decision. The record keeps
+  its name, domain and other fields, and its stored member lists are brought in line with accepted state.
+  What is keyed by the group stays: registry roots (`rroots`), mailbox cursors and the credentials the
+  group holds, so the new member needs no root copy from a peer when the Habery already holds the
+  group's roots. `kpub` re-posts the new member's KEL. The call drops the durable rows that address the
+  group to the old member (root copies escrowed for it, markers of copies sent to it). The runtime call
+  also ends, as `abandoned` with the reason, every live issuance whose party member or frozen DH
+  custodian is the old member and every live Unblind that holds it; ending releases their held
+  `heldq`/`heldu` rows. They are not carried over: start a new proposal. Group IPEX messages and
+  presentations keep no member binding and run on. An exchange the old member led is not resumed.
 
 ## Mailboxes and rotation
 

@@ -449,6 +449,11 @@ export {
   settleProposedRotation,
 } from "../app/multisig/proposing.ts";
 export {
+  type ReplacedGroupMember,
+  replaceGroupMember,
+  type ReplaceGroupMemberInput,
+} from "../app/multisig/replace-member.ts";
+export {
   Notifier,
 } from "../app/notifications/notifying.ts";
 export {

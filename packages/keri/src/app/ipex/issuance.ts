@@ -417,6 +417,19 @@ export class IssuanceOperations {
     this.deps.changes?.push({ kind: "issuance", id: op.grant });
   }
 
+  /**
+   * End, as abandoned with `reason`, every live operation of local group `group` whose party member or frozen
+   * DH custodian is `member`. Releasing the approval drops the DH owner's held query. Returns the Grants ended.
+   */
+  endBoundToMember(group: string, member: string, reason: string): string[] {
+    const bound = [...this.live.values()].filter(op =>
+      op.group?.party.group.pre === group
+      && (op.group.party.member.pre === member || op.group.party.custodian === member)
+    );
+    for (const op of bound) this.end(op, "abandoned", reason);
+    return bound.map(op => op.grant);
+  }
+
   /** Drop the live entry and the DH approval; a missing approval means the owner already closed. */
   private release(op: LiveIssuance): void {
     this.live.delete(partyKey(op.grant, op.role));
