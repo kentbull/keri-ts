@@ -23,6 +23,7 @@
  */
 import { concatBytes, Counter, type SerderKERI, type Versionage, Vrsn_2_0 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
+import type { RegistryDisclosure } from "../../acdc/regeventing.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { KramRefusedError, ValidationError } from "../../core/errors.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
@@ -39,6 +40,7 @@ import { RetryBackoff } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import { IpexAdmitter } from "./ipex-admitting.ts";
+import { attachPresentationProof, type PreparedGrantBody } from "./ipex-discloser.ts";
 import {
   approveMultisigIpexLocally,
   approveStoredMultisigIpexWrappers,
@@ -96,12 +98,18 @@ export interface GroupIpexDeps {
   readonly registry?: RegistryProposeDeps;
 }
 
-/** A group registry update an operation waits for before its own message can be signed. */
+/**
+ * A presentation Grant waiting for the group to accept the registry update that anchors its proof. Plain data: the
+ * owner reads the stores on each pass and, once the update is accepted, attaches the proof and signs this member's
+ * contribution itself.
+ */
 export interface GroupIpexPrerequisite {
   /** The TEL event and the group anchor that seals it. */
   readonly anchor: RegistryEventRef;
-  /** Signs this member's contribution to the message once the update is accepted; returns its accepted wire. */
-  readonly proceed: () => Operation<Uint8Array>;
+  /** The frozen unsigned Grant and its selected nodes; only its nested proof is extended once the update is accepted. */
+  readonly grant: PreparedGrantBody;
+  /** The presented-state opening the update commits to. It blinds the Grant's state, so it is never logged or reported. */
+  readonly opening: RegistryDisclosure;
 }
 
 interface LiveGroupIpex {
@@ -159,6 +167,30 @@ export interface GroupIpexProposal {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Frame a group-authored body with its nests and sign this member's contribution, accepting it locally; returns the
+ * contribution's wire. Both the proposer's consent and the owner's signing after a registry update use it.
+ *
+ * @throws ValidationError while the message awaits authenticating dependencies; KramRefusedError when this member's
+ * own KRAM refuses it.
+ */
+function* contribute(
+  deps: GroupIpexDeps,
+  hab: Hab,
+  exn: SerderKERI,
+  nests: Uint8Array,
+  gvrsn: Versionage,
+): Operation<Uint8Array> {
+  const candidate = concatBytes(
+    Counter.makeGVC(gvrsn),
+    exn.raw,
+    Counter.enclose({ qb64: nests, version: gvrsn }),
+  );
+  const own = yield* prepareAcdcV2GroupIpex(deps.hby, deps.protocol, hab, candidate);
+  if (!own) throw new ValidationError("ACDC v2 group disclosure awaits authenticating dependencies.");
+  return own;
 }
 
 /** The live table of group IPEX operations and its driver; one per host runtime. */
@@ -249,15 +281,44 @@ export class GroupIpexOperations {
     }
   }
 
+  /**
+   * The event that took the awaited update's place, read from state: a different accepted KEL event at the anchor's
+   * sequence number, or a different accepted TEL event at the update's. Null while the update can still be accepted;
+   * an update the members never approve stays awaited until the user abandons it.
+   */
+  private supersededBy(anchor: RegistryEventRef): string | null {
+    const kel = this.deps.hby.db.kels.getLast(anchor.anchor.pre, anchor.anchor.sn);
+    if (kel && kel !== anchor.anchor.said) return kel;
+    const tel = this.deps.rgy.store.seqEvent(anchor.regid, anchor.sn)?.said;
+    if (tel && tel !== anchor.said) return tel;
+    return null;
+  }
+
+  /**
+   * Sign this member's contribution to a presentation Grant whose registry update the group has accepted: attach the
+   * proof sealed by the accepted anchor, then contribute. The consent that began the operation covers this signature.
+   */
+  private *signAfterUpdate(op: LiveGroupIpex, awaited: GroupIpexPrerequisite): Operation<Uint8Array> {
+    const seal = this.deps.rgy.store.anchor(awaited.anchor.said);
+    if (!seal) throw new ValidationError("The presentation update is accepted but its anchor is unavailable");
+    const grant = yield* attachPresentationProof(awaited.grant, awaited.opening, { s: seal[0], d: seal[1] });
+    return yield* contribute(this.deps, op.group, grant.exn, grant.nests, op.genus);
+  }
+
   private *step(op: LiveGroupIpex): Operation<void> {
     const { hby, protocol, postman, exc, rgy, clock } = this.deps;
     if (op.prerequisite) {
-      const read = { db: hby.db, store: rgy.store, protocol };
-      const { anchor, proceed } = op.prerequisite;
-      if (registryEventStatus(read, anchor).state !== "accepted") {
-        if ((yield* settleRegistryEvent(read, anchor)).state !== "accepted") return;
+      const awaited = op.prerequisite;
+      const superseding = this.supersededBy(awaited.anchor);
+      if (superseding) {
+        this.end(op, "failed", `The registry update was superseded by ${superseding}`);
+        return;
       }
-      op.outbound = { kind: "initial", wire: yield* proceed() };
+      const read = { db: hby.db, store: rgy.store, protocol };
+      if (registryEventStatus(read, awaited.anchor).state !== "accepted") {
+        if ((yield* settleRegistryEvent(read, awaited.anchor)).state !== "accepted") return;
+      }
+      op.outbound = { kind: "initial", wire: yield* this.signAfterUpdate(op, awaited) };
       op.prerequisite = null;
       this.setPhase(op, "publishing");
     }
@@ -334,17 +395,10 @@ export function* proposeGroupIpex(
   ops: GroupIpexOperations,
   { hab, exn, nests = new Uint8Array(), gvrsn = Vrsn_2_0, deliver = true }: GroupIpexProposalInput,
 ): Operation<GroupIpexBegun> {
-  const { hby, protocol } = ops.deps;
-  if (!isLocalGroupHab(hby, hab)) throw new ValidationError("Group IPEX requires a local group identifier");
+  if (!isLocalGroupHab(ops.deps.hby, hab)) throw new ValidationError("Group IPEX requires a local group identifier");
   if (exn.pre !== hab.pre || !exn.said) throw new ValidationError("The IPEX message must be authored by the group");
   if (ops.live.has(exn.said)) throw new ValidationError("A group IPEX message was already begun for this SAID");
-  const candidate = concatBytes(
-    Counter.makeGVC(gvrsn),
-    exn.raw,
-    Counter.enclose({ qb64: nests, version: gvrsn }),
-  );
-  const own = yield* prepareAcdcV2GroupIpex(hby, protocol, hab, candidate);
-  if (!own) throw new ValidationError("ACDC v2 group disclosure awaits authenticating dependencies.");
+  const own = yield* contribute(ops.deps, hab, exn, nests, gvrsn);
   return ops.begin(exn.said, hab, gvrsn, { kind: "initial", wire: own }, deliver);
 }
 
@@ -359,10 +413,11 @@ export interface GroupIpexAfterInput {
 }
 
 /**
- * The proposer's consent to a group-authored message that waits for a registry update, as a Grant carrying a
- * presentation proof does: the caller has proposed the update (this member's contribution is its approval) and
- * passes the anchor to wait for. The owner signs the message's contribution, through `prerequisite.proceed`, once
- * the group has accepted the update, under this same consent. Returns after local commit.
+ * The proposer's consent to a presentation Grant that waits for a registry update: the caller has proposed the
+ * update (this member's contribution is its approval) and passes the frozen Grant, its opening and the anchor to wait
+ * for. On each pass the owner reads whether the group accepted the update; once it has, the owner attaches the proof
+ * and signs this member's contribution under this same consent. A superseded update ends the operation `failed`; one
+ * the members never approve stays active until {@link abandonGroupIpex}. Returns after local commit.
  */
 export function proposeGroupIpexAfter(
   ops: GroupIpexOperations,
