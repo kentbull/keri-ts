@@ -238,11 +238,14 @@ export class UnblindingOperations {
 
   /**
    * Whether a pass has work: a live operation, or an owner holds an authenticated peer query whose reply is
-   * owed (an in-memory walk of the owners, no store read).
+   * owed (an in-memory walk of the owners, no store read). Finding what is owed reprocesses held queries, which
+   * answers them (signs), so an owner whose habitat cannot sign yet is skipped here as it is in `adopt`.
    */
   active(): boolean {
     if (this.live.size > 0) return true;
-    for (const owner of this.deps.unblinds.unblindOwners()) if (owner.awaitingReply().length) return true;
+    for (const owner of this.deps.unblinds.unblindOwners()) {
+      if (owner.hab.canSign() && owner.awaitingReply().length) return true;
+    }
     return false;
   }
 

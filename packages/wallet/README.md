@@ -52,7 +52,7 @@ await w.credentials.present({ verb: "grant", pre: icp.pre, selection: { said }, 
 await w.credentials.requestProof(icp.pre, { message: "", recipient: holder, plan: [] }); // the verifier's apply
 for (const p of w.credentials.presentations()) await w.credentials.unblind(p.grant);
 
-const health = w.health(); // ok | latched | faulted | stopped | closed
+const health = w.health(); // ok | latched | mailbox-unreachable | signer-unavailable | stopped | closed
 await w.close();
 ```
 

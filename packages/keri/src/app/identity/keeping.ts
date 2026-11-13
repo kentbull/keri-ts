@@ -19,7 +19,7 @@ import {
   Tiers,
   Verfer,
 } from "cesr-ts";
-import { b } from "cesr-ts";
+import { b, ParserError } from "cesr-ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Keeper, type PrePrm, type PrePrmShape, type PreSit, type PreSitShape, PubLot } from "../../db/keeping.ts";
 
@@ -684,9 +684,9 @@ export class Manager {
     this._seed = seed;
   }
 
-  /** Require full canonical keys; local ownership is the calling operation's responsibility. */
+  /** Require full canonical keys for a write; local ownership is the calling operation's responsibility. */
   private registryRootKeys(aid: string, regid: string): string[] {
-    if (new Prefixer({ qb64: aid }).qb64 !== aid || new Diger({ qb64: regid }).qb64 !== regid) {
+    if (!canonicalRegistryRootKeys(aid, regid)) {
       throw new Error("Registry root keys must be canonical AID and registry SAID strings");
     }
     return [aid, regid];
@@ -708,7 +708,9 @@ export class Manager {
 
   /** Return the retained Salt128 root; absent reads require no encryption. */
   getRegistryRoot(aid: string, regid: string): Salter | null {
-    const cipher = this.ks.rroots.get(this.registryRootKeys(aid, regid));
+    // No root is stored under a key that is not canonical (see `canonicalRegistryRootKeys`).
+    if (!canonicalRegistryRootKeys(aid, regid)) return null;
+    const cipher = this.ks.rroots.get([aid, regid]);
     if (!cipher) return null;
     const { decrypter } = this.registryRootCrypto();
     const root = decrypter.decrypt({ cipher, ctor: Salter }) as Salter;
@@ -730,9 +732,12 @@ export class Manager {
     return this.ks.retainRegistryRoot(keys, root, aeid, encrypter, decrypter, overwrite);
   }
 
-  /** Whether a root is retained for `aid` and `regid`; reads no ciphertext and needs no unlocked Keeper. */
+  /**
+   * Whether a root is retained for `aid` and `regid`; reads no ciphertext and needs no unlocked Keeper. False for
+   * a key that is not canonical, since no root is stored under one (see `canonicalRegistryRootKeys`).
+   */
   hasRegistryRoot(aid: string, regid: string): boolean {
-    return !!this.ks.rroots.get(this.registryRootKeys(aid, regid));
+    return canonicalRegistryRootKeys(aid, regid) && !!this.ks.rroots.get([aid, regid]);
   }
 
   private signerDecrypter(): Decrypter | undefined {
@@ -1852,4 +1857,18 @@ export function b64DecodeUrl(text: string): Uint8Array {
  */
 export function ensureKeeperCryptoReady(): void {
   // no-op
+}
+
+/**
+ * Whether `aid` and `regid` are one complete canonical AID and one complete canonical SAID. A registry identifier is
+ * often a peer's text (a Grant's `rd`), so text that does not decode as CESR is a key that names no stored root, not
+ * a fault: a lookup answers "not held" and only a write refuses it.
+ */
+function canonicalRegistryRootKeys(aid: string, regid: string): boolean {
+  try {
+    return new Prefixer({ qb64: aid }).qb64 === aid && new Diger({ qb64: regid }).qb64 === regid;
+  } catch (error) {
+    if (error instanceof ParserError) return false;
+    throw error;
+  }
 }

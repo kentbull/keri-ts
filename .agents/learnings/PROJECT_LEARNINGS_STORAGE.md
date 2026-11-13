@@ -88,8 +88,8 @@ not report a failing finalizer, so the composition returns its outcome through a
 The wallet also owns the app surface (`src/web/wallet-api.ts`): `identifiers`, `oobis`, `mailboxes`, `credentials` run
 the library workflows through `run(...)` so an app never does. A call that waits has a default `timeoutMs` and returns
 a typed `outcome` (remote and clock results are values); only caller-contract and infrastructure failures reject, and
-every method is `async` so none throws synchronously. `health()` adds `faulted` (owner-loop faults), `stopped` (the
-composition ended without `close()`: a runtime crash) and `closed`. The owners' `ChangeSink` is the wallet's own
+every method is `async` so none throws synchronously. `health()` adds `stopped` (the
+composition ended without `close()`: a runtime crash, which is how any loop fault surfaces) and `closed`. The owners' `ChangeSink` is the wallet's own
 (`walletChangeSink`): it forwards to the host or Signaler and records a tracked issuance when it finishes, which is
 sync; the holder's `recordAdmission` is async and consent-bearing, so `receive` records it inline, before delivery.
 Presentation selects from the wallet's inventory through `OperationStores.views`, which `openWebWallet` binds late to its `Wallet`; `credentials.present`, `requestProof` (the verifier's `apply`), `presentations` (pending Grants minus the issuance ones) and `unblind` are thin wraps of the runtime's presentation and Unblind owners, and `resendAdmit` rebuilds the stored Admit's wire (`rebuildIssuanceAdmit`) without signing.

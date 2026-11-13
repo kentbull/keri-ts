@@ -72,7 +72,7 @@ function keyState(): { pre: string; sn: number; said: string; wits: string[]; to
 /** Why a step is stuck: the wallet reports a stopped runtime and its cause through `health()`. */
 export function crashCause(): Promise<string> {
   const health = wallet?.health();
-  if (health?.status === "stopped" || health?.status === "faulted") {
+  if (health?.status === "stopped") {
     return Promise.resolve(
       `\nwallet health: ${JSON.stringify(health, (_k, v) => v instanceof Error ? describe(v) : v)}`,
     );

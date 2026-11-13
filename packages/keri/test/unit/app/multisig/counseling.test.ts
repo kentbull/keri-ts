@@ -8,11 +8,11 @@
  * through Kevery, or fan-out to other witnesses (`Receiptor` owns those).
  */
 import { Dater, Diger, GroupSizeError, NumberPrimitive, NumDex, type SerderKERI, Siger } from "cesr-ts";
-import { ensure, type Operation, run } from "effection";
+import { ensure, type Operation, run, spawn } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { type RegistryRoot, RootDeferred } from "../../../../src/acdc/salting.ts";
 import { RootReplicator } from "../../../../src/app/credentials/root-replicator.ts";
-import type { Poster } from "../../../../src/app/delivery/forwarding.ts";
+import { Poster } from "../../../../src/app/delivery/forwarding.ts";
 import { Anchorer } from "../../../../src/app/identity/delegating.ts";
 import { type Hab, type Habery, openHabery } from "../../../../src/app/identity/habbing.ts";
 import { IssuanceOperations, partyKey } from "../../../../src/app/ipex/issuance.ts";
@@ -26,6 +26,7 @@ import {
   type GroupReceipting,
   waitForGroupEvent,
 } from "../../../../src/app/multisig/counseling.ts";
+import { groupEventForwarding } from "../../../../src/app/multisig/event-forwarding.ts";
 import {
   groupElectedMember,
   groupSigningMembers,
@@ -35,9 +36,11 @@ import {
 import { remoteGroupMembers } from "../../../../src/app/multisig/multisig-messaging.ts";
 import { replaceGroupMember } from "../../../../src/app/multisig/replace-member.ts";
 import type { AgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
 import type { RotatedCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
+import { DatabaseOperationError } from "../../../../src/core/errors.ts";
 import { exchange } from "../../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
 import { MemStoreOpener } from "../../../../src/db/core/memstore.ts";
@@ -1314,6 +1317,59 @@ Deno.test("the elected member forwards a completed event to the other members, r
     assertEquals(sent.length, 2);
   });
 });
+
+Deno.test("a failed member forward does not end the Counselor loop and is retried", async () => {
+  await run(function*() {
+    const sides = yield* members(3);
+    const gid = pair(sides);
+    const event = ref(sides[0].hby.db.getEvtSerder(gid, gid)!);
+    // The runtime's own forwarding over a real Poster; no member has an endpoint, so every send fails.
+    const postman = new Poster(sides[0].hby, null, null, new FakeRuntimeHttpClient(), systemClock, null);
+    yield* spawn(() => postman.deliverDo(5));
+    const sent: string[] = [];
+    const send = postman.send.bind(postman);
+    postman.send = (evt, options) => {
+      sent.push(evt.dest);
+      return send(evt, options);
+    };
+    const elected = counselor(sides[0], [], { t: 0 }, false, undefined, groupEventForwarding(sides[0].hby, postman));
+    elected.c.start(event);
+    yield* elected.c.processOnce();
+    const others = [pres(sides)[1], pres(sides)[2]];
+    assertEquals(sent, others);
+    assertEquals(elected.c.forwardOutcomes(event).map(({ outcome }) => outcome), ["failed", "failed"]);
+    assert(elected.c.holdsForwards, "the failed members are still owed the event");
+    elected.clock.t = 2_000;
+    yield* elected.c.processOnce();
+    assertEquals(sent, [...others, ...others], "the next due pass tries them again");
+
+    // A fault in forwarding is not a member's failure: it ends the pass and spends no attempt.
+    const group = yield* members(3);
+    const brokenGid = pair(group);
+    const broken = counselor(group[0], [], { t: 0 }, false, undefined, {
+      *forward() {
+        throw new DatabaseOperationError("accepted event body is unreadable");
+      },
+    });
+    broken.c.start(ref(group[0].hby.db.getEvtSerder(brokenGid, brokenGid)!));
+    yield* assertRejectsOperation(() => broken.c.processOnce(), DatabaseOperationError);
+    assert(broken.c.holdsForwards, "the event stays owed");
+  });
+});
+
+/** An error class a test expects. */
+type ErrorClass = new(...args: never[]) => Error;
+
+/** Run `operation` and require it to throw `type`. */
+function* assertRejectsOperation(operation: () => Operation<unknown>, type: ErrorClass): Operation<void> {
+  let thrown: unknown;
+  try {
+    yield* operation();
+  } catch (error) {
+    thrown = error;
+  }
+  assert(thrown instanceof type, `expected ${type.name}, got ${String(thrown)}`);
+}
 
 /**
  * A group `[p, e]` whose member `p` has signing weight 0 (threshold `["0", "1"]`) and commits, with `n`, the group's

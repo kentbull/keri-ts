@@ -75,6 +75,16 @@ export class DatabaseOperationError extends DatabaseError {
 }
 
 /**
+ * Local durable state that the store's own records say must exist is missing or contradicts itself: a local group
+ * names a member habitat the store does not hold, for example. Never a remote outcome: no peer message removes a
+ * local record, so a long-running loop does not survive it and lets it end the runtime. Recovery is repairing or
+ * replacing the store, not retrying.
+ */
+export class MissingDurableStateError extends DatabaseError {
+  override readonly name: string = "MissingDurableStateError";
+}
+
+/**
  * A browser composition's persistence queue gave up on a write after its retries (ADR-0015 rule 3), so it accepts
  * no more commits and reports this from every later commit, flush and close. The cause is the write's first failure.
  * The latch is terminal for that composition; recovery is closing it and opening a new one.

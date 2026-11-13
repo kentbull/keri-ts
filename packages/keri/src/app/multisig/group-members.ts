@@ -1,6 +1,6 @@
 import type { SerderKERI, Verfer } from "cesr-ts";
 import { TransIdxSigGroup } from "../../core/dispatch.ts";
-import { ValidationError } from "../../core/errors.ts";
+import { MissingDurableStateError, ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import type { Baser } from "../../db/basing.ts";
 import { dgKey } from "../../db/core/keys.ts";
@@ -11,12 +11,19 @@ export function isLocalGroupHab(hby: Habery, hab: Hab): boolean {
   return !!hab.pre && !!hby.db.getHab(hab.pre)?.mid;
 }
 
-/** Return the local member habitat for a persisted group identifier. */
+/**
+ * Return the local member habitat for a persisted group identifier.
+ *
+ * @throws ValidationError when `groupPre` is not a local group (no habitat record names a local member).
+ * @throws MissingDurableStateError when the group's record names a local member the store does not hold: the
+ * store is damaged, which no remote message can cause (retirement refuses a local group's member).
+ */
 export function localGroupMember(hby: Habery, groupPre: string): Hab {
-  const record = hby.db.getHab(groupPre);
-  const member = record?.mid ? hby.habs.get(record.mid) : null;
+  const mid = hby.db.getHab(groupPre)?.mid;
+  if (!mid) throw new ValidationError(`${groupPre} is not a local group.`);
+  const member = hby.habs.get(mid);
   if (!member) {
-    throw new ValidationError(`Group ${groupPre} is missing local member metadata.`);
+    throw new MissingDurableStateError(`Group ${groupPre} names local member ${mid}, which this store does not hold.`);
   }
   return member;
 }

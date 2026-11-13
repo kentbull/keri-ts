@@ -28,7 +28,6 @@ import {
   type HttpClient,
   type KramConfig,
   openHabery,
-  type OwnerFault,
   runAgentRuntime,
   type RuntimeClock,
   signalerChangeSink,
@@ -145,10 +144,9 @@ export type OpenWebWalletOptions = WebWalletSecret & {
  * What the wallet can still do:
  * - `ok`;
  * - `latched`: a persistence write failed, so every store refuses commits (reads continue);
- * - `faulted`: the runtime runs, but an operations owner pass failed outside any single operation
- *   (`faults` of them, the latest in `last`);
  * - `stopped`: the runtime task ended without `close()`, so the stores are closed and the lock released;
- *   `cause` is the failure that ended it;
+ *   `cause` is the failure that ended it (a fault in any runtime loop, such as a store error or a
+ *   `MissingDurableStateError`, ends the runtime);
  * - `closed`: `close()` was called.
  * - `mailbox-unreachable`: the runtime gave up telling a mailbox an identifier's rotated KEL (five minutes of
  *   backed-off attempts), so the wallet cannot receive from it until it is told; a new rotation, a successful poll
@@ -156,12 +154,11 @@ export type OpenWebWalletOptions = WebWalletSecret & {
  * - `signer-unavailable`: a local identifier cannot sign because the host has not held its signer (the wallet was
  *   opened without it); `identifiers` names each with the public keys it lacks (`Habery.unsignable`, read now).
  *   Background loops skip such an identifier and act for it on the next tock after `Manager.hold`.
- * Precedence: `closed`, `stopped`, `latched`, `faulted`, `mailbox-unreachable`, `signer-unavailable`, `ok`.
+ * Precedence: `closed`, `stopped`, `latched`, `mailbox-unreachable`, `signer-unavailable`, `ok`.
  */
 export type WebWalletHealth =
   | { status: "ok" }
   | { status: "latched"; cause: unknown }
-  | { status: "faulted"; faults: number; last: OwnerFault | null }
   | { status: "mailbox-unreachable"; mailboxes: readonly { pre: string; mailbox: string; reason: string | null }[] }
   | { status: "signer-unavailable"; identifiers: readonly UnsignableHab[] }
   | { status: "stopped"; cause: unknown }
@@ -458,8 +455,6 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
       } catch (error) {
         return { status: "latched", cause: (error as Error).cause };
       }
-      const owners = parts.runtime.operations?.health;
-      if (owners?.faults) return { status: "faulted", faults: owners.faults, last: owners.last };
       const unreachable = parts.runtime.kelPublisher.status().entries.filter((entry) => entry.state === "timed-out");
       if (unreachable.length) {
         return {
