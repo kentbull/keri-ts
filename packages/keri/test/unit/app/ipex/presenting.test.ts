@@ -13,6 +13,7 @@ import { beginIssuance, issuanceStatus } from "../../../../src/app/ipex/issuance
 import {
   abandonPresentation,
   present,
+  PRESENTATION_RETRY_BOUND_MS,
   type PresentationDeps,
   PresentationOperations,
   presentationStatus,
@@ -92,7 +93,7 @@ Deno.test("an offer is signed and accepted locally at present; processOnce deliv
   });
 });
 
-Deno.test("a failing transport is retried on an interval, then the operation reads failed", async () => {
+Deno.test("a failing transport is retried with a doubling delay and ends the operation only at its bound", async () => {
   await run(function*() {
     const { s, ops, offer } = yield* setup();
     s.fail.on = true;
@@ -101,28 +102,33 @@ Deno.test("a failing transport is retried on an interval, then the operation rea
     let status = presentationStatus(ops, said);
     assertEquals(status.state === "active" && [status.attempts, status.blocked], [1, "transport failed"]);
     yield* ops.processOnce();
-    assertEquals(s.log.length, 1, "no retry before the interval has passed");
-    s.fail.on = false;
+    assertEquals(s.log.length, 1, "no retry before the delay has passed");
     s.clock.skew += 1100;
     yield* ops.processOnce();
+    status = presentationStatus(ops, said);
+    assertEquals(status.state === "active" && status.attempts, 2, "a second failure does not end it");
+    s.clock.skew += 1500;
+    yield* ops.processOnce();
+    assertEquals(s.log.length, 2, "the delay doubled, so one more second is not enough");
+    s.fail.on = false;
+    s.clock.skew += 2500;
+    yield* ops.processOnce();
     assertEquals(presentationStatus(ops, said).state, "done");
-    assertEquals(s.log.length, 2);
+    assertEquals(s.log.length, 3);
 
+    // An exchange that never reaches its peer ends at the deadline it has, or at the stated bound where it has none.
     s.fail.on = true;
     const second = yield* present(ops, {
       verb: "apply",
       hab: s.issuer.habs[0],
       options: { recipient: s.holder.habs[0].pre!, message: "apply", plan: [] },
-    }, { maxAttempts: 2 });
-    for (let i = 0; i < 2; i++) {
-      s.clock.skew += 1100;
-      yield* ops.processOnce();
-    }
-    assertEquals(presentationStatus(ops, second.said), {
-      state: "failed",
-      verb: "apply",
-      reason: "transport failed",
     });
+    yield* ops.processOnce();
+    assertEquals(presentationStatus(ops, second.said).state, "active");
+    s.clock.skew += PRESENTATION_RETRY_BOUND_MS + 1;
+    yield* ops.processOnce();
+    const ended = presentationStatus(ops, second.said);
+    assert(ended.state === "failed" || ended.state === "expired", JSON.stringify(ended));
   });
 });
 

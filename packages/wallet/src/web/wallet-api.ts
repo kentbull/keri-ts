@@ -704,7 +704,7 @@ export class Credentials extends Surface {
    */
   async present(
     input: PresentInput,
-    { timeoutMs = WALLET_TIMEOUTS.present, maxAttempts }: { timeoutMs?: number; maxAttempts?: number } = {},
+    { timeoutMs = WALLET_TIMEOUTS.present }: { timeoutMs?: number } = {},
   ): Promise<PresentOutcome | GroupPresentOutcome> {
     const { pre, ...rest } = input;
     if (isLocalGroupHab(this.parts.hby, this.hab(pre))) {
@@ -715,7 +715,7 @@ export class Credentials extends Surface {
     }
     const hab = this.individual(pre), ops = this.presenter();
     return await this.go(function*(): Operation<PresentOutcome> {
-      const begun = yield* present(ops, { ...rest, hab } as PresentationInput, { maxAttempts });
+      const begun = yield* present(ops, { ...rest, hab } as PresentationInput);
       const { said, recipient } = begun;
       const waited = yield* waitForPresentation(ops, said, { timeoutMs });
       const { status } = waited;
@@ -732,7 +732,7 @@ export class Credentials extends Surface {
   requestProof(
     pre: string,
     options: Extract<PresentInput, { verb: "apply" }>["options"],
-    wait?: { timeoutMs?: number; maxAttempts?: number },
+    wait?: { timeoutMs?: number },
   ): Promise<PresentOutcome> {
     return this.present({ verb: "apply", pre, options }, wait) as Promise<PresentOutcome>;
   }

@@ -5,7 +5,7 @@
  * Apply, Agree or Spurn (a Grant may also anchor its presentation proof under that same consent), takes
  * the signed exchange into local authenticated intake and queues it. It returns after local commit and
  * never waits for the peer. `PresentationOperations.processOnce` is the only worker: it delivers the
- * already signed bytes, retries a failed delivery on a fixed interval up to a bounded number of attempts
+ * already signed bytes, retries a failed delivery with a doubling delay until the exchange's deadline
  * and ends the operation at the Grant's original exchange deadline. It never signs.
  *
  * There is no operation store. The signed exchange is itself durable (the accepted exchange and its
@@ -35,20 +35,39 @@
  * Group identifiers are refused here: a group presents through {@link proposeGroupPresentation}, which hands the
  * frozen Grant to the group IPEX owner (`group-ipex.ts`) for member approval.
  */
-import { collectPayload, concatBytes, Counter, framePayload, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import {
+  collectPayload,
+  concatBytes,
+  Counter,
+  framePayload,
+  parseBytes,
+  type SerderACDC,
+  type SerderKERI,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { action, call, type Operation, race } from "npm:effection@^3.6.0";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { timestampMicros } from "../../time/mod.ts";
+import { registryEventRef } from "../credentials/registry-settling.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
+import { type CounselInputs } from "../multisig/counseling.ts";
+import { isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
+import { proposeRegistryEvent } from "../multisig/proposing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
+import { DeliveryOutbox } from "../runtime/delivery-outbox.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
-import { type GroupIpexBegun, type GroupIpexOperations, proposeGroupIpex } from "./group-ipex.ts";
+import {
+  type GroupIpexBegun,
+  type GroupIpexOperations,
+  proposeGroupIpex,
+  proposeGroupIpexAfter as groupIpexAfter,
+} from "./group-ipex.ts";
 import type { IpexV2BodyOptions } from "./ipex-building.ts";
 import {
   type CredentialViews,
@@ -57,12 +76,11 @@ import {
   type PreparedDisclosure,
   storedExchangeWire,
 } from "./ipex-discloser.ts";
+import { prepareAcdcV2GroupIpex } from "./ipex-grouping.ts";
 import type { IssuanceDelivery } from "./issuance.ts";
 
-/** Milliseconds between delivery attempts of a presentation whose transport failed. */
-export const PRESENTATION_RETRY_MS = 1000;
-/** Delivery attempts before a presentation reads `failed`. */
-export const PRESENTATION_MAX_ATTEMPTS = 10;
+/** How long delivery failures may last on an exchange with no deadline (an Apply, an Agree) before it reads `failed`. */
+export const PRESENTATION_RETRY_BOUND_MS = 600_000;
 
 /** The signed IPEX message a presentation operation sends. */
 export type PresentationVerb = "apply" | "offer" | "agree" | "spurn" | "grant";
@@ -83,8 +101,9 @@ export type PresentationStatus =
     verb: PresentationVerb;
     phase: "delivering";
     deadline?: string;
+    /** Consecutive delivery failures; the delivery is retried with a doubling delay. */
     attempts: number;
-    /** The last transport failure, while attempts remain. */
+    /** The last transport failure. */
     blocked?: string;
   }
   | {
@@ -159,27 +178,21 @@ export interface PresentationBegun {
   wire: Uint8Array;
 }
 
-/** Options of one `present`. */
-export interface PresentOptions {
-  /** Delivery attempts before the operation reads `failed`. */
-  maxAttempts?: number;
-}
-
 /** One delivery in progress; exists only while it is live in this process. */
 interface LivePresentation {
   /** SAID of the signed exchange. */
   readonly said: string;
   readonly verb: PresentationVerb;
   readonly hab: Hab;
+  /** The identifier whose endpoint sends it: the sender, or a group's local member. */
+  readonly src?: string;
   readonly recipient: string;
   readonly wire: Uint8Array;
   /** The exchange's original deadline (ISO 8601), for an exchange that has one. */
   readonly deadline?: string;
   readonly expires: bigint | null;
-  readonly maxAttempts: number;
-  attempts: number;
-  nextTry: number;
-  blocked?: string;
+  /** The signed bytes, delivered with retry; a failure waits for a later pass instead of ending the delivery. */
+  readonly outbox: DeliveryOutbox;
   /** A delivery is running; overlapping `processOnce` calls skip it. */
   busy: boolean;
 }
@@ -224,7 +237,7 @@ export class PresentationOperations {
   *processOnce(): Operation<void> {
     const { deps } = this;
     for (const op of [...this.live.values()]) {
-      if (op.busy || !this.live.has(op.said) || deps.clock.now() < op.nextTry) continue;
+      if (op.busy || !this.live.has(op.said)) continue;
       op.busy = true;
       try {
         const left = op.expires === null ? null : op.expires - BigInt(deps.clock.now()) * 1000n;
@@ -250,26 +263,29 @@ export class PresentationOperations {
     return "expired";
   }
 
-  /** One attempt: a failure is retried after {@link PRESENTATION_RETRY_MS} until the attempts run out. */
-  private *deliver(op: LivePresentation): Operation<"delivered" | "retry" | "failed"> {
+  /**
+   * One attempt: a failure keeps the bytes and is retried after a doubling delay until the exchange's deadline,
+   * or, for an exchange with none, until failures have lasted {@link PRESENTATION_RETRY_BOUND_MS}.
+   */
+  private *deliver(op: LivePresentation): Operation<void> {
     const { deps } = this;
-    op.attempts++;
     try {
-      const deliveries = yield* deps.delivery.deliver({ src: op.hab.pre!, dest: op.recipient, msg: op.wire });
-      this.live.delete(op.said);
-      this.settled.set(op.said, { verb: op.verb, state: "done", deliveries });
-      deps.changes?.push({ kind: "presentation", id: op.said });
-      return "delivered";
-    } catch (error) {
-      op.blocked = message(error);
-      if (op.attempts >= op.maxAttempts) {
-        this.end(op, "failed", op.blocked);
-        return "failed";
+      const done = yield* op.outbox.drain(
+        deps.delivery,
+        deps.clock,
+        op.expires === null ? PRESENTATION_RETRY_BOUND_MS : undefined,
+      );
+      if (!done) {
+        deps.changes?.push({ kind: "presentation", id: op.said });
+        return;
       }
-      op.nextTry = deps.clock.now() + PRESENTATION_RETRY_MS;
-      deps.changes?.push({ kind: "presentation", id: op.said });
-      return "retry";
+    } catch (error) {
+      this.end(op, "failed", message(error));
+      return;
     }
+    this.live.delete(op.said);
+    this.settled.set(op.said, { verb: op.verb, state: "done", deliveries: op.outbox.delivered });
+    deps.changes?.push({ kind: "presentation", id: op.said });
   }
 }
 
@@ -338,37 +354,103 @@ export function* preparePresentation(
   return { exn: prepared.exn, wire, recipient: prepared.exn.sad!.ri as string };
 }
 
+/** What a group presents and how: the view, the Grant body options and the registry update's counseling. */
+export interface GroupPresentationInput {
+  hab: Hab;
+  selection: DisclosureSelection;
+  options: PresentationOptions;
+  /** False when the caller takes the completed Grant itself (a file) and the lead must not send it. */
+  deliver?: boolean;
+  /** Counseling choices for the registry update's anchor. */
+  counsel?: CounselInputs;
+}
+
 /**
  * A group's consent to present an accepted Grant or credential view: freezes the Grant body once (selection and
  * authorization) and proposes it as a group-authored message, so the other members list and approve it with
  * `approveGroupIpex` and the elected lead delivers the completed Grant. Returns after local commit.
  *
- * A presentation registry (the Grant anchoring a presented-state update under the group's own anchor) is not
- * supported here: that update is a separate group proposal (`proposeRegistryEvent`).
+ * With `options.presentationRegistry` the Grant carries a presented-state proof: this member also proposes the
+ * registry update that anchors it (`proposeRegistryEvent`; the other members approve that proposal with
+ * `approveGroupProposal`), and the owner signs this member's contribution to the Grant once the group has accepted
+ * the update, under this same consent.
  *
- * @throws ValidationError for an identifier that is not a local group, a selection the discloser refuses, or a
- * message awaiting authenticating dependencies.
+ * @throws ValidationError for an identifier that is not a local group, an unknown presentation registry, a
+ * selection the discloser refuses, or a message awaiting authenticating dependencies.
  */
 export function* proposeGroupPresentation(
   deps: PresentationDeps,
   groupIpex: GroupIpexOperations,
-  { hab, selection, options, deliver }: {
-    hab: Hab;
-    selection: DisclosureSelection;
-    options: Omit<PresentationOptions, "presentationRegistry">;
-    /** False when the caller takes the completed Grant itself (a file) and the lead must not send it. */
-    deliver?: boolean;
-  },
+  { hab, selection, options, deliver, counsel }: GroupPresentationInput,
 ): Operation<GroupIpexBegun> {
+  const { presentationRegistry, ...body } = options;
+  const gvrsn = body.gvrsn ?? undefined;
   const discloser = discloserFor(deps, hab, selection.derive);
-  const prepared = yield* discloser.prepareGrantBody(hab.pre!, selection, options);
-  return yield* proposeGroupIpex(groupIpex, {
+  let prepared = yield* discloser.prepareGrantBody(hab.pre!, selection, body);
+  if (!presentationRegistry) {
+    return yield* proposeGroupIpex(groupIpex, { hab, exn: prepared.exn, nests: prepared.nests, gvrsn, deliver });
+  }
+  const reg = deps.rgy.registryByName(presentationRegistry);
+  if (!reg) throw new ValidationError("Unknown presentation registry.");
+  const node = parseBytes(prepared.raw)[0].body as SerderACDC;
+  if (reg.hab.pre !== hab.pre || node.issuee !== hab.pre || (node.sad!.a as { rd?: unknown }).rd !== reg.regk) {
+    throw new ValidationError("Presentation registry must match the selected disclosed local Issuee declaration.");
+  }
+  const proposals = groupIpex.deps.registry;
+  if (!proposals) throw new ValidationError("This owner was composed without group registry collaborators");
+  // The Grant SAID is frozen before the update is anchored; only its nested proof is extended afterwards.
+  const [proof, update] = reg.present(prepared.exn, "presented", { stamp: body.stamp });
+  const proposed = yield* proposeRegistryEvent(proposals, hab, update, proof, counsel);
+  const exn = prepared.exn;
+  return groupIpexAfter(groupIpex, {
     hab,
-    exn: prepared.exn,
-    nests: prepared.nests,
-    gvrsn: options.gvrsn ?? undefined,
+    exn,
+    gvrsn,
     deliver,
+    prerequisite: {
+      anchor: registryEventRef(update, proposed.event),
+      *proceed() {
+        const seal = deps.rgy.store.anchor(update.said!);
+        if (!seal) throw new ValidationError("The presentation update is accepted but its anchor is unavailable");
+        prepared = yield* discloser.attachPresentationProof(prepared, proof, { s: seal[0], d: seal[1] });
+        const candidate = concatBytes(
+          Counter.makeGVC(gvrsn ?? Vrsn_2_0),
+          prepared.exn.raw,
+          Counter.enclose({ qb64: prepared.nests, version: gvrsn ?? Vrsn_2_0 }),
+        );
+        const own = yield* prepareAcdcV2GroupIpex(deps.hby, groupIpex.deps.protocol, hab, candidate);
+        if (!own) throw new ValidationError("ACDC v2 group disclosure awaits authenticating dependencies.");
+        return own;
+      },
+    },
   });
+}
+
+/** A completed prepared Grant ready for the elected lead to deliver. */
+export interface PreparedGrantDelivery {
+  hab: Hab;
+  said: string;
+  /** Proof support and the completed Grant, in delivery order. */
+  delivery: Uint8Array;
+}
+
+/**
+ * Deliver a group's completed prepared Grant ({@link resumePresentationFile}): queues the delivery bytes for
+ * `processOnce` when the local member is the elected lead, with the retry and deadline of any presentation. Signs
+ * nothing. Returns null for a member that is not the lead.
+ */
+export function deliverPreparedGrant(
+  ops: PresentationOperations,
+  { hab, said, delivery }: PreparedGrantDelivery,
+): PresentationBegun | null {
+  const { deps } = ops, serder = deps.exc.retainedInput(said)?.serder;
+  if (!serder || serder.pre !== hab.pre) throw new ValidationError("Delivery selects the group's own prepared Grant");
+  if (!deps.exc.lead(hab, said, { pendingPresentation: true })) return null;
+  const recipient = String(serder.sad!.ri), deadline = deps.exc.exchangeDeadline(serder) ?? undefined;
+  const src = isLocalGroupHab(deps.hby, hab) ? localGroupMember(deps.hby, hab.pre!).pre! : hab.pre!;
+  queue(ops, { said, verb: "grant", hab, src, recipient, wire: delivery, deadline });
+  deps.changes?.push({ kind: "presentation", id: said });
+  return { said, recipient, wire: delivery };
 }
 
 /**
@@ -378,30 +460,23 @@ export function* proposeGroupPresentation(
 export function* present(
   ops: PresentationOperations,
   input: PresentationInput,
-  { maxAttempts = PRESENTATION_MAX_ATTEMPTS }: PresentOptions = {},
 ): Operation<PresentationBegun> {
   const { deps } = ops;
   const { exn, wire, recipient } = yield* preparePresentation(deps, input);
   const said = exn.said!, deadline = deps.exc.exchangeDeadline(exn) ?? undefined;
-  queue(ops, { said, verb: input.verb, hab: input.hab, recipient, wire, deadline }, maxAttempts);
+  queue(ops, { said, verb: input.verb, hab: input.hab, recipient, wire, deadline });
   deps.changes?.push({ kind: "presentation", id: said });
   return { said, recipient, wire };
 }
 
 function queue(
   ops: PresentationOperations,
-  op: Pick<LivePresentation, "said" | "verb" | "hab" | "recipient" | "wire" | "deadline">,
-  maxAttempts: number,
+  op: Pick<LivePresentation, "said" | "verb" | "hab" | "src" | "recipient" | "wire" | "deadline">,
 ): void {
+  const outbox = new DeliveryOutbox();
+  outbox.enqueue({ src: op.src ?? op.hab.pre!, dest: op.recipient, msg: op.wire });
   ops.settled.delete(op.said);
-  ops.live.set(op.said, {
-    ...op,
-    expires: timestampMicros(op.deadline),
-    maxAttempts,
-    attempts: 0,
-    nextTry: 0,
-    busy: false,
-  });
+  ops.live.set(op.said, { ...op, expires: timestampMicros(op.deadline), outbox, busy: false });
 }
 
 /** The signed exchange of a local sender, with the verb its route names. */
@@ -440,8 +515,8 @@ export function presentationStatus(
       verb: live.verb,
       phase: "delivering",
       deadline: live.deadline,
-      attempts: live.attempts,
-      blocked: live.blocked,
+      attempts: live.outbox.attempts,
+      blocked: live.outbox.lastError === null ? undefined : message(live.outbox.lastError),
     };
   }
   const { serder, verb } = signed(deps, said);
@@ -498,7 +573,7 @@ export function abandonPresentation(
 /**
  * Deliver a presentation again after a restart, or after delivery failed or was abandoned: rebuilds the wire
  * of the stored signed exchange from its retained signatures or source seal and nests, so the bytes are the
- * ones first delivered and nothing is signed. Queues them like `present`, with fresh bounded attempts; return
+ * ones first delivered and nothing is signed. Queues them like `present`, with a fresh outbox; return
  * is after the queueing, not after delivery.
  *
  * @throws ValidationError for an exchange no local identifier signed, one the peer already answered, one past
@@ -507,7 +582,6 @@ export function abandonPresentation(
 export function* resendPresentation(
   ops: PresentationOperations,
   said: string,
-  { maxAttempts = PRESENTATION_MAX_ATTEMPTS }: PresentOptions = {},
 ): Operation<PresentationBegun> {
   const { deps } = ops, { serder, hab, verb } = signed(deps, said);
   const status = presentationStatus(ops, said);
@@ -528,7 +602,7 @@ export function* resendPresentation(
   } else if (verb === "agree" && retained.sourceSeals?.length) support = discloser.kel(hab);
   const wire = concatBytes(discloser.kel(hab), support, yield* storedExchangeWire(retained));
   const recipient = String(serder.sad!.ri);
-  queue(ops, { said, verb, hab, recipient, wire, deadline }, maxAttempts);
+  queue(ops, { said, verb, hab, recipient, wire, deadline });
   deps.changes?.push({ kind: "presentation", id: said });
   return { said, recipient, wire };
 }

@@ -177,7 +177,7 @@ Deno.test("an operation begun while the loop idles is picked up at once, not at 
   });
 });
 
-Deno.test("a delivery that throws fails its operation and the loop keeps serving; an escaped fault is readable", async () => {
+Deno.test("a delivery that throws is retried, not failed, and the loop keeps serving; an escaped fault is readable", async () => {
   await run(function*() {
     const s = yield* scenario();
     const { operations, ipex } = s.issuer.runtime;
@@ -197,9 +197,10 @@ Deno.test("a delivery that throws fails its operation and the loop keeps serving
       credential: reg.credential(),
       options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
     });
-    yield* until(() => issuanceStatus(operations!.issuance, grant).state === "failed", 1500);
-    assertEquals(issuanceStatus(operations!.issuance, grant), { state: "failed", role: "issuer", reason: "refused" });
-    assertEquals(operations!.health.faults, 0, "an operation's own failure is not an owner fault");
+    yield* until(() => (operations!.issuance.live.get(grant)?.outbox.attempts ?? 0) > 0, 1500);
+    assertEquals(operations!.issuance.live.get(grant)?.outbox.attempts, 1, "the refusal was seen and the message kept");
+    assertEquals(issuanceStatus(operations!.issuance, grant).state, "active", "one failure does not end the issuance");
+    assertEquals(operations!.health.faults, 0, "a delivery failure is not an owner fault");
 
     // Something no operation owns throws out of an owner pass: the loop survives and records it.
     const presentation = operations!.presentation;

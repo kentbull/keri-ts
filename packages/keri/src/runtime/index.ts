@@ -866,12 +866,14 @@ export {
   approveGroupIpex,
   GROUP_IPEX_COLLECT_MS,
   GROUP_IPEX_RETRY_BOUND_MS,
+  type GroupIpexAfterInput,
   type GroupIpexBegun,
   type GroupIpexDeps,
   type GroupIpexEndState,
   GroupIpexOperations,
   type GroupIpexOutcome,
   type GroupIpexPhase,
+  type GroupIpexPrerequisite,
   type GroupIpexProposal,
   groupIpexProposals,
   type GroupIpexStatus,
@@ -879,6 +881,7 @@ export {
   type GroupIpexWaitOptions,
   proposeGroupAdmit,
   proposeGroupIpex,
+  proposeGroupIpexAfter,
   waitForGroupIpex,
 } from "../app/ipex/group-ipex.ts";
 export { RETRY_BASE_MS, RETRY_MAX_MS, RetryBackoff } from "../app/runtime/retry-backoff.ts";
@@ -906,6 +909,8 @@ export {
   beginIssuance,
   type BeginIssuanceInput,
   deliverIssuanceAdmit,
+  ISSUANCE_RETRY_BOUND_MS,
+  ISSUANCE_SWEEP_MS,
   type IssuanceAdmit,
   type IssuanceBegun,
   type IssuanceDelivery,
@@ -930,9 +935,13 @@ export {
 // Runtime-owned single-signature IPEX presentation operations (present, process, status, wait, abandon).
 export {
   abandonPresentation,
+  deliverPreparedGrant,
+  type GroupPresentationInput,
+  type PreparedGrantDelivery,
   type PreparedPresentation,
   preparePresentation,
   present,
+  PRESENTATION_RETRY_BOUND_MS,
   type PresentationBegun,
   type PresentationDeps,
   type PresentationEndState,
@@ -944,13 +953,23 @@ export {
   presentationStatus,
   type PresentationVerb,
   type PresentationWaitOptions,
-  type PresentOptions,
   proposeGroupPresentation,
   resendPresentation,
   waitForPresentation,
 } from "../app/ipex/presenting.ts";
 
 export { type PendingPresentation, pendingPresentations } from "../app/ipex/pending-presentations.ts";
+
+// Exact public Grant files for a group presentation (prepare, resume), and the delivery outbox with retry.
+export {
+  type PreparedPresentationFile,
+  preparePresentationFile,
+  type PresentationFileDeps,
+  type PresentationFileOptions,
+  type ResumedPresentationFile,
+  resumePresentationFile,
+} from "../app/ipex/presentation-files.ts";
+export { DeliveryOutbox, type Outbound, type OutboxDelivery } from "../app/runtime/delivery-outbox.ts";
 
 // Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
 export {

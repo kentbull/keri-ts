@@ -47,6 +47,7 @@ import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { RegistryCustody } from "../../acdc/custody.ts";
 import { Dhke } from "../../acdc/dhking.ts";
 import { vet } from "../../acdc/regeventing.ts";
+import { RegistryRoot } from "../../acdc/salting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
@@ -58,8 +59,8 @@ import {
   registryEventStatus,
   settleRegistryEvent,
 } from "../credentials/registry-settling.ts";
-import type { ExchangeRouteHandler } from "../exchanges/exchanging.ts";
-import type { Hab } from "../identity/habbing.ts";
+import type { Exchanger, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
+import type { Hab, Habery } from "../identity/habbing.ts";
 import type { CounselInputs } from "../multisig/counseling.ts";
 import {
   type GroupCoordinator,
@@ -223,22 +224,34 @@ function* retainLocalGrant(ops: Pick<IssuanceOperations, "deps">, child: CesrFra
   });
 }
 
+/** What deriving a custodian reads: the identities and the retained Grant. */
+export interface CustodyDeps {
+  hby: Habery;
+  exc: Exchanger;
+}
+
 /**
- * The selection a restarted group custodian was frozen with, derived from the stores: the local member that holds
- * the group's registry root is the custodian (only it retains one before the Grant completes), and the coordinator
- * is the latest accepted group event whose threshold evidence elects that member. DH only checks that the frozen
- * coordinator still elects the frozen custodian, so any such event serves. Null when no accepted event elects the
- * local member. A non-custodian that already holds a replicated root copy for a Grant still pending is the one case
- * this can mistake for a custodian; it then finishes its own Grant from the root and update, which verifies, and
- * broadcasts a proof wrapper that the other members reject because it is not the custodian's.
+ * The selection a restarted group custodian was frozen with, derived from the stores. The local member is the
+ * custodian when it holds the root of every registry the Grant discloses and received none of them as a copy: a
+ * root reaches a non-custodian only as a stored `/registry/root` exchange addressed to it, so that exchange tells
+ * a member that was sent its copy from the member whose own DH exchange retained the root. The coordinator is the
+ * latest accepted group event whose threshold evidence elects that member; DH only checks that the frozen
+ * coordinator still elects the frozen custodian, so any such event serves. Null when the member received a copy
+ * of a disclosed root, holds none, or no accepted event elects it.
  */
-export function deriveGroupCustody(
-  deps: Pick<IssuanceOperations["deps"], "hby">,
-  hab: Hab,
-): Selected | null {
+export function deriveGroupCustody(deps: CustodyDeps, hab: Hab, grant: string): Selected | null {
   const { hby } = deps;
   if (!isLocalGroupHab(hby, hab) || !hab.kever) return null;
   const member = localGroupMember(hby, hab.pre!);
+  const registries = new Set<string>();
+  for (const nest of deps.exc.retainedInput(grant)?.nests ?? []) {
+    const rd = nest.body.ked?.rd;
+    if (typeof rd === "string") registries.add(rd);
+  }
+  if (!registries.size || [...registries].some((registry) => !hab.mgr.hasRegistryRoot(hab.pre!, registry))) {
+    return null;
+  }
+  if (receivedRootCopy(hby, hab.pre!, member.pre!, registries)) return null;
   const events = [...hby.db.getKelItemIter(hab.pre!)].slice(-GROUP_COORDINATOR_SEARCH);
   for (const [, said] of events.reverse()) {
     const event = hby.db.getEvtSerder(hab.pre!, said);
@@ -249,6 +262,16 @@ export function deriveGroupCustody(
     }
   }
   return null;
+}
+
+/** Whether `member` was sent a `/registry/root` copy of the group's root for any of `registries`. */
+function receivedRootCopy(hby: Habery, group: string, member: string, registries: ReadonlySet<string>): boolean {
+  for (const [, copy] of hby.db.exns.getTopItemIter()) {
+    if (copy.route !== RegistryRoot.Route || copy.pre === member || copy.sad?.ri !== member) continue;
+    const data = copy.sad?.a as { gid?: string; rd?: string } | undefined;
+    if (data?.gid === group && typeof data.rd === "string" && registries.has(data.rd)) return true;
+  }
+  return false;
 }
 
 /**

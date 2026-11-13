@@ -43,6 +43,7 @@ import { interact, reply } from "../../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
+import { approvePending } from "../multisig/approve-pending.ts";
 
 const KRAM = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } as const;
 const BUDGET_MS = 60_000;
@@ -123,9 +124,18 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
         new Diger({ qb64: h1.hab.kever!.lastEst.d }),
         holders.flatMap((side) => side.hab.sign(body.raw, true)),
       );
-    // The holder group's coordinator: an accepted group event that elects its custodian.
+    // The holder group's presentation registry, its inception sealed by the group; the same event is the
+    // coordinator, an accepted group event that elects its custodian.
+    const presentation = h1.runtime.acdc!.makeRegistry("presented", h1.hab.pre!);
+    const presentationRip = presentation.store.event(presentation.regk!)!;
     const state = h1.hab.kever!;
-    const coordinator = interact(h1.hab.pre!, state.said, state.sn + 1, [], { version: Vrsn_2_0 });
+    const coordinator = interact(
+      h1.hab.pre!,
+      state.said,
+      state.sn + 1,
+      [{ i: presentationRip.said!, s: presentationRip.sad!.n, d: presentationRip.said! }],
+      { version: Vrsn_2_0 },
+    );
     yield* intakeAll(
       messagize(coordinator, {
         sigers: holders.flatMap((side) => side.hab.sign(coordinator.raw, true)),
@@ -164,7 +174,11 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
     const author = new RegistryAuthor(issuer.runtime.acdc!, stub);
     yield* author.incept("issued", issuer.hab.pre!);
     const registry = author.registry("issued", issuer.hab.pre!);
-    const credential = author.create(registry, { issuee: h1.hab.pre!, attribute: { name: "Ada" } });
+    yield* intakeAll(presentationRip.raw);
+    const credential = author.create(registry, {
+      issuee: h1.hab.pre!,
+      attribute: { name: "Ada", rd: presentation.regk! },
+    });
 
     const host = (side: Side) => spawn(() => runAgentRuntime(side.runtime, { hab: side.member, pollMailbox: false }));
     const hosts = [yield* host(issuer), yield* host(h1), yield* host(h2)];
@@ -226,7 +240,7 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       assertEquals((yield* waitForGroupIpex(ops, admit, { timeoutMs: BUDGET_MS })).status, {
         state: "done",
         phase: "accepted",
-      });
+      }, "the Admit reaches done");
     }
     for (const side of holders) assert(side.runtime.exc.complete(admit), `${side.name} accepted the Admit`);
     yield* until(() => issuer.runtime.exc.complete(admit), "the issuer to accept the completed Admit");
@@ -254,24 +268,38 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       clock: side.runtime.clock,
       views: wallet,
     });
-    const presented = yield* proposeGroupPresentation(presenting(h1), ops1, {
+    // --- the group presents: the registry update is proposed, approved and accepted, then the Grant is approved ---
+    const withProof = yield* proposeGroupPresentation(presenting(h1), ops1, {
       hab: h1.hab,
       selection: { fromGrant: grant, presenterAuthorized: true },
-      options: { recipient: issuer.hab.pre!, message: "Group presentation" },
+      options: {
+        recipient: issuer.hab.pre!,
+        message: "Group presentation with proof",
+        presentationRegistry: "presented",
+      },
     });
+    assertEquals(groupIpexStatus(ops1, withProof.said), { state: "active", phase: "awaitingRegistryUpdate" });
+    let update: SerderKERI | undefined;
+    yield* until(() => {
+      update = [...h2.hby.db.exns.getTopItemIter()].map(([, body]) => body).find((body) =>
+        body.route === "/multisig/bup"
+      );
+      return !!update;
+    }, "the presentation update proposal to reach the second member");
+    assert(!groupIpexProposals(ops2, h2.hab).some((proposal) => proposal.said === withProof.said));
+    assertExists(yield* approvePending(h2.hby, h2.runtime, { said: update!.said!, registryName: "presented" }));
     yield* until(
-      () => groupIpexProposals(ops2, h2.hab).some((proposal) => proposal.said === presented.said),
-      "the second member to hold the presentation proposal",
+      () => groupIpexProposals(ops2, h2.hab).some((proposal) => proposal.said === withProof.said),
+      "the second member to hold the Grant that carries the proof",
     );
-    assert(!h2.runtime.exc.complete(presented.said), "the Grant needs the second member's consent");
-    yield* approveGroupIpex(ops2, { said: presented.said });
+    yield* approveGroupIpex(ops2, { said: withProof.said });
     for (const ops of [ops1, ops2]) {
-      assertEquals((yield* waitForGroupIpex(ops, presented.said, { timeoutMs: BUDGET_MS })).status, {
+      assertEquals((yield* waitForGroupIpex(ops, withProof.said, { timeoutMs: BUDGET_MS })).status, {
         state: "done",
         phase: "accepted",
-      });
+      }, "the presentation with proof reaches done");
     }
-    yield* until(() => issuer.runtime.exc.complete(presented.said), "the issuer to accept the presented Grant");
+    yield* until(() => issuer.runtime.exc.complete(withProof.said), "the issuer to accept the Grant with its proof");
     for (const task of hosts) yield* task.halt();
   });
 });
