@@ -3,7 +3,8 @@
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { selectNewcomerCopies } from "@keri-ts/multisync/v2";
-import { createWalletBaser, Wallet, WalletAuthor } from "@keri-ts/wallet";
+import { Wallet, WalletAuthor } from "@keri-ts/wallet";
+import { createWalletBaser } from "@keri-ts/wallet/lmdb";
 import {
   type CesrFrame,
   collectPayload,
@@ -1120,21 +1121,21 @@ for (const keys of [1, 2]) {
       const frame = parseBytes(query)[0], envelope = envelopeFromFrame(frame);
       const proof = envelope.tsgs[0], last = envelope.ssgs[0];
       if (keys === 1) yield* right.runtime.reactor.processBytes(query);
-      else for (let index = 0; index < keys; index++) {
-        const fragment: CesrFrame = {
-          ...frame,
-          attachments: envelope.tsgs.length
-            ? messageAttachmentGroups({
-              tsgs: [new TransIdxSigGroup(proof.prefixer, proof.seqner, proof.diger, [proof.sigers[index]])],
-            }, Vrsn_2_0)
-            : parseBytes(messagize(envelope.serder, {
-              sigers: [last.sigers[index]],
-              seal: SealLast.fromTuple([last.prefixer]),
-              gvrsn: Vrsn_2_0,
-            }))[0].attachments,
-        };
-        yield* right.runtime.reactor.processBytes(yield* call(() => collectPayload(framePayload(fragment))));
-      }
+      else {for (let index = 0; index < keys; index++) {
+          const fragment: CesrFrame = {
+            ...frame,
+            attachments: envelope.tsgs.length
+              ? messageAttachmentGroups({
+                tsgs: [new TransIdxSigGroup(proof.prefixer, proof.seqner, proof.diger, [proof.sigers[index]])],
+              }, Vrsn_2_0)
+              : parseBytes(messagize(envelope.serder, {
+                sigers: [last.sigers[index]],
+                seal: SealLast.fromTuple([last.prefixer]),
+                gvrsn: Vrsn_2_0,
+              }))[0].attachments,
+          };
+          yield* right.runtime.reactor.processBytes(yield* call(() => collectPayload(framePayload(fragment))));
+        }}
       assertEquals(right.dh.outgoing.length, 0, "no consent, no reply");
       assertExists(right.hby.db.heldq.get([grant.said!]), "the accepted query is persisted");
       const resend = yield* right.runtime.protocol.dispatch(parseBytes(query)[0]);

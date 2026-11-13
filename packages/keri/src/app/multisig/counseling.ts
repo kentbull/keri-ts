@@ -117,6 +117,11 @@ export interface GroupReceipting {
   get(pre: string, options: { sn: number; said: string }): Operation<boolean>;
 }
 
+/** Publishes a completed group rotation to the group's mailboxes; `tellMailboxes` over the runtime's HTTP fits. */
+export interface GroupMailboxes {
+  tell(pre: string): Operation<unknown>;
+}
+
 /** Grace before a non-elected member submits receipts itself. */
 export const DEFAULT_FALLBACK_AFTER_MS = 60_000;
 /** First and longest wait between receipt attempts for one event. */
@@ -167,6 +172,8 @@ export class Counselor {
    * @param clock Time source for fallback and retry; only `now` is used.
    * @param changes Optional sink told `{kind:"group", id:"<pre>:<sn>"}` after commits.
    * @param delegation Anchorer and query port for delegated events; omit for non-delegated hosts.
+   * @param mailboxes Told the group once one of its rotations completes, so each member's runtime that has the
+   *   group's mailbox role authorized publishes the new key state; duplicates from several members are harmless.
    */
   constructor(
     private readonly hby: Habery,
@@ -174,6 +181,7 @@ export class Counselor {
     private readonly clock: Pick<RuntimeClock, "now">,
     private readonly changes?: ChangeSink,
     private readonly delegation?: GroupDelegation,
+    private readonly mailboxes?: GroupMailboxes,
   ) {
     this.anchorQuery = delegation && { hby, querying: delegation.querying, retryPasses: new Map() };
   }
@@ -352,7 +360,7 @@ export class Counselor {
   ): Operation<void> {
     const { anchorer } = this.delegation!;
     if (anchorer.complete(event.pre, event.sn)) {
-      this.finish(this.hby.db.gdee, event, row);
+      yield* this.finish(this.hby.db.gdee, event, row);
       return;
     }
     // The Anchorer asks the delegator only once the event's witnesses have receipted it.
@@ -386,7 +394,7 @@ export class Counselor {
   }
 
   /** Record completion of a counseled event and drop its row from `table`. */
-  private finish(table: Baser["gpse"], event: GroupEventRef, row: [NumberPrimitive, Diger]): void {
+  private *finish(table: Baser["gpse"], event: GroupEventRef, row: [NumberPrimitive, Diger]): Operation<void> {
     const db = this.hby.db;
     db.transaction(() => {
       table.rem([event.pre], row);
@@ -394,6 +402,11 @@ export class Counselor {
     });
     this.runs.delete(this.runKey(event));
     this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
+    const ilk = db.getEvtSerder(event.pre, event.said)?.ilk;
+    if (this.mailboxes && (ilk === Ilks.rot || ilk === Ilks.drt)) {
+      // The event is complete whether or not a mailbox hears of it; the poller repairs one that refuses.
+      yield* this.mailboxes.tell(event.pre);
+    }
   }
 
   /** Complete events whose own witness threshold is met; otherwise submit or fetch receipts. */
@@ -408,7 +421,7 @@ export class Counselor {
         yield* this.pursueReceipts(event, serder);
         if (!db.fullyWitnessed(serder)) continue;
       }
-      this.finish(db.gpwe, event, [number, diger]);
+      yield* this.finish(db.gpwe, event, [number, diger]);
     }
   }
 

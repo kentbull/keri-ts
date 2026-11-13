@@ -304,6 +304,7 @@ export {
   type IpexRoute,
   ipexSpurnExn,
 } from "../app/ipex/ipexing.ts";
+export { type KelPublishingDeps, type MailboxPublication, tellMailboxes } from "../app/mailbox/kel-publishing.ts";
 export {
   addMailbox,
   completeGroupMailbox,
@@ -851,6 +852,29 @@ export {
   type WaitForIpexArrivalOptions,
 } from "../app/mailbox/ipex-arrival.ts";
 
+// Runtime-owned group IPEX messages (a group holder's Admit): propose, approve, status, wait.
+export {
+  abandonGroupIpex,
+  approveGroupIpex,
+  GROUP_IPEX_COLLECT_MS,
+  GROUP_IPEX_RETRY_BOUND_MS,
+  type GroupIpexBegun,
+  type GroupIpexDeps,
+  type GroupIpexEndState,
+  GroupIpexOperations,
+  type GroupIpexOutcome,
+  type GroupIpexPhase,
+  type GroupIpexProposal,
+  groupIpexProposals,
+  type GroupIpexStatus,
+  groupIpexStatus,
+  type GroupIpexWaitOptions,
+  proposeGroupAdmit,
+  proposeGroupIpex,
+  waitForGroupIpex,
+} from "../app/ipex/group-ipex.ts";
+export { RETRY_BASE_MS, RETRY_MAX_MS, RetryBackoff } from "../app/runtime/retry-backoff.ts";
+
 // Runtime-owned group DH issuance: consent calls for the custodian and the members, proof export.
 export {
   approveGroupIssuanceExchange,
@@ -890,6 +914,7 @@ export {
   pendingIssuanceGrants,
   posterDelivery,
   prepareIssuanceGrant,
+  rebuildIssuanceAdmit,
   waitForIssuance,
 } from "../app/ipex/issuance.ts";
 
@@ -914,6 +939,8 @@ export {
   resendPresentation,
   waitForPresentation,
 } from "../app/ipex/presenting.ts";
+
+export { type PendingPresentation, pendingPresentations } from "../app/ipex/pending-presentations.ts";
 
 // Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
 export {

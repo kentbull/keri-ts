@@ -18,6 +18,7 @@
 import type { Operation } from "npm:effection@^3.6.0";
 import { TopicsRecord } from "../../core/records.ts";
 import { Roles } from "../../core/roles.ts";
+import type { Baser } from "../../db/basing.ts";
 import { openOwner } from "../../db/core/store-owner.ts";
 import { Mailboxer, type MailboxerOptions } from "../../db/mailbox/mailboxing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
@@ -130,6 +131,15 @@ export function updateMailboxRemoteCursor(
   hby.db.tops.pin([pre, witness], record);
 }
 
+/** AIDs `pre` currently has an authorized mailbox role with, in stored order. */
+export function authorizedMailboxes(db: Baser, pre: string): string[] {
+  const eids: string[] = [];
+  for (const [keys, end] of db.ends.getTopItemIter([pre, Roles.mailbox], { topive: true })) {
+    if (end.allowed && keys[2]) eids.push(keys[2]);
+  }
+  return eids;
+}
+
 /**
  * Enumerate authorized mailbox providers and the subject's current KEL witnesses.
  *
@@ -142,10 +152,7 @@ export function updateMailboxRemoteCursor(
  * @returns One HTTPS-preferred HTTP target per provider AID, with stable worker keys.
  */
 export function mailboxPollEndpoints(hab: Hab): Array<{ key: string; eid: string; url: string }> {
-  const eids = new Set<string>();
-  for (const [keys, end] of hab.db.ends.getTopItemIter([hab.pre, Roles.mailbox], { topive: true })) {
-    if (end.allowed && keys[2]) eids.add(keys[2]);
-  }
+  const eids = new Set<string>(authorizedMailboxes(hab.db, hab.pre));
   for (const eid of hab.kever?.wits ?? []) eids.add(eid);
 
   const endpoints: Array<{ key: string; eid: string; url: string }> = [];

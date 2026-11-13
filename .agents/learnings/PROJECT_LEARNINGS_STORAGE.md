@@ -57,10 +57,10 @@ real-engine behavior (durability hints, eviction, blocked ordering) is only chec
 It is public only as `keri-ts/db/indexeddb` (`IndexedDbPersistence`, `indexedDbOpener`), never from
 `keri-ts/db`, whose Node consumers must not type-check DOM types.
 
-`@keri-ts/wallet` splits by backend: the root keeps LMDB `createWalletBaser` and stays Node-only
-(no `browser` condition); `@keri-ts/wallet/web` has the same surface minus LMDB plus
-`openWalletBaser(opener, identity)`. Open application stores through the composition's opener
-(`hby.opener`) so they share its one `WebStoreOpener` queue.
+`@keri-ts/wallet` splits by backend: the root and `./web` are browser-safe (both carry a `browser` condition and
+the boundary check and the esbuild bundle gate cover both); only `@keri-ts/wallet/lmdb` (`createWalletBaser`) reaches
+LMDB and has none. The root has `openWalletBaser(opener, identity)`; `./web` adds `openWebWallet`. Open application
+stores through the composition's opener (`hby.opener`) so they share its one `WebStoreOpener` queue.
 
 Browser host duties live in `keri-ts/runtime/web`. `barrierHttpClient` (ADR-0015 rule 6) waits on
 `WebStoreOpener.queue.flushed()`, not one store's `flushed()`: the queue is shared by every family
@@ -89,7 +89,7 @@ every method is `async` so none throws synchronously. `health()` adds `faulted` 
 composition ended without `close()`: a runtime crash) and `closed`. The owners' `ChangeSink` is the wallet's own
 (`walletChangeSink`): it forwards to the host or Signaler and records a tracked issuance when it finishes, which is
 sync; the holder's `recordAdmission` is async and consent-bearing, so `receive` records it inline, before delivery.
-Presentation needs `PresentationDeps.views` (the wallet) from the runtime composition and is not exposed yet.
+Presentation selects from the wallet's inventory through `OperationStores.views`, which `openWebWallet` binds late to its `Wallet`; `credentials.present`, `requestProof` (the verifier's `apply`), `presentations` (pending Grants minus the issuance ones) and `unblind` are thin wraps of the runtime's presentation and Unblind owners, and `resendAdmit` rebuilds the stored Admit's wire (`rebuildIssuanceAdmit`) without signing.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;

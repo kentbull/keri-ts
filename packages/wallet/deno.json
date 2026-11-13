@@ -3,12 +3,13 @@
   "version": "2.1.0",
   "exports": {
     ".": "./mod.ts",
-    "./web": "./web.ts"
+    "./web": "./web.ts",
+    "./lmdb": "./lmdb.ts"
   },
   "tasks": {
-    "check": "deno check mod.ts web.ts scripts/*.ts test/*.ts && deno run -A scripts/check_library_boundary.ts",
+    "check": "deno check mod.ts web.ts lmdb.ts scripts/*.ts test/*.ts && deno run -A scripts/check_library_boundary.ts",
     "test": "deno test -A test",
-    "lint": "deno lint mod.ts web.ts src scripts test --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
+    "lint": "deno lint mod.ts web.ts lmdb.ts src scripts test --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
     "check:surface": "deno run -A scripts/check_library_boundary.ts",
     "build:npm": "deno run -A scripts/build_npm.ts"
   },

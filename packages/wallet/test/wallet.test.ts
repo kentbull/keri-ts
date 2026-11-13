@@ -50,7 +50,8 @@ import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messageAttachmentGroups } from "../../keri/src/core/protocol-serialization.ts";
 import { graphDisclosures } from "../../keri/test/integration/app/ipex/disclosures.ts";
 import { preparePresentationGrant, resumePresentationGrant } from "../../tufa/src/cli/commands/ipex-presentation.ts";
-import { createWalletBaser, Wallet } from "../mod.ts";
+import { createWalletBaser } from "../lmdb.ts";
+import { Wallet } from "../mod.ts";
 import { anchorExchange, WalletDiscloser } from "../src/disclosing.ts";
 
 /** Sign each exact node/EXN with its owning real habitat. */

@@ -17,7 +17,8 @@ import {
   ValidationError,
 } from "keri-ts/runtime";
 import { createProtocolHandler } from "../../hosting/mod.ts";
-import { createWalletBaser, Wallet, WalletAuthor } from "../mod.ts";
+import { createWalletBaser } from "../lmdb.ts";
+import { Wallet, WalletAuthor } from "../mod.ts";
 import { RegistryCustody } from "../src/custody.ts";
 import { WalletDiscloser } from "../src/disclosing.ts";
 

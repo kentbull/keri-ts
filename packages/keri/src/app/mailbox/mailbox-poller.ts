@@ -8,13 +8,12 @@ import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { isLegacyCesrMediaRejection, readResponseDetail } from "../transport/cesr-egress.ts";
 import {
   buildCesrRequest,
-  buildCesrStreamRequest,
   CESR_CONTENT_TYPE,
   KERIPY_CESR_JSON_CONTENT_TYPE,
 } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { requestWithHeaderTimeout } from "../transport/httping.ts";
-import { collectKelSubmission } from "./kel-submission.ts";
+import { postKelToMailbox } from "./kel-publishing.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import { mailboxPollEndpoints } from "./mailboxing.ts";
@@ -227,7 +226,7 @@ export class MailboxPoller {
       let outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
       if (outcome === "unauthorized") {
         const head = this.unpostedHead(target, posted);
-        if (head && (yield* this.postKel(target, endpoint))) {
+        if (head && (yield* postKelToMailbox(this, target.targetPre, endpoint)).outcome === "told") {
           posted = head;
           outcome = yield* this.pollRemoteEndpointOnce(target, endpoint, onBatch);
         }
@@ -250,29 +249,6 @@ export class MailboxPoller {
     const kever = this.hby.db.getKever(target.targetPre);
     const said = kever?.serder.said ?? null;
     return said && said !== posted && this.hby.db.fullyWitnessed(kever!.serder) ? said : null;
-  }
-
-  /**
-   * Post the subject's KEL, with its delegation chain and stored receipts, to the endpoint's CESR ingress.
-   * A mailbox authenticates a poll against the key state it holds, which is only as new as the last KEL it
-   * was given; a rotation it has not seen makes it refuse the requester. The replay is a separate request,
-   * never prefixed to the poll, because a host answers with the response to the first message of a body.
-   *
-   * @returns True when the host accepted the bytes; a failure leaves the worker on its backoff.
-   */
-  private *postKel(target: MailboxPollTarget, endpoint: { eid: string; url: string }): Operation<boolean> {
-    const { replay } = collectKelSubmission(this.hby, target.targetPre);
-    const request = buildCesrStreamRequest(replay, { destination: endpoint.eid });
-    try {
-      const response = yield* this.http.request(endpoint.url, {
-        method: "POST",
-        headers: request.headers,
-        body: request.body,
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
   }
 
   /**

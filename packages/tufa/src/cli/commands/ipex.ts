@@ -4,12 +4,11 @@ import {
   BlindState,
   BoundState,
   concatBytes,
-  Counter,
   Matter,
   parseBytes,
   type SerderACDC,
   type SerderKERI,
-  Vrsn_2_0,
+  type Versionage,
 } from "cesr-ts";
 import { call, type Operation, race, scoped, sleep, spawn } from "effection";
 import {
@@ -33,27 +32,22 @@ import {
 import {
   admitIssuance,
   type AgentRuntime,
-  approveStoredMultisigIpexWrappers,
-  CREDENTIAL_MAILBOX_TOPIC,
   deliverIssuanceAdmit,
   type Hab,
-  type Habery,
   isLocalGroupHab,
   Organizer,
   posterDelivery,
-  prepareAcdcV2GroupIpex,
   preparePresentation,
   present,
   type PresentationDeps,
   type PresentationInput,
   PresentationOperations,
-  publishInitialGroupIpex,
+  proposeGroupIpex,
   Receiptor,
   type RegistryDisclosure,
-  requireAcdcV2GroupUse,
   runAgentRuntime,
-  sendCompletedGroupIpex,
   ValidationError,
+  waitForGroupIpex,
   waitForPresentation,
 } from "keri-ts/runtime";
 import { withAgentRuntime, withHabAndAgentRuntime } from "../support/context.ts";
@@ -74,59 +68,49 @@ function printSend({ exn, deliveries, group }: IpexSendResult): void {
     });}
 }
 
-/** CLI owns the existing finite approval wait; protocol completion never substitutes for graph-use authorization. */
+/**
+ * Propose a group-authored v2 IPEX message through the runtime's group IPEX owner and observe it to the finite
+ * approval wait. The owner publishes, collects, authorizes graph use and, unless `--out` takes the completed
+ * message, lets the elected lead send it; this only hosts the workers and writes the file.
+ */
 function* acdcV2GroupDisclosure(
-  hby: Habery,
   runtime: AgentRuntime,
   hab: Hab,
   exn: SerderKERI,
-  candidate: Uint8Array,
+  nests: Uint8Array,
+  gvrsn: Versionage,
   args: Record<string, unknown>,
 ) {
   const timeout = parseNumberOption(args.approvalTimeoutSeconds, "approval-timeout") ?? 60;
   if (!Number.isFinite(timeout) || timeout < 0) throw new ValidationError("--approval-timeout must be nonnegative.");
-  const own = yield* prepareAcdcV2GroupIpex(hby, runtime.protocol, hab, candidate);
-  if (!own) throw new ValidationError("ACDC v2 group disclosure awaits authenticating dependencies.");
-  const host = yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
-  try {
-    const publication = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, hab, own, Vrsn_2_0);
-    const deadline = Date.now() + timeout * 1000;
-    while (!runtime.exc.complete(exn.said!)) {
-      yield* approveStoredMultisigIpexWrappers(hby, runtime.protocol, exn.said!, null);
-      if (runtime.exc.complete(exn.said!) || Date.now() >= deadline) break;
-      yield* sleep(Math.min(250, deadline - Date.now()));
-    }
-    if (!runtime.exc.complete(exn.said!)) {
-      return { said: exn.said!, accepted: false, status: "multisig-pending", ...publication };
-    }
-    requireAcdcV2GroupUse(hby, runtime.protocol, exn);
-    const out = parseStringOption(args.out, "out");
-    let deliveries = publication.deliveries;
-    if (out) {
-      const chunks: Uint8Array[] = [];
-      yield* call(async () => {
-        for await (const chunk of runtime.exc.replay(exn.said!)) chunks.push(chunk);
-      });
-      Deno.writeFileSync(out, concatBytes(...chunks));
-    } else if (runtime.exc.lead(hab, exn.said!)) {
-      deliveries = [
-        ...deliveries,
-        ...yield* sendCompletedGroupIpex(
-          hby,
-          runtime.postman,
-          null,
-          hab,
-          exn,
-          Vrsn_2_0,
-          runtime.acdc!.store,
-          runtime.exc,
-        ),
-      ];
-    }
-    return { said: exn.said!, accepted: true, status: "multisig-complete", messages: publication.messages, deliveries };
-  } finally {
-    yield* host.halt();
+  const ops = runtime.operations?.groupIpex;
+  if (!ops) throw new ValidationError("ACDC v2 group IPEX requires the runtime's operation owners.");
+  const out = parseStringOption(args.out, "out");
+  yield* proposeGroupIpex(ops, { hab, exn, nests, gvrsn, deliver: !out });
+  const said = exn.said!;
+  yield* withRuntimeWorkers(
+    runtime,
+    { hab, pollMailbox: true },
+    () => waitForGroupIpex(ops, said, { timeoutMs: timeout * 1000 }),
+  );
+  const outcome = ops.outcomes.get(said);
+  if (!runtime.exc.complete(said)) {
+    return { said, accepted: false, status: "multisig-pending", ...(outcome ?? { messages: [], deliveries: [] }) };
   }
+  if (out) {
+    const chunks: Uint8Array[] = [];
+    yield* call(async () => {
+      for await (const chunk of runtime.exc.replay(said)) chunks.push(chunk);
+    });
+    Deno.writeFileSync(out, concatBytes(...chunks));
+  }
+  return {
+    said,
+    accepted: true,
+    status: "multisig-complete",
+    messages: outcome?.messages ?? [],
+    deliveries: [...(outcome?.deliveries ?? []), ...(outcome?.sent ?? [])],
+  };
 }
 
 /** Display a completed apply attempt after resource cleanup. */
@@ -229,12 +213,7 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
         const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
         if (isLocalGroupHab(hby, hab)) {
           const admit = yield* wallet.prepareAdmitBody(said, hab.pre, { consent, message, gvrsn });
-          const candidate = concatBytes(
-            Counter.makeGVC(gvrsn),
-            admit.raw,
-            Counter.enclose({ qb64: new Uint8Array(), version: gvrsn }),
-          );
-          const result = yield* acdcV2GroupDisclosure(hby, runtime, hab, admit, candidate, args);
+          const result = yield* acdcV2GroupDisclosure(runtime, hab, admit, new Uint8Array(), gvrsn, args);
           if (!result.accepted) return { ...result, grant: said };
           const admission = yield* call(() => wallet.recordAdmission(said, admit.said!, { consent }));
           return { ...result, ...admission };
@@ -383,12 +362,7 @@ function* acdcV2Disclosure(
             const seal = runtime.acdc.store.anchor(update.said!)!;
             selected = yield* discloser.attachPresentationProof(selected, proof, { s: seal[0], d: seal[1] });
           }
-          const candidate = concatBytes(
-            Counter.makeGVC(options.gvrsn),
-            selected.exn.raw,
-            Counter.enclose({ qb64: selected.nests, version: options.gvrsn }),
-          );
-          return yield* acdcV2GroupDisclosure(hby, runtime, hab, selected.exn, candidate, args);
+          return yield* acdcV2GroupDisclosure(runtime, hab, selected.exn, selected.nests, options.gvrsn, args);
         }
         // TODO(group proposal API): group Apply/Offer/Agree/Spurn still take the single-signature path, which
         // refuses a group identifier; the group Grant branch above stays here until that API replaces it.
