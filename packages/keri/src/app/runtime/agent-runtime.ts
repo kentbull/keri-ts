@@ -209,6 +209,12 @@ export interface AgentRuntimeOptions {
   /** Construct a provider mailbox store. Omitted leaves it absent; injected mailboxer stays borrowed. */
   enableMailboxStore?: boolean;
   /**
+   * Agent side of relay mode: `/fwd` intake delivers the child of a sender that authorized this host as its
+   * `mailbox` or `agent`, through this runtime's own ingress to a local habitat and through its Poster to anyone
+   * else. Requires a mailbox store, which hosts `/fwd` intake. Omitted or false keeps store-only intake.
+   */
+  relaying?: boolean;
+  /**
    * Header and poll-window overrides, in milliseconds, for this runtime's mailbox poller. Omitted values keep
    * the poller defaults; a short `maxPollDurationMs` makes polls turn over quickly for an embedder or test.
    */
@@ -344,6 +350,9 @@ export function* createAgentRuntime(
   ) {
     throw new RangeError("AgentRuntime notification services require its exact Signator, Noter and Signaler");
   }
+  if (options.relaying && !options.mailboxer && !options.enableMailboxStore) {
+    throw new RangeError("Relaying requires a mailbox store for /fwd intake");
+  }
   const mailboxer = options.mailboxer
     ?? (options.enableMailboxStore ? (yield* openRuntimeMailboxer(hby)) : null);
   const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
@@ -461,7 +470,7 @@ export function* createAgentRuntime(
   });
   const respondant = new Respondant(hby, postman);
   if (mailboxer) {
-    exc.addHandler(new ForwardHandler(mailboxDirector));
+    exc.addHandler(new ForwardHandler(mailboxDirector, options.relaying ? { postman, reactor } : null));
   }
   for (const route of exc.routes.keys()) {
     if (route === ForwardHandler.resource) {
