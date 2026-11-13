@@ -579,13 +579,22 @@ export class Proposals {
       const hab = this.#scope.group(grant.group);
       const parts = this.#scope.parts;
       return await this.#scope.go(function*(): Operation<ProposalOutcome> {
-        if (!issuance.live.has(id) && !issuance.deps.exc.complete(id)) {
-          yield* approveGroupIssuance(issuance, id);
-          // The member records the credential when the issuance completes, as the custodian does.
-          const origin = issuance.deps.exc.retainedInput(id, { pending: true })?.nests?.[0]?.body;
-          if (origin instanceof SerderACDC && origin.regid) trackGroupIssuance(parts, hab, id, origin, origin.regid);
-        }
+        if (!issuance.live.has(id) && !issuance.deps.exc.complete(id)) yield* approveGroupIssuance(issuance, id);
+        // The member records the credential when the issuance completes, as the custodian does. Tracking lives in
+        // memory, so a page that reloaded after its consent (or finished the issuance while closed) tracks it here
+        // on the next call instead of never recording it.
+        const origin = issuance.deps.exc.retainedInput(id)?.nests?.[0]?.body;
+        if (
+          origin instanceof SerderACDC && origin.regid && !parts.tracked.has(id)
+          && !parts.inventory.issued.get([origin.said!])
+        ) trackGroupIssuance(parts, hab, id, origin, origin.regid);
         const waited = yield* waitForIssuance(issuance, id, { timeoutMs });
+        // A finished issuance sends no further change, so give the recorder its try now.
+        try {
+          if (parts.tracked.get(id)?.()) parts.tracked.delete(id);
+        } catch {
+          // The registry root copy has not arrived; its `root` change gives the recorder another try.
+        }
         return { id, family: "issuance", ...issuanceSummary(waited) };
       });
     }

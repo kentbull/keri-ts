@@ -10,15 +10,15 @@ import { echoHandler } from "./transport_echo.ts";
 const packageDir = new URL("../", import.meta.url);
 export const engines: Record<string, BrowserType> = { chromium, firefox, webkit };
 
-/** Pick engines from arguments, then `KERI_BROWSER_ENGINES` (comma separated), else all. */
-export function selectEngines(): string[] {
+/** Pick engines from arguments, then `KERI_BROWSER_ENGINES` (comma separated), else `fallback` (default all). */
+export function selectEngines(fallback: string[] = Object.keys(engines)): string[] {
   const requested = Deno.args.length ? Deno.args : (Deno.env.get("KERI_BROWSER_ENGINES")?.split(",") ?? []);
   const names = requested.map((name) => name.trim()).filter(Boolean);
   const unknown = names.filter((name) => !(name in engines));
   if (unknown.length) {
     throw new Error(`Unknown browser engine: ${unknown.join(", ")}. Choose from ${Object.keys(engines).join(", ")}.`);
   }
-  return names.length ? [...new Set(names)] : Object.keys(engines);
+  return names.length ? [...new Set(names)] : fallback;
 }
 
 /**

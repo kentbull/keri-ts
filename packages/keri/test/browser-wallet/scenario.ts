@@ -18,8 +18,12 @@ export interface Context {
   page(step: string, args?: Record<string, unknown>): Promise<any>;
   /** Run one `tufa` command on the counterparty's store; throws unless it exits 0. */
   peer(args: string[], timeoutMs?: number): Promise<PeerResult>;
-  /** Replace the counterparty store's configuration file (used for KRAM). */
-  peerConfig(config: unknown): Promise<void>;
+  /** Replace a counterparty store's configuration file (used for KRAM); `name` defaults to this run's `store`. */
+  peerConfig(config: unknown, name?: string): Promise<void>;
+  /** Write a file into the counterparty's container and return its path (for commands that read a file). */
+  peerFile(name: string, content: string): Promise<string>;
+  /** Reload the browser tab and wait for the page entry to run again; all page module state is lost. */
+  reload(): Promise<void>;
   /** `tufa` store options selecting this run's counterparty store. */
   store: string[];
   /** Values earlier steps recorded. */
@@ -79,7 +83,7 @@ function sendChallenge(peer: Context["peer"], store: string[], recipient: string
 }
 
 /** `tufa ipex setup` refuses a Grant the counterparty's store does not hold yet. */
-const NO_GRANT_YET = "Select the exact unanchored pending issuance Grant";
+export const NO_GRANT_YET = "Select the exact unanchored pending issuance Grant";
 
 /**
  * The counterparty comes online and takes the Grant: poll its mailbox until the Grant is stored, then run
@@ -87,16 +91,21 @@ const NO_GRANT_YET = "Select the exact unanchored pending issuance Grant";
  * Admit, still in the mailbox when 4b begins, ends it before the Grant has arrived. A wallet's own poller runs
  * all the time and has no such gap.
  */
-async function setupWhenGranted(
+export async function setupWhenGranted(
   peer: Context["peer"],
   store: string[],
   grant: string,
   attempts = 20,
+  alias = "peer",
+  timeoutSeconds = 150,
 ): Promise<PeerResult> {
   for (let attempt = 1;; attempt++) {
-    await peer(["ipex", "poll", ...store, "-a", "peer", "--timeout", "3"]);
+    await peer(["ipex", "poll", ...store, "-a", alias, "--timeout", "3"]);
     try {
-      return await peer(["ipex", "setup", ...store, "-a", "peer", "--said", grant, "--timeout", "150"], 170_000);
+      return await peer(
+        ["ipex", "setup", ...store, "-a", alias, "--said", grant, "--timeout", String(timeoutSeconds)],
+        (timeoutSeconds + 20) * 1000,
+      );
     } catch (error) {
       if (attempt >= attempts || !String(error instanceof Error ? error.message : error).includes(NO_GRANT_YET)) {
         throw error;

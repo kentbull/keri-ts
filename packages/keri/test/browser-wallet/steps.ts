@@ -10,6 +10,7 @@
 import { openWebWallet, type WebWallet } from "../../../wallet/web.ts";
 import { type Hab, mailboxStatus, oobiStatus } from "../../runtime.ts";
 import { dgKey } from "../../src/db/core/keys.ts";
+import { assert, describe, waitUntil } from "./page-support.ts";
 
 /** Servers and identities the runner passes to every step. */
 export interface StepArgs {
@@ -28,11 +29,6 @@ let wallet: WebWallet | undefined;
 let hab: Hab | undefined;
 /** The issuance in flight: its call, started by step 4c and finished by step 4d. */
 let issuing: Promise<unknown> | undefined;
-
-/** Fail the step with `message` unless `condition` holds. */
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
 
 /** The open wallet, or a failure naming the step that needs it. */
 function open(): WebWallet {
@@ -73,12 +69,6 @@ function keyState(): { pre: string; sn: number; said: string; wits: string[]; to
   };
 }
 
-/** Error text including causes, for the report. */
-function describe(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-  return `${error.name}: ${error.message}${error.cause ? ` <- ${describe(error.cause)}` : ""}`;
-}
-
 /** Why a step is stuck: the wallet reports a stopped runtime and its cause through `health()`. */
 export function crashCause(): Promise<string> {
   const health = wallet?.health();
@@ -91,19 +81,10 @@ export function crashCause(): Promise<string> {
 }
 
 /** Wait until `read` returns a value, polling the library status; fail at the deadline. */
-async function until<T>(label: string, read: () => T | undefined, timeoutMs = 60_000): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  let last: unknown;
-  while (Date.now() < deadline) {
-    try {
-      const value = read();
-      if (value !== undefined) return value;
-    } catch (error) {
-      last = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`${label} not reached in ${timeoutMs} ms${last ? `: ${describe(last)}` : ""}${await crashCause()}`);
+function until<T>(label: string, read: () => T | undefined, timeoutMs = 60_000): Promise<T> {
+  return waitUntil(label, read, () => "", timeoutMs).catch(async (error) => {
+    throw new Error(`${error.message}${await crashCause()}`);
+  });
 }
 
 /** Step 4a (holder): wait for the counterparty's Grant, then take the credential in one call. */
