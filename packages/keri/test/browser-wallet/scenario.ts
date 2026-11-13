@@ -284,9 +284,8 @@ export const steps: Step[] = [
     needs: ["5 close, reopen, durable state present, mailbox polling resumes"],
     run: async ({ page, peer, facts, store, servers }) => {
       facts.rotation = await page("rotate");
-      // The mailbox has not seen the rotation and refuses the wallet's polling queries until it is posted again.
+      // The mailbox has not seen the rotation: the wallet's poller posts its KEL when the mailbox refuses it.
       const { cursor } = await page("readInventory");
-      await page("refreshMailbox");
       await sendChallenge(peer, store, facts.inception.pre, "three four");
       await page("awaitMailboxCursor", { topic: "/challenge", above: cursor["/challenge"] ?? -1 });
       // The witness holds the receipted rotation; the counterparty learns it from the witness's OOBI.

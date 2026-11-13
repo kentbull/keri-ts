@@ -37,6 +37,7 @@ import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
 import type { WaitResult } from "../runtime/workflow-contract.ts";
 import { buildCesrStreamRequest } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
+import { collectKelSubmission, type KelSubmission } from "./kel-submission.ts";
 import { fetchEndpointUrls, preferredUrl } from "./mailboxing.ts";
 
 /** Collaborators mailbox administration needs; nothing else is reachable from here. */
@@ -64,14 +65,6 @@ export interface MailboxAdminResponse {
   readonly ok: boolean;
   readonly status: number;
   readonly body: string;
-}
-
-/** Administrative replay material in both the normalized and legacy multipart shapes. */
-export interface MailboxAdminSubmission {
-  /** Verifier-ready stream for the raw CESR body: delegation chain then KEL. */
-  readonly replay: Uint8Array;
-  readonly kel: Uint8Array;
-  readonly delkel: Uint8Array;
 }
 
 /** Derive the mailbox-admin URL relative to one hosted endpoint path. */
@@ -167,7 +160,7 @@ export function* completeMailboxAdmin(
     deps.http,
     endpointUrl,
     mailbox,
-    collectMailboxAdminSubmission(deps.hby, hab.pre),
+    collectKelSubmission(deps.hby, hab.pre),
     rpy,
   );
   if (!response.ok) {
@@ -259,20 +252,6 @@ export function* waitForMailboxState(
 }
 
 /**
- * Collect mailbox-admin replay material in both normalized and legacy shapes.
- *
- * `replay` is the verifier-ready stream used by raw CESR ingress.
- * `kel`/`delkel` preserve the legacy multipart wrapper contract used by
- * existing KERIpy mailbox admin hosts.
- */
-export function collectMailboxAdminSubmission(hby: Habery, pre: string): MailboxAdminSubmission {
-  const kever = hby.db.getKever(pre);
-  const delkel = kever ? concatBytes(...hby.db.cloneDelegation(kever)) : new Uint8Array();
-  const kel = concatBytes(...hby.db.clonePreIter(pre));
-  return { replay: concatBytes(delkel, kel), kel, delkel };
-}
-
-/**
  * Submit one admin request: the raw `application/cesr` body first, then the
  * legacy multipart form when the provider answers 406 or 415.
  */
@@ -280,7 +259,7 @@ function* postMailboxAdmin(
   http: HttpClient,
   url: string,
   mailbox: string,
-  submission: MailboxAdminSubmission,
+  submission: KelSubmission,
   rpy: Uint8Array,
 ): Operation<MailboxAdminResponse> {
   const raw = yield* postMailboxAdminCesr(http, url, mailbox, concatBytes(submission.replay, rpy));
@@ -313,7 +292,7 @@ export function* postMailboxAdminMultipart(
   http: HttpClient,
   url: string,
   mailbox: string,
-  submission: Pick<MailboxAdminSubmission, "kel" | "delkel">,
+  submission: Pick<KelSubmission, "kel" | "delkel">,
   rpy: Uint8Array,
 ): Operation<MailboxAdminResponse> {
   const decoder = new TextDecoder();
