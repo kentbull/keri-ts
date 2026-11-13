@@ -200,8 +200,6 @@ export interface IssuanceDeps extends AdmitDeps {
   readonly dhkes: { dhke(hab: Hab): Dhke };
   /** Non-secret derivation coordinates of blinded registry updates. */
   readonly derived: DerivedUpdateStore;
-  /** Called when an operation becomes live, so the owner loop leaves its idle cadence at once. */
-  readonly wake?: () => void;
   /** Delivery retry delays; {@link DEFAULT_RETRY_POLICY} when absent. */
   readonly retry?: Readonly<RetryPolicy>;
   /** Milliseconds between issuer query resends; {@link ISSUANCE_QUERY_RESEND_MS} when absent. */
@@ -437,7 +435,6 @@ export class IssuanceOperations {
       busy: false,
     });
     this.deps.changes?.push({ kind: "issuance", id: grant });
-    this.deps.wake?.();
   }
 
   /**
@@ -454,7 +451,6 @@ export class IssuanceOperations {
     this.ended.delete(grant);
     this.live.set(grant, this.liveGroup(group, dh, xid, "rootRetained"));
     this.deps.changes?.push({ kind: "issuance", id: grant });
-    this.deps.wake?.();
   }
 
   /** The live entry of a group operation; its lifetime is the Grant's once KRAM has accepted it, else unknown. */
@@ -543,7 +539,6 @@ export class IssuanceOperations {
     this.ended.delete(group.said);
     this.live.set(group.said, this.liveGroup(group, dh, xid, phase));
     deps.changes?.push({ kind: "issuance", id: group.said });
-    deps.wake?.();
     return { grant: group.said, xid };
   }
 
@@ -790,7 +785,6 @@ export function* beginIssuance(
     busy: false,
   });
   deps.changes?.push({ kind: "issuance", id: grant });
-  deps.wake?.();
   return { grant, xid };
 }
 
@@ -990,7 +984,6 @@ export function approveIssuanceExchange(ops: IssuanceOperations, grant: string):
     busy: false,
   });
   deps.changes?.push({ kind: "issuance", id: grant });
-  deps.wake?.();
   return { grant, xid };
 }
 

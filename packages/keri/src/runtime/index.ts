@@ -309,6 +309,9 @@ export {
   type KelPublicationStatus,
   KelPublisher,
   type KelPublisherDeps,
+  KEL_PUBLISHER_PACING,
+  KEL_PUBLISHER_SWEEP_TOCKS,
+  KEL_PUBLISHER_TOCK_MS,
   kelPublisherDo,
   type KelPublisherStatus,
 } from "../app/mailbox/kel-publisher.ts";
@@ -1015,15 +1018,19 @@ export {
   waitForUnblinding,
 } from "../app/ipex/unblinding-workflow.ts";
 
+// Fixed-tock doers.
+export { type DoerPacing, type DoerPass, doEvery } from "../app/runtime/doing.ts";
+
 // Operations owners composed by the runtime.
 export {
   type ComposedOwners,
   type OperationStores,
-  OWNER_BUSY_MS,
-  OWNER_IDLE_MS,
+  OWNER_PACING,
+  OWNER_SWEEP_TOCKS,
+  OWNER_TOCK_MS,
   type OwnerFault,
   OwnerHealth,
-  OwnerWake,
+  type OwnerLoopParts,
   type RuntimeOperations,
 } from "../app/runtime/operation-owners.ts";
 

@@ -432,7 +432,7 @@ export class Mailboxes {
     const hab = this.#scope.individual(pre);
     requireMailboxEndpointUrl(hby, mailbox);
     return this.#scope.go(function*(): Operation<MailboxOutcome<Done>> {
-      const deps = { hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol };
+      const deps = { hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol, publisher: runtime.kelPublisher };
       try {
         const result = yield* within(runtime.clock, timeoutMs, () => admin(deps, hab, mailbox));
         const status = mailboxStatus(hby, pre, mailbox);
@@ -454,7 +454,7 @@ export class Mailboxes {
    * a new rotation, a successful poll of that mailbox or reopening the wallet tries again).
    */
   publication(pre: string): readonly KelPublicationStatus[] {
-    return this.#scope.parts.runtime.kelPublisher.status().entries.filter((entry) => entry.pre === pre);
+    return this.#scope.parts.runtime.kelPublisher.statusOf(pre);
   }
 
   /**

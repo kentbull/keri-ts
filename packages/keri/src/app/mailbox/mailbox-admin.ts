@@ -37,6 +37,7 @@ import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
 import type { WaitResult } from "../runtime/workflow-contract.ts";
 import { buildCesrStreamRequest } from "../transport/cesr-http.ts";
 import type { HttpClient } from "../transport/http-client.ts";
+import type { KelPublisher } from "./kel-publisher.ts";
 import { kelHeads, pinKelPublished } from "./kel-publishing.ts";
 import { collectKelSubmission, type KelSubmission } from "./kel-submission.ts";
 import { fetchEndpointUrls, preferredUrl } from "./mailboxing.ts";
@@ -51,6 +52,11 @@ export interface MailboxAdminDeps {
   readonly reactor: Reactor;
   /** Escrow processing over the same database as `hby`. */
   readonly protocol: ProtocolProcessor;
+  /**
+   * The runtime's KEL publisher, told once a mailbox role is accepted locally so the next tock derives what the
+   * mailbox is owed instead of waiting for the publisher's minute sweep.
+   */
+  readonly publisher?: Pick<KelPublisher, "prompt">;
 }
 
 /** Accepted end-role state for one controller and mailbox. */
@@ -182,6 +188,7 @@ export function* completeMailboxAdmin(
   }
   // The publisher need not send a KEL this request just carried.
   if (allow && established) pinKelPublished(deps.hby.db, hab.pre, mailbox, established, systemClock);
+  deps.publisher?.prompt(hab.pre);
   return status;
 }
 

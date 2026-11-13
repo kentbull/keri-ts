@@ -309,6 +309,7 @@ function* withMailboxWorkflow(
         http: new NodeHttpClient(),
         reactor: runtime.reactor,
         protocol: runtime.protocol,
+        publisher: runtime.kelPublisher,
       };
 
       if (isLocalGroupHab(hby, hab)) {

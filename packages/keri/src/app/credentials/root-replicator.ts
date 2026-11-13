@@ -101,8 +101,17 @@ export class RootReplicator {
    * on a remote failure; every attempt is returned. The host runs `postman.deliverDo`.
    */
   *processOnce({ timeoutMs = RootResealBudgetMs }: { timeoutMs?: number } = {}): Operation<RootCopyResult[]> {
+    this.sweep();
+    return yield* this.processDue({ timeoutMs });
+  }
+
+  /**
+   * The fixed-tock pass: re-derive only the groups that were prompted, then send up to {@link RootSendsPerPass}
+   * due copies. A rotation nobody prompted for waits for {@link RootReplicator.sweep}.
+   */
+  *processDue({ timeoutMs = RootResealBudgetMs }: { timeoutMs?: number } = {}): Operation<RootCopyResult[]> {
     const { clock } = this.#deps, deadline = clock.now() + Math.max(timeoutMs, 0);
-    this.#refresh();
+    this.#refreshDirty();
     const results: RootCopyResult[] = [];
     for (const entry of [...this.#pending.values()]) {
       if (results.length >= RootSendsPerPass) break;
@@ -174,8 +183,25 @@ export class RootReplicator {
     }
   }
 
-  /** Re-derive the owed copies of each local group that is new, rotated or prompted. */
-  #refresh(): void {
+  /** Re-derive the owed copies of each prompted local group. */
+  #refreshDirty(): void {
+    const hby = this.#deps.root.hby;
+    for (const group of [...this.#dirty]) {
+      const hab = hby.habs.get(group);
+      const established = hab && isLocalGroupHab(hby, hab) ? hab.kever?.lastEst.d : null;
+      this.#dirty.delete(group);
+      if (!established) continue;
+      this.#seen.set(group, established);
+      this.#derive(group);
+    }
+  }
+
+  /**
+   * The full check: drop markers of groups that are gone (once) and re-derive each local group that is new or
+   * whose establishment event changed. One keyed read per local identifier, so a host runs it every
+   * many tocks, not every tock.
+   */
+  sweep(): void {
     const { root } = this.#deps, hby = root.hby;
     if (!this.#pruned) {
       this.#pruned = true;

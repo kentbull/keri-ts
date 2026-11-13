@@ -156,9 +156,11 @@ status is derived from the protocol stores:
 | `unblinding`   | `requestUnblind` (the discloser answers its own Grant's queries with no consent call)                                                        | `unblindingStatus`, `pendingPresentations`, `waitForUnblinding` |
 | `groupIpex`    | `proposeGroupAdmit`, `proposeGroupIpex`, `approveGroupIpex`                                                                                  | `groupIpexStatus`, `groupIpexProposals`, `waitForGroupIpex`     |
 
-`runAgentRuntime` drives all owners on one fiber: every `OWNER_BUSY_MS` (50 ms) while anything is
-live, every `OWNER_IDLE_MS` (1 s) otherwise, and beginning an operation wakes it
-(`operations.wake`). A failure that escapes an owner pass is recorded in `operations.health`
+`runAgentRuntime` drives all owners on one fixed-tock doer: a pass every `OWNER_TOCK_MS` (50 ms),
+whether or not anything is live, and nothing wakes it early; an operation begun between tocks is
+seen on the next one. The replicator's rotation check runs on tock 0 and every `OWNER_SWEEP_TOCKS`
+(a minute). A host that must be gentler (a background browser tab, a battery) passes a longer
+`DoerPacing` as `ownerPacing` (and `publisherPacing` for the KEL publisher, 250 ms). A failure that escapes an owner pass is recorded in `operations.health`
 (`faults`, `last`) and the loop continues; a failure of one operation ends that operation as
 `failed`. Delivery failures retry with a doubling delay (`RetryBackoff`, 1 s up to 30 s).
 

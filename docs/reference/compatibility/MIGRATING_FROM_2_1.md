@@ -78,7 +78,8 @@ Changed:
   (blind-derivation coordinates). The first pass on a store from before `rrsn.` sends one root copy per other member
   per held registry once.
 - `OWNER_LOOP_MS` does not exist in any release; the owners run on one fiber with
-  `OWNER_BUSY_MS` and `OWNER_IDLE_MS`.
+  the fixed `OWNER_TOCK_MS` (`DoerPacing`); `OWNER_BUSY_MS`, `OWNER_IDLE_MS`, `OwnerWake`,
+  `operations.wake` and the publisher's busy and idle cadences never shipped.
 
 ## Tufa CLI
 
