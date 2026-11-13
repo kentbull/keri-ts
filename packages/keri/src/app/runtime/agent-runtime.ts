@@ -37,6 +37,7 @@ import { Anchorer, loadDelegationHandlers } from "../identity/delegating.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { loadIpexHandlers } from "../ipex/ipexing.ts";
 import { ForwardHandler } from "../mailbox/forward-handler.ts";
+import { tellMailboxes } from "../mailbox/kel-publishing.ts";
 import { MailboxDirector } from "../mailbox/mailbox-director.ts";
 import { type MailboxPollBatch, MailboxPoller } from "../mailbox/mailbox-poller.ts";
 import { mailboxerOptionsForHabery } from "../mailbox/mailboxing.ts";
@@ -470,6 +471,7 @@ export function* createAgentRuntime(
     clock,
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
+    { tell: (pre) => tellMailboxes({ hby, http }, pre) },
   );
   const owned = acdc && ipex
     ? composeOwners({

@@ -284,7 +284,7 @@ export const steps: Step[] = [
     needs: ["5 close, reopen, durable state present, mailbox polling resumes"],
     run: async ({ page, peer, facts, store, servers }) => {
       facts.rotation = await page("rotate");
-      // The mailbox has not seen the rotation: the wallet's poller posts its KEL when the mailbox refuses it.
+      // Completing the rotation told the mailbox; the wallet needs no mailbox call of its own.
       const { cursor } = await page("readInventory");
       await sendChallenge(peer, store, facts.inception.pre, "three four");
       await page("awaitMailboxCursor", { topic: "/challenge", above: cursor["/challenge"] ?? -1 });

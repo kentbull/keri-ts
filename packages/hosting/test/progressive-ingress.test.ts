@@ -31,6 +31,7 @@ import {
 } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
 import {
+  type AgentRuntime,
   createAgentRuntime,
   cueDo,
   envelopeFromFrame,
@@ -41,8 +42,10 @@ import {
   queryEnvelopeFromDispatch,
   readCesrRequestBytes,
 } from "keri-ts/runtime";
+import { completeEvent } from "../../keri/src/app/identity/event-completion.ts";
 import { acceptedEventReplayMessage } from "../../keri/src/app/identity/habbing.ts";
 import { collectKelSubmission } from "../../keri/src/app/mailbox/kel-submission.ts";
+import type { ProtocolProcessor } from "../../keri/src/app/protocol/protocol-processing.ts";
 import { abortable } from "../../keri/src/app/runtime/abortable.ts";
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
@@ -589,6 +592,113 @@ Deno.test("a mailbox host that holds only the inception refuses a rotated reques
     } finally {
       yield* runtime.close();
       yield* host.close(true);
+      yield* client.close(true);
+    }
+  });
+});
+
+/** A wallet with two mailbox hosts that hold only its inception; `down` makes one of them unreachable. */
+function* rotatedWalletWithMailboxes(down: number | null) {
+  const client = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+  const wallet = client.makeHab("wallet", undefined, { transferable: true, toad: 0 });
+  const hosts: {
+    host: Habery;
+    service: Hab;
+    runtime: AgentRuntime;
+    url: string;
+    handler: ReturnType<typeof createProtocolHandler>;
+  }[] = [];
+  for (const index of [0, 1]) {
+    const host = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const service = host.makeHab("mailbox");
+    const runtime = yield* createAgentRuntime(host, new FetchHttpClient(), systemClock, { enableMailboxStore: true });
+    yield* runtime.reactor.processBytes(collectKelSubmission(client, wallet.pre).replay);
+    const url = `http://mailbox-${index}.test/`;
+    client.db.locs.pin([service.pre, "http"], { url });
+    client.db.ends.pin([wallet.pre, "mailbox", service.pre], { allowed: true });
+    hosts.push({ host, service, runtime, url, handler: createProtocolHandler(runtime, { serviceHab: service }) });
+  }
+  const http = httpClient((url, init) => {
+    const reached = hosts.findIndex((candidate) => url.startsWith(candidate.url));
+    if (reached === down) throw new Error("connection refused");
+    return hosts[reached].handler(new Request(url, init));
+  });
+  return { client, wallet, hosts, http };
+}
+
+Deno.test("completing a rotation tells every mailbox, whose next poll is then accepted", async () => {
+  await run(function*() {
+    const { client, wallet, hosts, http } = yield* rotatedWalletWithMailboxes(null);
+    try {
+      wallet.rotate({});
+      const completion = yield* completeEvent(
+        {
+          hby: client,
+          protocol: {} as ProtocolProcessor,
+          http,
+          clock: systemClock,
+          withDelegation() {
+            throw new Error("not delegated");
+          },
+        },
+        wallet,
+        wallet.kever!.sn,
+      );
+      assertEquals(completion.outcome, "settled");
+      assertEquals(completion.mailboxes, hosts.map(({ service }) => ({ mailbox: service.pre, outcome: "told" })));
+      for (const { service, handler } of hosts) {
+        const poll = wallet.query(wallet.pre, service.pre, { route: "mbx", q: { topics: { "/reply": 0 } } });
+        const served = yield* call(() =>
+          handler(
+            new Request("http://localhost/", {
+              method: "POST",
+              headers: { "content-type": "application/cesr" },
+              body: new Uint8Array(poll),
+            }),
+          )
+        );
+        assertEquals(served.status, 200);
+        yield* call(() => served.body?.cancel());
+      }
+    } finally {
+      for (const { runtime, host } of hosts) {
+        yield* runtime.close();
+        yield* host.close(true);
+      }
+      yield* client.close(true);
+    }
+  });
+});
+
+Deno.test("a mailbox that cannot be reached is reported and does not fail the rotation", async () => {
+  await run(function*() {
+    const { client, wallet, hosts, http } = yield* rotatedWalletWithMailboxes(1);
+    try {
+      wallet.rotate({});
+      const completion = yield* completeEvent(
+        {
+          hby: client,
+          protocol: {} as ProtocolProcessor,
+          http,
+          clock: systemClock,
+          withDelegation() {
+            throw new Error("not delegated");
+          },
+        },
+        wallet,
+        wallet.kever!.sn,
+      );
+      assertEquals(completion.outcome, "settled");
+      assertEquals(completion.status, { state: "complete" });
+      assertEquals(completion.mailboxes, [
+        { mailbox: hosts[0].service.pre, outcome: "told" },
+        { mailbox: hosts[1].service.pre, outcome: "failed", reason: "connection refused" },
+      ]);
+    } finally {
+      for (const { runtime, host } of hosts) {
+        yield* runtime.close();
+        yield* host.close(true);
+      }
       yield* client.close(true);
     }
   });

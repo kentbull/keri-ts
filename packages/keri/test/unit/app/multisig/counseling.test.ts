@@ -148,13 +148,19 @@ class FakeReceipting implements GroupReceipting {
 }
 
 /** Counselor with a controllable clock over `side`. */
-function counselor(side: Side, wits: Hab[] = [], clock = { t: 0 }, delegated = false) {
+function counselor(
+  side: Side,
+  wits: Hab[] = [],
+  clock = { t: 0 },
+  delegated = false,
+  mailboxes?: ConstructorParameters<typeof Counselor>[5],
+) {
   const receipting = new FakeReceipting(side.hby, wits);
   const changes = new MemoryChangeSink();
   const anchorer = new FakeAnchorer();
   const queries: unknown[] = [];
   const delegation = delegated ? { anchorer, querying: { enqueue: (q: unknown) => queries.push(q) } } : undefined;
-  const c = new Counselor(side.hby, receipting, { now: () => clock.t }, changes, delegation);
+  const c = new Counselor(side.hby, receipting, { now: () => clock.t }, changes, delegation, mailboxes);
   return { clock, receipting, changes, anchorer, queries, c };
 }
 
@@ -219,6 +225,35 @@ Deno.test("KERIpy test_counselor: signatures stage across inception and three ro
       assertEquals(s0.hby.db.getKever(gid)!.sn, round + 1);
       assertEquals(s0.hby.db.getKever(gid)!.verfers.map(v => v.qb64), sm.map(s => s.hab.kever!.verfers[0].qb64));
     }
+  });
+});
+
+Deno.test("a completed group rotation, and only a rotation, is published to the group's mailboxes", async () => {
+  await run(function*() {
+    const sides = yield* members(2);
+    const [s0, s1] = sides;
+    const told: string[] = [];
+    const { c } = counselor(s0, [], { t: 0 }, false, {
+      *tell(pre) {
+        told.push(pre);
+      },
+    });
+    const smids = pres(sides);
+    const created = [s0, s1].map(s => incept(s, smids, { isith: "2", nsith: "2", toad: 0, wits: [] }));
+    const gid = created[0].serder.pre!;
+    c.start(ref(created[0].serder));
+    deliver(s0.hby, created[1]);
+    yield* c.processOnce();
+    assertEquals(told, [], "an inception is not published");
+    deliver(s1.hby, created[0]);
+    rotateMembers(sides, sides);
+    const proposals = sides.map(s => rotate(s, smids, smids, { isith: "2", nsith: "2", toad: 0 }));
+    const event = ref(proposals[0].serder);
+    c.start(event);
+    deliver(s0.hby, proposals[1]);
+    yield* c.processOnce();
+    assert(c.complete(event));
+    assertEquals(told, [gid], "the completed rotation is published once");
   });
 });
 

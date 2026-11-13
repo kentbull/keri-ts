@@ -9,7 +9,10 @@
  * host's runtime has learned the delegator's anchor. Begin is separate from
  * wait so that a host without a blocking caller can begin, return to its user
  * interface and read `delegationStatus` later. `completeEvent` is the
- * convenience that runs both steps in order.
+ * convenience that runs both steps in order. A completed rotation (`rot` or `drt`) is then published: the
+ * KEL goes to every mailbox the identifier has an authorized role with, because a mailbox authenticates the
+ * identifier's polls against the key state it holds. An interaction event changes no keys, so it needs no
+ * publication.
  *
  * Boundaries:
  * - Dependencies are narrow collaborators, not an AgentRuntime (ADR-0013). The
@@ -21,9 +24,11 @@
  * - Delegation state is the Anchorer's durable escrow membership; this module
  *   adds none.
  */
+import { Ilks } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import type { Baser } from "../../db/basing.ts";
 import { dgKey } from "../../db/core/keys.ts";
+import { type MailboxPublication, tellMailboxes } from "../mailbox/kel-publishing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
@@ -181,7 +186,23 @@ export interface CompleteEventOptions extends ReceiptOptions {
  */
 export type EventCompletion =
   & WaitResult<EventStatus>
-  & { readonly delegationPhase: DelegationWorkflowStatus["phase"] | null };
+  & {
+    readonly delegationPhase: DelegationWorkflowStatus["phase"] | null;
+    /**
+     * Mailboxes a completed rotation was published to, told or failed with the reason. Empty for any other
+     * event, an incomplete rotation or an identifier with no mailbox. A failure never fails the rotation: the
+     * poller posts the KEL again when a mailbox refuses it.
+     */
+    readonly mailboxes: readonly MailboxPublication[];
+  };
+
+/** Publish a completed rotation to the identifier's mailboxes; any other event publishes nothing. */
+function* publishRotation(deps: EventCompletionDeps, pre: string, sn: number, status: EventStatus) {
+  if (status.state !== "complete") return [];
+  const said = deps.hby.db.kels.getLast(pre, sn);
+  const ilk = said ? deps.hby.db.getEvtSerder(pre, said)?.ilk : null;
+  return ilk === Ilks.rot || ilk === Ilks.drt ? yield* tellMailboxes(deps, pre) : [];
+}
 
 /**
  * Complete a freshly authored event: witness receipts, then, for delegated
@@ -197,7 +218,13 @@ export function* completeEvent(
 ): Operation<EventCompletion> {
   yield* receiptEvent(deps, hab.pre, { ...receipt, sn });
   if (!delegation) {
-    return { outcome: "settled", status: eventStatus(deps.hby, hab.pre, sn), delegationPhase: null };
+    const status = eventStatus(deps.hby, hab.pre, sn);
+    return {
+      outcome: "settled",
+      status,
+      delegationPhase: null,
+      mailboxes: yield* publishRotation(deps, hab.pre, sn, status),
+    };
   }
 
   const communicationHab = delegation.communicationHab?.();
@@ -205,9 +232,17 @@ export function* completeEvent(
     beginDelegation(collaborator, hab.pre, sn, communicationHab);
     const result = yield* waitForDelegation(collaborator, hab, sn, { timeoutMs: delegation.timeoutMs });
     const status = eventStatus({ db: deps.hby.db, anchorer: collaborator.anchorer }, hab.pre, sn);
-    return result.outcome === "timed-out"
-      ? { outcome: "timed-out", status, timeoutMs: result.timeoutMs, delegationPhase: result.status.phase }
-      : { outcome: "settled", status, delegationPhase: result.status.phase };
+    if (result.outcome === "timed-out") {
+      return {
+        outcome: "timed-out",
+        status,
+        timeoutMs: result.timeoutMs,
+        delegationPhase: result.status.phase,
+        mailboxes: [],
+      };
+    }
+    const mailboxes = yield* publishRotation(deps, hab.pre, sn, status);
+    return { outcome: "settled", status, delegationPhase: result.status.phase, mailboxes };
   });
 }
 
