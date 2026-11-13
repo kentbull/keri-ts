@@ -33,7 +33,13 @@ import {
   proposeIssuance,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
-import { type PresentationDeps, proposeGroupPresentation } from "../../../../src/app/ipex/presenting.ts";
+import { pendingApplies } from "../../../../src/app/ipex/pending-presentations.ts";
+import {
+  preparePresentation,
+  type PresentationDeps,
+  proposeGroupNegotiation,
+  proposeGroupPresentation,
+} from "../../../../src/app/ipex/presenting.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
@@ -168,7 +174,7 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
         yield* intakeAll(messagize(controller, { tsgs: [groupProof(controller)], gvrsn: Vrsn_2_0 }));
       }
     }
-    for (const side of sides) side.runtime.ipex!.dhke(side.hab);
+    // No owner is made here: the runtime composes the group's DH owner when its first message arrives.
 
     // The issuer's registry and credential for the holder group.
     const stub = { hby: issuer.hby, *receipt(): Operation<void> {} } as unknown as Receiptor;
@@ -267,6 +273,32 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       clock: side.runtime.clock,
       views: wallet,
     });
+    // --- the issuer applies for the credential, then the group answers with a Grant that carries the proof ---
+    // The Apply names the schema; the Grant answers it with an empty ditto plan, so the two plans match by
+    // construction. A caller only names the Apply in `priorSaid`. (The credential declares a presentation registry,
+    // so any Grant of it by its Issuee needs the presented-state proof.)
+    const asking = presenting(issuer);
+    const applyFor = function*(plan: unknown[]) {
+      const prepared = yield* preparePresentation(asking, {
+        verb: "apply",
+        hab: issuer.hab,
+        options: { recipient: h1.hab.pre!, message: "Apply", plan: plan as never },
+      });
+      for (const side of holders) yield* side.runtime.reactor.processBytes(prepared.wire);
+      for (const side of holders) {
+        yield* until(() => side.runtime.exc.complete(prepared.exn.said!), `${side.name} to accept the Apply`);
+      }
+      return prepared.exn.said!;
+    };
+    const answered = yield* applyFor([[(credential.schema as { $id: string }).$id, "/", []]]);
+    const waitingApplies = (side: Side) =>
+      pendingApplies({ hby: side.hby, exc: side.runtime.exc, clock: side.runtime.clock }, { hab: side.hab });
+    assertEquals(
+      waitingApplies(h1).map((item) => [item.apply, item.applicant, item.holder]),
+      [[answered, issuer.hab.pre, h1.hab.pre]],
+      "the unanswered Apply is listed for the group",
+    );
+    assertEquals(waitingApplies(issuer), [], "an Apply is pending only for the identifier it is addressed to");
     // --- the group presents: the registry update is proposed, approved and accepted, then the Grant is approved ---
     const withProof = yield* proposeGroupPresentation(presenting(h1), ops1, {
       hab: h1.hab,
@@ -274,6 +306,7 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       options: {
         recipient: issuer.hab.pre!,
         message: "Group presentation with proof",
+        priorSaid: answered,
         presentationRegistry: "presented",
       },
     });
@@ -299,6 +332,38 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       }, "the presentation with proof reaches done");
     }
     yield* until(() => issuer.runtime.exc.complete(withProof.said), "the issuer to accept the Grant with its proof");
+    for (const side of [issuer, h1, h2]) {
+      assertEquals(side.hby.db.erpy.get([answered])?.qb64, withProof.said, `${side.name} pins the Apply's answer`);
+    }
+    assertEquals(waitingApplies(h1), [], "an answered Apply is no longer pending");
+
+    // --- the group asks and spurns through the first-class call ---
+    const asked = yield* proposeGroupNegotiation(presenting(h1), ops1, {
+      verb: "apply",
+      hab: h1.hab,
+      options: { recipient: issuer.hab.pre!, message: "Group Apply", plan: [] },
+    });
+    yield* until(
+      () => groupIpexProposals(ops2, h2.hab).some((proposal) => proposal.said === asked.said),
+      "the second member to hold the group Apply",
+    );
+    yield* approveGroupIpex(ops2, asked.said);
+    yield* until(() => issuer.runtime.exc.complete(asked.said), "the issuer to accept the group Apply");
+
+    const second = yield* applyFor([]);
+    const spurned = yield* proposeGroupNegotiation(presenting(h1), ops1, {
+      verb: "spurn",
+      hab: h1.hab,
+      priorSaid: second,
+      message: "No",
+    });
+    yield* until(
+      () => groupIpexProposals(ops2, h2.hab).some((proposal) => proposal.said === spurned.said),
+      "the second member to hold the Spurn",
+    );
+    yield* approveGroupIpex(ops2, spurned.said);
+    yield* until(() => issuer.runtime.exc.complete(spurned.said), "the issuer to accept the group Spurn");
+    assertEquals(issuer.hby.db.erpy.get([second])?.qb64, spurned.said);
     for (const task of hosts) yield* task.halt();
   });
 });
