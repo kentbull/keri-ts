@@ -43,7 +43,7 @@ import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { runGroupDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-group-issuance.ts";
 import { prepareDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-issuance.ts";
-import { runGroupUnblind } from "../../../../../tufa/src/cli/commands/ipex-unblinding.ts";
+import { runUnblind } from "../../../../../tufa/src/cli/commands/ipex-unblinding.ts";
 import type { AcdcWalkPolicy } from "../../../../src/acdc/chaining.ts";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
@@ -1047,7 +1047,7 @@ class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
   }
   override approveUnblind(grant: string, proposer?: string): Promise<void> {
     if (!proposer) throw new Error("Select the ordinary group Unblind proposer");
-    this.start("unblind", () => runGroupUnblind(this.runtime, this.hab, grant, { proposer, timeoutMs: 120000 }));
+    this.start("unblind", () => runUnblind(this.runtime, this.hab, grant, { proposer, timeoutMs: 120000 }));
     return Promise.resolve();
   }
   override async finishUnblind(_grant: string): Promise<void> {

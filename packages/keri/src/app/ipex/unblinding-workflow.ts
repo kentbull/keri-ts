@@ -26,14 +26,18 @@
  * timers, the consent time. Per-identifier {@link Unblind} owners come through a narrow interface (`runtime.ipex`). Group identifiers
  * are refused; group Unblind belongs to the group proposal API.
  */
-import { type Operation, race } from "npm:effection@^3.6.0";
+import { bytesEqual, type CesrFrame, collectPayload, framePayload, parseBytes, SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import { call, type Operation, race } from "npm:effection@^3.6.0";
 import { Unblind } from "../../acdc/unblinding.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { singleKeyQueryWindow } from "../../core/mailbox/kram-policy.ts";
 import { timestampMicros } from "../../time/mod.ts";
-import type { Exchanger } from "../exchanges/exchanging.ts";
+import type { Exchanger, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
-import { isLocalGroupHab } from "../multisig/group-members.ts";
+import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
+import { type Multiplexor, MULTISIG_QRY_ROUTE, MULTISIG_RPY_ROUTE, multisigExnBody } from "../multisig/grouping.ts";
+import { envelopeFromFrame } from "../protocol/parsering.ts";
+import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { IssuanceDelivery } from "./issuance.ts";
@@ -56,10 +60,20 @@ export type UnblindingStatus =
   | { state: "done"; role: UnblindingRole }
   | { state: UnblindingEndState; role: UnblindingRole; reason: string };
 
+/** Collaborators only a group needs; an owner without them unblinds as an individual alone. */
+export interface GroupUnblindDeps {
+  /** Where the Unblind child wrappers (`/multisig/qry`, `/multisig/rpy`) are delegated; one owner per runtime registers. */
+  readonly mux: Pick<Multiplexor, "addChildHandler" | "removeChildHandler">;
+  /** Local intake of this member's own contribution and of the other members'. */
+  readonly protocol: Pick<ProtocolProcessor, "dispatch">;
+}
+
 /** Narrow collaborators of the Unblind owner. Hosts adapt their runtime to this once. */
 export interface UnblindingDeps {
   readonly hby: Habery;
   readonly exc: Pick<Exchanger, "retainedInput" | "exchangeDeadline" | "complete" | "verifyGrantProofs">;
+  /** Collaborators of group Unblind; absent, this owner refuses group identifiers. */
+  readonly group?: GroupUnblindDeps;
   /** Per-identifier Unblind owners (`runtime.ipex`), so several identifiers can unblind on one runtime. */
   readonly unblinds: { unblind(hab: Hab): Unblind; unblindOwners(): Iterable<Unblind> };
   readonly delivery: IssuanceDelivery;
@@ -89,9 +103,23 @@ interface LiveUnblinding {
   /** When {@link query} was signed (host clock, ms); it is re-dated once older than the single-key window. */
   queryAt: number;
   nextQuery: number;
+  /** Group party state; such an operation never re-dates its threshold query. */
+  group?: GroupUnblind;
   phase: UnblindingPhase;
   /** A step is running; overlapping `processOnce` calls skip it. */
   busy: boolean;
+}
+
+/** Per-operation state of a group party; memory only. */
+class GroupUnblind {
+  readonly pending = new Map<string, { parent: SerderKERI; child: CesrFrame }>();
+  readonly seen = new Set<string>();
+  /** The exact DH-style body this member contributes to, once frozen. */
+  frozen?: Uint8Array;
+  contributed = false;
+  finished = false;
+  started = false;
+  constructor(readonly member: Hab, readonly proposer: string) {}
 }
 
 /** What a consent step selected. */
@@ -104,10 +132,12 @@ export interface UnblindingBegun {
 /** The party and ordinary-state vocabulary a consent step acts for. */
 export interface UnblindingRequest {
   hab: Hab;
+  /** A group requires the current signing member that authors the query (disclosee) or the reply (discloser). */
+  proposer?: string;
   /** SAID of the live Grant. */
   grant: string;
-  /** Ordinary state labels the owner treats as the credential-state vocabulary. */
-  states: readonly string[];
+  /** Ordinary state labels the owner treats as the credential-state vocabulary; omitted uses the owner's default. */
+  states?: readonly string[];
 }
 
 const EXPIRED = "The presentation reached its original exchange deadline";
@@ -137,6 +167,8 @@ export class UnblindingOperations {
   readonly live = new Map<string, LiveUnblinding>();
   /** Operations that finished or ended in this process; not durable, see the module doc. */
   readonly settled = new Map<string, SettledUnblinding>();
+  /** The Unblind child handlers registered on the multiplexor, once a group operation began. */
+  groupRoutes: Array<[string, ExchangeRouteHandler]> | null = null;
 
   constructor(readonly deps: UnblindingDeps) {}
 
@@ -249,8 +281,99 @@ export class UnblindingOperations {
     this.deps.changes?.push({ kind: "unblinding", id: op.grant });
   }
 
+  /**
+   * One pass of a group party, in the order of the CLI loop it replaces: take in the members' wrappers, contribute
+   * this member's signature once to the frozen body, publish it to the other members, and finish.
+   */
+  private *stepGroup(op: LiveUnblinding): Operation<"stepped"> {
+    const { deps } = this, { owner, xid, grant } = op, g = op.group!, { member, proposer } = g;
+    const input = deps.exc.retainedInput(grant);
+    if (!input || deps.exc.exchangeDeadline(input.serder) !== op.deadline) throw new ValidationError(CHANGED);
+    owner.complete(xid);
+    const requester = op.role === "requester", group = deps.group!;
+    const send = (dest: string, msg: Uint8Array, topic = "credential") =>
+      deps.delivery.deliver({ src: member.pre!, dest, msg, topic });
+    if (!g.started) {
+      g.started = true;
+      // Accepted wrappers can precede the consent; intake alone never contributed.
+      for (const [, parent] of deps.hby.db.exns.getTopItemIter()) {
+        const retained = parent.route === groupRoute(op) ? deps.exc.retainedInput(parent.said!) : null;
+        if (
+          retained?.nests && structural(deps, parent, retained.nests) && groupAccepts(deps, op, parent, retained.nests)
+        ) {
+          g.pending.set(parent.said!, { parent, child: retained.nests[0] });
+        }
+      }
+    }
+    if (!requester && member.pre === proposer && !g.contributed && owner.hasPeerQuery(xid)) owner.respond(xid);
+    const broadcast = function*(raw: Uint8Array) {
+      const child = parseBytes(raw)[0];
+      if (!(child?.body instanceof SerderKERI) || child.body.ilk !== (requester ? "qry" : "rpy")) {
+        throw new ValidationError("Unexpected local Unblind proposal");
+      }
+      g.frozen = child.body.raw;
+      g.contributed = true;
+      yield* group.protocol.dispatch(child, { local: true });
+      const route = groupRoute(op);
+      const body = multisigExnBody(member.pre!, { route, attrs: { gid: op.hab.pre! } }, child.body, {
+        version: Vrsn_2_0,
+      });
+      const parent = parseBytes(member.endorse(body, { gvrsn: Vrsn_2_0 }))[0];
+      parent.nests = [child];
+      const proposal = yield* call(() => collectPayload(framePayload(parent)));
+      for (const peer of groupSigningMembers(deps.hby, op.hab.pre!)) {
+        if (peer !== member.pre) yield* send(peer, proposal, "multisig");
+      }
+    };
+    for (const [said, item] of [...g.pending]) {
+      if (g.seen.has(said) || item.parent.pre === member.pre) {
+        g.pending.delete(said);
+        continue;
+      }
+      if ((!g.frozen && item.parent.pre !== proposer) || (!requester && !owner.hasPeerQuery(xid))) continue;
+      if (!groupAccepts(deps, op, item.parent, [item.child])) {
+        g.pending.delete(said);
+        g.seen.add(said);
+        continue;
+      }
+      const contribution = owner.contribute(xid, yield* call(() => collectPayload(framePayload(item.child))));
+      yield* group.protocol.dispatch(item.child, { local: true });
+      if (!g.contributed) yield* broadcast(contribution);
+      g.seen.add(said);
+      g.pending.delete(said);
+    }
+    while (owner.outgoing.length) {
+      const message = owner.outgoing.pull()!;
+      if (message.kin === "sign") {
+        if (!g.contributed) yield* broadcast(message.msg);
+      } else if (message.kin === "query") op.query = message.msg;
+      else if (!g.finished) {
+        yield* owner.finish(xid); // Validate exact evidence; no issuer-state admission policy here.
+        g.finished = true;
+        yield* send(message.dest, message.msg);
+      }
+    }
+    if (requester && owner.complete(xid)) {
+      this.setPhase(op, "proving");
+      const decision = yield* owner.finish(xid);
+      if (decision.kind !== "accept") throw new ValidationError("Updated presentation proofs did not verify");
+      return this.finishedStep(op);
+    }
+    if (!requester && (g.finished || owner.complete(xid))) {
+      if (!g.finished) yield* owner.finish(xid);
+      return this.finishedStep(op);
+    }
+    // A threshold query cannot be re-dated by one member: it is resent unchanged.
+    if (op.query && deps.clock.now() >= op.nextQuery) {
+      yield* send(op.peer, op.query);
+      op.nextQuery = deps.clock.now() + UNBLIND_QUERY_RESEND_MS;
+    }
+    return "stepped";
+  }
+
   /** One pass, in the order of the CLI loop it replaces. */
   private *step(op: LiveUnblinding): Operation<"stepped"> {
+    if (op.group) return yield* this.stepGroup(op);
     const { deps } = this, { owner, xid, grant } = op;
     const send = (dest: string, msg: Uint8Array) => deps.delivery.deliver({ src: op.hab.pre!, dest, msg });
     const input = deps.exc.retainedInput(grant);
@@ -304,12 +427,15 @@ export class UnblindingOperations {
 }
 
 /** The exact live Grant the local party may consent to, with its deadline and role. */
-function selectGrant(ops: UnblindingOperations, { hab, grant }: UnblindingRequest) {
+function selectGrant(ops: UnblindingOperations, { hab, grant, proposer }: UnblindingRequest) {
   const { deps } = ops;
   if (isLocalGroupHab(deps.hby, hab)) {
-    throw new ValidationError(
-      "Individual Unblind requires an individual habitat; group Unblind needs explicit member coordination",
-    );
+    if (!deps.group) throw new ValidationError("This Unblind owner was composed without group collaborators");
+    if (!proposer || !groupSigningMembers(deps.hby, hab.pre!).includes(proposer)) {
+      throw new ValidationError("Group Unblind requires a current signing member proposer");
+    }
+  } else if (proposer !== undefined) {
+    throw new ValidationError("Individual Unblind has no proposer");
   }
   if (ops.live.has(grant)) throw new ValidationError("Unblind was already begun for this Grant");
   const input = deps.exc.retainedInput(grant);
@@ -333,14 +459,19 @@ function selectGrant(ops: UnblindingOperations, { hab, grant }: UnblindingReques
 function consent(
   ops: UnblindingOperations,
   request: UnblindingRequest,
+  role: UnblindingRole = "requester",
 ): { op: LiveUnblinding | null; begun: UnblindingBegun } {
   const { deps } = ops, { hab, grant } = request;
   const selected = selectGrant(ops, request);
-  if (selected.role !== "requester") throw new ValidationError("Only the disclosee requests Unblind");
+  if (selected.role !== role) {
+    throw new ValidationError(
+      role === "requester" ? "Only the disclosee requests Unblind" : "Only the discloser answers",
+    );
+  }
   const owner = deps.unblinds.unblind(hab), xid = owner.approve(grant, { states: request.states });
-  const begun = { grant, xid, role: "requester" as const };
+  const begun = { grant, xid, role };
   // A current authenticated view needs no empty auxiliary query or new proof writes.
-  if (deps.exc.complete(grant)) {
+  if (role === "requester" && deps.exc.complete(grant)) {
     const current = deps.exc.verifyGrantProofs(grant, selected.input.nests ?? []);
     if (current === true || typeof current === "object" && current.kind === "accept") {
       owner.abandon(xid);
@@ -354,7 +485,7 @@ function consent(
     op: {
       grant,
       xid,
-      role: "requester",
+      role,
       deadline: selected.deadline,
       hab,
       owner,
@@ -362,7 +493,8 @@ function consent(
       expires: selected.expires,
       queryAt: deps.clock.now(),
       nextQuery: 0,
-      phase: "awaitingReply",
+      group: request.proposer ? new GroupUnblind(localGroupMember(deps.hby, hab.pre!), request.proposer) : undefined,
+      phase: role === "requester" ? "awaitingReply" : "proving",
       busy: false,
     },
   };
@@ -379,13 +511,110 @@ function consent(
 export function requestUnblind(ops: UnblindingOperations, request: UnblindingRequest): UnblindingBegun {
   const { op, begun } = consent(ops, request);
   if (op) {
-    op.query = op.owner.start(request.grant);
+    if (op.group) {
+      registerUnblindRoutes(ops);
+      // Only the proposer authors the threshold query; the other members contribute to it when it arrives.
+      if (op.group.member.pre === request.proposer) op.owner.start(request.grant);
+    } else op.query = op.owner.start(request.grant);
     ops.settled.delete(request.grant);
     ops.live.set(request.grant, op);
     ops.deps.changes?.push({ kind: "unblinding", id: request.grant });
     ops.deps.wake?.();
   }
   return begun;
+}
+
+/**
+ * A group discloser member's consent to answer a live presentation: approves the Grant, so that this member
+ * contributes its signature to the one threshold reply (the proposer authors the reply once the disclosee's
+ * authenticated query arrives; the others contribute to it). Returns after local commit; `processOnce` does
+ * the rest. An individual discloser needs no consent: its owner answers an authenticated query by itself.
+ *
+ * @throws ValidationError for an individual identifier, a Grant the group did not send, a proposer that is not a
+ * current signing member, or an Unblind already begun.
+ */
+export function answerUnblind(ops: UnblindingOperations, request: UnblindingRequest): UnblindingBegun {
+  const { deps } = ops;
+  if (!isLocalGroupHab(deps.hby, request.hab)) {
+    throw new ValidationError("An individual discloser answers an authenticated query without consent");
+  }
+  const { op, begun } = consent(ops, request, "responder");
+  registerUnblindRoutes(ops);
+  ops.settled.delete(request.grant);
+  ops.live.set(request.grant, op!);
+  deps.changes?.push({ kind: "unblinding", id: request.grant });
+  deps.wake?.();
+  return begun;
+}
+
+/** The wrapper route an operation's party uses: the disclosee's query, the discloser's reply. */
+function groupRoute(op: LiveUnblinding): typeof MULTISIG_QRY_ROUTE | typeof MULTISIG_RPY_ROUTE {
+  return op.role === "requester" ? MULTISIG_QRY_ROUTE : MULTISIG_RPY_ROUTE;
+}
+
+/** The structure every Unblind child wrapper has, whichever operation it is for. */
+function structural(
+  deps: Pick<UnblindingDeps, "hby">,
+  parent: SerderKERI,
+  children: readonly CesrFrame[],
+): boolean {
+  const child = children[0], body = child?.body, route = parent.route;
+  if (
+    children.length !== 1 || !(body instanceof SerderKERI) || parent.pvrsn.major !== 2 || parent.pvrsn.minor !== 0
+    || (route !== MULTISIG_QRY_ROUTE && route !== MULTISIG_RPY_ROUTE)
+  ) return false;
+  const requester = route === MULTISIG_QRY_ROUTE, field = requester ? "qry" : "rpy", gid = body.pre;
+  const attrs = parent.sad!.a as Record<string, unknown>;
+  if (
+    !gid || !deps.hby.habs.has(gid) || !groupSigningMembers(deps.hby, gid).includes(parent.pre!) || !attrs
+    || Object.keys(attrs).length !== 2 || attrs.gid !== gid || attrs[field] !== body.said
+  ) return false;
+  const data = body.sad![requester ? "q" : "a"] as { x?: unknown };
+  if (
+    body.ilk !== field || body.route !== Unblind.Route || body.pvrsn.major !== 2 || body.pvrsn.minor !== 0
+    || typeof data?.x !== "string" || (requester && body.sad!.rr !== Unblind.Route)
+  ) return false;
+  const allowed = requester
+    ? ["TransIdxSigGroups", "TransLastIdxSigGroups"]
+    : ["TransIdxSigGroups", "BlindedStateQuadruples", "BoundStateSextuples"];
+  return (requester || !child.nests?.length)
+    && envelopeFromFrame(child).attachmentGroups.every((group) => allowed.includes(group.name.replace(/^Big/, "")));
+}
+
+/** Operation-specific acceptance: the group's own transaction, in the direction this party consumes. */
+function groupAccepts(
+  deps: Pick<UnblindingDeps, "hby">,
+  op: LiveUnblinding,
+  parent: SerderKERI,
+  children: readonly CesrFrame[],
+): boolean {
+  if (parent.route !== groupRoute(op) || !structural(deps, parent, children)) return false;
+  const body = children[0].body as SerderKERI, requester = op.role === "requester";
+  const data = body.sad![requester ? "q" : "a"] as { x?: string };
+  return body.pre === op.hab.pre && data?.x === op.xid && (!op.group?.frozen || bytesEqual(op.group.frozen, body.raw));
+}
+
+/**
+ * Delegate the Unblind child wrappers of `/multisig/qry` and `/multisig/rpy` to this owner, once. The delegation
+ * is structural; operation-specific checks run at intake, and stored wrappers are found when an operation starts.
+ */
+function registerUnblindRoutes(ops: UnblindingOperations): void {
+  if (ops.groupRoutes) return;
+  const { deps } = ops, mux = deps.group!.mux;
+  ops.groupRoutes = [MULTISIG_QRY_ROUTE, MULTISIG_RPY_ROUTE].map((route): [string, ExchangeRouteHandler] => [route, {
+    resource: route,
+    acceptsNests: true,
+    verify: (args) =>
+      structural(deps, args.serder, args.nests ?? []) && !args.attachments.length && !args.essrs?.length,
+    handle: (args) => {
+      for (const op of ops.live.values()) {
+        if (op.group && groupAccepts(deps, op, args.serder, args.nests!)) {
+          op.group.pending.set(args.serder.said!, { parent: args.serder, child: args.nests![0] });
+        }
+      }
+    },
+  }]);
+  for (const [route, handler] of ops.groupRoutes) mux.addChildHandler(route, Unblind.Route, handler);
 }
 
 /**

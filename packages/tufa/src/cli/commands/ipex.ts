@@ -7,8 +7,6 @@ import {
   Matter,
   parseBytes,
   type SerderACDC,
-  type SerderKERI,
-  type Versionage,
 } from "cesr-ts";
 import { call, type Operation, race, scoped, sleep, spawn } from "effection";
 import {
@@ -33,6 +31,8 @@ import {
   admitIssuance,
   type AgentRuntime,
   deliverIssuanceAdmit,
+  type GroupIpexBegun,
+  type GroupIpexOperations,
   type Hab,
   isLocalGroupHab,
   Organizer,
@@ -43,6 +43,7 @@ import {
   type PresentationInput,
   PresentationOperations,
   proposeGroupIpex,
+  proposeGroupPresentation,
   Receiptor,
   type RegistryDisclosure,
   runAgentRuntime,
@@ -76,9 +77,7 @@ function printSend({ exn, deliveries, group }: IpexSendResult): void {
 function* acdcV2GroupDisclosure(
   runtime: AgentRuntime,
   hab: Hab,
-  exn: SerderKERI,
-  nests: Uint8Array,
-  gvrsn: Versionage,
+  begin: (ops: GroupIpexOperations, deliver: boolean) => Operation<GroupIpexBegun>,
   args: Record<string, unknown>,
 ) {
   const timeout = parseNumberOption(args.approvalTimeoutSeconds, "approval-timeout") ?? 60;
@@ -86,8 +85,7 @@ function* acdcV2GroupDisclosure(
   const ops = runtime.operations?.groupIpex;
   if (!ops) throw new ValidationError("ACDC v2 group IPEX requires the runtime's operation owners.");
   const out = parseStringOption(args.out, "out");
-  yield* proposeGroupIpex(ops, { hab, exn, nests, gvrsn, deliver: !out });
-  const said = exn.said!;
+  const { said } = yield* begin(ops, !out);
   yield* withRuntimeWorkers(
     runtime,
     { hab, pollMailbox: true },
@@ -213,7 +211,12 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
         const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
         if (isLocalGroupHab(hby, hab)) {
           const admit = yield* wallet.prepareAdmitBody(said, hab.pre, { consent, message, gvrsn });
-          const result = yield* acdcV2GroupDisclosure(runtime, hab, admit, new Uint8Array(), gvrsn, args);
+          const result = yield* acdcV2GroupDisclosure(
+            runtime,
+            hab,
+            (ops, deliver) => proposeGroupIpex(ops, { hab, exn: admit, gvrsn, deliver }),
+            args,
+          );
           if (!result.accepted) return { ...result, grant: said };
           const admission = yield* call(() => wallet.recordAdmission(said, admit.said!, { consent }));
           return { ...result, ...admission };
@@ -330,7 +333,31 @@ function* acdcV2Disclosure(
         if (registryName && !runtime.acdc.registryByName(registryName)) {
           throw new ValidationError("Unknown presentation registry.");
         }
+        const custody = derive
+          ? new RegistryCustody({ hby, hab, registry: wallet.registry, db: wallet.db })
+          : undefined;
+        const deps: PresentationDeps = {
+          hby,
+          rgy: runtime.acdc,
+          exc: runtime.exc,
+          receiptor: discloser.receiptor,
+          reactor: runtime.reactor,
+          protocol: runtime.protocol,
+          delivery: posterDelivery(runtime.postman),
+          clock: runtime.clock,
+          views: wallet,
+          derived: custody?.options.store,
+        };
         if (isLocalGroupHab(hby, hab) && verb === "grant") {
+          if (!registryName) {
+            // A group presents through the runtime: the Grant is frozen once and approved by the other members.
+            return yield* acdcV2GroupDisclosure(
+              runtime,
+              hab,
+              (ops, deliver) => proposeGroupPresentation(deps, ops, { hab, selection, options, deliver }),
+              args,
+            );
+          }
           let selected = yield* discloser.prepareGrantBody(hab.pre, selection, options);
           if (registryName) {
             const reg = runtime.acdc.registryByName(registryName)!;
@@ -362,25 +389,14 @@ function* acdcV2Disclosure(
             const seal = runtime.acdc.store.anchor(update.said!)!;
             selected = yield* discloser.attachPresentationProof(selected, proof, { s: seal[0], d: seal[1] });
           }
-          return yield* acdcV2GroupDisclosure(runtime, hab, selected.exn, selected.nests, options.gvrsn, args);
+          return yield* acdcV2GroupDisclosure(
+            runtime,
+            hab,
+            (ops, deliver) =>
+              proposeGroupIpex(ops, { hab, exn: selected.exn, nests: selected.nests, gvrsn: options.gvrsn, deliver }),
+            args,
+          );
         }
-        // TODO(group proposal API): group Apply/Offer/Agree/Spurn still take the single-signature path, which
-        // refuses a group identifier; the group Grant branch above stays here until that API replaces it.
-        const custody = derive
-          ? new RegistryCustody({ hby, hab, registry: wallet.registry, db: wallet.db })
-          : undefined;
-        const deps: PresentationDeps = {
-          hby,
-          rgy: runtime.acdc,
-          exc: runtime.exc,
-          receiptor: discloser.receiptor,
-          reactor: runtime.reactor,
-          protocol: runtime.protocol,
-          delivery: posterDelivery(runtime.postman),
-          clock: runtime.clock,
-          views: wallet,
-          derived: custody?.options.store,
-        };
         const request: PresentationInput = verb === "apply"
           ? { verb, hab, options }
           : verb === "agree" || verb === "spurn"
