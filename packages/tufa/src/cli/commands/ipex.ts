@@ -26,9 +26,8 @@ import {
   withRuntimeWorkers,
 } from "keri-ts/cli";
 import {
-  admitIssuance,
+  admitAndDeliver,
   type AgentRuntime,
-  deliverIssuanceAdmit,
   type GroupIpexBegun,
   type GroupIpexOperations,
   type Hab,
@@ -230,19 +229,30 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
           delivery: posterDelivery(runtime.postman),
           clock: runtime.clock,
         };
-        const admitted = yield* admitIssuance(deps, { hab, grant: said, message, gvrsn, auths });
-        // The inventory record precedes delivery, as before: the embedder reacts to the accepted Admit.
-        const admission = yield* call(() => wallet.recordAdmission(said, admitted.admit.said!, { consent }));
-        let deliveries: string[] = [];
-        if (out) Deno.writeFileSync(out, admitted.wire);
-        else {
-          const host = yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: false }));
-          try {
-            deliveries = yield* deliverIssuanceAdmit(deps, hab, admitted);
-          } finally {
-            yield* host.halt();
-          }
+        let admission!: Awaited<ReturnType<typeof wallet.recordAdmission>>;
+        // The host runs the delivery worker only while the Admit is being sent; `--out` sends nothing.
+        const host = out ? undefined : yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: false }));
+        let done;
+        try {
+          done = yield* admitAndDeliver(deps, {
+            hab,
+            grant: said,
+            message,
+            gvrsn,
+            auths,
+            deliver: !out,
+            // The inventory record precedes delivery, as before: the embedder reacts to the accepted Admit.
+            *onAdmitted(admitted) {
+              admission = yield* call(() => wallet.recordAdmission(said, admitted.admit.said!, { consent }));
+            },
+          });
+        } finally {
+          if (host) yield* host.halt();
         }
+        const { admitted, delivery } = done;
+        if (out) Deno.writeFileSync(out, admitted.wire);
+        else if (delivery.state === "undelivered") throw new Error(delivery.reason);
+        const deliveries = delivery.state === "delivered" ? delivery.to : [];
         return { ...admission, said: admitted.admit.said!, deliveries };
       });
     },

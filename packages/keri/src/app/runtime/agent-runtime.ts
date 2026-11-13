@@ -390,7 +390,14 @@ export function* createAgentRuntime(
     grantWalk: options.grantWalk,
   });
   // Construction adopts stored copies an earlier handler-less Exchanger left unescrowed.
-  const registryRoot = options.registryRoots !== "refuse" && acdc ? new RegistryRoot(hby, acdc, notifier) : null;
+  const registryRoot = options.registryRoots !== "refuse" && acdc
+    ? new RegistryRoot(
+      hby,
+      acdc,
+      notifier,
+      options.operationStores?.changes ?? (signaler ? signalerChangeSink(signaler) : undefined),
+    )
+    : null;
   if (registryRoot) exc.addHandler(registryRoot);
   const mailboxDirector = yield* resource<MailboxDirector>(function*(provide) {
     const director = new MailboxDirector(hby, {
@@ -890,7 +897,7 @@ export function* runAgentRuntime(
       yield* cueDo(runtime, options);
     }),
     yield* spawn(function*() {
-      yield* runtime.protocol.escrowDo();
+      yield* runtime.protocol.escrowDo(runtime.clock);
     }),
     yield* spawn(function*() {
       yield* runtime.oobiery.oobiDo();

@@ -321,7 +321,8 @@ Deno.test("nested replacement rolls back publication failure and preserves earli
     };
     try {
       await assertRejects(
-        () => run(() => exchanger.processEvent({ ...input, nests: [replacement] })),
+        // The metadata write is skipped when nothing about it changed, so this replacement also moves the mailbox.
+        () => run(() => exchanger.processEvent({ ...input, nests: [replacement], mailboxAid: sender.pre })),
         Error,
         "publication fault",
       );

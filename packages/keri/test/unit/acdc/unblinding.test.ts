@@ -824,3 +824,111 @@ for (const keys of [1, 2]) {
     });
   });
 }
+
+Deno.test("a no-progress retry of a waiting Grant commits no write", async () => {
+  await run(function*() {
+      const stamp = makeNowIso8601(new Date());
+      const hbys = [];
+      for (const bran of ["PresenterPasscodeABCD", "VerifierPasscodeABCDE"]) {
+        const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, bran });
+        yield* ensure(() => hby.close(true));
+        hbys.push(hby);
+      }
+      const [senderHby, verifierHby] = hbys;
+      const sender = senderHby.makeHab("presenter", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+      const verifier = verifierHby.makeHab("verifier", undefined, {
+        icount: 2,
+        isith: "2",
+        ncount: 2,
+        nsith: "2",
+      });
+      const parties = [];
+      for (const [hby, hab] of [[senderHby, sender], [verifierHby, verifier]] as const) {
+        const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
+        yield* ensure(() => baser.close(true));
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+          acdc: new Regery(hby, baser),
+          kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+        });
+        yield* ensure(() => runtime.close());
+        parties.push({ hby, hab, runtime, store: runtime.ipex!.unblind(hab) });
+      }
+      const [presenter, observer] = parties;
+      for (const wire of senderHby.db.clonePreIter(sender.pre, 0)) yield* observer.runtime.reactor.processBytes(wire);
+      for (const wire of verifierHby.db.clonePreIter(verifier.pre, 0)) {
+        yield* presenter.runtime.reactor.processBytes(wire);
+      }
+      const rip = regcept(sender.pre, { stamp });
+      yield* observer.runtime.reactor.processBytes(sender.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] }));
+      for (const party of parties) yield* party.runtime.reactor.processBytes(rip.raw);
+      const root = new Salter({ raw: new TextEncoder().encode("public-test-root"), code: MtrDex.Salt_128 });
+      sender.mgr.putRegistryRoot(sender.pre, rip.said!, root);
+      const credential = acdcmap(sender.pre, { regid: rip.said!, attribute: { d: "", i: verifier.pre, name: "Ada" } });
+      const first = makeBlindState({ salt: root.qb64, sn: 1, acdc: credential.said!, state: "issued" });
+      const event1 = blindate(rip.said!, rip.said!, first.d.nonce, { stamp });
+      yield* observer.runtime.reactor.processBytes(
+        sender.interact({ data: [{ i: rip.said!, s: "1", d: event1.said! }] }),
+      );
+      for (const party of parties) yield* party.runtime.reactor.processBytes(event1.raw);
+      const child: CesrFrame = {
+        body: credential,
+        gvrsn: Vrsn_2_0,
+        attachments: [parseAttachmentGroup(publicOpeningAttachment(first), Vrsn_2_0, "txt").group],
+      };
+      const grant = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
+        kind: Kinds.json,
+        recipient: verifier.pre,
+        message: "Live presentation",
+        date: stamp,
+      });
+      const wire = yield* call(() =>
+        collectPayload(framePayload({
+          body: grant,
+          gvrsn: Vrsn_2_0,
+          attachments: parseBytes(sender.endorse(grant, { gvrsn: Vrsn_2_0 }))[0].attachments,
+          nests: [child],
+        }))
+      );
+      for (const party of parties) yield* party.runtime.reactor.processBytes(wire);
+      // Only the verifier learns the later TEL suffix, which its query then carries.
+      let prior = event1;
+      for (const sn of [2, 3]) {
+        const proof = makeBlindState({
+          salt: root.qb64,
+          sn,
+          acdc: sn === 3 ? credential.said! : "",
+          state: sn === 3 ? "issued" : "",
+        });
+        const event = blindate(rip.said!, prior.said!, proof.d.nonce, { sn, stamp });
+        yield* observer.runtime.reactor.processBytes(
+          sender.interact({ data: [{ i: rip.said!, s: sn.toString(16), d: event.said! }] }),
+        );
+        yield* observer.runtime.reactor.processBytes(event.raw);
+        prior = event;
+      }
+      // The verifier learns later events, so the Grant it receives now waits for current openings.
+      const waiting = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
+        kind: Kinds.json,
+        recipient: verifier.pre,
+        message: "Waiting presentation",
+        date: stamp,
+      });
+      const waitingWire = yield* call(() =>
+        collectPayload(framePayload({
+          body: waiting,
+          gvrsn: Vrsn_2_0,
+          attachments: parseBytes(sender.endorse(waiting, { gvrsn: Vrsn_2_0 }))[0].attachments,
+          nests: [child],
+        }))
+      );
+      yield* observer.runtime.reactor.processBytes(waitingWire);
+      assertEquals(observer.runtime.exc.complete(waiting.said!), false);
+      assertExists(observer.hby.db.epse.get([waiting.said!]), "the Grant waits in escrow");
+      yield* observer.runtime.exc.processEscrows(); // the first retry may settle bookkeeping
+      const version = observer.hby.db.writeVersion;
+      yield* observer.runtime.exc.processEscrows();
+      yield* observer.runtime.exc.processEscrows();
+      assertEquals(observer.hby.db.writeVersion, version, "a retry that makes no progress writes nothing");
+      assertExists(observer.hby.db.epse.get([waiting.said!]), "and the Grant still waits");
+  });
+});
