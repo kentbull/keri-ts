@@ -9,7 +9,11 @@
  */
 import { SerderACDC } from "cesr-ts";
 import { ValidationError } from "../../core/errors.ts";
-import type { Hab } from "../identity/habbing.ts";
+import { timestampMicros } from "../../time/mod.ts";
+import type { Exchanger } from "../exchanges/exchanging.ts";
+import type { Hab, Habery } from "../identity/habbing.ts";
+import type { RuntimeClock } from "../runtime/runtime-clock.ts";
+import { type DisclosurePlan, singleDagDisclosurePlan } from "./ipex-graph.ts";
 import { type UnblindingOperations, type UnblindingStatus, unblindingStatus } from "./unblinding-workflow.ts";
 
 /** A pending Grant addressed to a local identifier. */
@@ -54,6 +58,53 @@ export function pendingPresentations(ops: UnblindingOperations, { hab }: { hab?:
       // Not a Grant this runtime can unblind (no deadline): it is not pending here.
       if (!(error instanceof ValidationError)) throw error;
     }
+  }
+  return found;
+}
+
+/** An accepted Apply addressed to a local identifier that nothing has answered. */
+export interface PendingApply {
+  /** SAID of the Apply exchange. */
+  apply: string;
+  /** The local identifier it is addressed to. */
+  holder: string;
+  /** The AID that sent it. */
+  applicant: string;
+  /** The Apply's message text. */
+  message: string;
+  /** The disclosure the applicant asks for; empty when the Apply names none. */
+  plan: DisclosurePlan;
+  /** The Apply's exchange deadline (ISO 8601), when it has one. */
+  deadline: string | null;
+}
+
+/**
+ * The accepted v2 Applies addressed to a local identifier (to `hab` when given) that no exchange has answered
+ * (no `erpy` pointer) and whose deadline has not passed. Mutates nothing. A group member lists the Applies of
+ * its group once the group has accepted them.
+ */
+export function pendingApplies(
+  deps: { readonly hby: Habery; readonly exc: Exchanger; readonly clock: RuntimeClock },
+  { hab }: { hab?: Hab } = {},
+): PendingApply[] {
+  const { hby, exc, clock } = deps, found: PendingApply[] = [];
+  const now = BigInt(clock.now()) * 1000n;
+  for (const [[apply], serder] of [...hby.db.exns.getTopItemIter()]) {
+    const holder = serder.sad?.ri;
+    if (serder.route !== "/ipex/apply" || serder.pvrsn.major < 2 || typeof holder !== "string") continue;
+    if (!hby.habs.has(holder) || (hab && hab.pre !== holder)) continue;
+    if (!exc.complete(apply) || hby.db.erpy.get([apply])) continue;
+    const deadline = exc.exchangeDeadline(serder), expiry = deadline ? timestampMicros(deadline) : null;
+    if (expiry !== null && now >= expiry) continue;
+    const q = serder.sad?.q as { dp?: unknown } | undefined;
+    found.push({
+      apply,
+      holder,
+      applicant: serder.pre!,
+      message: String((serder.sad?.a as { m?: unknown } | undefined)?.m ?? ""),
+      plan: singleDagDisclosurePlan(q?.dp) ?? [],
+      deadline,
+    });
   }
   return found;
 }

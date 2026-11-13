@@ -521,12 +521,16 @@ export class IpexDiscloser {
   }
   /** Create an application request; no credential-use approval is invented for negotiation. */
   *prepareApply(sender: string, options: IpexV2BodyOptions): Operation<PreparedDisclosure> {
-    const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0), exn = ipexExnBody(sender, "/ipex/apply", [], options);
+    const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0), exn = this.applyBody(sender, options);
     return {
       exn,
       wire: exchangeWire(hab, exn, undefined, undefined, options.gvrsn ?? Vrsn_2_0),
       support: new Uint8Array(),
     };
+  }
+  /** The unsigned Apply body, for a sender that signs elsewhere (a group's members each sign their share). */
+  applyBody(sender: string, options: IpexV2BodyOptions): SerderKERI {
+    return ipexExnBody(sender, "/ipex/apply", [], options);
   }
   /** Accept or decline the exact authenticated predecessor and its negotiated anchoring choice. */
   *prepareReply(
@@ -537,12 +541,22 @@ export class IpexDiscloser {
     recipient?: string,
     auths?: WitnessAuthMap,
   ): Operation<PreparedDisclosure> {
-    const hab = this.signer(sender), prior = yield* this.prior(priorSaid);
-    const exn = ipexExnBody(sender, `/ipex/${verb}`, [], { message, prior, recipient });
+    const hab = this.signer(sender), exn = yield* this.replyBody(sender, verb, priorSaid, message, recipient);
     const source = verb === "agree" && (exn.sad!.a as { ax?: boolean[] }).ax?.[0]
       ? yield* anchorExchange(this.hby, this.receiptor, hab, exn, auths)
       : undefined;
     return { exn, wire: exchangeWire(hab, exn, undefined, source), support: source ? this.kel(hab) : new Uint8Array() };
+  }
+  /** The unsigned Agree or Spurn body answering an accepted, authenticated predecessor. */
+  *replyBody(
+    sender: string,
+    verb: "agree" | "spurn",
+    priorSaid: string,
+    message = "",
+    recipient?: string,
+  ): Operation<SerderKERI> {
+    const prior = yield* this.prior(priorSaid);
+    return ipexExnBody(sender, `/ipex/${verb}`, [], { message, prior, recipient });
   }
   /** Extend the frozen Grant's exact origin proof; ordinary intake still authenticates the supplied presentation evidence. */
   *attachPresentationProof(
@@ -660,15 +674,25 @@ export class IpexDiscloser {
     selection: DisclosureSelection,
     options: DisclosureBodyOptions,
   ): Operation<PreparedDisclosure> {
-    refuseBuilderPrior(options);
-    const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0), prior = yield* this.prior(options.priorSaid);
-    const raw = yield* this.selected(selection, true);
-    const [exn, nests] = yield* prepareIpexExn(sender, "/ipex/offer", raw, { ...options, prior });
+    const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0);
+    const { exn, nests } = yield* this.prepareOfferBody(sender, selection, options);
     return {
       exn,
       wire: exchangeWire(hab, exn, nests, undefined, options.gvrsn ?? Vrsn_2_0),
       support: new Uint8Array(),
     };
+  }
+  /** Freeze an Offer body and its nested evidence without signing, for a sender that signs elsewhere. */
+  *prepareOfferBody(
+    sender: string,
+    selection: DisclosureSelection,
+    options: DisclosureBodyOptions,
+  ): Operation<{ exn: SerderKERI; nests: Uint8Array }> {
+    refuseBuilderPrior(options);
+    const prior = yield* this.prior(options.priorSaid);
+    const raw = yield* this.selected(selection, true);
+    const [exn, nests] = yield* prepareIpexExn(sender, "/ipex/offer", raw, { ...options, prior });
+    return { exn, nests };
   }
   /** Select and authorize once before freezing a Grant body, without signing or committing group approval. */
   *prepareGrantBody(
