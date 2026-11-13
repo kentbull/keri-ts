@@ -48,6 +48,12 @@ with every failure after all steps ran. After a latched persistence failure, `cl
 
 ## The wallet-level API
 
+(Composition note, read last: the namespaces below are classes that each hold one `WalletScope`, the wallet's collaborators
+and the single place an app's promise meets the runtime's scope; none extends a base class. `createWalletApi` builds them
+once, and the classes are exported as types only. Every option and outcome a method takes or returns is a named type
+(`TimeoutOptions`, `ReceiveOptions`, `UnblindOptions`, `PresentWaitOptions`, `ProposalListOptions`, the `*Outcome` and
+`*Result` unions), so a signature never carries an inline object or union.)
+
 Promise-returning, typed, and the wallet owns the Effection bridge (`wallet-api.ts`):
 an app never calls `run(...)`.
 
@@ -149,20 +155,69 @@ Defined in `app/runtime/workflow-contract.ts` and followed by every library work
 `runtime.operations` (a writable Habery's runtime always has it) holds in-memory live tables whose
 status is derived from the protocol stores:
 
-| Owner          | Consents (may sign)                                                                                                                          | Pure reads and waits                                            |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `issuance`     | `proposeIssuance` (or `prepareIssuanceGrant` then `beginIssuance`), `approveIssuanceExchange`, `admitIssuance` (then `deliverIssuanceAdmit`) | `issuanceStatus`, `pendingIssuanceGrants`, `waitForIssuance`    |
-| `presentation` | `present` (offer, grant, apply, agree, spurn)                                                                                                | `presentationStatus`, `waitForPresentation`                     |
-| `unblinding`   | `requestUnblind` (the discloser answers its own Grant's queries with no consent call)                                                        | `unblindingStatus`, `pendingPresentations`, `waitForUnblinding` |
-| `groupIpex`    | `proposeGroupAdmit`, `proposeGroupIpex`, `approveGroupIpex`                                                                                  | `groupIpexStatus`, `groupIpexProposals`, `waitForGroupIpex`     |
+| Owner          | Consents (may sign)                                                                                                                                                                                                      | Pure reads and waits                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `issuance`     | `proposeIssuance` (or `prepareIssuanceGrant` then `beginIssuance(ops, grant)`), `approveIssuanceExchange(ops, grant)`, `receiveIssuance` or `admitIssuance(deps, grant)` then `deliverIssuanceAdmit` (`admitAndDeliver`) | `issuanceStatus`, `pendingIssuanceGrants`, `waitForIssuance`    |
+| `presentation` | `present` (offer, grant, apply, agree, spurn)                                                                                                                                                                            | `presentationStatus`, `waitForPresentation`                     |
+| `unblinding`   | `requestUnblind(ops, grant, options?)`; `answerUnblind(ops, grant, options)` for a group discloser (an individual discloser answers its own Grant's queries with no consent call)                                        | `unblindingStatus`, `pendingPresentations`, `waitForUnblinding` |
+| `groupIpex`    | `proposeGroupAdmit`, `proposeGroupIpex`, `approveGroupIpex`                                                                                                                                                              | `groupIpexStatus`, `groupIpexProposals`, `waitForGroupIpex`     |
 
-`runAgentRuntime` drives all owners on one fixed-tock doer: a pass every `OWNER_TOCK_MS` (50 ms),
-whether or not anything is live, and nothing wakes it early; an operation begun between tocks is
-seen on the next one. The replicator's rotation check runs on tock 0 and every `OWNER_SWEEP_TOCKS`
-(a minute). A host that must be gentler (a background browser tab, a battery) passes a longer
-`DoerPacing` as `ownerPacing` (and `publisherPacing` for the KEL publisher, 250 ms). A failure that escapes an owner pass is recorded in `operations.health`
-(`faults`, `last`) and the loop continues; a failure of one operation ends that operation as
-`failed`. Delivery failures retry with a doubling delay (`RetryBackoff`, 1 s up to 30 s).
+The party is derived from the Grant: the issuer is the credential registry's identifier, the holder is the Grant's
+recipient, and an Unblind's party is the Grant's recipient (the disclosee) or its sender (the discloser). So
+`beginIssuance(ops, grant, auths?)`, `approveIssuanceExchange(ops, grant)`, `admitIssuance(deps, grant, options?)`,
+`requestUnblind(ops, grant, options?)` and `answerUnblind(ops, grant, options)` take no habitat; `UnblindingOptions`
+carries `states` and, for a group, the `proposer`. `receiveIssuance(ops, input)` is the whole individual holder path
+(approve the DH exchange, wait, then `admitAndDeliver`) with the outcome `admitted`, `ended` or `timed-out`, and calling
+it again after `timed-out` resumes. `admitAndDeliver(deps, input)` signs the Admit, runs the host's `onAdmitted` step once
+before delivery (the wallet records its consent in its inventory there) and delivers within a budget; a failed or
+expired delivery is a value, and `deliver: false` leaves the bytes to the caller.
+
+### Pacing
+
+Background loops are fixed-tock doers (`doEvery` in `app/runtime/doing.ts`): a pass, then a wait of one tock on the
+runtime clock, as a HIO `Doer` re-runs every `tock`. Nothing wakes a loop early, and work that arrives between tocks is
+seen on the next one (`OwnerWake` and `operations.wake` do not exist). A `DoerPacing` is `{ tockMs, sweepTocks }`: a
+loop that has a full sweep does it on tock 0 and every `sweepTocks`, and does lighter work on the tocks between.
+
+| Loop                                                                                                 | Tock                          | Sweep                 | Runtime option    |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------- | --------------------- | ----------------- |
+| Operation owners (and the root replicator's rotation check)                                          | 50 ms (`OWNER_TOCK_MS`)       | 1200 tocks (a minute) | `ownerPacing`     |
+| `KelPublisher`                                                                                       | 250 ms                        | 240 tocks (a minute)  | `publisherPacing` |
+| Cue routing, OOBI resolution, authentication, signals, TEL publication, delegation, group counseling | 31.25 ms (`PROTOCOL_TOCK_MS`) | 1920 tocks (a minute) | `protocolPacing`  |
+| Mailbox poller worker selection                                                                      | 31.25 ms                      | 1920 tocks            | `pollerPacing`    |
+| Escrow loop (`ProtocolProcessor.escrowDo`)                                                           | 31.25 ms (`ESCROW_TOCK_MS`)   | none                  | none (fixed)      |
+
+A host that must be gentler (a browser wallet in a background tab, a mobile wallet on battery) passes longer
+`DoerPacing` values; a test passes small ones. The escrow loop waits a fixed `ESCROW_TOCK_MS` after every pass and never
+skips or shortens one. The outgoing delivery workers (`Poster.deliverDo`, the query sender) keep their per-turn loop.
+The mailbox poller no longer walks every identifier each turn: it re-selects workers on tock 0 and every sweep, when the
+topics or the number of identifiers change, and for identifiers given to `MailboxPoller.prompt`; an accepted
+`/end/role` reply tells the runtime (`Revery.onEndRole`), so a new mailbox role prompts the KEL publisher and the poller
+at once.
+
+### Failures, retries and what is durable
+
+A failure that escapes an owner pass is recorded in `operations.health` (`faults`, `last`) and the loop continues; a
+failure of one operation ends that operation as `failed`. Issuance, presentation and Unblind (single and group) deliver
+through one `DeliveryOutbox`: a failed message keeps its signed bytes and is retried with a doubling delay until the
+Grant's deadline, or, for an operation with no deadline, until failures have lasted a bound (10 minutes), when it ends
+`failed`. An active status reports a retrying delivery as `failure` (`attempts`, `reason` with the error's `cause` chain
+flattened, `retryAt`); presentation status has no `attempts` or `blocked` fields any more.
+
+The waits are injectable through the runtime options, with the production values as defaults: `RetryPolicy`
+(`baseMs`, `maxMs`, `boundMs`; `DEFAULT_RETRY_POLICY` is 1 s, 30 s, 10 minutes) for `operationRetry` (delivery retries),
+`counselorReceiptRetry` and `kelPublishRetry` (`DEFAULT_KEL_PUBLISH_RETRY`, 1 s doubling to 60 s with a 5 minute bound);
+`issuanceQueryResendMs` for the individual issuer's DH query resend; and `mailboxPolling` (request-open, poll-window,
+read-idle and refusal back-off times). Group issuance keeps the production delays.
+
+Two requests are durable so a restart does not lose what KRAM would drop as a replay: a DH query that reached an Issuee
+before its consent (`Baser.heldq`, keyed by exchange id) and an Unblind request a discloser has accepted and owes a reply
+to (`Baser.heldu`, keyed by discloser and exchange id, removed when the operation ends). No `ipexQueries` runtime option
+exists. The issuance owner rescans for resumable Grants every `ISSUANCE_SWEEP_MS` (5 s) rather than once, so a custodian
+that reloaded while its registry update awaited the other members resumes when the update is accepted.
+Compiled schema validators are cached: `validateSchema` keeps the compiled validator of a fully resolved schema closure
+per store, keyed by the verified root SAID (at most 256 per store, oldest evicted), so a Grant that waits in escrow does
+not recompile its schemas on every retry; a missing or invalid result is never kept.
 
 Presentation selects credentials from the embedder's inventory through
 `OperationStores.views`; `openWebWallet` binds it to its `Wallet`. Without it only replies and
@@ -194,12 +249,23 @@ Group work is a set of explicit library calls plus the `Counselor`.
   signs, and lets a non-elected member submit receipts after `fallbackAfterMs`. Observe it with
   `waitForGroupEvent`. A group habitat is held across a reopen even while its inception is
   unaccepted.
-- **Issuance and Admit.** A group issues or receives a v2 DH credential through
-  `runtime.operations.issuance` (`prepareGroupIssuance`, `proposeGroupIssuance`,
-  `approveGroupIssuance`, `approveGroupIssuanceExchange`, `followGroupIssuanceProof`; `groupIssuanceProposals` lists what
-  a member may consent to). A group's Admit or other v2 IPEX message goes through
-  `runtime.operations.groupIpex`. Root copies for the other members come from the runtime's
-  `RootReplicator`, which derives what is owed from state and records sent copies in `rrsn.`.
+- **Issuance and Admit.** A group issues or receives a v2 DH credential through `runtime.operations.issuance`. The
+  group is derived from the Grant, the proposal or the credential's registry, not passed in:
+  `proposeGroupIssuance(ops, draft, options?)` (prepare, then the custodian's own approval in one consent),
+  `approveGroupIssuance(ops, grant, options?)` (an issuer member's consent),
+  `approveGroupIssuanceExchange(ops, grant, coordinator?)` (a holder group member), `followGroupIssuanceProof` and
+  `groupIssuanceProof`. `groupIssuanceElection(ops, group, coordinator?)` is a pure read of the custodian a coordinator
+  elects and whether the local member is it; the coordinator is an optional pin that defaults to the group's latest
+  establishment event, and the custodian is always the election's. `approveGroupIssuance` refuses a proposal the elected
+  custodian did not sign, so a disagreement fails at consent instead of stalling DH. `groupIssuanceProposals` lists what
+  a member may consent to and `pendingGroupGrants` the Grants addressed to a group. `deriveGroupCustody(deps, hab, grant)`
+  returns null when a `/registry/root` copy was sent to the local member for a disclosed registry, so a member holding a
+  copy of a still-pending Grant is never adopted as the custodian. A group's Admit or other v2 IPEX message goes through
+  `runtime.operations.groupIpex` (`approveGroupIpex(ops, said, options?)`). A group presents through
+  `proposeGroupPresentation`, with a presentation registry too (the registry update is proposed first and the member's
+  Grant contribution waits for it, phase `awaitingRegistryUpdate`), and proves with `requestUnblind` / `answerUnblind`
+  naming a `proposer`. Root copies for the other members come from the runtime's `RootReplicator`, which derives what is
+  owed from state and records sent copies in `rrsn.`; `RegistryRoot` publishes a `root` change when it retains one.
 
 ## Mailboxes and rotation
 
@@ -210,8 +276,8 @@ rotation has to reach it. Telling it is the `KelPublisher`'s job (`app/mailbox/k
 `runtime.kelPublisher`):
 
 - **A cue and its own fiber.** Completing a rotation (`completeEvent`, and the Counselor for a group rotation)
-  pushes a `RotatedCue` onto `kelPublisher.rotated`, which wakes the publisher's fiber, started by
-  `runAgentRuntime`. The cue is only a hint: what is owed is derived from state.
+  pushes a `RotatedCue` onto `kelPublisher.rotated`; the publisher's fixed-tock doer (`runAgentRuntime` starts it) drains it
+  on its next tock. The cue is only a hint: what is owed is derived from state.
 - **A durable record.** `Baser.kpub.` keeps, per (identifier, mailbox), the establishment event whose KEL the
   mailbox last answered 2xx for, and a `failed` entry when publishing used up its budget. A post is owed unless the
   record shows the identifier's latest establishment event, so a lost cue, a bare `Hab.rotate`, a crash or a
@@ -223,7 +289,8 @@ rotation has to reach it. Telling it is the `KelPublisher`'s job (`app/mailbox/k
   would start more than 5 minutes after the first (`KEL_PUBLISH_BUDGET_MS`). Giving up writes `failed` to the record
   and publishes a change. The runtime never fails because a mailbox is unreachable.
 - **What re-arms a given-up entry.** A new rotation of the identifier, a successful poll of that mailbox, a
-  request from the poller's unauthorized handling (`repair`), `prompt`, or the next runtime open (memory starts
+  request from the poller's unauthorized handling (`KelPublisher.repair`), `prompt` (the library's `addMailbox` and
+  `completeGroupMailbox` prompt it), or the next runtime open (memory starts
   empty, so each owed entry gets a fresh budget).
 - **Observing it.** `kelPublisher.status()` reads every (identifier, mailbox) as `published`, `pending` (being
   sent or waiting out a retry delay), `waiting` (gated: unwitnessed, unanchored or no URL) or `timed-out`, and
@@ -248,7 +315,14 @@ read authorization of `mbx` queries at all, so a poll it accepts can be refused 
 - **A rotation-only member.** A member named only in the group's `rmids` holds no current group key and is refused
   until a rotation makes it a signing member.
 
-How the poller schedules, backs off and classifies its polls is being rewritten and is not described here.
+### The mailbox poller
+
+The poller is a state machine (`mailbox-poller.ts`). Each poll ends in a `PollOutcome` (`served`, `no-response`,
+`unreachable`, `unauthorized`, `refused`) and `nextPoll` turns it and the back-off state into the next action; only a
+served poll resets the back-off, and an unreachable mailbox no longer stops the runtime. The poller does not post the KEL
+itself: a 403 calls its `onUnauthorized` hook, which the runtime wires to `KelPublisher.repair` (forget what the mailbox
+was given so the publisher posts it again), and the worker backs off. A successful poll calls `onPolled`, which re-arms a
+given-up publication. `MailboxPoller.prompt(pre)` makes it re-select the workers of an identifier at once.
 
 ## Known limits in 2.2.0
 
@@ -260,7 +334,7 @@ How the poller schedules, backs off and classifies its polls is being rewritten 
 - An Unblind request a discloser has accepted and owes a reply to is persisted (`Baser.heldu`), so a reopened
   runtime answers it with no resend. A group Unblind keeps its per-operation state (the members' wrappers it has
   taken in and the contributions) in memory (`GroupUnblind` in `unblinding-workflow.ts`); what a restart does to a
-  partly contributed group reply is **unconfirmed**: no test I read pins it.
+  partly contributed group reply is **unconfirmed**: the code shows the state is memory only and I found no test that pins the outcome.
 - A rotation-only group member (in `rmids`, not `smids`) cannot read the group's mailbox until a rotation makes it a
   signing member, and a refused poll reports only 403 "Query requester is not authorized": the response does not
   say whether the requester's KEL is unknown to the host or its keys are not the group's.
@@ -285,6 +359,20 @@ How the poller schedules, backs off and classifies its polls is being rewritten 
   offers no re-send.
 - A `KelPublisher` entry that timed out stays timed out until a new rotation, a successful poll of that mailbox, a
   repair request, `prompt` or the next runtime open re-arms it; `health()` reports `mailbox-unreachable` meanwhile.
+
+### Fast-follow
+
+Work the maintainers listed as next, none of it on master (so none is described as behavior above):
+
+- Retry only the missing dependency of an escrowed message. A retry of an escrowed message re-runs its checks; the schema
+  validator cache removes the recompile, not the rest.
+- An explicit action to recover an issuer that crashed between staging and anchoring the registry update, which reads
+  `interrupted` today.
+- A way for a rotation-only group member to read the group's mailbox.
+- Host-side catch-up from witnesses for a KERIpy controller on a keri-ts mailbox, so the host learns a rotation the
+  controller's runtime never sent it.
+- A distinct refusal reason when a poll is refused because the host does not hold the requester's KEL, instead of the one
+  403 "Query requester is not authorized".
 
 ### Coverage gaps
 

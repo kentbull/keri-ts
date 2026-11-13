@@ -173,3 +173,18 @@ external import. It seeds `keri-ts/db/lmdb` and `keri-ts/runtime/node` imports t
 gate rejects them, and prints the bundle size with its top contributors. `@keri-ts/wallet`
 is a named known-failing entry (`TODO(wallet-web)`). To run it by hand inside an npm project
 that has the packed tarballs and `esbuild` installed: `deno task check:browser-bundle <dir>`.
+
+## Running interop locally
+
+`scripts/ci/run-keri-test-group.ts` sets three things for interop owners:
+
+- `KERI_TEST_FAST=1` shortens the poll intervals and cycle time of the frozen KERIpy peers (a monkeypatch,
+  `scripts/ci/keripy_fast_timing.py`) for every target except `qualification`; the extended-interop workflow pins it off
+  (`KERI_TEST_FAST: "0"`), and an exported `KERI_TEST_FAST` overrides either default. The readiness probes poll every 50 ms.
+- It compiles the Tufa CLI once per interop run and exports it as `KERI_TEST_TUFA_BIN`; the interop helpers spawn that
+  binary instead of `deno run packages/tufa/mod.ts`, which reloads the module graph on every call. An exported
+  `KERI_TEST_TUFA_BIN` is used as is; without one (or if the build fails) the CLI runs from source.
+- Owners whose files share no fixed ports or process-global state run two files at a time as separate child processes
+  (`processes: 2` in `scripts/ci/keri-test-suites.ts`): `interop-parity`, `interop-reference-profiles`,
+  `interop-ipex-disclosure`, `interop-delegation`, `interop-witness-main` and `interop-oobi-bootstrap` (the suite list
+  is the authority). Each child gets its own slice of the random-port range.
