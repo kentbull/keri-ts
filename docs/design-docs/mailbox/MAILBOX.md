@@ -56,7 +56,7 @@ unmodified upstream witness hosting.
 The recipient sends a signed `qry` route mbx. Kevery verifies requester identity
 and current signing threshold before producing a stream cue. Tufa rechecks the
 exact envelope and correlates the accepted cue by query SAID, then verifies the
-addressed provider authorization before SSE opens. See [read authorization](READ_AUTHORIZATION.md).
+addressed provider authorization before SSE opens. See [read authorization](READ_AUTHORIZATION.md), which also says who may read a group's mailbox.
 
 MailboxDirector owns correlation/provider reads; MailboxPoller owns remote
 polling and recipient cursors. Correlations use an ordinary Deck of stream cues.

@@ -3061,8 +3061,19 @@ function queryRequester(envelope: QueryEnvelope): string | null {
 /**
  * Mailbox reads authorize private recipient bytes, unlike public KEL queries.
  * Require the recipient's current signing threshold; merely naming its prefix
- * in endorsement material is not authentication. Repeated indices count once. *
- * A group recipient is also read by one of its members, which signs the poll with its own keys.
+ * in endorsement material is not authentication. Repeated indices count once.
+ *
+ * Who may read a transferable recipient's mailbox on this host: the recipient itself, and, for a group, any
+ * signing member that signs the poll as itself (the shape KERIpy's `GroupHab.query` emits: `q.i` is the group,
+ * sender and signer are the member) when {@link provesGroupKeyControl} holds. Forwarded mail is plaintext CESR
+ * unless the sender used ESSR, so this check is the read protection. KERIpy hosts are open: they do no read
+ * authorization of `mbx` queries, so a poll KERIpy accepts can be refused here.
+ *
+ * Two refusals are by design. The host must hold the member's KEL: the keri-ts poller and `KelPublisher` submit it
+ * (see `collectKelSubmission`), but a KERIpy member's poller does not, so its KEL has to reach the host by OOBI or
+ * a mailbox add, and until then its poll is refused as unauthorized. And a rotation-only member (named in the
+ * group's `rmids` but not its `smids`) holds no current group key, so it is refused until a rotation makes it a
+ * signing member.
  */
 function authenticatesMailboxQuery(envelope: QueryEnvelope, recipient: Kever, db: Baser): boolean {
   if (!recipient.transferable) {

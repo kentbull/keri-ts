@@ -316,6 +316,70 @@ Deno.test("a mailbox poll for a group is authorized for a member, including one 
   });
 });
 
+Deno.test("a KERIpy-shaped group mailbox poll signed only by the member habitat is authorized", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const [alice, bob] = ["alice", "bob"].map((name) => hby.makeHab(name));
+      const group = hby.makeGroupHab("team", alice, [alice.pre, bob.pre], undefined, undefined, {
+        isith: "2",
+        nsith: "2",
+        toad: 0,
+      }).hab;
+      const protocol = protocolFixture(hby);
+      // KERIpy GroupHab.query: `q.i` is the group, the query's sender and signer are the member habitat, and the
+      // endorsement is the member's indexed signatures behind a last-event seal in a pipelined attachment group.
+      const poll = query("mbx", { i: group.pre, src: group.pre, topics: { "/reply": 0 } }, {
+        pre: alice.pre,
+        stamp: makeNowIso8601(),
+      });
+      const endorsed = messagize(poll, {
+        sigers: alice.sign(poll.raw, true),
+        seal: SealLast.fromTuple([new Prefixer({ qb64: alice.pre })]),
+        pipelined: true,
+      });
+      assertEquals(
+        protocol.kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(envelopeFromFrame(parseBytes(endorsed)[0]))),
+        true,
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a rotation-only group member holding no current group key is refused the group's mailbox", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const [alice, bob, carol] = ["alice", "bob", "carol"].map((name) => hby.makeHab(name));
+      // Carol is named only among the rotation members, so none of the group's current keys is hers. This is the
+      // known limit: until a rotation makes her a signing member she cannot read the group's mailbox.
+      const group = hby.makeGroupHab(
+        "team",
+        alice,
+        [alice.pre, bob.pre],
+        [alice.pre, bob.pre, carol.pre],
+        undefined,
+        { isith: "2", nsith: "2", toad: 0 },
+      ).hab;
+      const protocol = protocolFixture(hby);
+      const authorized = (signer: typeof alice) =>
+        protocol.kvy.isMailboxQueryAuthorized(
+          queryEnvelopeFromDispatch(
+            envelopeFromFrame(
+              parseBytes(signer.query(group.pre, group.pre, { route: "mbx", q: { topics: { "/reply": 0 } } }))[0],
+            ),
+          ),
+        );
+      assertEquals(authorized(alice), true);
+      assertEquals(authorized(carol), false);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("two request reservations survive an interleaved background cue drain", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });

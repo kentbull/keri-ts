@@ -38,7 +38,6 @@
 import { Diger, Ilks, NumberPrimitive, NumDex, type SerderKERI, Verfer } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import type { RotatedCue } from "../../core/cues.ts";
-import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import type { Baser } from "../../db/basing.ts";
@@ -50,6 +49,7 @@ import {
   retryDelegatorWitnessQuery,
 } from "../identity/delegating.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
+import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { WitnessAuthMap } from "../witness/receipting.ts";
