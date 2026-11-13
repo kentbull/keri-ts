@@ -7,8 +7,6 @@ import {
   Matter,
   parseBytes,
   type SerderACDC,
-  type SerderKERI,
-  type Versionage,
 } from "cesr-ts";
 import { call, type Operation, race, scoped, sleep, spawn } from "effection";
 import {

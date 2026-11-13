@@ -7,6 +7,8 @@
  * runtime publishes, collects, accepts and lets the elected lead deliver the completed Admit to the issuer.
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
+import { Wallet } from "@keri-ts/wallet";
+import { createWalletBaser } from "@keri-ts/wallet/lmdb";
 import { Diger, NumberPrimitive, parseBytes, Prefixer, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, ensure, type Operation, run, sleep, spawn } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
@@ -224,6 +226,11 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
     );
 
     // --- the group presents the accepted Grant: one member proposes, the other approves, the lead delivers ---
+    // The presenter's inventory is the embedder's: it records the admission, and the runtime selects from it.
+    const walletDb = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
+    yield* ensure(() => walletDb.close(true));
+    const wallet = new Wallet({ hby: h1.hby, registry: h1.runtime.acdc!.store, exc: h1.runtime.exc, db: walletDb });
+    yield* call(() => wallet.recordAdmission(grant, admit, { consent: true }));
     const presenting = (side: Side): PresentationDeps => ({
       hby: side.hby,
       rgy: side.runtime.acdc!,
@@ -233,6 +240,7 @@ Deno.test("a group holder admits through the library: propose, list, approve, ac
       protocol: side.runtime.protocol,
       delivery: posterDelivery(side.runtime.postman),
       clock: side.runtime.clock,
+      views: wallet,
     });
     const presented = yield* proposeGroupPresentation(presenting(h1), ops1, {
       hab: h1.hab,
