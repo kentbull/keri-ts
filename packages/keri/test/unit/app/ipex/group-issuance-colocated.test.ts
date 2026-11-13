@@ -12,6 +12,7 @@ import type { RegBaser } from "../../../../src/acdc/regbasing.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
+import { type DisclosureRole, listGroupDisclosures } from "../../../../src/app/ipex/disclosure-replaying.ts";
 import {
   approveGroupIpex,
   groupIpexProposals,
@@ -270,5 +271,10 @@ Deno.test("one Habery holding a member of the issuer group and a member of the h
       const fresh = new IssuanceOperations(issuanceOf(site).deps);
       assertEquals(issuanceStatus(fresh, grant).state, "done", site.name);
     }
+    // This Habery lists the disclosure for each group it holds a member of: issued by one, held by the other.
+    const row = (role: DisclosureRole) => ({ grant, admit, credential: credential.said!, registry: rip.said!, role });
+    assertEquals(listGroupDisclosures(x.hby, x.runtime.exc, issuers.pre!), [row("issuer")]);
+    assertEquals(listGroupDisclosures(x.hby, x.runtime.exc, holders.pre!), [row("holder")]);
+    assertEquals(x.runtime.acdc!.store.registries(issuers.pre!), [rip.said!]);
   });
 });
