@@ -238,25 +238,25 @@ export class KelPublisher {
 
   #statusOf(entry: Derived): KelPublicationStatus {
     const base = { pre: entry.pre, mailbox: entry.mailbox, said: entry.said };
-        if (entry.published) return { ...base, state: "published", attempts: 0 };
-        const budget = this.#budgets.get(idOf(entry.pre, entry.mailbox));
-        const failed = this.#deps.hby.db.kpub.get([entry.pre, entry.mailbox])?.failed;
-        if (entry.hold) return { ...base, state: "waiting", attempts: budget?.attempts ?? 0, lastFailure: entry.hold };
-        if (budget?.expired) {
-          return {
-            ...base,
-            state: "timed-out",
-            attempts: failed?.attempts ?? budget.attempts,
-            lastFailure: failed?.reason ?? budget.lastFailure ?? undefined,
-          };
-        }
-        return {
-          ...base,
-          state: "pending",
-          attempts: budget?.attempts ?? 0,
-          ...(budget?.lastFailure ? { lastFailure: budget.lastFailure } : {}),
-          ...(budget?.attempts ? { retryAt: new Date(budget.retryAt).toISOString() } : {}),
-        };
+    if (entry.published) return { ...base, state: "published", attempts: 0 };
+    const budget = this.#budgets.get(idOf(entry.pre, entry.mailbox));
+    const failed = this.#deps.hby.db.kpub.get([entry.pre, entry.mailbox])?.failed;
+    if (entry.hold) return { ...base, state: "waiting", attempts: budget?.attempts ?? 0, lastFailure: entry.hold };
+    if (budget?.expired) {
+      return {
+        ...base,
+        state: "timed-out",
+        attempts: failed?.attempts ?? budget.attempts,
+        lastFailure: failed?.reason ?? budget.lastFailure ?? undefined,
+      };
+    }
+    return {
+      ...base,
+      state: "pending",
+      attempts: budget?.attempts ?? 0,
+      ...(budget?.lastFailure ? { lastFailure: budget.lastFailure } : {}),
+      ...(budget?.attempts ? { retryAt: new Date(budget.retryAt).toISOString() } : {}),
+    };
   }
 
   /**
@@ -269,7 +269,8 @@ export class KelPublisher {
     { timeoutMs, pollMs = 50 }: { timeoutMs: number; pollMs?: number },
   ): Operation<WaitResult<KelPublisherStatus>> {
     this.#dirty.add(pre);
-    const settled = () => this.statusOf(pre).every((entry) => entry.state === "published" || entry.state === "timed-out");
+    const settled = () =>
+      this.statusOf(pre).every((entry) => entry.state === "published" || entry.state === "timed-out");
     const done = yield* observeUntil(settled, { timeoutMs, pollMs, clock: this.#deps.clock });
     const status = this.status();
     return done ? { outcome: "settled", status } : { outcome: "timed-out", status, timeoutMs };

@@ -5,8 +5,8 @@ import { assert, assertEquals } from "jsr:@std/assert";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { kelPublisherDo } from "../../../../src/app/mailbox/kel-publisher.ts";
 import { KelPublisher } from "../../../../src/app/mailbox/kel-publisher.ts";
-import { dgKey } from "../../../../src/db/core/keys.ts";
 import { doEvery } from "../../../../src/app/runtime/doing.ts";
+import { dgKey } from "../../../../src/db/core/keys.ts";
 import { FakeRuntimeHttpClient, ManualRuntimeClock } from "../../../support/runtime-fakes.ts";
 
 /** Let every pending macrotask run, so a doer that is not waiting on the clock shows itself. */

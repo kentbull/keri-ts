@@ -333,7 +333,13 @@ export class Groups {
     const { hby, runtime } = this.#scope.parts;
     const hab = this.#scope.group(group);
     return await this.#scope.go(function*(): Operation<GroupMailboxOutcome> {
-      const deps = { hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol, publisher: runtime.kelPublisher };
+      const deps = {
+        hby,
+        http: runtime.http,
+        reactor: runtime.reactor,
+        protocol: runtime.protocol,
+        publisher: runtime.kelPublisher,
+      };
       try {
         const done = yield* within(runtime.clock, timeoutMs, () => completeGroupMailbox(deps, hab, mailbox));
         const status = mailboxStatus(hby, hab.pre!, mailbox);

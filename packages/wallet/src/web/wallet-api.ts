@@ -432,7 +432,13 @@ export class Mailboxes {
     const hab = this.#scope.individual(pre);
     requireMailboxEndpointUrl(hby, mailbox);
     return this.#scope.go(function*(): Operation<MailboxOutcome<Done>> {
-      const deps = { hby, http: runtime.http, reactor: runtime.reactor, protocol: runtime.protocol, publisher: runtime.kelPublisher };
+      const deps = {
+        hby,
+        http: runtime.http,
+        reactor: runtime.reactor,
+        protocol: runtime.protocol,
+        publisher: runtime.kelPublisher,
+      };
       try {
         const result = yield* within(runtime.clock, timeoutMs, () => admin(deps, hab, mailbox));
         const status = mailboxStatus(hby, pre, mailbox);
