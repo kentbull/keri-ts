@@ -17,14 +17,17 @@ import {
   type AgentRuntime,
   type AgentRuntimeOptions,
   AppError,
+  type ChangeSink,
   createAgentRuntime,
   FetchHttpClient,
   type Habery,
   type HttpClient,
   type KramConfig,
   openHabery,
+  type OwnerFault,
   runAgentRuntime,
   type RuntimeClock,
+  signalerChangeSink,
   systemClock,
 } from "keri-ts/runtime";
 import {
@@ -37,6 +40,13 @@ import {
 import { WalletDerivedUpdates } from "../custody.ts";
 import { openWalletBaser, type WalletBaser } from "../storing.ts";
 import { Wallet } from "../wallet.ts";
+import {
+  createWalletApi,
+  type TrackedIssuances,
+  type WalletApi,
+  walletChangeSink,
+  WalletStoppedError,
+} from "./wallet-api.ts";
 
 /**
  * KRAM windows a web wallet uses unless its host passes `runtime.kram`, as one catchall row in milliseconds in
@@ -99,11 +109,26 @@ export type OpenWebWalletOptions = WebWalletSecret & {
   host?: WebWalletHost;
 };
 
-/** `ok`, or the failed persistence write that latched the composition. */
-export type WebWalletHealth = { status: "ok" } | { status: "latched"; cause: unknown };
+/**
+ * What the wallet can still do:
+ * - `ok`;
+ * - `latched`: a persistence write failed, so every store refuses commits (reads continue);
+ * - `faulted`: the runtime runs, but an operations owner pass failed outside any single operation
+ *   (`faults` of them, the latest in `last`);
+ * - `stopped`: the runtime task ended without `close()`, so the stores are closed and the lock released;
+ *   `cause` is the failure that ended it;
+ * - `closed`: `close()` was called.
+ * Precedence: `closed`, `stopped`, `latched`, `faulted`, `ok`.
+ */
+export type WebWalletHealth =
+  | { status: "ok" }
+  | { status: "latched"; cause: unknown }
+  | { status: "faulted"; faults: number; last: OwnerFault | null }
+  | { status: "stopped"; cause: unknown }
+  | { status: "closed" };
 
 /** An open browser wallet. */
-export interface WebWallet {
+export interface WebWallet extends WalletApi {
   readonly hby: Habery;
   readonly runtime: AgentRuntime;
   /** Protocol-side wallet over `hby`, the runtime's exchanger and v2 registry, and `inventory`. */
@@ -131,7 +156,11 @@ export interface WebWallet {
 }
 
 /** What the composition hands back once it is running. */
-type Composed = Omit<WebWallet, "health" | "close"> & { readonly flush: () => Operation<void> };
+type Composed = Omit<WebWallet, "health" | "close" | keyof WalletApi> & {
+  readonly flush: () => Operation<void>;
+  readonly changes: ChangeSink;
+  readonly tracked: TrackedIssuances;
+};
 
 /** Refuse arguments that cannot encrypt the keeper, before any store is touched. */
 function assertSecret({ bran, seed, aeid }: WebWalletSecret): void {
@@ -190,13 +219,27 @@ function* compose(
       try {
         yield* scoped(function*() {
           const http = barrierHttpClient(host.http ?? new FetchHttpClient(), () => opener.queue.flushed());
+          // Owners publish to the wallet's sink, which forwards to the host's (or else the runtime's
+          // Signaler) and records finished issuances in the inventory.
+          const tracked: TrackedIssuances = new Map();
+          let signaler: AgentRuntime["signaler"] = null;
+          const hostChanges = options.runtime?.operationStores?.changes;
+          const changes = walletChangeSink(
+            tracked,
+            () => hostChanges ?? (signaler ? signalerChangeSink(signaler) : undefined),
+          );
           const runtime = yield* createAgentRuntime(hby, http, host.clock ?? systemClock, {
             ...options.runtime,
             // The operation owners record blind-derivation coordinates where the wallet's own custody
             // reads them back; a process-local default would hide them from `recordIssued`.
-            operationStores: { derived: new WalletDerivedUpdates(inventory), ...options.runtime?.operationStores },
+            operationStores: {
+              derived: new WalletDerivedUpdates(inventory),
+              ...options.runtime?.operationStores,
+              changes,
+            },
             kram: options.runtime?.kram ?? { enabled: true, caches: WALLET_KRAM_CACHES },
           });
+          signaler = runtime.signaler;
           try {
             const worker = yield* spawn(() => runAgentRuntime(runtime, { pollMailbox: true }));
             try {
@@ -208,6 +251,8 @@ function* compose(
                 inventory,
                 opener,
                 storage,
+                changes,
+                tracked,
                 flush: function*() {
                   yield* hby.db.flushed();
                   yield* hby.ks.flushed();
@@ -282,7 +327,26 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
     })
   );
   const composed = await ready;
-  const { flush, ...parts } = composed;
+  const { flush, changes, tracked, ...parts } = composed;
+  // The composition ends on its own only when the runtime crashed; `close()` ends it deliberately.
+  let stopped: { cause: unknown } | undefined;
+  let closing: Promise<void> | undefined;
+  void done.then((cause) => {
+    if (!closing) stopped = { cause };
+  });
+  const assertRunning = () => {
+    if (closing) throw new WalletStoppedError("The web wallet is closed.");
+    if (stopped) throw new WalletStoppedError("The web wallet's runtime stopped.", { cause: stopped.cause });
+  };
+  const api = createWalletApi({
+    hby: parts.hby,
+    runtime: parts.runtime,
+    wallet: parts.wallet,
+    inventory: parts.inventory,
+    changes,
+    tracked,
+    assertRunning,
+  });
   const lifecycle = options.host?.lifecycle === undefined ? pageTargets() : options.host.lifecycle;
   const requestFlush = () => void run(flush).then(undefined, () => {});
   const onHide = () => requestFlush();
@@ -291,16 +355,20 @@ export async function openWebWallet(options: OpenWebWalletOptions): Promise<WebW
   };
   lifecycle?.page.addEventListener("pagehide", onHide);
   lifecycle?.document.addEventListener("visibilitychange", onVisibility);
-  let closing: Promise<void> | undefined;
   return {
     ...parts,
+    ...api,
     health(): WebWalletHealth {
+      if (closing) return { status: "closed" };
+      if (stopped) return { status: "stopped", cause: stopped.cause };
       try {
         parts.opener.queue.assertHealthy();
-        return { status: "ok" };
       } catch (error) {
         return { status: "latched", cause: (error as Error).cause };
       }
+      const owners = parts.runtime.operations?.health;
+      if (owners?.faults) return { status: "faulted", faults: owners.faults, last: owners.last };
+      return { status: "ok" };
     },
     close: () =>
       closing ??= (async () => {
