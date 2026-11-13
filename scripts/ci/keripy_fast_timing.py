@@ -8,9 +8,15 @@ deadline, timeout and retry count stays as KERIpy wrote it; a poll that waited
 ``1.0`` seconds between checks now waits ``0.1``. Nothing here changes what a
 command sends, stores or accepts.
 
+Newer KERIpy commits ship a tock registry (``keri.app.tocking``) whose defaults are
+already fast and which reads ``KERI_<NAME>_TOCK`` environment variables. When it is
+present this module only sets the few variables the defaults leave slower than the
+tests want and skips the monkeypatches; older peers (the main, 1.2 and 1.3 profiles)
+keep the monkeypatch path below.
+
 Everything is behind one switch. ``KERI_TEST_FAST=1`` turns the overrides on;
-any other value, or no value, leaves stock KERIpy timing untouched and imports
-nothing from KERIpy or hio. The final stock-timing qualification pass runs with
+any other value, or no value, leaves the pinned commit's own timing (its registry
+defaults, or the historical literals) untouched and imports nothing from KERIpy or hio. The final stock-timing qualification pass runs with
 the switch off.
 
 Waits this module cannot reach without editing KERIpy (fixed windows measured by
@@ -20,6 +26,7 @@ window of ``kli vc list``) are deliberately left alone.
 
 import functools
 import importlib
+import importlib.util
 import inspect
 import os
 import re
@@ -46,6 +53,9 @@ POLLER_RECONNECT_CAP = 0.5
 MAILBOX_RETRY_MS = 500
 #: Seconds an unresolved OOBI waits before it is retried (stock 30).
 OOBI_RETRY_DELAY = 1
+#: Tock registry module of newer KERIpy commits, and the one default tighter than its default.
+TOCK_REGISTRY = "keri.app.tocking"
+REGISTRY_ENVIRONMENT = {"KERI_OOBI_RETRY_TOCK": str(OOBI_RETRY_DELAY)}
 
 #: Library generators, keyed by ``module.qualname`` with a shared value map.
 LIBRARY_RULES = {
@@ -185,6 +195,14 @@ def _patch_lmdb_nosync():
     lmdb.open = open_environment
 
 
+def _has_tock_registry():
+    """True when the selected KERIpy ships the tock registry (``keri.app.tocking``)."""
+    try:
+        return importlib.util.find_spec(TOCK_REGISTRY) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def _patch_keri_constants():
     """Shorten the OOBI retry delay and the mailbox reconnect hint, where present."""
     try:
@@ -192,6 +210,11 @@ def _patch_keri_constants():
         oobiing.Oobiery.RetryDelay = OOBI_RETRY_DELAY
     except (ImportError, AttributeError):
         pass
+    _patch_mailbox_retry_hint()
+
+
+def _patch_mailbox_retry_hint():
+    """Lower the SSE reconnect hint mailbox servers send (default 5000 ms), where present."""
     try:
         indirecting = importlib.import_module("keri.app.indirecting")
     except ImportError:
@@ -212,13 +235,22 @@ def apply(environ=os.environ):
     global _applied
     if _applied or not enabled(environ):
         return _applied
-    doing = importlib.import_module("hio.base.doing")
-    _patch_doify(doing)
-    _patch_doist_tock(doing)
+    if _has_tock_registry():
+        # The registry's defaults already cover cycle time, receipt, command, poller and
+        # escrow waits; only the OOBI retry (5 s by default) is tightened here.
+        for name, value in REGISTRY_ENVIRONMENT.items():
+            os.environ.setdefault(name, value)
+    else:
+        doing = importlib.import_module("hio.base.doing")
+        _patch_doify(doing)
+        _patch_doist_tock(doing)
     try:
         _patch_lmdb_nosync()
     except ImportError:
         pass
-    _patch_keri_constants()
+    if not _has_tock_registry():
+        _patch_keri_constants()
+    else:
+        _patch_mailbox_retry_hint()
     _applied = True
     return True
