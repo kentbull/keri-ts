@@ -388,7 +388,7 @@ function* acdcV2Disclosure(
         const request: PresentationInput = verb === "apply"
           ? { verb, hab, options }
           : verb === "agree" || verb === "spurn"
-          ? { verb, hab, prior: priorSaid ?? "", message, recipient, auths }
+          ? { verb, hab, priorSaid: priorSaid ?? "", message, recipient, auths }
           : { verb, hab, selection, options: { ...options, presentationRegistry: registryName } };
         if (out) {
           const prepared = yield* preparePresentation(deps, request);
