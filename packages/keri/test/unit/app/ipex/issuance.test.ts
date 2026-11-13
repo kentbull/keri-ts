@@ -365,6 +365,7 @@ Deno.test("a query the peer never got is replaced by a freshly dated one, which 
     let lose = true;
     const queries: Uint8Array[] = [];
     const ops = s.owner({
+      queryResendMs: 100,
       delivery: {
         *deliver(sent) {
           if (text(sent.msg).includes("/ipex/dhke") && parseBytes(sent.msg)[0].body.ilk === "qry") {
@@ -383,7 +384,7 @@ Deno.test("a query the peer never got is replaced by a freshly dated one, which 
     });
     yield* ops.processOnce();
     holderApproves(s, grant); // the Grant arrived; the query did not
-    yield* sleep(1100); // past the resend interval and far past the 300 ms window
+    yield* sleep(350); // past the 100 ms resend interval and the 300 ms window
     lose = false;
     yield* ops.processOnce();
     assertEquals(queries.length, 2, "the query was due again");

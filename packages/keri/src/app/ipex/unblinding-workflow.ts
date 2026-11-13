@@ -39,6 +39,7 @@ import { type Multiplexor, MULTISIG_QRY_ROUTE, MULTISIG_RPY_ROUTE, multisigExnBo
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { DeliveryOutbox } from "../runtime/delivery-outbox.ts";
+import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { IssuanceDelivery } from "./issuance.ts";
@@ -80,6 +81,8 @@ export interface UnblindingDeps {
   readonly delivery: IssuanceDelivery;
   /** Same clock the exchanger and Unblind owners were composed with. */
   readonly clock: RuntimeClock;
+  /** Delivery retry delays; the production policy when absent. */
+  readonly retry?: Readonly<RetryPolicy>;
   readonly changes?: ChangeSink;
   /** Called when an operation becomes live, so the owner loop leaves its idle cadence at once. */
   readonly wake?: () => void;
@@ -245,7 +248,7 @@ export class UnblindingOperations {
           queryAt: 0,
           nextQuery: 0,
           phase: "proving",
-          outbox: new DeliveryOutbox(),
+          outbox: new DeliveryOutbox(deps.retry),
           finished: false,
           busy: false,
         });
@@ -515,7 +518,7 @@ function consent(
       nextQuery: 0,
       group: request.proposer ? new GroupUnblind(localGroupMember(deps.hby, hab.pre!), request.proposer) : undefined,
       phase: role === "requester" ? "awaitingReply" : "proving",
-      outbox: new DeliveryOutbox(),
+      outbox: new DeliveryOutbox(deps.retry),
       finished: false,
       busy: false,
     },

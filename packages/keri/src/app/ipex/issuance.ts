@@ -87,6 +87,7 @@ import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import { DeliveryOutbox, type Outbound } from "../runtime/delivery-outbox.ts";
+import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
@@ -201,6 +202,10 @@ export interface IssuanceDeps extends AdmitDeps {
   readonly derived: DerivedUpdateStore;
   /** Called when an operation becomes live, so the owner loop leaves its idle cadence at once. */
   readonly wake?: () => void;
+  /** Delivery retry delays; {@link DEFAULT_RETRY_POLICY} when absent. */
+  readonly retry?: Readonly<RetryPolicy>;
+  /** Milliseconds between issuer query resends; {@link ISSUANCE_QUERY_RESEND_MS} when absent. */
+  readonly queryResendMs?: number;
   /** Collaborators of group issuance; absent, this owner issues and holds as an individual only. */
   readonly group?: GroupIssuanceDeps;
 }
@@ -420,7 +425,7 @@ export class IssuanceOperations {
       expires,
       issuer: wires ? { credential, ...wires, query: null, sent: true, nextQuery: 0 } : undefined,
       phase: "rootRetained",
-      outbox: new DeliveryOutbox(),
+      outbox: new DeliveryOutbox(this.deps.retry),
       finished: false,
       busy: false,
     });
@@ -470,7 +475,7 @@ export class IssuanceOperations {
         resumed: true,
       }),
       phase: "rootRetained",
-      outbox: new DeliveryOutbox(),
+      outbox: new DeliveryOutbox(this.deps.retry),
       finished: false,
       busy: false,
     });
@@ -500,7 +505,7 @@ export class IssuanceOperations {
     return yield* op.outbox.drain(
       this.deps.delivery,
       this.deps.clock,
-      op.expires === null ? ISSUANCE_RETRY_BOUND_MS : undefined,
+      op.expires === null ? this.deps.retry?.boundMs ?? ISSUANCE_RETRY_BOUND_MS : undefined,
     );
   }
 
@@ -584,7 +589,7 @@ export class IssuanceOperations {
     if (!op.dh.complete(op.xid)) {
       if (issuer?.query && this.deps.clock.now() >= issuer.nextQuery) {
         this.enqueue(op, { src: op.hab.pre!, dest: op.peer, msg: () => this.renewed(op, issuer) });
-        issuer.nextQuery = this.deps.clock.now() + ISSUANCE_QUERY_RESEND_MS;
+        issuer.nextQuery = this.deps.clock.now() + (this.deps.queryResendMs ?? ISSUANCE_QUERY_RESEND_MS);
       }
     } else if (issuer) yield* this.finish(op, issuer);
     else yield* this.receive(op);
@@ -799,7 +804,7 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
     expires,
     issuer: { credential, raw, grantWire, query, auths, sent: false, nextQuery: 0 },
     phase: "exchangingKeys",
-    outbox: new DeliveryOutbox(),
+    outbox: new DeliveryOutbox(ops.deps.retry),
     finished: false,
     busy: false,
   });
@@ -988,7 +993,7 @@ export function approveIssuanceExchange(
     registry: credential.regid!,
     expires,
     phase: "exchangingKeys",
-    outbox: new DeliveryOutbox(),
+    outbox: new DeliveryOutbox(ops.deps.retry),
     finished: false,
     busy: false,
   });

@@ -59,6 +59,7 @@ import { proposeRegistryEvent } from "../multisig/proposing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import { DeliveryOutbox } from "../runtime/delivery-outbox.ts";
+import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
@@ -128,6 +129,8 @@ export interface PresentationDeps {
   readonly reactor: Pick<Reactor, "processBytes">;
   readonly protocol: Pick<ProtocolProcessor, "processEscrowsOnce">;
   readonly delivery: IssuanceDelivery;
+  /** Delivery retry delays; the production policy when absent. */
+  readonly retry?: Readonly<RetryPolicy>;
   /** Same clock the exchanger was composed with. */
   readonly clock: RuntimeClock;
   /** Embedder inventory for selecting an issued credential or a retained Grant. */
@@ -473,7 +476,7 @@ function queue(
   ops: PresentationOperations,
   op: Pick<LivePresentation, "said" | "verb" | "hab" | "src" | "recipient" | "wire" | "deadline">,
 ): void {
-  const outbox = new DeliveryOutbox();
+  const outbox = new DeliveryOutbox(ops.deps.retry);
   outbox.enqueue({ src: op.src ?? op.hab.pre!, dest: op.recipient, msg: op.wire });
   ops.settled.delete(op.said);
   ops.live.set(op.said, { ...op, expires: timestampMicros(op.deadline), outbox, busy: false });

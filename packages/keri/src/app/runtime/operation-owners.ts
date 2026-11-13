@@ -31,6 +31,7 @@ import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import type { Receiptor } from "../witness/receipting.ts";
 import type { IpexAuxiliaries } from "./ipex-auxiliaries.ts";
+import type { RetryPolicy } from "./retry-backoff.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import type { ChangeSink } from "./workflow-contract.ts";
 
@@ -110,6 +111,10 @@ export interface OwnerParts {
   mux: Multiplexor;
   /** Counsels the group anchor of a custodian's registry update. */
   counselor: Counselor;
+  /** Delivery retry delays of the owners; the production policy when absent. */
+  retry?: Readonly<RetryPolicy>;
+  /** Milliseconds between issuer query resends; one second when absent. */
+  queryResendMs?: number;
   changes?: ChangeSink;
 }
 
@@ -131,6 +136,8 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
     clock,
     changes,
     wake: wake.notify,
+    retry: parts.retry,
+    queryResendMs: parts.queryResendMs,
     group: { mux, registry: { hby, protocol, postman, counselor, registryStore: acdc.store } },
   };
   const operations: RuntimeOperations = {
@@ -157,6 +164,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       clock,
       derived: issuance.derived,
       views: stores.views,
+      retry: parts.retry,
       changes,
       wake: wake.notify,
     }),
@@ -169,6 +177,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       group: { mux, protocol },
       delivery,
       clock,
+      retry: parts.retry,
       changes,
       wake: wake.notify,
     }),

@@ -11,6 +11,26 @@
 export const RETRY_BASE_MS = 1_000;
 /** Longest delay between attempts. */
 export const RETRY_MAX_MS = 30_000;
+/** How long failures may last before an owner with no deadline of its own gives up. */
+export const RETRY_BOUND_MS = 600_000;
+
+/**
+ * How long a retried action waits: it starts at `baseMs`, doubles per consecutive failure up to `maxMs`, and an
+ * owner that gives up does so once failures have lasted `boundMs`. Owners that never give up ignore the bound.
+ * Milliseconds; a test passes small values.
+ */
+export interface RetryPolicy {
+  baseMs: number;
+  maxMs: number;
+  boundMs: number;
+}
+
+/** The production delays of delivery retries. */
+export const DEFAULT_RETRY_POLICY: Readonly<RetryPolicy> = Object.freeze({
+  baseMs: RETRY_BASE_MS,
+  maxMs: RETRY_MAX_MS,
+  boundMs: RETRY_BOUND_MS,
+});
 
 /** Consecutive-failure counter with a next-attempt time; memory only. */
 export class RetryBackoff {
@@ -22,6 +42,8 @@ export class RetryBackoff {
   last: unknown = null;
   #next = 0;
 
+  constructor(private readonly policy: Readonly<RetryPolicy> = DEFAULT_RETRY_POLICY) {}
+
   /** Whether an attempt may be made at `now`. */
   due(now: number): boolean {
     return now >= this.#next;
@@ -32,7 +54,7 @@ export class RetryBackoff {
     if (this.attempts === 0) this.since = now;
     this.attempts++;
     this.last = error;
-    this.#next = now + Math.min(RETRY_BASE_MS * 2 ** (this.attempts - 1), RETRY_MAX_MS);
+    this.#next = now + Math.min(this.policy.baseMs * 2 ** (this.attempts - 1), this.policy.maxMs);
   }
 
   /** Whether failures have lasted at least `boundMs` by `now`. */

@@ -8,7 +8,7 @@
  * states. Memory only: the signed messages themselves are durable in the protocol stores.
  */
 import type { Operation } from "npm:effection@^3.6.0";
-import { RetryBackoff } from "./retry-backoff.ts";
+import { DEFAULT_RETRY_POLICY, RetryBackoff, type RetryPolicy } from "./retry-backoff.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 
 /** One message waiting for delivery. */
@@ -28,9 +28,13 @@ export interface OutboxDelivery {
 /** The queue and its retry state for one live operation. */
 export class DeliveryOutbox {
   private readonly queue: Outbound[] = [];
-  private readonly backoff = new RetryBackoff();
+  private readonly backoff: RetryBackoff;
   /** Destinations the transport reported for everything delivered so far. */
   readonly delivered: string[] = [];
+
+  constructor(policy: Readonly<RetryPolicy> = DEFAULT_RETRY_POLICY) {
+    this.backoff = new RetryBackoff(policy);
+  }
 
   /** Messages still waiting. */
   get length(): number {

@@ -28,6 +28,7 @@ import type { RotatedCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { OwnerWake } from "../runtime/operation-owners.ts";
+import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import {
@@ -48,6 +49,12 @@ export const KEL_PUBLISH_BASE_MS = 1_000;
 export const KEL_PUBLISH_MAX_DELAY_MS = 60_000;
 /** Give up when the next attempt would start more than this long after the first. */
 export const KEL_PUBLISH_BUDGET_MS = 300_000;
+/** The production retry policy of KEL posts: `boundMs` is the budget. */
+export const DEFAULT_KEL_PUBLISH_RETRY: Readonly<RetryPolicy> = Object.freeze({
+  baseMs: KEL_PUBLISH_BASE_MS,
+  maxMs: KEL_PUBLISH_MAX_DELAY_MS,
+  boundMs: KEL_PUBLISH_BUDGET_MS,
+});
 /** Pause between passes while a post waits to be retried, and while nothing does. */
 export const KEL_PUBLISHER_BUSY_MS = 250;
 export const KEL_PUBLISHER_IDLE_MS = 1_000;
@@ -56,6 +63,8 @@ export const KEL_PUBLISHER_IDLE_MS = 1_000;
 export interface KelPublisherDeps extends KelPublishingDeps {
   /** Optional sink told `{kind:"event", id:"<pre>:<sn>"}` after each attempt and when a publication is given up. */
   readonly changes?: ChangeSink;
+  /** Retry delays of a failed post, and the budget after which it is given up; {@link DEFAULT_KEL_PUBLISH_RETRY} when absent. */
+  readonly retry?: Readonly<RetryPolicy>;
 }
 
 /**
@@ -267,9 +276,10 @@ export class KelPublisher {
     } else {
       budget.attempts += 1;
       budget.lastFailure = result.reason;
-      const delay = Math.min(KEL_PUBLISH_BASE_MS * 2 ** (budget.attempts - 1), KEL_PUBLISH_MAX_DELAY_MS);
+      const retry = this.#deps.retry ?? DEFAULT_KEL_PUBLISH_RETRY;
+      const delay = Math.min(retry.baseMs * 2 ** (budget.attempts - 1), retry.maxMs);
       budget.retryAt = clock.now() + delay;
-      if (budget.retryAt - budget.firstAt > KEL_PUBLISH_BUDGET_MS) {
+      if (budget.retryAt - budget.firstAt > retry.boundMs) {
         budget.expired = true;
         const record = hby.db.kpub.get([entry.pre, entry.mailbox]);
         hby.db.kpub.pin([entry.pre, entry.mailbox], {

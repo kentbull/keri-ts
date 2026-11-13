@@ -38,6 +38,7 @@
 import { Diger, Ilks, NumberPrimitive, NumDex, type SerderKERI, Verfer } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import type { RotatedCue } from "../../core/cues.ts";
+import type { RetryPolicy } from "../runtime/retry-backoff.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import type { Baser } from "../../db/basing.ts";
@@ -127,6 +128,12 @@ export interface GroupMailboxes {
 export const DEFAULT_FALLBACK_AFTER_MS = 60_000;
 /** First and longest wait between receipt attempts for one event. */
 export const RECEIPT_BACKOFF_MS = { first: 1_000, max: 30_000 } as const;
+/** The production receipt retry delays as a policy; only `baseMs` and `maxMs` apply, the Counselor never gives up. */
+export const DEFAULT_RECEIPT_RETRY: Readonly<RetryPolicy> = Object.freeze({
+  baseMs: RECEIPT_BACKOFF_MS.first,
+  maxMs: RECEIPT_BACKOFF_MS.max,
+  boundMs: 0,
+});
 
 /** In-memory retry and input state for one event. */
 interface Run {
@@ -183,6 +190,7 @@ export class Counselor {
     private readonly changes?: ChangeSink,
     private readonly delegation?: GroupDelegation,
     private readonly mailboxes?: GroupMailboxes,
+    private readonly receiptRetry: Readonly<RetryPolicy> = DEFAULT_RECEIPT_RETRY,
   ) {
     this.anchorQuery = delegation && { hby, querying: delegation.querying, retryPasses: new Map() };
   }
@@ -436,11 +444,11 @@ export class Counselor {
       if (submit) yield* this.receipting.receipt(event.pre, { sn: event.sn, auths: run.auths });
       else yield* this.receipting.get(event.pre, { sn: event.sn, said: event.said });
       run.failure = null;
-      run.delay = RECEIPT_BACKOFF_MS.first;
+      run.delay = this.receiptRetry.baseMs;
     } catch (error) {
       // A witness refusing or being unreachable is a remote outcome: report it in status and retry later.
       run.failure = error instanceof Error ? error.message : String(error);
-      run.delay = Math.min(run.delay * 2, RECEIPT_BACKOFF_MS.max);
+      run.delay = Math.min(run.delay * 2, this.receiptRetry.maxMs);
     }
     run.nextAt = now + run.delay;
     if (!this.hby.db.fullyWitnessed(serder)) this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
@@ -499,7 +507,7 @@ export class Counselor {
         fallbackAfterMs: DEFAULT_FALLBACK_AFTER_MS,
         since: null,
         nextAt: 0,
-        delay: RECEIPT_BACKOFF_MS.first,
+        delay: this.receiptRetry.baseMs,
         failure: null,
         proxy: null,
         begun: false,
