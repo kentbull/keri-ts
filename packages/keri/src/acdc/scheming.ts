@@ -229,65 +229,110 @@ class SchemaResources {
   }
 }
 
+/** A closure's validator and the compiled root function, kept so a retry does not compile again. */
+interface CompiledSchema {
+  validator: Validator;
+  validate: SchemaFunction;
+}
+/** A compiled schema, or the normal invalid outcome compiling it found. */
+type SchemaCompilation = CompiledSchema | SchemaValidation;
+type SchemaFunction = ((data: unknown) => boolean) & { errors?: unknown };
+/** Most closures kept per store; the oldest is evicted first. */
+const COMPILED_SCHEMA_BOUND = 256;
+/**
+ * Compiled closures by store, then root SAID. A closure is fully determined by its root SAID: the root and every
+ * bundled or `$ref` resource is verified against its SAID when admitted, so a cached closure cannot go stale.
+ * Per store, so a store that does not hold the schema still reports it missing; only a valid closure is kept.
+ */
+const compiledSchemas = new WeakMap<Baser, Map<string, CompiledSchema>>();
+let compilations = 0;
+/** How many schema closures this process has compiled; a diagnostic for tests of the cache. */
+export function schemaCompilationCount(): number {
+  return compilations;
+}
+
+function isCompiled(value: SchemaCompilation): value is CompiledSchema {
+  return "validate" in value;
+}
+
+/** Compile an admitted closure once; regular-expression and duplicate-id refusals are normal invalid outcomes. */
+function compileClosure(resources: SchemaResources, root: Resource): SchemaCompilation {
+  const { roots, scopes } = resources;
+  // Compile only admitted private copies. Canonical local URNs remove URI-alias ambiguity without changing stored IDs.
+  const uri = (said: string) => `urn:said:${said}`;
+  const registered = new Set<string>();
+  const copy = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(copy);
+    if (!object(value)) return value;
+    const result = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copy(item)]));
+    const owner = scopes.get(value);
+    if (!owner) return result;
+    if ("$id" in value) {
+      if (registered.has(owner.said)) delete result.$id;
+      else {
+        result.$id = uri(owner.said);
+        registered.add(owner.said);
+      }
+    }
+    if ("$ref" in value) {
+      const parsed = reference(value.$ref);
+      result.$ref = uri(parsed.said ?? owner.said) + parsed.fragment;
+    }
+    // Python treats these AJV extension/obsolete applicator keywords as annotations.
+    for (const key of ["$async", "nullable", "dependencies", "additionalItems"]) delete result[key];
+    return result;
+  };
+  const validator = new ValidatorCtor({ strict: false, validateFormats: false });
+  for (const schema of scopes.keys()) {
+    if (!validator.validateSchema(schema)) throw new InvalidSchema("Invalid Draft 2020-12 schema");
+  }
+  const copies = roots.map(copy);
+  let validate: SchemaFunction | undefined;
+  try {
+    for (const schema of copies) validator.addSchema(schema);
+    validate = validator.getSchema(uri(root.said));
+  } catch (error) {
+    if (error instanceof SyntaxError && error.message.includes("regular expression")) {
+      return { kind: "invalid", subject: "schema", reason: error.message };
+    }
+    if (error instanceof Error && /^reference "urn:said:[^"]+" resolves to more than one schema$/.test(error.message)) {
+      return { kind: "invalid", subject: "schema", reason: error.message };
+    }
+    throw error;
+  }
+  if (!validate) throw new Error("Admitted schema was not registered");
+  compilations++;
+  return { validator, validate };
+}
+
 /** Local static schema closure plus a synchronous Draft 2020-12 validator; legacy Schemer behavior is unchanged. */
 export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | Readonly<Schema>): SchemaValidation {
-  const resources = new SchemaResources(db);
   try {
+    // The closure is always admitted: that verifies every SAID, and the verified root SAID names the cached validator.
+    const resources = new SchemaResources(db);
     const root = resources.admit(override ?? acdc.schema);
     if (!root) {
       return resources.missing
         ? { kind: "missing", said: resources.missing }
         : { kind: "invalid", subject: "schema", reason: "Invalid ACDC schema field" };
     }
-    const { roots, scopes } = resources;
-    // Compile only admitted private copies. Canonical local URNs remove URI-alias ambiguity without changing stored IDs.
-    const uri = (said: string) => `urn:said:${said}`;
-    const registered = new Set<string>();
-    const copy = (value: unknown): unknown => {
-      if (Array.isArray(value)) return value.map(copy);
-      if (!object(value)) return value;
-      const result = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copy(item)]));
-      const owner = scopes.get(value);
-      if (!owner) return result;
-      if ("$id" in value) {
-        if (registered.has(owner.said)) delete result.$id;
-        else {
-          result.$id = uri(owner.said);
-          registered.add(owner.said);
-        }
+    // An override object is checked against the document it replaces each time and is never kept.
+    const keep = typeof override !== "object";
+    let store = compiledSchemas.get(db);
+    let compiled = keep ? store?.get(root.said) : undefined;
+    if (!compiled) {
+      const built = compileClosure(resources, root);
+      if (!isCompiled(built)) return built;
+      compiled = built;
+      if (keep) {
+        if (!store) compiledSchemas.set(db, store = new Map<string, CompiledSchema>());
+        if (store.size >= COMPILED_SCHEMA_BOUND) store.delete(store.keys().next().value!);
+        store.set(root.said, compiled);
       }
-      if ("$ref" in value) {
-        const parsed = reference(value.$ref);
-        result.$ref = uri(parsed.said ?? owner.said) + parsed.fragment;
-      }
-      // Python treats these AJV extension/obsolete applicator keywords as annotations.
-      for (const key of ["$async", "nullable", "dependencies", "additionalItems"]) delete result[key];
-      return result;
-    };
-    const validator = new ValidatorCtor({ strict: false, validateFormats: false });
-    for (const schema of scopes.keys()) {
-      if (!validator.validateSchema(schema)) throw new InvalidSchema("Invalid Draft 2020-12 schema");
     }
-    const copies = roots.map(copy);
-    let validate: ReturnType<Validator["getSchema"]>;
-    try {
-      for (const schema of copies) validator.addSchema(schema);
-      validate = validator.getSchema(uri(root.said));
-    } catch (error) {
-      if (error instanceof SyntaxError && error.message.includes("regular expression")) {
-        return { kind: "invalid", subject: "schema", reason: error.message };
-      }
-      if (
-        error instanceof Error && /^reference "urn:said:[^"]+" resolves to more than one schema$/.test(error.message)
-      ) {
-        return { kind: "invalid", subject: "schema", reason: error.message };
-      }
-      throw error;
-    }
-    if (!validate) throw new Error("Admitted schema was not registered");
-    return validate(acdc.sad)
+    return compiled.validate(acdc.sad)
       ? { kind: "valid" }
-      : { kind: "invalid", subject: "credential", reason: validator.errorsText(validate.errors) };
+      : { kind: "invalid", subject: "credential", reason: compiled.validator.errorsText(compiled.validate.errors) };
   } catch (error) {
     if (error instanceof InvalidSchema) return { kind: "invalid", subject: "schema", reason: error.message };
     throw error;
