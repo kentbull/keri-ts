@@ -133,24 +133,36 @@ function originOf(url: string): string | null {
 }
 
 /**
- * Refuse egress to anything but the relay. The relay's accepted locations are read on every request, so a
- * location accepted (or replaced) after composition is honored without rebuilding the client.
+ * Whether a URL addresses the relay: its origin is the relay's own OOBI origin or the origin of a currently accepted
+ * relay location. The accepted locations are read on every call, so a location accepted (or replaced) later is
+ * honored at once. The egress guard refuses everything else, and the edge's Oobiery fetches such a URL directly
+ * while it resolves any other origin's OOBI through the relay.
  *
  * @param hby Borrowed accepted-state store holding the relay's location replies.
  * @param relay The configured relay agent.
- * @param oobiOrigin Origin of the relay's own OOBI, allowed before its location is accepted.
+ * @param url Candidate absolute URL.
+ * @returns True when the URL's origin is the relay's.
+ */
+export function isRelayOrigin(hby: Habery, relay: Relay, url: string): boolean {
+  const origin = originOf(url);
+  if (origin === null) return false;
+  if (origin === originOf(relay.oobi)) return true;
+  return Object.values(fetchEndpointUrls(hby, relay.aid)).some((location) => originOf(location) === origin);
+}
+
+/**
+ * Refuse egress to anything but the relay (see {@link isRelayOrigin}).
+ *
+ * @param hby Borrowed accepted-state store holding the relay's location replies.
+ * @param relay The configured relay agent.
  * @param url Requested URL.
  * @throws RelayOnlyError when the URL's origin is not the relay's.
  */
-function requireRelayOrigin(hby: Habery, relay: Relay, oobiOrigin: string, url: string): void {
-  const origin = originOf(url);
-  if (origin !== null) {
-    if (origin === oobiOrigin) return;
-    for (const location of Object.values(fetchEndpointUrls(hby, relay.aid))) {
-      if (originOf(location) === origin) return;
-    }
-  }
-  throw new RelayOnlyError(`Relay-only egress refused ${origin ?? "an unparseable URL"}; relay is ${relay.aid}.`);
+function requireRelayOrigin(hby: Habery, relay: Relay, url: string): void {
+  if (isRelayOrigin(hby, relay, url)) return;
+  throw new RelayOnlyError(
+    `Relay-only egress refused ${originOf(url) ?? "an unparseable URL"}; relay is ${relay.aid}.`,
+  );
 }
 
 /**
@@ -175,11 +187,11 @@ export function relayOnlyHttpClient(inner: HttpClient, hby: Habery, relay: Relay
   const tcp: TcpDialer | undefined = dialer
     ? {
       messenger(url, clock, protocol) {
-        requireRelayOrigin(hby, relay, oobiOrigin, url);
+        requireRelayOrigin(hby, relay, url);
         return dialer.messenger(url, clock, protocol);
       },
       streamMessenger(url, clock, payload) {
-        requireRelayOrigin(hby, relay, oobiOrigin, url);
+        requireRelayOrigin(hby, relay, url);
         return dialer.streamMessenger(url, clock, payload);
       },
     }
@@ -187,11 +199,11 @@ export function relayOnlyHttpClient(inner: HttpClient, hby: Habery, relay: Relay
   return {
     ...(tcp ? { tcp } : {}),
     *request(url: string, init?: HttpRequestInit): Operation<HttpResponse> {
-      requireRelayOrigin(hby, relay, oobiOrigin, url);
+      requireRelayOrigin(hby, relay, url);
       return yield* inner.request(url, init);
     },
     *open(url: string, init?: HttpRequestInit): Operation<HttpStreamResponse> {
-      requireRelayOrigin(hby, relay, oobiOrigin, url);
+      requireRelayOrigin(hby, relay, url);
       return yield* inner.open(url, init);
     },
   };

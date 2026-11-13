@@ -191,28 +191,12 @@ export class ForwardHandler implements ExchangeRouteHandler {
     mailboxAid: string | null | undefined,
   ): ForwardPath | null {
     const hby = this.mailboxDirector.hby;
-    if (this.relaying && hby.habs.has(recipient) && this.servingHost(source, mailboxAid)) return { kind: "ingest" };
+    if (this.relaying && hby.habs.has(recipient) && servingHost(hby, source, mailboxAid)) return { kind: "ingest" };
     if (this.canStoreRecipient(recipient, mailboxAid)) return { kind: "store" };
     // Nothing addressed to this Habery leaves through its own Poster; it would only loop back here.
     if (!this.relaying || hby.db.prefixes.has(recipient)) return null;
-    const host = this.servingHost(source, mailboxAid);
+    const host = servingHost(hby, source, mailboxAid);
     return host ? { kind: "relay", host } : null;
-  }
-
-  /**
-   * Select the local host that serves this source, or null.
-   *
-   * Without request-scoped provenance any local habitat the source authorized serves it, as the store path
-   * accepts any local store host.
-   *
-   * @param source Authenticated `/fwd` signer and the forwarded message's own originator.
-   * @param mailboxAid Receiving hosted endpoint AID, or null when the request named none.
-   * @returns The local AID the source authorized, or null.
-   */
-  private servingHost(source: ForwardSource, mailboxAid: string | null | undefined): string | null {
-    const hby = this.mailboxDirector.hby;
-    const hosts = mailboxAid ? [mailboxAid] : [...hby.db.prefixes];
-    return hosts.find((host) => hby.habs.has(host) && servesSource(hby, source, host)) ?? null;
   }
 
   /**
@@ -292,14 +276,32 @@ function authorizesHost(hby: Habery, cid: string, hostAid: string): boolean {
 }
 
 /**
- * Who a `/fwd` speaks for. A group's `/fwd` wrapper is signed by its local member (Poster cannot meet a group
- * threshold with one signature), so the signer and the forwarded message's originator can differ.
+ * Who a relayed request speaks for. A group's `/fwd` wrapper is signed by its local member (Poster cannot meet a
+ * group threshold with one signature), so the signer and the forwarded message's originator can differ. A request
+ * the host consumes itself (an `/oobis` request) has no forwarded originator.
  */
-interface ForwardSource {
+export interface ForwardSource {
   /** Authenticated `/fwd` signer (its `i`), verified by the Exchanger before this handler runs. */
   readonly sender: string | null;
   /** The forwarded message's own `i` (an ACDC's issuer), or null when it carries none. */
   readonly origin: string | null;
+}
+
+/**
+ * Select the local host that serves this source, or null. This is the one served-sender rule of a relaying host:
+ * `/fwd` intake relays only for it and the `/oobis` handler resolves only for it.
+ *
+ * Without request-scoped provenance any local habitat the source authorized serves it, as the store path
+ * accepts any local store host.
+ *
+ * @param hby Borrowed local habitat collection and accepted-state database.
+ * @param source Authenticated signer and, for a `/fwd`, the forwarded message's own originator.
+ * @param mailboxAid Receiving hosted endpoint AID, or null when the request named none.
+ * @returns The local AID the source authorized, or null.
+ */
+export function servingHost(hby: Habery, source: ForwardSource, mailboxAid: string | null | undefined): string | null {
+  const hosts = mailboxAid ? [mailboxAid] : [...hby.db.prefixes];
+  return hosts.find((host) => hby.habs.has(host) && servesSource(hby, source, host)) ?? null;
 }
 
 /**

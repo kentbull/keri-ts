@@ -13,9 +13,12 @@ import type { Revery } from "../../core/routing.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../../core/routing.ts";
 import { Schemer } from "../../core/scheming.ts";
 import type { Baser } from "../../db/basing.ts";
+import type { Poster } from "../delivery/forwarding.ts";
+import { isRelayOrigin, type Relay, relayAuthorized, relayEndpoint, relayRefusal } from "../delivery/relaying.ts";
 import type { Exchanger, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { persistResolvedContact } from "../identity/organizing.ts";
+import { servingHost } from "../mailbox/forward-handler.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { abortable } from "../runtime/abortable.ts";
@@ -25,8 +28,41 @@ import { collectBytes } from "../transport/byte-source.ts";
 import type { HttpStreamResponse } from "../transport/http-client.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { processMessages } from "../transport/message-source.ts";
+import { TransportError } from "../transport/transport-error.ts";
 
 export const OOBI_REQUEST_ROUTE = "/oobis";
+
+/**
+ * How long an edge's OOBI job waits for its relay to hold the answer before it fails: 30 seconds, measured from the
+ * job's first relay attempt on the composed clock. It matches KERIpy's `Oobiery.RetryDelay` and the default
+ * `bootstrapOobis` timeout; the keri-ts Oobiery has no other retry, and a direct fetch fails on its first non-OK
+ * answer.
+ */
+export const RELAY_OOBI_TIMEOUT_MS = 30_000;
+
+/** Job states of an OOBI an edge resolves through its relay; any other state starts a new relay wait. */
+const RelayOobiStates = Object.freeze({
+  /** Waiting; the relay has not been asked yet (its location or a serving authorization is missing). */
+  pending: "relay-pending",
+  /** Waiting; the relay was asked with `/oobis` and has not answered with the result yet. */
+  requested: "relay-requested",
+});
+
+/**
+ * What an edge's Oobiery uses to resolve OOBIs through its relay agent instead of fetching third-party origins.
+ *
+ * For a job whose origin is not the relay's, the Oobiery asks the relay to resolve the URL (an `/oobis` exchange
+ * sent through `postman`) and then fetches the result from the relay's own OOBI endpoint, verifying what it
+ * ingests exactly as for a direct fetch. The relay's own OOBI is fetched directly.
+ */
+export interface OobiRelaying {
+  /** The relay agent; the only origin this Oobiery fetches. */
+  readonly relay: Relay;
+  /** Borrowed delivery owner that hands the `/oobis` request to the relay. */
+  readonly postman: Poster;
+  /** Borrowed clock that dates a job's relay wait and decides {@link RELAY_OOBI_TIMEOUT_MS}. */
+  readonly clock: RuntimeClock;
+}
 
 /**
  * Runtime-tracked OOBI resolution job.
@@ -130,8 +166,15 @@ export class Oobiery {
   readonly cues: Deck<AgentCue>;
   /** Borrowed HTTP client; no network service is discovered through ingress. */
   readonly http: HttpClient;
+  /** Relay collaborators of an edge; null resolves every OOBI directly. */
+  readonly relaying: OobiRelaying | null;
   /** Prevent overlapping passes over this owner's durable job queue. */
   private active = false;
+  /**
+   * URL of the last job handled with a relay, so a job left waiting does not starve the jobs after it: the next
+   * pass takes the first queued URL after this one. Always null without a relay.
+   */
+  private relayCursor: string | null = null;
 
   /**
    * Bind byte intake and the actual reply verifier used by OOBI proof persistence.
@@ -141,6 +184,7 @@ export class Oobiery {
    * @param rvy Actual shared reply verifier used for OOBI reply proof persistence.
    * @param http Borrowed HTTP implementation selected by composition.
    * @param cues Required application result Deck supplied by composition.
+   * @param relaying Relay collaborators of an edge runtime; null (a forwarder) resolves every OOBI directly.
    */
   constructor(
     hby: Habery,
@@ -149,6 +193,7 @@ export class Oobiery {
     private readonly rvy: Revery,
     http: HttpClient,
     cues: Deck<AgentCue>,
+    relaying: OobiRelaying | null = null,
   ) {
     this.hby = hby;
     this.kvy = protocol.makeKevery();
@@ -157,6 +202,7 @@ export class Oobiery {
     }
     this.cues = cues;
     this.http = http;
+    this.relaying = relaying;
   }
 
   /**
@@ -242,15 +288,22 @@ export class Oobiery {
     return yield* doEveryOnWrite(clock, pacing, this.hby.db, () => this.processOnce());
   }
 
-  /** Select queued work, including a surviving in-flight row whose former process is gone. */
+  /**
+   * Select queued work, including a surviving in-flight row whose former process is gone. After a relay job, the
+   * first queued URL after it is taken, wrapping around, so jobs waiting on the relay take turns.
+   */
   private nextQueued(): [OobiQueueKind, string, OobiRecord] | null {
+    const after = this.relayCursor;
+    let first: [OobiQueueKind, string, OobiRecord] | null = null;
     for (const store of [this.hby.db.oobis, this.hby.db.coobi]) {
       for (const [keys, record] of store.getTopItemIter()) {
         const url = keys[0];
-        if (url) return ["oobis", url, record];
+        if (!url) continue;
+        if (after === null || url > after) return ["oobis", url, record];
+        first ??= ["oobis", url, record];
       }
     }
-    return null;
+    return first;
   }
 
   /** Select a parent only after its current child attempts, including authentication, settle. */
@@ -283,6 +336,11 @@ export class Oobiery {
     url: string,
     record: OobiRecord,
   ): Operation<void> {
+    if (this.relaying && !isRelayOrigin(this.hby, this.relaying.relay, url)) {
+      this.relayCursor = url;
+      yield* this.processRelayJob(this.relaying, kind, url, record);
+      return;
+    }
     const http = this.http;
     const meta = {
       ...parseOobiUrl(url, record.oobialias ?? undefined),
@@ -399,14 +457,187 @@ export class Oobiery {
       role: meta.role ?? undefined,
       eid: meta.eid ?? undefined,
     };
-    this.pinQueueStore(kind, url, queuedRecord);
-    this.hby.db.coobi.pin(url, { ...queuedRecord, state: "streaming" });
-    yield* processMessages((signal) => response.body(signal), this.protocol, this.kvy);
-
-    this.hby.db.coobi.rem(url);
+    yield* this.ingestCesrOobiResponse(kind, url, queuedRecord, response);
     this.hby.db.roobi.pin(url, { ...queuedRecord, date: new Date().toISOString(), state: "resolved" });
     persistResolvedContact(this.hby, meta.cid, { alias: queuedRecord.oobialias, oobi: url });
     this.cues.push(cue);
+  }
+
+  /**
+   * Dispatch one complete CESR OOBI response through this owner's Kevery and the shared semantic handlers, keeping
+   * the queued row and an in-flight `coobi.` row until the stream is consumed. Writes no terminal state.
+   *
+   * @param kind Durable OOBI queue family identifying the job path.
+   * @param url Exact OOBI URL used as the durable job key.
+   * @param queuedRecord Original durable job metadata retained until terminal publication.
+   * @param response Borrowed scoped HTTP response.
+   */
+  private *ingestCesrOobiResponse(
+    kind: OobiQueueKind,
+    url: string,
+    queuedRecord: OobiRecordShape,
+    response: HttpStreamResponse,
+  ): Operation<void> {
+    this.pinQueueStore(kind, url, queuedRecord);
+    this.hby.db.coobi.pin(url, { ...queuedRecord, state: "streaming" });
+    yield* processMessages((signal) => response.body(signal), this.protocol, this.kvy);
+    this.hby.db.coobi.rem(url);
+  }
+
+  /**
+   * Resolve one job through the relay: ask it once, then fetch the result from the relay's own OOBI endpoint.
+   *
+   * The job stays in `oobis.` while it waits, dated from its first relay attempt; a pass that changes nothing
+   * writes nothing. It waits while the relay answers 404, is unreachable, or answers a controller OOBI without the
+   * controller's KEL. It fails at {@link RELAY_OOBI_TIMEOUT_MS}: `relay-unresolved` when the relay was asked,
+   * `relay-unserved` when it never could be (no accepted relay location, or no local identifier authorized the
+   * relay as its mailbox). Another non-OK answer fails at once as `http-<status>`, as a direct fetch does, and a URL
+   * that names neither an identifier nor a SAID fails at once as `relay-unmappable-oobi`.
+   *
+   * @param relaying Relay collaborators of this edge.
+   * @param kind Durable OOBI queue family identifying the job path.
+   * @param url Exact third-party OOBI URL used as the durable job key; it is never fetched.
+   * @param record Pending durable job.
+   */
+  private *processRelayJob(
+    relaying: OobiRelaying,
+    kind: OobiQueueKind,
+    url: string,
+    record: OobiRecord,
+  ): Operation<void> {
+    const { relay, postman, clock } = relaying;
+    const meta = { ...parseOobiUrl(url, record.oobialias ?? undefined), ...record, url };
+    const path = relayOobiPath(meta);
+    if (path === null) {
+      this.remQueueStore(kind, url);
+      this.failFetchedOobi(url, record, "relay-unmappable-oobi");
+      return;
+    }
+    let waiting: OobiRecordShape = record;
+    if (record.state !== RelayOobiStates.pending && record.state !== RelayOobiStates.requested) {
+      waiting = {
+        ...record,
+        date: new Date(clock.now()).toISOString(),
+        state: RelayOobiStates.pending,
+        cid: meta.cid ?? null,
+        eid: meta.eid ?? null,
+        role: meta.role ?? null,
+        oobialias: meta.alias ?? meta.oobialias ?? null,
+        said: meta.said ?? null,
+      };
+      this.hby.db.transaction(() => {
+        this.pinQueueStore(kind, url, waiting);
+        this.hby.db.eoobi.rem(url);
+        this.hby.db.roobi.rem(url);
+      });
+    }
+    if (waiting.state === RelayOobiStates.pending) {
+      const asker = this.relayAsker(relay);
+      if (asker) {
+        const exn = oobiRequestExn(asker, relay.aid, url);
+        postman.send({
+          src: asker.pre,
+          dest: relay.aid,
+          topic: OOBI_MAILBOX_TOPIC,
+          msg: asker.endorse(exn, { pipelined: false }),
+        });
+        waiting = { ...waiting, state: RelayOobiStates.requested };
+        this.pinQueueStore(kind, url, waiting);
+      }
+    }
+
+    const endpoint = relayEndpoint(this.hby, relay);
+    const base = endpoint?.urls.https ?? endpoint?.urls.http;
+    if (base) {
+      const refused = yield* this.fetchFromRelay(kind, url, waiting, meta, new URL(path, withSlash(base)).href);
+      if (refused === "resolved") return;
+      if (refused !== "waiting") {
+        this.remQueueStore(kind, url);
+        this.hby.db.eoobi.pin(url, { ...waiting, date: new Date().toISOString(), state: `http-${refused}` });
+        this.cues.push({ kin: "oobiFailed", url, reason: `HTTP ${refused}` });
+        return;
+      }
+    }
+    if (clock.now() - Date.parse(waiting.date ?? "") < RELAY_OOBI_TIMEOUT_MS) return;
+    const state = waiting.state === RelayOobiStates.requested ? "relay-unresolved" : "relay-unserved";
+    this.remQueueStore(kind, url);
+    this.failFetchedOobi(url, waiting, state);
+  }
+
+  /**
+   * Fetch what the relay holds for one job and ingest it under the ordinary verification.
+   *
+   * @param kind Durable OOBI queue family identifying the job path.
+   * @param url Exact third-party OOBI URL used as the durable job key.
+   * @param record Waiting durable job metadata.
+   * @param meta Parsed OOBI URL metadata selecting the response interpretation.
+   * @param relayUrl URL on the relay's origin that serves the job's answer.
+   * @returns `resolved` after a terminal write, `waiting` when the relay does not hold the answer yet, or the
+   * refusing HTTP status.
+   */
+  private *fetchFromRelay(
+    kind: OobiQueueKind,
+    url: string,
+    record: OobiRecordShape,
+    meta: { cid?: string | null; role?: string | null; eid?: string | null },
+    relayUrl: string,
+  ): Operation<RelayFetchResult> {
+    const http = this.http;
+    // deno-lint-ignore no-this-alias -- The scoped body borrows this OOBI worker's durable queue.
+    const self = this;
+    try {
+      return yield* scoped(function*(): Operation<RelayFetchResult> {
+        const response = yield* http.open(relayUrl);
+        if (response.status === 404) return "waiting";
+        if (!response.ok) return response.status;
+        const type = mediaType(response.headers.get("content-type") ?? "");
+        if (!isCesrMediaType(type) && type.includes("json")) {
+          // Schema and JSON OOBI bodies reach a terminal state under the direct-fetch rules.
+          yield* self.processResponse(kind, url, record, meta, response);
+          self.remQueueStore(kind, url);
+          return "resolved";
+        }
+        yield* self.ingestCesrOobiResponse(kind, url, record, response);
+        // An answer without the controller's KEL is not the result yet; the relay may still be resolving it.
+        if (meta.cid && !self.hby.db.getKever(meta.cid)) return "waiting";
+        self.remQueueStore(kind, url);
+        self.hby.db.roobi.pin(url, { ...record, date: new Date().toISOString(), state: "resolved" });
+        persistResolvedContact(self.hby, meta.cid, { alias: record.oobialias, oobi: url });
+        self.cues.push({
+          kin: "oobiResolved",
+          url,
+          cid: meta.cid ?? undefined,
+          role: meta.role ?? undefined,
+          eid: meta.eid ?? undefined,
+        });
+        return "resolved";
+      });
+    } catch (error) {
+      // An unreachable relay is the same wait as a relay that has not resolved the job yet.
+      if (error instanceof TransportError) return "waiting";
+      throw error;
+    } finally {
+      // Remove only a row this fetch left; a pass that changed nothing writes nothing.
+      if (this.hby.db.coobi.get(url)) this.hby.db.coobi.rem(url);
+    }
+  }
+
+  /**
+   * The local identifier that asks the relay to resolve an OOBI: one the relay serves, which has authorized the
+   * relay as its mailbox ({@link relayAuthorized}). A group cannot sign the request alone, so groups never ask.
+   *
+   * @param relay The configured relay agent.
+   * @returns The asking habitat, or null while the relay has no accepted location or no local identifier it serves.
+   */
+  private relayAsker(relay: Relay): Hab | null {
+    if (relayRefusal(this.hby, relay, null)) return null;
+    for (const hab of this.hby.habs.values()) {
+      const pre = hab.pre;
+      if (pre && pre !== relay.aid && !this.hby.db.groups.has(pre) && relayAuthorized(this.hby, pre, relay)) {
+        return hab;
+      }
+    }
+    return null;
   }
 
   /** Handle schema data-OOBIs before generic JSON reply handling. */
@@ -650,12 +881,22 @@ export class Oobiery {
   }
 }
 
+/**
+ * Register the `/oobis` exchange handler.
+ *
+ * @param hby Borrowed local identities and the durable OOBI queue.
+ * @param exchanger Exchanger receiving the route.
+ * @param notifier Optional operator notice producer.
+ * @param relaying Whether this host relays (the agent side of relay mode): requests are then accepted only from a
+ * served sender.
+ */
 export function loadOobiHandlers(
   hby: Habery,
   exchanger: Exchanger,
   notifier: Notifier | null = null,
+  relaying = false,
 ): void {
-  exchanger.addHandler(new OobiRequestHandler(hby, notifier));
+  exchanger.addHandler(new OobiRequestHandler(hby, notifier, relaying));
 }
 
 /**
@@ -677,24 +918,49 @@ export function loadOobiHandlers(
  *   state
  * - unlike KERIpy's DoDoer-centric runtime, the queued record is later
  *   advanced by the shared `AgentRuntime` turn that owns OOBI processing
+ * - on a relaying host (the agent side of relay mode) a request is accepted
+ *   only from a served sender, by the same rule `/fwd` intake relays for
+ *   ({@link servingHost}): the sender authorized a local habitat as its
+ *   `mailbox` or `agent`. An edge resolves third-party OOBIs this way; nobody
+ *   else can make the agent fetch a URL. Without relaying, any authenticated
+ *   sender is accepted, as in KERIpy.
  */
 export class OobiRequestHandler implements ExchangeRouteHandler {
   static readonly resource = OOBI_REQUEST_ROUTE;
   readonly resource = OobiRequestHandler.resource;
   readonly hby: Habery;
   readonly notifier: Notifier | null;
+  /** Whether requests are restricted to served senders. */
+  readonly relaying: boolean;
 
+  /**
+   * @param hby Borrowed local identities and the durable OOBI queue.
+   * @param notifier Optional operator notice producer.
+   * @param relaying Restrict requests to served senders (a relaying host); false accepts any sender.
+   */
   constructor(
     hby: Habery,
     notifier: Notifier | null = null,
+    relaying = false,
   ) {
     this.hby = hby;
     this.notifier = notifier;
+    this.relaying = relaying;
   }
 
+  /**
+   * Accept a request carrying an HTTP(S) `oobi`; on a relaying host, only from a served sender.
+   *
+   * @param args Authenticated exchange and the receiving hosted endpoint, if the request named one.
+   * @returns False to reject the exchange.
+   */
   verify(args: {
     serder: SerderKERI;
+    mailboxAid?: string | null;
   }): boolean {
+    if (this.relaying && !servingHost(this.hby, { sender: args.serder.pre, origin: null }, args.mailboxAid)) {
+      return false;
+    }
     const payload = args.serder.ked?.a as Record<string, unknown> | undefined;
     if (typeof payload?.["oobi"] !== "string") {
       return false;
@@ -821,6 +1087,34 @@ function findPathSequence(parts: string[], sequence: string[]): number {
   }
 
   return -1;
+}
+
+/** Outcome of one relay fetch: a terminal write, a wait for the relay, or the refusing HTTP status. */
+type RelayFetchResult = "resolved" | "waiting" | number;
+
+/**
+ * Path, relative to the relay's location, at which the relay serves what an OOBI job names. The relay's OOBI
+ * endpoint answers for what it holds, so the third party's host and base path are dropped:
+ * - a controller, witness, agent or mailbox OOBI `.../oobi/{cid}/{role}[/{eid}]` maps to
+ *   `oobi/{cid}/{role}[/{eid}]`; the relay answers with the controller's KEL (receipts included) and the replies
+ *   it holds for that role;
+ * - a data OOBI `.../oobi/{said}` (a schema) maps to `oobi/{said}`.
+ * Well-known OOBIs are authentication jobs, not Oobiery jobs. A URL naming neither maps to nothing.
+ *
+ * @param job Parsed job metadata.
+ * @returns The relative path, or null when the job names no identifier or SAID.
+ */
+function relayOobiPath(job: OobiRecordShape): string | null {
+  if (job.cid && job.role) {
+    return ["oobi", job.cid, job.role, ...(job.eid ? [job.eid] : [])].map(encodeURIComponent).join("/");
+  }
+  if (job.said) return `oobi/${encodeURIComponent(job.said)}`;
+  return null;
+}
+
+/** A base URL that resolves relative paths beneath it rather than beside its last segment. */
+function withSlash(url: string): string {
+  return url.endsWith("/") ? url : `${url}/`;
 }
 
 function queueKindFor(url: string): OobiQueueKind {
