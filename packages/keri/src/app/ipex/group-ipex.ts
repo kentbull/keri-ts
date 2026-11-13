@@ -25,6 +25,7 @@ import { concatBytes, Counter, type SerderKERI, type Versionage, Vrsn_2_0 } from
 import type { Operation } from "npm:effection@^3.6.0";
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
+import { loadNests } from "../../db/exchange/exchange-nests.ts";
 import { type RegistryEventRef, registryEventStatus, settleRegistryEvent } from "../credentials/registry-settling.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
@@ -50,6 +51,8 @@ import {
   sendCompletedGroupIpex,
   storedMultisigIpexBody,
 } from "./ipex-grouping.ts";
+import { isIssuanceOrigin } from "./ipex-node-authentication.ts";
+import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
 
 /** Milliseconds between collections of the other members' stored contributions. */
 export const GROUP_IPEX_COLLECT_MS = 250;
@@ -408,6 +411,10 @@ export function groupIpexProposals(ops: GroupIpexOperations, hab?: Hab): GroupIp
       || !hby.habs.get(group) || !isLocalGroupHab(hby, hby.habs.get(group)!)
     ) continue;
     if (found.some((item) => item.said === embedded.said)) continue;
+    if (
+      embedded.route === IPEX_GRANT_ROUTE
+      && isIssuanceOrigin(group, loadNests(hby.db, wrapper.said!)[0]?.nests?.[0])
+    ) continue;
     found.push({
       said: embedded.said!,
       route: embedded.route,
