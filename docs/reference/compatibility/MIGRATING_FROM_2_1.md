@@ -26,6 +26,9 @@ are Node-only.
 
 ## Wallet package
 
+- `openWebWallet` returns `identifiers`, `oobis`, `mailboxes`, `credentials`, `groups` and `proposals`. They share one
+  `WalletScope` they hold (no base class), their option and outcome types are named and exported, and the namespace
+  classes are exported as types only. Group identifiers use the same `credentials` calls; see the guide.
 - `createWalletBaser` is no longer exported from `@keri-ts/wallet`. Import it from
   `@keri-ts/wallet/lmdb`. The root is now browser-safe and exports `openWalletBaser(opener, identity)`; `@keri-ts/wallet/web` adds `openWebWallet`.
 - `openWebWallet` is new in 2.2.0 (it was not in 2.1.0), so there is no earlier `WebWalletHealth`
@@ -81,8 +84,25 @@ Changed:
   the fixed `OWNER_TOCK_MS` (`DoerPacing`); `OWNER_BUSY_MS`, `OWNER_IDLE_MS`, `OwnerWake`,
   `operations.wake` and the publisher's busy and idle cadences never shipped.
 
+## New runtime options and status fields
+
+- `createAgentRuntime` / `openWebWallet`'s `runtime` option take pacing and retry values, each with a production default:
+  `ownerPacing`, `publisherPacing`, `protocolPacing` and `pollerPacing` (`DoerPacing`: `tockMs`, `sweepTocks`; a host may
+  slow them for a background tab or battery), `operationRetry`, `counselorReceiptRetry` and `kelPublishRetry`
+  (`RetryPolicy`: `baseMs`, `maxMs`, `boundMs`), `issuanceQueryResendMs`, and `mailboxPolling` (request-open, poll-window,
+  read-idle and refusal back-off times). See the [wallet guide](../../design-docs/runtime/WALLET_LIBRARY_GUIDE.md#pacing).
+- Active issuance, presentation and Unblind statuses carry `failure` (`attempts`, `reason`, `retryAt`) while a delivery
+  is being retried. Presentation status has no `attempts` or `blocked` fields, and `present` has no `maxAttempts`.
+- The `IPEX` owner functions derive the party from the Grant (`beginIssuance(ops, grant)`, `approveIssuanceExchange(ops, grant)`, `admitIssuance(deps, grant)`, `requestUnblind(ops, grant, options?)`), and group issuance is
+  `proposeGroupIssuance` / `approveGroupIssuance` with `groupIssuanceElection`; see the guide. Holders can use the
+  `receiveIssuance` and `admitAndDeliver` workflows instead of sequencing the calls.
+- `RegistryRoot` takes an optional `ChangeSink` and publishes `{ kind: "root", id: registry }` when it retains a copy.
+
 ## Tufa CLI
 
+- `tufa ipex` group issuance: `--coordinator` is optional (default the group's latest establishment event) and
+  `--custodian` is optional and only asserts the custodian the election names. `tufa ipex admit --acdc-v2` calls the
+  `admitAndDeliver` workflow with unchanged flags and output.
 - `tufa delegate confirm` gains `--timeout <seconds>` (default 30) and its errors say which
   request or anchor never arrived.
 - `tufa witness start` and `tufa mailbox start` accept `--version 1.0|2.0` for the host AID they
