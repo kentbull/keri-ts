@@ -48,7 +48,7 @@ const issued = await w.credentials.issue({
 
 // Present, and verify what was presented to you.
 await w.credentials.present({ verb: "grant", pre: icp.pre, selection: { said }, options: { message: "", recipient } });
-await w.credentials.requestProof(icp.pre, { message: "", recipient: holder }); // the verifier's apply
+await w.credentials.requestProof(icp.pre, { message: "", recipient: holder, plan: [] }); // the verifier's apply
 for (const p of w.credentials.presentations()) await w.credentials.unblind(p.grant);
 
 const health = w.health(); // ok | latched | faulted | stopped | closed

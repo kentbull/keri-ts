@@ -270,7 +270,9 @@ Deno.test("presentation, Unblind, Admit resend and mailbox removal are wired and
     assert(views);
     assertEquals(views.issuedRegistry("Eunknown"), undefined);
     assertEquals(w.credentials.presentations(), []);
-    const applied = await w.credentials.requestProof(a.pre, { message: "", recipient: b.pre }, { timeoutMs: 300 });
+    const applied = await w.credentials.requestProof(a.pre, { message: "", recipient: b.pre, plan: [] }, {
+      timeoutMs: 300,
+    });
     assertEquals(applied.status.verb, "apply");
     assertEquals(applied.recipient, b.pre);
     assertEquals(w.credentials.presentationStatus(applied.said).verb, "apply");
