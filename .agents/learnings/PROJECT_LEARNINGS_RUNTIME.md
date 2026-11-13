@@ -204,7 +204,11 @@ reported at Poster with routing context and the original error, without raw sour
 bytes. Cancellation/close report unconsumed failures once. No unused failure backlog,
 retry/discard API or automatic retry remains. A reported source has no owner-retained
 recovery history. Pending work depends on evts and active execution, not outcomes.
-Unexpected construction/storage/parser/cleanup errors publish/report then propagate.
+Unexpected construction/storage/cleanup errors publish/report then propagate. What
+the event itself causes fails only that event or target: its bytes are decoded once
+(`ParserError` -> `UnsendableMessageError`), a forwarded ordinary event must be one
+message, `PeerVersionError`, and a location no messenger can use (`messengerUrl`:
+refused by `isRequestableHttpUrl`, or TCP without a port) reads as no location.
 No final-packet cache, manual reply cursor or cross-batch fairness remains.
 The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) defines
 current behavior; Git and PR checks retain implementation evidence.
@@ -401,9 +405,13 @@ keeps config creation after store acquisition, so a failed store open leaves no 
 
 ## OOBI, DID, mailbox and notices
 
-OOBI keeps its durable job row until terminal intake and joined cleanup. Failure
-clears in-flight markers but retains retry ownership and accepted events. Validate
-all child URLs before writes, then publish cues. Retrieval completion is not universal
+OOBI keeps its durable job row until terminal intake and joined cleanup. Cancellation
+clears in-flight markers but retains retry ownership and accepted events. What a remote
+party causes (`oobiJobFailure`: refused URL, relay-only refusal, `TransportError`,
+`WireParseError`, other `ParserError`/`SyntaxError`/`RangeError` from a frame) ends that
+job in `eoobi.`/`rmfa.` and removes its queued row; anything else propagates. Refuse at
+intake what `isRequestableHttpUrl` refuses (`/oobis`, `/introduce`, multi-OOBI children).
+Validate all child URLs before writes, then publish cues. Retrieval completion is not universal
 acceptance; accepted resolution convergence excludes unsolicited receipt delivery
 to static OOBI servers. Ingress/query/escrow dependencies still matter. Authenticator
 uses status-only GET; cleanup failure cannot publish authorization.
@@ -416,7 +424,12 @@ did.json opens no replay; broader lazy generation/export is deferred.
 
 Mailboxer lives above Habery. fwd stores the inner message under recipient
 authorization; reading requires current requester proof/threshold, not correlation
-alone. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
+alone. `ForwardHandler` decides the child once: verify refuses a `/fwd` whose recipient
+is not a prefix, whose topic is empty or not `storableTopic`, or whose child does not
+parse as exactly one complete message, so nothing is stored, relayed or ingested.
+`keepRawArrival` keeps only what a processor decided (accept, escrow, KRAM
+pending/missing, unverified reply, a receipt with no decision; dispatch rejects
+malformed fields first) and a storable topic. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
 HTTP(S), alongside all current KEL witnesses. TCP-only providers do not suppress
 witness polling. A shared provider AID has one worker and cursor even if authorized
 as both mailbox and witness; locally controlled providers use ordinary HTTP intake.

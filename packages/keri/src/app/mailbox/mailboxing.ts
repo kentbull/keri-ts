@@ -157,6 +157,8 @@ export interface MailboxPollEndpoint {
  * Both sets are polled, as in KERIpy MailboxDirector. A provider in both roles
  * shares one history and cursor, so it gets one worker. Locally controlled AIDs
  * remain eligible for HTTP polling; provider storage is never scanned directly.
+ * This lists every provider; the poller itself drops a local provider that
+ * processes the subject's mail on arrival (`MailboxPoller.deliveredOnArrival`).
  * Missing HTTP(S) locations produce no poll target until a location is available.
  *
  * With a relay (an edge runtime) the relay is the only provider: witnesses and other mailboxes are not polled, and

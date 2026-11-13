@@ -15,7 +15,8 @@ import {
   parse,
   parseBytes,
   Prefixer,
-  type SerderKERI,
+  Saider,
+  SerderKERI,
   t,
   Texter,
   Vrsn_1_0,
@@ -44,7 +45,7 @@ import { Roles } from "../../../../src/core/roles.ts";
 import { loadNests, prepareNests, publishNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import keripy from "../../../../test/fixtures/keripy-ipex-current-state-vectors.json" with { type: "json" };
 
-import { encodeDateTimeToDater } from "../../../../src/time/mod.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../../../../src/time/mod.ts";
 
 /** Share a real habitat and authorized witness mailbox across each independent scenario. */
 async function scenario(
@@ -65,7 +66,7 @@ async function scenario(
       const sender = hby.makeHab("sender");
       const recipient = hby.makeHab("recipient", undefined, { wits: [provider.pre], toad: 1 });
       const director = new MailboxDirector(hby, { mailboxer });
-      const exchanger = new Exchanger(hby, { handlers: [new ForwardHandler(director, null)] });
+      const exchanger = new Exchanger(hby, { handlers: [new ForwardHandler(director, null, null)] });
       yield* call(() => test(hby, sender, recipient, provider, director, exchanger));
     } finally {
       yield* mailboxer.close(true);
@@ -101,11 +102,12 @@ function forward(
   provider: Hab,
   nest: CesrFrame,
   commitment = nest.body.raw,
+  modifiers: Record<string, unknown> = { pre: recipient.pre, topic: "/nested" },
 ): ExchangeInput {
   const serder = exchange("/fwd", { evt: new Diger({ raw: Diger.digest(commitment, "E"), code: "E" }).qb64 }, {
     sender: sender.pre,
     pvrsn: Vrsn_2_0,
-    modifiers: { pre: recipient.pre, topic: "/nested" },
+    modifiers,
   })[0];
   return { serder, tsgs: signatures(sender, serder), nests: [nest], mailboxAid: provider.pre };
 }
@@ -126,10 +128,10 @@ interface RelayFixture {
 type RelayTest = (fixture: RelayFixture) => Operation<void>;
 
 /**
- * Compose an agent with `relaying: true` and a separate edge Habery. The sender names the agent as its witness
- * when `witnessed`; nothing else about the sender reaches the agent until a test ingests it.
+ * Compose an agent with `relaying` (on unless a test turns it off) and a separate edge Habery. The sender names the
+ * agent as its witness when `witnessed`; nothing else about the sender reaches the agent until a test ingests it.
  */
-async function relayScenario(witnessed: boolean, test: RelayTest): Promise<void> {
+async function relayScenario(witnessed: boolean, test: RelayTest, relaying = true): Promise<void> {
   await run(function*() {
     const agentHby = yield* createHabery({ name: `relay-agent-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const edgeHby = yield* createHabery({ name: `relay-edge-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -140,7 +142,7 @@ async function relayScenario(witnessed: boolean, test: RelayTest): Promise<void>
       const recipient = edgeHby.makeHab("recipient");
       const runtime = yield* createAgentRuntime(agentHby, new FetchHttpClient(), systemClock, {
         enableMailboxStore: true,
-        relaying: true,
+        relaying,
       });
       try {
         // A witness takes its controller's events as local input (its receipt endpoint), never as misfits.
@@ -278,6 +280,10 @@ Deno.test("group named in a third party's /fwd is ingested once and stored once 
   await relayScenario(false, (fixture) => groupPickup(fixture, Roles.agent));
 });
 
+Deno.test("a non-relaying host ingests a third party's /fwd for a co-hosted group once and stores it once", async () => {
+  await relayScenario(false, (fixture) => groupPickup(fixture, Roles.mailbox), false);
+});
+
 Deno.test("a group member's forward is relayed on the group's authorization", async () => {
   await relayScenario(false, function*(fixture) {
     const { runtime, agent, edge, sender, recipient } = fixture;
@@ -303,11 +309,114 @@ Deno.test("a group member's forward is relayed on the group's authorization", as
   });
 });
 
+/**
+ * A signed legacy `/fwd` for `recipient` whose `e.evt` is exactly `evt`, saidified as `exchange` saidifies an embed.
+ *
+ * @param sender Habitat that signs the `/fwd`.
+ * @param recipient Final recipient named by the modifiers.
+ * @param evt The embedded SAD, taken as given.
+ * @returns The signed `/fwd` body.
+ */
+function legacyForward(sender: Hab, recipient: Hab, evt: Record<string, unknown>): SerderKERI {
+  return new SerderKERI({
+    sad: {
+      t: "exn",
+      d: "",
+      i: sender.pre,
+      rp: "",
+      p: "",
+      dt: makeNowIso8601(),
+      r: "/fwd",
+      q: { pre: recipient.pre, topic: "/nested" },
+      a: {},
+      e: Saider.saidify({ evt, d: "" }, { label: "d" }).sad,
+    },
+    makify: true,
+  });
+}
+
+/**
+ * A signed legacy `/fwd` whose embedded child is followed, under its `/e/evt` path, by `junk` instead of the child's
+ * own attachments, decoded as ingress decodes it.
+ *
+ * @param sender Habitat that signs the `/fwd` and the child.
+ * @param recipient Final recipient named by the modifiers.
+ * @param junk Quadlet-aligned bytes the pathed group carries after the child body.
+ * @returns The `/fwd` as the Exchanger receives it.
+ */
+function* legacyForwardWithJunk(sender: Hab, recipient: Hab, junk: string): Operation<ExchangeInput> {
+  const body = exchange("/child", { value: "junk follows" }, { sender: sender.pre })[0];
+  const [serder, pathed] = exchange("/fwd", {}, {
+    sender: sender.pre,
+    modifiers: { pre: recipient.pre, topic: "/nested" },
+    embeds: { evt: concatBytes(body.raw, b(junk)) },
+  });
+  const [frame] = yield* call(() => parseBytes(concatBytes(sender.endorse(serder, { pipelined: false }), pathed)));
+  return envelopeFromFrame(frame);
+}
+
+Deno.test("a v1 forward with a junk embed is refused by verify", async () => {
+  await scenario(async (hby, sender, recipient, provider, director, exchanger) => {
+    const serder = legacyForward(sender, recipient, { t: "zzz" });
+    const handler = new ForwardHandler(director, null, null);
+    assertEquals(handler.verify({ serder, attachments: [] }), false);
+    // Through the Exchanger: a typed reject, nothing stored, and no escrow row a retry would replay.
+    const decision = await run(() =>
+      exchanger.processEvent({ serder, tsgs: signatures(sender, serder), mailboxAid: provider.pre })
+    );
+    assertEquals(decision.kind, "reject");
+    assertEquals(hby.db.exns.get([serder.said!]), null);
+    assertEquals(director.mailboxer!.getTopicMsgs(`${recipient.pre}/nested`), []);
+    // The v2 branch refuses a child that is not a message body the same way.
+    const nest = await child(sender, "not a body");
+    const v2 = forward(sender, recipient, provider, nest);
+    assertEquals(
+      handler.verify({ serder: v2.serder, attachments: [], nests: [{ ...nest, body: { ...nest.body } }] }),
+      false,
+    );
+  });
+});
+
+Deno.test("a forward whose address cannot be stored or relayed is refused by verify", async () => {
+  await scenario(async (_hby, sender, recipient, provider, director, exchanger) => {
+    const nest = await child(sender, "addressed");
+    for (
+      const modifiers of [
+        // The mailbox store would refuse this topic's row key as a fault.
+        { pre: recipient.pre, topic: `/${"t".repeat(2000)}` },
+        { pre: `${recipient.pre}x`, topic: "/nested" },
+        { pre: "not a prefix", topic: "/nested" },
+        { pre: recipient.pre, topic: "/" },
+      ]
+    ) {
+      const input = forward(sender, recipient, provider, nest, nest.body.raw, modifiers);
+      assertEquals((await run(() => exchanger.processEvent(input))).kind, "reject");
+    }
+    assertEquals([...director.topicIter(recipient.pre, "/nested")], []);
+  });
+});
+
+Deno.test("a forward whose child is not one complete message is dropped and nothing is relayed", async () => {
+  await relayScenario(false, function*(fixture) {
+    const { runtime, agent, sender, recipient } = fixture;
+    yield* settleRuntimeIngress(runtime, [sender.makeEndRole(agent.pre, Roles.mailbox, true)]);
+    for (const junk of ["####", "-AAB"]) {
+      const input = yield* legacyForwardWithJunk(sender, recipient, junk);
+      const decision = yield* runtime.exc.processEvent({ ...input, mailboxAid: agent.pre });
+      assertEquals(decision.kind, "reject");
+    }
+    assertEquals([...runtime.postman.evts], []);
+    // A well-formed child from the same served sender is still relayed.
+    yield* forwardToAgent(fixture, "well formed", recipient, sender);
+    assertEquals([...runtime.postman.evts].length, 1);
+  });
+});
+
 Deno.test("nested forwarding rechecks provider authority before publishing collected child bytes", async () => {
   await scenario(async (_hby, sender, recipient, provider, director) => {
     const nest = await child(sender, "authority changed");
     const input = forward(sender, recipient, provider, nest);
-    const handler = new ForwardHandler(director, null);
+    const handler = new ForwardHandler(director, null, null);
     const pending = handler.handle({ ...input, attachments: [] });
     if (!pending) throw new Error("The nested handler must return its collection operation");
     // The returned operation has yet to collect its child; revoke the real witness authority.
@@ -393,7 +502,7 @@ Deno.test("nested forward preserves signed tree, ciphertext and duplicates acros
     await run(function*() {
       yield* hby.db.reopen();
     });
-    const reopened = new Exchanger(hby, { handlers: [new ForwardHandler(director, null)] });
+    const reopened = new Exchanger(hby, { handlers: [new ForwardHandler(director, null, null)] });
     for await (const frame of parse(reopened.replay(input.serder.said!))) {
       assertEquals(frame.body.raw, input.serder.raw);
       assertEquals(envelopeFromFrame(frame).tsgs.length, 1);

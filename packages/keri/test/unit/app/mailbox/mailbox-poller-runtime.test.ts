@@ -1,6 +1,14 @@
 import { call, type Operation, run, scoped, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { MtrDex, ParserError, type Siger, Signer, Vrsn_2_0, WireParseError } from "../../../../../cesr/mod.ts";
+import {
+  MtrDex,
+  ParserError,
+  SerderKERI,
+  type Siger,
+  Signer,
+  Vrsn_2_0,
+  WireParseError,
+} from "../../../../../cesr/mod.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { SignerNotHeldError } from "../../../../src/app/identity/keeping.ts";
@@ -12,7 +20,7 @@ import {
   type MailboxPollBatch,
   MailboxPoller,
 } from "../../../../src/app/mailbox/mailbox-poller.ts";
-import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
+import { mailboxTopicKey, openMailboxerForHabery } from "../../../../src/app/mailbox/mailboxing.ts";
 import {
   createAgentRuntime,
   runAgentRuntime,
@@ -27,6 +35,7 @@ import { FakeRuntimeHttpClient } from "../../../support/runtime-fakes.ts";
 import { runtimeTurn } from "../../../../src/app/runtime/runtime-turn.ts";
 import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { incept } from "../../../../src/core/protocol-eventing.ts";
+import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../../effection-http.ts";
 import { httpClient } from "../../../support/http-client.ts";
@@ -117,6 +126,53 @@ Deno.test("continuous mailbox consumer settles complete body-only mailbox record
       } finally {
         yield* waitForTaskHalt(worker);
       }
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a receipt with a non-hex sequence number is dropped and the poll continues", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = makeTransferableHab(hby, "bob"), endpoint = seedMailboxEndpoint(hby, hab.pre, "hostile");
+    // SAID-valid and well-formed, but "zz" is not a hex sequence number.
+    const rct = new SerderKERI({
+      sad: { v: "KERI10JSON000000_", t: "rct", d: hab.kever!.serder.said, i: hab.pre, s: "zz" },
+      makify: true,
+    });
+    const poison = messagize(rct, { sigers: hab.sign(rct.raw, true) as Siger[] });
+    const valid = hab.makeEndRole(hab.pre, Roles.mailbox, true);
+    const text = (msg: Uint8Array) => new TextDecoder().decode(msg);
+    const http = new FakeRuntimeHttpClient();
+    let available = true;
+    http.registerOrigin(endpoint.url, () => {
+      if (!available) return new Response(null, { status: 204 });
+      available = false;
+      return new Response(
+        `id: 0\nevent: /reply\ndata: ${text(poison)}\n\nid: 1\nevent: /reply\ndata: ${text(valid)}\n\n`,
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    });
+    const runtime = yield* createAgentRuntime(hby, http, systemClock);
+    try {
+      const worker = yield* spawn(() =>
+        runtime.mailboxPoller.pollDo((batch) => settleMailboxPollBatch(runtime, batch))
+      );
+      try {
+        yield* waitForCondition(
+          () => hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"] === 1,
+          "Expected the poll to pass the malformed receipt and consume the next message.",
+        );
+        assertEquals(hby.db.ends.get([hab.pre, Roles.mailbox, hab.pre])?.allowed, true);
+      } finally {
+        yield* waitForTaskHalt(worker);
+      }
+      // After a restart the poller asks for the message after the valid one: the malformed receipt is not re-read.
+      const restarted = new MailboxDirector(hby);
+      restarted.registerTopic("/reply");
+      assertEquals(restarted.remoteQueryCursor(hab.pre, endpoint.eid)["/reply"], 2);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
@@ -1053,6 +1109,55 @@ Deno.test("poller signs group poll with replacement member", async () => {
       assert(bodies.every((body) => body.includes(`"q":{"topics":{"/reply":0},"i":"${group.pre}"`)));
     } finally {
       yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a mailbox host never polls itself for a local group it keeps mail for, but still for a single-sig", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const mailboxer = yield* openMailboxerForHabery(hby);
+    try {
+      const { alice, group, http, bodies } = groupWithMailbox(hby);
+      // This Habery's own host is the mailbox of both a local single-sig habitat and the local group.
+      const host = hby.makeHab("host", undefined, { transferable: false });
+      const solo = makeTransferableHab(hby, "solo");
+      const url = "http://host.mailbox.test/";
+      hby.db.locs.pin([host.pre, "http"], { url });
+      for (const pre of [solo.pre, group.pre]) hby.db.ends.pin([pre, Roles.mailbox, host.pre], { allowed: true });
+      const own: string[] = [];
+      http.registerOrigin(url, async (request) => {
+        own.push(new TextDecoder().decode(await request.arrayBuffer()));
+        return new Response(null, { status: 204 });
+      });
+      for (const store of [mailboxer, null]) {
+        own.length = 0;
+        bodies.length = 0;
+        const clock = new ManualRuntimeClock();
+        const director = new MailboxDirector(hby, store ? { mailboxer: store } : {});
+        const poller = new MailboxPoller(hby, director, http, clock, null);
+        poller.registerTopic("/reply");
+        const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
+        try {
+          // The single-sig habitat's only local delivery of stored mail is the loopback poll, with or without a store.
+          yield* tockUntil(clock, () => signedBy(own, solo) > 0, "the single-sig subject polls its local mailbox");
+          // The group's remote mailbox is polled either way.
+          yield* tockUntil(clock, () => signedBy(bodies, alice) > 0, "the group polls its remote mailbox");
+          if (store) {
+            // The provider ingests the group's mail on arrival, so it never polls its own endpoint for the group.
+            for (let turn = 0; turn < 50; turn++) yield* runtimeTurn();
+            assertEquals(signedBy(own, alice), 0);
+          } else {
+            // Without the store this runtime is not the provider, and polls the group's mailbox like any client.
+            yield* tockUntil(clock, () => signedBy(own, alice) > 0, "a runtime without the store polls the group");
+          }
+        } finally {
+          yield* waitForTaskHalt(worker);
+        }
+      }
+    } finally {
+      yield* mailboxer.close(true);
       yield* hby.close(true);
     }
   });

@@ -31,6 +31,8 @@ export type RejectKind =
   | "invalidRecovery"
   | "delegationPolicyViolation"
   | "invalidDelegation"
+  /** A remote field value does not decode as its type (a junk key, digest, witness, threshold or delegator). */
+  | "malformedField"
   | "unsupported"
   | "stale";
 

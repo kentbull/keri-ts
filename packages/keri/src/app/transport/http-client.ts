@@ -80,6 +80,25 @@ export interface HttpClient {
 }
 
 /**
+ * Whether {@link FetchHttpClient.open} can request `url` at all: an absolute HTTP(S) URL without embedded
+ * credentials. Anything else is refused by construction, before any I/O, so a caller holding a URL from a remote
+ * party can refuse it at intake instead of queuing work that can never succeed.
+ *
+ * @param url Candidate request URL.
+ * @returns False for an unparseable URL, a non-HTTP(S) scheme, or a URL carrying a user name or password.
+ */
+export function isRequestableHttpUrl(url: string): boolean {
+  let endpoint: URL;
+  try {
+    endpoint = new URL(url);
+  } catch {
+    return false;
+  }
+  return (endpoint.protocol === "http:" || endpoint.protocol === "https:") && !endpoint.username
+    && !endpoint.password;
+}
+
+/**
  * Native requests and signals that a pending `fetch` still needs. WebKit links an in-flight fetch to
  * its abort signal only weakly: once the `Request`, or an `AbortSignal.any` composite, is garbage
  * collected, `abort()` neither rejects the fetch nor closes the connection, so a halted caller waits
@@ -157,8 +176,7 @@ export class FetchHttpClient implements HttpClient {
           : new TransportError(`${message} for ${url}`, { cause });
       try {
         signal.throwIfAborted();
-        const endpoint = new URL(url);
-        if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password) {
+        if (!isRequestableHttpUrl(url)) {
           throw new ValidationError("HTTP output requires an HTTP(S) URL without credentials");
         }
         // Construction errors are caller errors, before native network classification.

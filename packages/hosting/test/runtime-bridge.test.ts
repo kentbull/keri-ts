@@ -21,8 +21,12 @@ import {
   createAgentRuntime,
   envelopeFromFrame,
   exchange,
+  FetchHttpClient,
   type Habery,
   type KramConfig,
+  MailboxDirector,
+  type MailboxPollBatch,
+  MailboxPoller,
   mailboxTopicKey,
   query,
   readCesrRequestBytes,
@@ -383,4 +387,119 @@ Deno.test("raw message for a local group is processed and stored once", async ()
       yield* agentHby.close(true);
     }
   });
+});
+
+/**
+ * A host (relaying when `enableRelay`) co-hosts one member of an edge's group and is the group's `mailbox`. A third
+ * party it does not serve posts a `/fwd` for the group; the co-member processes it on arrival, the host keeps one
+ * copy, and the host never polls the group's mailbox at itself. The edge member then polls the group's mailbox at the
+ * host and receives that one copy.
+ */
+function* coHostedGroupMail(enableRelay: boolean) {
+  const agentPort = reservePort();
+  const agentUrl = `http://127.0.0.1:${agentPort}/`;
+  const agentHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+  const edgeHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+  const thirdHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+  try {
+    const agent = agentHby.makeHab("agent");
+    const colocated = agentHby.makeHab("colocated");
+    const member = edgeHby.makeHab("member");
+    const third = thirdHby.makeHab("third");
+    agentHby.db.locs.pin([agent.pre, "http"], { url: agentUrl });
+    yield* preload(agentHby, [...member.db.replay(member.pre)!, ...third.db.replay(third.pre)!]);
+    yield* preload(edgeHby, [...colocated.db.replay(colocated.pre)!]);
+    // The edge's group: its member on the edge and a co-member hosted on the agent; one of two signs.
+    const signing = [colocated.pre, member.pre];
+    const groupArgs = { isith: "1", nsith: "1", toad: 0 };
+    const { hab: group } = agentHby.makeGroupHab("team", colocated, signing, undefined, undefined, groupArgs);
+    const { hab: edgeGroup } = edgeHby.makeGroupHab("team", member, signing, undefined, undefined, groupArgs);
+    assertEquals(edgeGroup.pre, group.pre);
+    yield* preload(agentHby, [group.makeEndRole(agent.pre, Roles.mailbox, true)]);
+    edgeHby.db.ends.pin([group.pre, Roles.mailbox, agent.pre], { allowed: true });
+    edgeHby.db.locs.pin([agent.pre, "http"], { url: agentUrl });
+
+    const listening = Promise.withResolvers<void>();
+    let agentRuntime: AgentRuntime | undefined;
+    const agentHost = yield* spawn(() =>
+      runHostKernel(agentHby, {
+        enableMailboxStore: true,
+        enableRelay,
+        serviceHab: agent,
+        http: { port: agentPort, hostname: "127.0.0.1", onListen: () => listening.resolve() },
+        protocolPolicy: {},
+        companionHosts: [function*(runtime) {
+          agentRuntime = runtime;
+          yield* suspend();
+        }],
+      })
+    );
+    try {
+      yield* call(() => listening.promise);
+      const [child] = yield* call(() =>
+        parseBytes(third.endorse(
+          exchange("/relay/check", { value: "for the group" }, { sender: third.pre, pvrsn: Vrsn_2_0 })[0],
+          { pipelined: false, gvrsn: Vrsn_2_0, genusify: true },
+        ))
+      );
+      const [fwd] = exchange("/fwd", {
+        evt: new Diger({ code: MtrDex.Blake3_256, raw: Diger.digest(child.body.raw, MtrDex.Blake3_256) }).qb64,
+      }, { sender: third.pre, modifiers: { pre: group.pre, topic: "/credential" }, pvrsn: Vrsn_2_0 });
+      const [outer] = yield* call(() =>
+        parseBytes(third.endorse(fwd, { pipelined: false, gvrsn: Vrsn_2_0, genusify: true }))
+      );
+      const wrapper = yield* call(() => collectPayload(framePayload({ ...outer, nests: [child] })));
+      const status = yield* call(async () => {
+        const response = await fetch(agentUrl, {
+          method: "POST",
+          headers: { "content-type": "application/cesr", "CESR-DESTINATION": agent.pre },
+          body: new Blob([wrapper as Uint8Array<ArrayBuffer>]),
+        });
+        await response.body?.cancel();
+        return response.status;
+      });
+      assertEquals(status, 204);
+      const childWire = yield* call(() => collectPayload(nestedPayload(child, Vrsn_2_0)));
+      // The co-member processed the child on arrival, and one copy waits for the group's remote member.
+      assertEquals(agentRuntime!.exc.complete(child.body.said!), true);
+      assertEquals(agentRuntime!.mailboxer!.getTopicMsgs(mailboxTopicKey(group.pre, "/credential")), [childWire]);
+
+      // The edge member polls the group's mailbox at the agent and receives the one stored copy.
+      const poller = new MailboxPoller(edgeHby, new MailboxDirector(edgeHby), new FetchHttpClient(), systemClock, null);
+      poller.registerTopic("/credential");
+      const batches: MailboxPollBatch[] = [];
+      const edgeWorker = yield* spawn(() => poller.pollDo((batch) => void batches.push(batch)));
+      try {
+        const deadline = performance.now() + 10_000;
+        while (
+          edgeHby.db.tops.get([group.pre, agent.pre])?.topics["/credential"] !== 0 && performance.now() < deadline
+        ) {
+          yield* sleep(25);
+        }
+        assertEquals(edgeHby.db.tops.get([group.pre, agent.pre])?.topics["/credential"], 0);
+        assertEquals(batches.map(({ pre, eid, messages }) => [pre, eid, messages]), [[group.pre, agent.pre, [
+          childWire,
+        ]]]);
+      } finally {
+        yield* edgeWorker.halt();
+      }
+      // `/credential` is a topic the agent's own poller registers, so a loopback poll of the group would have consumed
+      // the copy by now. The agent never polled the group's mailbox at itself: nothing was processed a second time.
+      assertEquals(agentHby.db.tops.get([group.pre, agent.pre]), null);
+    } finally {
+      yield* agentHost.halt();
+    }
+  } finally {
+    yield* thirdHby.close(true);
+    yield* edgeHby.close(true);
+    yield* agentHby.close(true);
+  }
+}
+
+Deno.test("a non-relaying host that co-hosts a member still delivers that member's mail exactly once", async () => {
+  await run(() => coHostedGroupMail(false));
+});
+
+Deno.test("the remote member still polls its stored copy after the relaying host stops polling itself", async () => {
+  await run(() => coHostedGroupMail(true));
 });

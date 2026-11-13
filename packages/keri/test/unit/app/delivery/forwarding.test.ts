@@ -21,7 +21,7 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
-import { Poster } from "../../../../src/app/delivery/forwarding.ts";
+import { Poster, UnsendableMessageError } from "../../../../src/app/delivery/forwarding.ts";
 import { introduce, introductionMessages } from "../../../../src/app/delivery/introducing.ts";
 import { createExchangeMessage } from "../../../../src/app/exchanges/exchange-messaging.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../../src/app/identity/delegating.ts";
@@ -594,7 +594,7 @@ Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
       });
       mailboxer = yield* openMailboxerForHabery(hby);
       const director = new MailboxDirector(hby, { mailboxer });
-      const handler = new ForwardHandler(director, null);
+      const handler = new ForwardHandler(director, null, null);
       const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         mailboxer,
       });
@@ -1098,7 +1098,7 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
           modifiers: { pre: recipient.pre, topic: "/receipt" },
           embeds: { evt: forwarded },
         });
-        const handler = new ForwardHandler(runtime.mailboxDirector, null);
+        const handler = new ForwardHandler(runtime.mailboxDirector, null, null);
         const attachments = [{
           raw: wrapped.attachments,
           text: new TextDecoder().decode(wrapped.attachments),
@@ -1408,6 +1408,96 @@ Deno.test("poster reports an unsignable forward as failed and delivers later eve
         [],
         "nothing was posted for the unsignable one",
       );
+    } finally {
+      yield* postman.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a message the Poster cannot prepare fails that delivery and the next is sent", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient"), mailbox = hby.makeHab("mailbox");
+    hby.db.ends.pin([recipient.pre, EndpointRoles.mailbox, mailbox.pre], { allowed: true });
+    hby.db.locs.pin([mailbox.pre, "http"], { url: "http://mailbox.test/" });
+    const bodies: string[] = [];
+    const postman = new Poster(
+      hby,
+      null,
+      null,
+      httpClient(async (url, init) => {
+        bodies.push(new TextDecoder().decode(await readCesrRequestBytes(new Request(url, init))));
+        return new Response(null, { status: 204 });
+      }),
+      systemClock,
+      null,
+    );
+    try {
+      const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
+      const queue = (bytes: Uint8Array) =>
+        postman.send({ src: sender.pre, dest: recipient.pre, topic: "/replay", msg: bytes }, { notify: true });
+      // Not CESR at all; a message followed by opaque bytes; two messages where a forward wraps exactly one.
+      const unpreparable = [
+        queue(new TextEncoder().encode("####")),
+        queue(concatBytes(msg, new TextEncoder().encode("####"))),
+        queue(concatBytes(msg, msg)),
+      ];
+      for (let pass = 0; pass < 4 && postman.hasPending; pass++) yield* postman.process();
+      for (const evt of unpreparable) {
+        const outcome = yield* postman.wait(evt);
+        assertEquals(outcome.kin, "failed");
+        assert(outcome.kin === "failed" && outcome.error instanceof UnsendableMessageError, String(outcome));
+      }
+      assertEquals(bodies, [], "nothing was posted for an event that could not be prepared");
+      // The same pass continues: a preparable event queued behind them is sent.
+      queue(concatBytes(msg, msg));
+      const later = queue(msg);
+      for (let pass = 0; pass < 4 && postman.hasPending; pass++) yield* postman.process();
+      assertEquals((yield* postman.wait(later)).kin, "sent");
+      assert(bodies.length > 0, "the preparable event was posted");
+    } finally {
+      yield* postman.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a recipient location the HTTP client refuses fails that delivery and the loop continues", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), refused = hby.makeHab("refused"), reachable = hby.makeHab("reachable");
+    // Accepted `/loc/scheme` admits these; the HTTP client and the TCP messenger refuse them by construction.
+    const controllers = [hby.makeHab("credentials"), hby.makeHab("portless")];
+    hby.db.locs.pin([controllers[0].pre, "http"], { url: "http://user:secret@controller.test/" });
+    hby.db.locs.pin([controllers[1].pre, "tcp"], { url: "tcp://controller.test" });
+    for (const controller of controllers) {
+      hby.db.ends.pin([refused.pre, EndpointRoles.controller, controller.pre], { allowed: true });
+    }
+    hby.db.ends.pin([reachable.pre, EndpointRoles.controller, reachable.pre], { allowed: true });
+    hby.db.locs.pin([reachable.pre, "http"], { url: "http://reachable.test/" });
+    const urls: string[] = [];
+    const postman = new Poster(
+      hby,
+      null,
+      null,
+      httpClient((url) => {
+        urls.push(url);
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }),
+      systemClock,
+      null,
+    );
+    try {
+      const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
+      const first = postman.send({ src: sender.pre, dest: refused.pre, topic: "", msg }, { notify: true });
+      const next = postman.send({ src: sender.pre, dest: reachable.pre, topic: "", msg }, { notify: true });
+      for (let pass = 0; pass < 4 && postman.hasPending; pass++) yield* postman.process();
+      const failed = yield* postman.wait(first);
+      assert(failed.kin === "failed" && failed.error instanceof AggregateError, String(failed));
+      assertEquals(failed.deliveries, []);
+      assertEquals((yield* postman.wait(next)).kin, "sent");
+      assertEquals(urls, ["http://reachable.test/"]);
     } finally {
       yield* postman.close();
       yield* hby.close(true);

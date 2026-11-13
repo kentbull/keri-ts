@@ -1,12 +1,14 @@
 /** Queued signed-message publication. Poster owns transport attempts and their concrete outcomes. */
 import {
   attachmentPayload,
+  type CesrFrame,
   collectPayload,
   concatBytes,
   Diger,
   framePayload,
   MtrDex,
   parseBytes,
+  ParserError,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
@@ -16,7 +18,7 @@ import { exchange } from "../../core/exchange/protocol-exchanging.ts";
 import { Roles } from "../../core/roles.ts";
 import type { Mailboxer } from "../../db/mailbox/mailboxing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
-import { mailboxTopicKey, preferredUrl } from "../mailbox/mailboxing.ts";
+import { mailboxTopicKey } from "../mailbox/mailboxing.ts";
 import { transportMailboxTopic } from "../mailbox/topic-routing.ts";
 import { localGroupMember } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
@@ -27,7 +29,7 @@ import { runtimeTurn } from "../runtime/runtime-turn.ts";
 import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { CesrHttpRefusal } from "../transport/cesr-egress.ts";
 import type { HttpClient } from "../transport/http-client.ts";
-import { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../transport/messengering.ts";
+import { messengerFrom, messengerUrl, type MessengerUrls, streamMessengerFrom } from "../transport/messengering.ts";
 import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
 import { introduce } from "./introducing.ts";
@@ -97,7 +99,8 @@ interface RawCesrRoute {
    */
   readonly kind: "forward" | "direct";
   /**
-   * Ordered endpoint AIDs and URLs; null preserves a missing/unsupported location for execution failure.
+   * Ordered endpoint AIDs and URLs; null preserves a missing location, or one no messenger can use
+   * ({@link messengerUrl}), for execution failure.
    */
   readonly targets: readonly { eid: string; url: string | null; urls: MessengerUrls }[];
 }
@@ -160,9 +163,39 @@ function knownV1Peer(hby: Habery, aid: string): boolean {
   return kever !== null && kever !== undefined && kever.serder.pvrsn.major < 2;
 }
 
-/** Whether any frame of this complete signed wire needs a v2 reader. */
-function wireNeedsV2(message: Uint8Array): boolean {
-  return parseBytes(message).some(frame => frame.body.pvrsn.major >= 2 || (frame.gvrsn?.major ?? 1) >= 2);
+/**
+ * A queued message whose own bytes cannot be prepared for sending: they are not complete CESR, or a forwarded
+ * delivery's source is not exactly one complete message. It describes the event, never this node, so it fails that
+ * delivery and the Poster continues with the next.
+ */
+export class UnsendableMessageError extends ValidationError {
+  override readonly name: string = "UnsendableMessageError";
+}
+
+/**
+ * Decode a queued message once, before any target is prepared.
+ *
+ * `ParserError` is the decoder's refusal of the bytes. This is the Poster's only decode of a producer's bytes; the
+ * wrappers it later builds and re-parses are its own output, so a failure there stays a fault.
+ *
+ * @param evt Admitted event whose copied bytes are decoded.
+ * @returns The message's complete frames in wire order.
+ * @throws UnsendableMessageError when the bytes are not complete CESR.
+ */
+function messageFrames(evt: PosterEvent): CesrFrame[] {
+  try {
+    return parseBytes(evt.msg);
+  } catch (error) {
+    if (!(error instanceof ParserError)) throw error;
+    throw new UnsendableMessageError(`Queued message for ${evt.dest} is not complete CESR: ${error.message}`, {
+      cause: error,
+    });
+  }
+}
+
+/** Whether any of these frames needs a v2 reader. */
+function framesNeedV2(frames: readonly CesrFrame[]): boolean {
+  return frames.some(frame => frame.body.pvrsn.major >= 2 || (frame.gvrsn?.major ?? 1) >= 2);
 }
 
 /**
@@ -452,7 +485,11 @@ export class Poster {
   /**
    * Resolve and execute one event using sequential current endpoints.
    * Observed HTTP refusal and TransportError permit remaining targets to run.
-   * Unexpected construction/parser/storage/cleanup errors propagate so process can
+   * The event's bytes are decoded once; bytes that are not complete CESR fail the
+   * event. `PeerVersionError` and `UnsendableMessageError` from preparation fail
+   * only that target: both are decided from the event's own bytes and the peer's
+   * accepted version before any store write or I/O for the target. Other
+   * construction/storage/cleanup errors are faults and propagate so process can
    * publish or report the failed outcome before exposing the error.
    *
    * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
@@ -476,6 +513,13 @@ export class Poster {
         error: new ValidationError(`No end roles for ${evt.dest} to send raw CESR payload.`),
       };
     }
+    let frames: CesrFrame[];
+    try {
+      frames = messageFrames(evt);
+    } catch (error) {
+      if (!(error instanceof UnsendableMessageError)) throw error;
+      return { kin: "failed", evt, deliveries, error };
+    }
     // A refused target does not prevent later targets from receiving this event.
     const failed: Error[] = [];
     try {
@@ -487,13 +531,20 @@ export class Poster {
           }
           let target: PreparedCesrTarget;
           try {
-            target = yield* this.prepareBytesTarget(hab, route, {
-              eid: endpoint.eid,
-              url: endpoint.url,
-              urls: endpoint.urls,
-            }, evt);
+            target = yield* this.prepareBytesTarget(
+              hab,
+              route,
+              {
+                eid: endpoint.eid,
+                url: endpoint.url,
+                urls: endpoint.urls,
+              },
+              evt,
+              frames,
+            );
           } catch (error) {
-            if (!(error instanceof PeerVersionError)) throw error;
+            // Facts about this event and its peer, never this node: that target fails and the rest still run.
+            if (!(error instanceof PeerVersionError || error instanceof UnsendableMessageError)) throw error;
             failed.push(error);
             continue;
           }
@@ -608,7 +659,7 @@ export class Poster {
       if (role === Roles.controller || role === Roles.agent) {
         return {
           kind: "direct",
-          targets: candidates.map(([eid, urls]) => ({ eid, url: preferredUrl(urls), urls })),
+          targets: candidates.map(([eid, urls]) => ({ eid, url: messengerUrl(urls), urls })),
         };
       }
       if (!topic) throw new ValidationError(`Forwarded delivery requires an explicit topic for ${recipient}.`);
@@ -618,7 +669,7 @@ export class Poster {
       const [eid, urls] = candidates[Math.floor(Math.random() * candidates.length)];
       return {
         kind: "forward",
-        targets: [{ eid, url: preferredUrl(urls), urls }],
+        targets: [{ eid, url: messengerUrl(urls), urls }],
       };
     });
   }
@@ -686,22 +737,25 @@ export class Poster {
    * @param route Selected direct or forwarded endpoint group.
    * @param endpoint One selected endpoint AID and URL from the route.
    * @param evt Original signed source and concrete ordinary/stream operation.
+   * @param frames The event's bytes, decoded once by {@link messageFrames}.
    * @returns A prepared remote target, or stored after authorized local mailbox publication.
    * @throws PeerVersionError when the wire needs a v2 reader that this peer is known not to be.
+   * @throws UnsendableMessageError when a forwarded ordinary message is not exactly one message.
    */
   private *prepareBytesTarget(
     hab: Hab,
     route: RawCesrRoute,
     endpoint: { eid: string; url: string; urls: MessengerUrls },
     evt: PosterEvent,
+    frames: readonly CesrFrame[],
   ): Operation<PreparedCesrTarget> {
-    if (wireNeedsV2(evt.msg) && knownV1Peer(this.hby, evt.dest)) {
+    if (framesNeedV2(frames) && knownV1Peer(this.hby, evt.dest)) {
       throw new PeerVersionError(`Refusing a v2 message for ${evt.dest}, whose latest accepted event is v1.`);
     }
     if (route.kind !== "direct") {
-      return yield* this.prepareForwardedTarget(hab, evt.dest, evt.topic, evt, endpoint);
+      return yield* this.prepareForwardedTarget(hab, evt.dest, evt.topic, evt, frames, endpoint);
     }
-    if (wireNeedsV2(evt.msg) && knownV1Peer(this.hby, endpoint.eid)) {
+    if (framesNeedV2(frames) && knownV1Peer(this.hby, endpoint.eid)) {
       throw new PeerVersionError(
         `Refusing a v2 message for endpoint ${endpoint.eid}, whose latest accepted event is v1.`,
       );
@@ -716,15 +770,18 @@ export class Poster {
    * @param recipient Final recipient AID, distinct from the intermediary endpoint.
    * @param topic Recipient mailbox topic used by the forwarding envelope.
    * @param evt Original signed source and operation; outer envelopes may be rebuilt.
+   * @param frames The event's decoded messages: exactly one for an ordinary event, each forwarded alone in a stream.
    * @param endpoint Mailbox/witness endpoint selected for this attempt.
    * @returns Stored for a local endpoint, unsignable when the wrapper signer cannot sign now, or signed forwarding
    * wire with its introduction.
+   * @throws UnsendableMessageError when an ordinary event is not exactly one message.
    */
   private *prepareForwardedTarget(
     hab: Hab,
     recipient: string,
     topic: string,
     evt: PosterEvent,
+    frames: readonly CesrFrame[],
     endpoint: { eid: string; url: string; urls: MessengerUrls },
   ): Operation<PreparedCesrTarget> {
     if (this.mbx && this.hby.db.prefixes.has(endpoint.eid)) {
@@ -738,33 +795,30 @@ export class Poster {
     const signer = this.wrapperSigner(hab);
     // Poster does not retry: an event whose wrapper cannot be signed now fails like any other undeliverable one.
     if (!signer.canSign()) return { kind: "unsignable", signer: signer.pre! };
-    const msgs: Uint8Array[] = [];
-    if (evt.kin === "stream") {
-      // Prepare every frame before opening the one selected relay attempt.
-      for (const frame of parseBytes(evt.msg)) {
-        msgs.push(yield* abortable((signal) => collectPayload(framePayload(frame), signal)));
-      }
-    } else {
-      msgs.push(evt.msg);
+    // A stream forwards each of its messages alone; an ordinary event is forwarded whole, so it must be one message.
+    if (evt.kin !== "stream" && frames.length !== 1) {
+      throw new UnsendableMessageError(`Forwarding to ${recipient} requires one complete CESR message.`);
     }
     // The provider reads the envelope, so it must read v2 whenever the envelope or child is v2.
-    if ((signer.kelVersion.major >= 2 || msgs.some(wireNeedsV2)) && knownV1Peer(this.hby, endpoint.eid)) {
+    if ((signer.kelVersion.major >= 2 || framesNeedV2(frames)) && knownV1Peer(this.hby, endpoint.eid)) {
       throw new PeerVersionError(
         `Refusing a v2 envelope for provider ${endpoint.eid}, whose latest accepted event is v1.`,
       );
     }
+    // Prepare every frame before opening the one selected relay attempt.
     const forwarded: Uint8Array[] = [];
-    for (const message of msgs) forwarded.push(yield* buildForwardedDelivery(signer, { recipient, topic, message }));
+    for (const child of frames) forwarded.push(yield* buildForwardedDelivery(signer, { recipient, topic, child }));
     const intro = introduce(signer, endpoint.eid);
     let message = concatBytes(intro, ...forwarded);
     if (evt.kin === "stream") {
-      const frames = parseBytes(message);
-      if (frames.some(frame => (frame.gvrsn?.major ?? 1) >= 2)) {
+      // This node's own wrappers around already-decoded children: a parse failure here is a fault.
+      const prepared = parseBytes(message);
+      if (prepared.some(frame => (frame.gvrsn?.major ?? 1) >= 2)) {
         // A v2 peer's default cannot interpret unqualified v1 introduction counters.
         // Declare each prepared frame's actual genus without changing signed bodies.
         // Entirely legacy streams retain their v1-peer-compatible unqualified wire.
         const qualified: Uint8Array[] = [];
-        for (const frame of frames) {
+        for (const frame of prepared) {
           qualified.push(yield* abortable(signal => collectPayload(framePayload(frame), signal)));
         }
         message = concatBytes(...qualified);
@@ -772,6 +826,16 @@ export class Poster {
     }
     return remoteCesrTarget(endpoint, message);
   }
+}
+
+/** What one forwarded delivery wraps: its final recipient, mailbox topic and one decoded source message. */
+interface ForwardedDelivery {
+  /** Final recipient AID named by the `/fwd` modifiers. */
+  readonly recipient: string;
+  /** Recipient mailbox topic; the envelope carries its bare form. */
+  readonly topic: string;
+  /** One complete signed source message, decoded from the queued bytes. */
+  readonly child: CesrFrame;
 }
 
 /**
@@ -782,20 +846,11 @@ export class Poster {
  * material that should travel with the forwarded request.
  *
  * @param hab Local signing habitat; its state/store lifetime remains with the caller.
- * @param args Final recipient, mailbox topic and exactly one complete signed source message.
+ * @param args Final recipient, mailbox topic and one decoded signed source message.
  * @returns Signed /fwd wire; v2 binds one nested child body, legacy uses pathed embeds.
  */
-function* buildForwardedDelivery(
-  hab: Hab,
-  args: {
-    recipient: string;
-    topic: string;
-    message: Uint8Array;
-  },
-): Operation<Uint8Array> {
-  const frames = parseBytes(args.message);
-  if (frames.length !== 1) throw new ValidationError("Forwarding requires one complete CESR message.");
-  const child = frames[0];
+function* buildForwardedDelivery(hab: Hab, args: ForwardedDelivery): Operation<Uint8Array> {
+  const child = args.child;
   // A v2 member's stream is v2 after its introduction, so even a v1 child (such as a
   // KERIpy-form `e`-embed group proposal) travels nested with its own genus selector,
   // like KERIpy `StreamPoster.createForward`. Only v1 members keep the legacy embed.
