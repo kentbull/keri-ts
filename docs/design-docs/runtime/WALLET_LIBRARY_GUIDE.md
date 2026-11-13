@@ -46,19 +46,6 @@ mailbox), and `operationStores.derived` is the wallet's `derived-updates.` table
 with every failure after all steps ran. After a latched persistence failure, `close()` then
 `openWebWallet()` loads the last durable state.
 
-### Held signers at open
-
-A host that keeps an identifier's keys itself (`Habery.makeSignedHab`, ADR-0016) lends them to the Manager with
-`Manager.hold`; they are never stored, so a reopen must lend them again. `openWebWallet` starts its runtime before it
-returns, and a hold made after the open can come too late for the first mailbox poll, which would find no signer. Pass
-the signers as `heldSigners` instead: a list of `Signer`s (`HeldSigners`), held by `openHabery` right after the
-Manager is built and before the Habery exists, so before any runtime loop can sign. The option is on `HaberyArgs`, so
-every opener built on `openHabery` (`createHabery` included) takes it, and `openWebWallet` forwards its own
-`heldSigners`. It is a list, not a callback, because holding needs nothing but the signers.
-
-A signer released later (`Manager.release`) does not end the runtime: the poll for that identifier waits, the wallet's
-`health()` reports `signer-unavailable`, and a later `Manager.hold` resumes it at once.
-
 ## The wallet-level API
 
 (Composition note, read last: the namespaces below are classes that each hold one `WalletScope`, the wallet's collaborators
