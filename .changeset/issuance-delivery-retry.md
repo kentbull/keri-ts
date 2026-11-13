@@ -1,0 +1,5 @@
+---
+"keri-ts": minor
+---
+
+A delivery failure no longer ends a DH issuance, single-signature or group, at the first error. The issuance owner queues the signed bytes its steps decide to send and delivers them in order; a failure keeps the message and retries it with a doubling delay (`RetryBackoff`, 1 s up to 30 s). The Grant deadline still ends an issuance that has one (it then reads `expired`), and delivery failures lasting `ISSUANCE_RETRY_BOUND_MS` (10 minutes) end a group issuer's operation that has no deadline yet as `failed`. A group custodian that reloads after retaining its root now resumes: `deriveGroupCustody` finds the frozen coordinator and custodian from the stores (the local member that holds the root, and the latest accepted group event whose threshold evidence elects it), and the owner adopts the exchange when the issuer's update is already accepted, or, for a holder group, at once. It signs only the public proof wrapper the original consent covers. A group custodian that reloads while its registry update is still awaiting the other members' approval still reads `interrupted`; the owner scans for resumable Grants once, at its first pass.
