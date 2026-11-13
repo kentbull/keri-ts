@@ -1,7 +1,7 @@
 /** `openWebWallet` composes lock, IndexedDB stores, runtime and barrier; fakes stand in for the browser. */
 import { concatBytes, Counter, MtrDex, Signer, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run } from "effection";
-import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
 import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
@@ -271,12 +271,16 @@ Deno.test("presentation, Unblind, Admit resend and mailbox removal are wired and
     assert(views);
     assertEquals(views.issuedRegistry("Eunknown"), undefined);
     assertEquals(w.credentials.presentations(), []);
+    assertEquals(w.credentials.applies(), []);
+    assertThrows(() => w.credentials.pinSchema(new TextEncoder().encode("{}")));
     const applied = await w.credentials.requestProof(a.pre, { message: "", recipient: b.pre, plan: [] }, {
       timeoutMs: 300,
     });
     assertEquals(applied.status.verb, "apply");
     assertEquals(applied.recipient, b.pre);
     assertEquals(w.credentials.presentationStatus(applied.said).verb, "apply");
+    assertEquals(w.credentials.applies(b.pre).map((item) => item.apply), [applied.said], "the Apply waits for b");
+    assertEquals(w.credentials.applies(a.pre), [], "and for nobody else");
     await assertRejects(() => w.credentials.unblind("Eunknown"), Error, "not addressed to a local identifier");
     await assertRejects(() => w.credentials.resendAdmit("Eunknown"), Error, "has not admitted");
     await assertRejects(() => w.mailboxes.remove(a.pre, "Emailbox"), Error, "No endpoint URL");

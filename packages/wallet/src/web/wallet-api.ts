@@ -41,10 +41,13 @@ import {
   type MailboxStatus,
   mailboxStatus,
   type OobiRecord,
+  pendingApplies,
+  type PendingApply,
   type PendingGrant,
   pendingIssuanceGrants,
   type PendingPresentation,
   pendingPresentations,
+  pinSchemaBytes,
   present,
   type PresentationInput,
   type PresentationStatus,
@@ -75,6 +78,7 @@ import type { Wallet } from "../wallet.ts";
 import {
   GroupCredentials,
   type GroupIssueOutcome,
+  type GroupPresentInput,
   type GroupPresentOutcome,
   type GroupReceiveOutcome,
   Groups,
@@ -773,10 +777,7 @@ export class Credentials {
     const { timeoutMs = WALLET_TIMEOUTS.present } = options;
     const { pre, ...rest } = input;
     if (isLocalGroupHab(this.#scope.parts.hby, this.#scope.hab(pre))) {
-      if (rest.verb !== "grant" && rest.verb !== "offer") {
-        throw new ValidationError("A group presents a Grant (verb \"grant\") through the group IPEX path.");
-      }
-      return await this.#groups.present(this.#scope.hab(pre), rest, { timeoutMs });
+      return await this.#groups.present(this.#scope.hab(pre), rest as GroupPresentInput, { timeoutMs });
     }
     const hab = this.#scope.individual(pre), ops = this.presenter();
     return await this.#scope.go(function*(): Operation<PresentOutcome> {
@@ -813,6 +814,25 @@ export class Credentials {
     return pendingPresentations(this.unblinder(), pre ? { hab: this.#scope.hab(pre) } : {}).filter((item) =>
       !issuance.has(item.grant)
     );
+  }
+
+  /**
+   * The Applies addressed to this wallet (to `pre` when given) that nothing has answered: accepted, inside their
+   * deadline, and without an `erpy` answer pointer. A pure read; answer one with `present` and its `priorSaid`.
+   */
+  applies(pre?: string): PendingApply[] {
+    const { hby, runtime } = this.#scope.parts;
+    return pendingApplies({ hby, exc: runtime.exc, clock: runtime.clock }, pre ? { hab: this.#scope.hab(pre) } : {});
+  }
+
+  /**
+   * Keep the schema bytes this wallet was handed in its schema table and return their SAID, so credentials of that
+   * schema validate. Nothing is fetched or issued; the bytes are the schema's exact document.
+   *
+   * @throws ValidationError when the bytes are not a schema document.
+   */
+  pinSchema(raw: Uint8Array): string {
+    return pinSchemaBytes(this.#scope.parts.hby, raw);
   }
 
   /**
