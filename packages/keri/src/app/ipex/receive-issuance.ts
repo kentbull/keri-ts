@@ -141,7 +141,8 @@ export interface TimedOutIssuance {
  * wait for the issuer to finish it, then admit and deliver ({@link admitAndDeliver}).
  *
  * @throws ValidationError for a Grant that is not addressed to a local identifier, one this runtime issued, or a
- * group identifier.
+ * group identifier; its subclass `KramRefusedError` (reason `lifetime`, with the deadline) for a Grant whose
+ * deadline passed before the stores could say more (its cache row pruned or the Grant ejected from escrow).
  */
 export function* receiveIssuance(
   ops: IssuanceOperations,

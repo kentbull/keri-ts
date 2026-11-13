@@ -56,6 +56,15 @@ export function singleKeyQueryWindow(db: Baser, route: string): number | null {
   return storedCacheType(db, "qry", route)?.sl ?? null;
 }
 
+/**
+ * How long an exchange of a message of `ilk` on `route` stays open after its opener under the windows this store
+ * is configured with now, in milliseconds: the exchange lag `xl`. Null when this store has no KRAM cache types
+ * (KRAM never ran on it).
+ */
+export function exchangeWindow(db: Baser, ilk: string, route: string | null): number | null {
+  return storedCacheType(db, ilk, route)?.xl ?? null;
+}
+
 /** Validate caller configuration before any durable policy mutation. */
 function windows(value: unknown, transitional = false): KramWindows {
   if (!Array.isArray(value) || value.length !== 7 || value.some((v) => !Number.isSafeInteger(v) || v < 0)) {

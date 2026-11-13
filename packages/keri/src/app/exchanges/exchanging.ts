@@ -37,6 +37,7 @@ import {
 import { nestedIpexRoute, supportsNestedExchange } from "../../core/exchange/protocol-exchanging.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import { consoleLogger } from "../../core/logger.ts";
+import { exchangeWindow } from "../../core/mailbox/kram-policy.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../core/protocol-serialization.ts";
 import { hasNests, loadNests, prepareNests, publishNests } from "../../db/exchange/exchange-nests.ts";
 import type { ExchangeRegistryStateShape } from "../../db/exchange/exchange-records.ts";
@@ -305,6 +306,12 @@ export class Exchanger {
   private readonly versionedRoutes = new Map<string, Map<number, ExchangeRouteHandler>>();
   /** Borrow the runtime clock for escrow deadlines and retries. */
   private readonly now: () => number;
+  /**
+   * Lifetimes of the pending exchanges this process's escrow sweep ejected, by SAID. Ejection removes the only
+   * stored body, so this is all that still says when such an exchange expired ({@link exchangeExpiry}). Lost on
+   * restart, by design: no store keeps ejected exchanges.
+   */
+  private readonly ejected = new Map<string, string>();
   /** Bind route handlers, cues and the escrow clock to one habitat database. */
   constructor(hby: Habery, { handlers = [], cues, now = Date.now }: {
     handlers?: readonly ExchangeRouteHandler[];
@@ -684,11 +691,14 @@ export class Exchanger {
       if (schema && new Diger({ qb64: keys[1] }).qb64 !== keys[1]) throw new Error("Corrupt schema escrow dependency.");
       const expired = yield* call(() => this.expirePending(serder));
       if (expired) {
+        const deadline = this.lifetime(serder);
+        if (deadline) this.ejected.set(said, deadline);
         consoleLogger.warn("Exchanger ejected exchange escrow", {
           said,
           pre: serder.pre,
           route: serder.route,
           ...expired,
+          ...(deadline && { deadline }),
         });
         continue;
       }
@@ -772,16 +782,41 @@ export class Exchanger {
 
   /** Original accepted KRAM lifetime; partial-escrow timestamps never authorize live auxiliary work. */
   exchangeDeadline(serder: SerderKERI): string | null {
-    const said = serder.said, sender = serder.pre;
-    const xid = serder.ilk === "xip" ? said : serder.sad?.x;
-    if (!said || !sender || typeof xid !== "string" || !xid) return null;
-    const cache = this.hby.db.tmsc.get([sender, xid, said]);
+    const key = transactionCacheKey(serder);
+    const cache = key && this.hby.db.tmsc.get(key);
     if (!cache?.rdt) return null;
     const opener = timestampMicros(cache.xdt);
     if (timestampMicros(cache.rdt) === null || opener === null || !Number.isSafeInteger(cache.xl) || cache.xl! < 0) {
       throw new Error("Corrupt accepted exchange transaction lifetime.");
     }
     return this.deadlineDater(opener + BigInt(cache.xl!) * 1000n).dts;
+  }
+
+  /**
+   * When the exchange `said` expires, or expired: its KRAM lifetime, opener plus exchange window. Unlike
+   * {@link exchangeDeadline} this keeps answering after KRAM prunes the cache row (at opener + `pxl`, which the
+   * default windows make the deadline itself) and after the escrow sweep ejects an expired pending exchange, so a
+   * caller can say why the exchange is gone. A pure read. Null when KRAM is off (no exchange window), while KRAM
+   * holds the message without accepting it (an incomplete multi-signature message), for a pruned message that
+   * continues another message's thread, and for an ejected exchange after a restart.
+   */
+  exchangeExpiry(said: string): string | null {
+    const db = this.hby.db, serder = db.exns.get([said]) ?? db.epse.get([said]);
+    return serder?.said === said ? this.lifetime(serder) : this.ejected.get(said) ?? null;
+  }
+
+  /**
+   * The accepted lifetime while KRAM keeps the cache row; once the row is pruned, an exchange that opens its own
+   * thread (an `xip`, or an `exn` with no prior, the rule KRAM opened it with) is its own opener, so its stamp
+   * plus the exchange window configured now gives the deadline again. Reads no escrow row, so it also works on
+   * the body of an exchange that is being ejected.
+   */
+  private lifetime(serder: SerderKERI): string | null {
+    const accepted = this.exchangeDeadline(serder), key = transactionCacheKey(serder);
+    if (accepted || !key || this.hby.db.tmsc.get(key)) return accepted;
+    const opener = serder.ilk === "xip" || !serder.ked?.p ? timestampMicros(serder.stamp) : null;
+    const window = exchangeWindow(this.hby.db, serder.ilk!, serder.route);
+    return opener === null || window === null ? null : this.deadlineDater(opener + BigInt(window) * 1000n).dts;
   }
 
   /**
@@ -1361,8 +1396,7 @@ export class Exchanger {
     const prior = emsd.get([said]);
     if (prior && timestampMicros(prior.dts) === null) throw new Error("Corrupt missing-schema deadline.");
     if (!prior) {
-      const xid = serder.ilk === "xip" ? said : serder.sad!.x;
-      const cache = typeof xid === "string" && xid ? this.hby.db.tmsc.get([serder.pre!, xid, said]) : null;
+      const key = transactionCacheKey(serder), cache = key ? this.hby.db.tmsc.get(key) : null;
       const opener = cache && timestampMicros(cache.xdt);
       if (cache && (opener === null || opener === undefined || !Number.isSafeInteger(cache.pxl) || cache.pxl! < 0)) {
         throw new Error("Corrupt missing-schema transaction lifetime.");
@@ -1602,6 +1636,13 @@ export class Exchanger {
     this.hby.db.emse?.trim([said]);
     this.hby.db.emsd?.rem([said]);
   }
+}
+
+/** The KRAM transaction cache key `[sender, xid, said]` of an exchange; null for a message outside a transaction. */
+function transactionCacheKey(serder: SerderKERI): [string, string, string] | null {
+  const said = serder.said, sender = serder.pre;
+  const xid = serder.ilk === "xip" ? said : serder.sad?.x;
+  return said && sender && typeof xid === "string" && xid ? [sender, xid, said] : null;
 }
 
 function normalizeAttachments(
