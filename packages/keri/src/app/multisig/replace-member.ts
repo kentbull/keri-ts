@@ -6,7 +6,9 @@
  * member or frozen DH custodian is the old member, and an Unblind holding it. Each ends through its owner's
  * own end path, which releases the approval and drops the held `heldq`/`heldu` rows. Group IPEX messages and
  * presentations keep no member binding (their contributions are already signed and the member is read live),
- * so they are left to run. Nothing is signed and no event is made.
+ * so they are left to run. It then prompts the mailbox poller, the KEL publisher and the root replicator for the
+ * group, so each acts as the new member on its next tock instead of at its next sweep. Nothing is signed and no
+ * event is made.
  */
 import { ValidationError } from "../../core/errors.ts";
 import type { Hab } from "../identity/habbing.ts";
@@ -48,6 +50,9 @@ export function replaceGroupMember(runtime: AgentRuntime, input: ReplaceGroupMem
   if (previous === member.pre) throw new ValidationError(`Member ${previous} is already the local member of ${group}.`);
   hby.joinGroupHab(group, alias, member, input.smids, input.rmids ?? input.smids, record.domain);
   const reason = `Local member ${previous} of group ${group} was replaced by ${member.pre}`;
+  runtime.mailboxPoller.prompt(group);
+  runtime.kelPublisher.prompt(group);
+  runtime.rootReplicator?.prompt(group);
   const ops = runtime.operations;
   return {
     previous,

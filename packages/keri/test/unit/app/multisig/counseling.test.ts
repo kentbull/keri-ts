@@ -10,10 +10,14 @@
 import { Dater, Diger, GroupSizeError, NumberPrimitive, NumDex, type SerderKERI, Siger } from "cesr-ts";
 import { ensure, type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
+import type { RegistryRoot } from "../../../../src/acdc/salting.ts";
+import { RootReplicator } from "../../../../src/app/credentials/root-replicator.ts";
+import type { Poster } from "../../../../src/app/delivery/forwarding.ts";
 import { Anchorer } from "../../../../src/app/identity/delegating.ts";
 import { type Hab, type Habery, openHabery } from "../../../../src/app/identity/habbing.ts";
 import { IssuanceOperations, partyKey } from "../../../../src/app/ipex/issuance.ts";
 import { unblindingKey, UnblindingOperations } from "../../../../src/app/ipex/unblinding-workflow.ts";
+import { KelPublisher } from "../../../../src/app/mailbox/kel-publisher.ts";
 import {
   Counselor,
   DEFAULT_FALLBACK_AFTER_MS,
@@ -29,6 +33,7 @@ import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.
 import { exchange } from "../../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
 import { MemStoreOpener } from "../../../../src/db/core/memstore.ts";
+import { FakeRuntimeHttpClient, ManualRuntimeClock } from "../../../support/runtime-fakes.ts";
 
 interface Side {
   hby: Habery;
@@ -261,7 +266,7 @@ Deno.test("a completed group rotation, and only a rotation, is announced for the
     const sides = yield* members(2);
     const [s0, s1] = sides;
     const told: string[] = [];
-    const { c } = counselor(s0, [], { t: 0 }, false, { rotated: (cue) => told.push(cue.pre) });
+    const { c } = counselor(s0, [], { t: 0 }, false, { rotated: cue => told.push(cue.pre) });
     const smids = pres(sides);
     const created = [s0, s1].map(s => incept(s, smids, { isith: "2", nsith: "2", toad: 0, wits: [] }));
     const gid = created[0].serder.pre!;
@@ -859,7 +864,13 @@ Deno.test("joinGroupHab replaces a local member that left the accepted key state
       });
     }
     Object.assign(unblinding, { live: unblinds, settled: new Map(), deps: {} });
-    const runtime = { hby: a.hby, operations: { issuance, unblinding } } as unknown as AgentRuntime;
+    const runtime = {
+      hby: a.hby,
+      operations: { issuance, unblinding },
+      mailboxPoller: { prompt() {} },
+      kelPublisher: { prompt() {} },
+      rootReplicator: null,
+    } as unknown as AgentRuntime;
 
     const replaced = replaceGroupMember(runtime, { group: gid, member: fresh, smids: next, rmids: next });
     assertEquals(replaced, { previous: a.hab.pre, issuance: ["Gmember", "Gcustodian"], unblinding: ["Umember"] });
@@ -1202,7 +1213,7 @@ Deno.test("the elected member forwards a completed event to the other members, r
     const forwarding: GroupForwarding = {
       *forward(forwarded, to) {
         sent.push([...to]);
-        return to.map((recipient) => {
+        return to.map(recipient => {
           const failed = !reachable && recipient === pres(sides)[2];
           return {
             recipient,
@@ -1236,5 +1247,111 @@ Deno.test("the elected member forwards a completed event to the other members, r
     elected.clock.t = 60_000;
     yield* elected.c.processOnce();
     assertEquals(sent.length, 2);
+  });
+});
+
+/**
+ * A group whose local member `a` was rotated out by the others, with `fresh` (another habitat of `a`'s Habery)
+ * in the accepted state: the point where `replaceGroupMember` applies. Nothing is replaced yet.
+ */
+function* rotatedOutMember() {
+  const [a, b, c] = yield* members(3), fresh = a.hby.makeHab("replacement");
+  share(a.hby, fresh.pre!, [b.hby, c.hby]);
+  const smids = pres([a, b, c]), gid = pairAt([a, b, c], smids, [...smids, fresh.pre!]);
+  b.hab.rotate();
+  c.hab.rotate();
+  fresh.rotate();
+  share(b.hby, b.hab.pre!, [a.hby, c.hby]);
+  share(c.hby, c.hab.pre!, [a.hby, b.hby]);
+  share(a.hby, fresh.pre!, [b.hby, c.hby]);
+  const next = [b.hab.pre!, c.hab.pre!, fresh.pre!];
+  const rots = [b, c].map(s => rotate(s, next, next, { isith: "2", nsith: "2", toad: 0 }));
+  [b, c].forEach((s, i) => deliver(s.hby, rots[1 - i]));
+  rots.forEach(r => deliver(a.hby, r));
+  return { a, b, c, fresh, gid, next };
+}
+
+Deno.test("replaceGroupMember prompts poller, publisher and replicator", async () => {
+  await run(function*() {
+    const { a, fresh, gid, next } = yield* rotatedOutMember();
+    const prompted: string[] = [];
+    const spy = (name: string) => ({ prompt: (group: string) => void prompted.push(`${name}:${group}`) });
+    const runtime = {
+      hby: a.hby,
+      operations: null,
+      mailboxPoller: spy("poller"),
+      kelPublisher: spy("publisher"),
+      rootReplicator: spy("replicator"),
+    } as unknown as AgentRuntime;
+    replaceGroupMember(runtime, { group: gid, member: fresh, smids: next });
+    assertEquals(prompted, [`poller:${gid}`, `publisher:${gid}`, `replicator:${gid}`]);
+    // A runtime without a root replicator (no IPEX) is replaced all the same.
+    const { a: other, fresh: replacement, gid: group, next: members2 } = yield* rotatedOutMember();
+    replaceGroupMember(
+      { ...runtime, hby: other.hby, rootReplicator: null } as unknown as AgentRuntime,
+      { group, member: replacement, smids: members2 },
+    );
+    assertEquals(other.hby.db.getHab(group)!.mid, replacement.pre);
+  });
+});
+
+Deno.test("expired KEL budget re-arms after member replacement", async () => {
+  await run(function*() {
+    const { a, fresh, gid, next } = yield* rotatedOutMember();
+    const http = new FakeRuntimeHttpClient();
+    let status = 500;
+    http.registerOrigin("http://alpha.test/", () => new Response(null, { status }));
+    a.hby.db.ends.pin([gid, "mailbox", "alpha"], { allowed: true });
+    a.hby.db.locs.pin(["alpha", "http"], { url: "http://alpha.test/" });
+    const clock = new ManualRuntimeClock(0);
+    const publisher = new KelPublisher({ hby: a.hby, http, clock });
+    // The old member's posts fail until the five-minute budget is used up.
+    for (let second = 0; second <= 400; second++) {
+      yield* publisher.processOnce();
+      clock.advance(1_000);
+    }
+    assertEquals(publisher.statusOf(gid).map(entry => entry.state), ["timed-out"]);
+    status = 204;
+    assertEquals(yield* publisher.processDue(), [], "an expired budget is not retried by itself");
+
+    const runtime = {
+      hby: a.hby,
+      operations: null,
+      mailboxPoller: { prompt() {} },
+      kelPublisher: publisher,
+      rootReplicator: null,
+    } as unknown as AgentRuntime;
+    replaceGroupMember(runtime, { group: gid, member: fresh, smids: next });
+    assertEquals((yield* publisher.processDue()).map(result => result.outcome), ["told"]);
+    assertEquals(publisher.statusOf(gid).map(entry => entry.state), ["published"]);
+    assertEquals(a.hby.db.kpub.get([gid, "alpha"])?.m, fresh.kever!.lastEst.d, "the new member's head is recorded");
+  });
+});
+
+Deno.test("root copies re-derive for the new sender", async () => {
+  await run(function*() {
+    const { a, b, c, fresh, gid, next } = yield* rotatedOutMember();
+    const everyone = [a.hab.pre!, ...next];
+    // Only what the replicator reads of the root: the held registry, the members and the contribution key.
+    const root = { hby: a.hby, held: () => ["Eregistry"], members: () => everyone, contributor: () => "K" };
+    const replicator = new RootReplicator({
+      root: root as unknown as RegistryRoot,
+      postman: {} as Poster,
+      clock: new ManualRuntimeClock(0),
+    });
+    const owed = () => replicator.status().owed.map(copy => copy.recipient).sort();
+    replicator.sweep();
+    assertEquals(owed(), [b.hab.pre!, c.hab.pre!, fresh.pre!].sort(), "the recorded member sends to every other");
+
+    const runtime = {
+      hby: a.hby,
+      operations: null,
+      mailboxPoller: { prompt() {} },
+      kelPublisher: { prompt() {} },
+      rootReplicator: replicator,
+    } as unknown as AgentRuntime;
+    replaceGroupMember(runtime, { group: gid, member: fresh, smids: next });
+    replicator.sweep();
+    assertEquals(owed(), [a.hab.pre!, b.hab.pre!, c.hab.pre!].sort(), "the new sender owes the old member, not itself");
   });
 });

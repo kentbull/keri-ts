@@ -968,3 +968,108 @@ Deno.test("a witness rotated in is polled within one poller sweep", async () => 
     }
   });
 });
+
+/** A group of two local members, `alice` as the recorded member, with one authorized mailbox of its own. */
+function groupWithMailbox(hby: Habery) {
+  const [alice, bob] = ["alice", "bob"].map((name) => hby.makeHab(name, undefined, { transferable: true, toad: 0 }));
+  const group = hby.makeGroupHab("team", alice, [alice.pre, bob.pre], undefined, undefined, {
+    isith: "2",
+    nsith: "2",
+    toad: 0,
+  }).hab;
+  const endpoint = seedMailboxEndpoint(hby, group.pre, "group");
+  const http = new FakeRuntimeHttpClient();
+  const bodies: string[] = [];
+  http.registerOrigin(endpoint.url, async (request) => {
+    bodies.push(new TextDecoder().decode(await request.arrayBuffer()));
+    return new Response(null, { status: 204 });
+  });
+  /** What `replaceGroupMember` leaves in the store: the record names `member`. */
+  const replaceWith = (member: Hab) => hby.db.pinHab(group.pre, { ...hby.db.getHab(group.pre)!, mid: member.pre });
+  return { alice, bob, group, endpoint, http, bodies, replaceWith };
+}
+
+/** Run `poller` until `until` holds, advancing the tock clock so a prompted identifier is re-selected. */
+function* tockUntil(clock: ManualRuntimeClock, until: () => boolean, message: string): Operation<void> {
+  for (let tock = 0; tock < 20 && !until(); tock++) {
+    clock.advance(MAILBOX_POLLER_PACING.tockMs);
+    for (let turn = 0; turn < 20; turn++) yield* runtimeTurn();
+  }
+  assert(until(), message);
+}
+
+/** How many of `bodies` are queries signed by `member`, whose prefix is the query's own `i`. */
+const signedBy = (bodies: readonly string[], member: Hab) =>
+  bodies.filter((body) => body.includes(`"i":"${member.pre}"`)).length;
+
+Deno.test("poller respawns group worker when local member changes", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const { alice, bob, group, http, bodies, replaceWith } = groupWithMailbox(hby);
+    const clock = new ManualRuntimeClock();
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    poller.registerTopic("/reply");
+    const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
+    try {
+      yield* tockUntil(clock, () => signedBy(bodies, alice) > 0, "the recorded member polls");
+      assertEquals(signedBy(bodies, bob), 0);
+      replaceWith(bob);
+      poller.prompt(group.pre);
+      yield* tockUntil(clock, () => signedBy(bodies, bob) > 0, "the replacement polls on the next tock");
+      // The old worker is halted, not left polling beside the new one.
+      const stale = signedBy(bodies, alice);
+      for (let turn = 0; turn < 50; turn++) yield* runtimeTurn();
+      assertEquals(signedBy(bodies, alice), stale);
+    } finally {
+      yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("poller signs group poll with replacement member", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const { alice, bob, group, http, bodies, replaceWith } = groupWithMailbox(hby);
+    replaceWith(bob);
+    const clock = new ManualRuntimeClock();
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    poller.registerTopic("/reply");
+    const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
+    try {
+      yield* tockUntil(clock, () => bodies.length > 0, "the group is polled");
+      assertEquals(signedBy(bodies, alice), 0, "the recorded member's replacement signs, never the old member");
+      assertEquals(signedBy(bodies, bob), bodies.length);
+      assert(bodies.every((body) => body.includes(`"q":{"topics":{"/reply":0},"i":"${group.pre}"`)));
+    } finally {
+      yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("halted worker clears its signer condition", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
+    const { hab } = heldHab(hby, "custodial");
+    const endpoint = seedMailboxEndpoint(hby, hab.pre, "halted");
+    const http = new FakeRuntimeHttpClient();
+    http.registerOrigin(endpoint.url, () => new Response(null, { status: 204 }));
+    const clock = new ManualRuntimeClock();
+    const conditions = new SignerConditions();
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, { signerConditions: conditions });
+    poller.registerTopic("/reply");
+    const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
+    try {
+      hby.mgr.release();
+      yield* tockUntil(clock, () => conditions.list().length === 1, "the released signer is reported");
+      // The mailbox role is withdrawn: the worker halts while still waiting for the signer.
+      hby.db.ends.pin([hab.pre, Roles.mailbox, endpoint.eid], { allowed: false });
+      poller.prompt(hab.pre);
+      yield* tockUntil(clock, () => conditions.list().length === 0, "the halted worker leaves no condition");
+    } finally {
+      yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
+    }
+  });
+});
