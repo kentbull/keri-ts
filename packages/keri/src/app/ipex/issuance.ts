@@ -243,7 +243,8 @@ export interface LiveIssuance {
 export interface Outbound {
   src: string;
   dest: string;
-  msg: Uint8Array;
+  /** The signed bytes, or a producer called at delivery for a message that must be timely when it leaves (a query). */
+  msg: Uint8Array | (() => Uint8Array);
   topic?: string;
 }
 
@@ -494,7 +495,8 @@ export class IssuanceOperations {
       const now = this.deps.clock.now();
       if (!op.retry.due(now)) return false;
       try {
-        yield* this.deps.delivery.deliver(op.outbox[0]);
+        const { src, dest, msg, topic } = op.outbox[0];
+        yield* this.deps.delivery.deliver({ src, dest, msg: typeof msg === "function" ? msg() : msg, topic });
         op.outbox.shift();
         op.retry.succeeded();
       } catch (error) {
@@ -586,7 +588,7 @@ export class IssuanceOperations {
     }
     if (!op.dh.complete(op.xid)) {
       if (issuer?.query && this.deps.clock.now() >= issuer.nextQuery) {
-        this.enqueue(op, { src: op.hab.pre!, dest: op.peer, msg: this.renewed(op, issuer) });
+        this.enqueue(op, { src: op.hab.pre!, dest: op.peer, msg: () => this.renewed(op, issuer) });
         issuer.nextQuery = this.deps.clock.now() + ISSUANCE_QUERY_RESEND_MS;
       }
     } else if (issuer) yield* this.finish(op, issuer);
