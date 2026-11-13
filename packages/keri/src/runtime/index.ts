@@ -333,6 +333,7 @@ export {
   type IpexRoute,
   ipexSpurnExn,
 } from "../app/ipex/ipexing.ts";
+export { keepRawArrival, type RawArrival } from "../app/mailbox/agent-inbox.ts";
 export {
   KEL_PUBLISHER_PACING,
   KEL_PUBLISHER_SWEEP_TOCKS,
