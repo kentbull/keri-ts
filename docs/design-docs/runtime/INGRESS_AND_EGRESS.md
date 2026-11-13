@@ -105,6 +105,22 @@ evidence preparation rechecks current state at that boundary. ProtocolProcessor
 has no global lock: other inputs and escrow scans can progress during file I/O
 or handlers. Each operation joins its own cleanup.
 
+Network inputs (HTTP and TCP ingress, mailbox polling, witness ingress, the
+Reactor's `process`/`processBytes`) take `IntakeOptions`: `local`, `mailboxAid`
+and `escrows`. `DispatchOptions` adds `retained`, which only the finite credential
+importer (`importCredentialStream`) sets, for a stream of history the caller
+already holds, such as an exported disclosure. A retained v2 `exn`/`xip` skips
+KRAM intake, whose window its original stamp passed long ago; KRAM's replay
+protection guards live intake, not a local copy of accepted history. Nothing else
+is relaxed: sender policy applies, the Exchanger authenticates every signature
+against the sender's key state and runs the route's verify, escrows behave as
+usual, and queries and replies still pass KRAM. The Exchanger records the fact in
+the exchange's private metadata: route handlers see it on acceptance and on a
+later escrow retry (the IPEX handlers then raise no notice), and the exchange has
+no KRAM lifetime, so `exchangeExpiry` never reports it expired for its age.
+`processMessages` forwards only the intake fields, so no byte source can mark
+live input as retained.
+
 An optional caller-owned `AuxiliaryQueryProcessor` is injected as
 `ProtocolProcessor.qvy`. After sender policy and optional KRAM, it receives the
 full v2 query envelope for routes not owned by the existing KEL, mailbox and TEL

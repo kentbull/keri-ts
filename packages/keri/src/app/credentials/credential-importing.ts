@@ -1,6 +1,7 @@
 /** Finite credential-bundle intake; protocol owners retain and recover their own pending evidence. */
 import { Ilks, parse, SerderACDC, SerderKERI } from "cesr-ts";
 import { action, call, ensure, type Operation, race } from "npm:effection@^3.6.0";
+import { validateRip, validateUpdate } from "../../acdc/regeventing.ts";
 import type { Kevery } from "../../core/kel/eventing.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import type { Reger } from "../../db/reger.ts";
@@ -40,10 +41,22 @@ type ImportTarget =
     sn: number | null;
   }
   | {
-    /** An accepted exchange does not admit any embedded credential. */
-    ilk: "exn";
+    /** V2 public registry event, accepted in the v2 registry store rather than the v1 Reger. */
+    ilk: "rip" | "bup";
+    /** Event SAID; a different accepted event at the same ordinal cannot satisfy it. */
+    said: string;
+    /** Registry the event belongs to, or null for an event that fails field validation. */
+    regid: string | null;
+    /** Exact registry ordinal, or null for an event that fails field validation. */
+    sn: number | null;
+  }
+  | {
+    /** An accepted exchange (a v2 Grant opens its thread as `xip`) does not admit any embedded credential. */
+    ilk: "exn" | "xip";
     /** Exchange's own SAID. */
     said: string;
+    /** For a v2 `/ipex/admit`, the Grant it answers, whose reply row must name this Admit; otherwise null. */
+    answers: string | null;
   };
 
 /**
@@ -51,6 +64,14 @@ type ImportTarget =
  * This operation owns its parser/Kevery and starts no network, mailbox or host workers.
  * Later input failures preserve earlier accepted state. Receipts, replies and other messages still
  * use normal dispatch; absence of an importer acceptance lookup is not an additional refusal policy.
+ *
+ * The input is retained history the caller already holds (for example an exported disclosure stream: KELs, the v2
+ * registry TEL, a Grant and its Admit), so every frame is dispatched with `DispatchOptions.retained`. Its v2
+ * exchanges skip KRAM, whose window their original stamps passed long ago; signatures, route verification and
+ * escrows are unchanged, and the accepted exchanges raise no notice and get no exchange lifetime. Targets: raw
+ * credentials, KEL and v1 TEL events, v2 `rip`/`bup` (accepted at their exact ordinal in the v2 registry store),
+ * and exchanges (accepted by the Exchanger; a v2 Admit also needs its Grant's reply row to name it). Importing the
+ * same input again changes nothing and reports the same acceptance.
  *
  * @param protocol Borrowed protocol dispatcher, sharing reger with its TEL/credential handlers.
  * @param reger Borrowed credential/TEL store whose accepted records establish the result.
@@ -170,7 +191,8 @@ function readImportTargets(
           const target = importTarget(serder, reger);
           if (target) targets.set(target.said, target);
         }
-        const { decision } = yield* protocol.dispatch(next.value, {}, kvy);
+        // The one dispatch that marks its input as retained history; see the operation docs.
+        const { decision } = yield* protocol.dispatch(next.value, { retained: true }, kvy);
         if (decision && (decision.kind === "reject" || decision.kind === "drop")) {
           consoleLogger.warn("Credential import message refused", {
             said: serder.said,
@@ -198,7 +220,14 @@ function readImportTargets(
 function importTarget(serder: SerderACDC | SerderKERI, reger: Reger): ImportTarget | null {
   const said = serder.said!, ilk = serder.ilk;
   if (serder instanceof SerderACDC) {
-    return ilk === null ? { ilk, said, savedBefore: reger.saved.get([said]) !== null } : null;
+    if (ilk === null) return { ilk, said, savedBefore: reger.saved.get([said]) !== null };
+    if (ilk !== Ilks.rip && ilk !== Ilks.bup) return null;
+    // An event that fails field validation, or whose ordinal no store can hold, keeps no coordinates, so it is
+    // always reported unaccepted.
+    const result = ilk === Ilks.rip ? validateRip(serder) : validateUpdate(serder, serder.regid ?? "");
+    return result.kind === "valid" && result.event.sn <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? { ilk, said, regid: result.event.regid, sn: Number(result.event.sn) }
+      : { ilk, said, regid: null, sn: null };
   }
   switch (ilk) {
     case Ilks.icp:
@@ -214,7 +243,11 @@ function importTarget(serder: SerderACDC | SerderKERI, reger: Reger): ImportTarg
     case Ilks.brv:
       return { ilk, said, pre: serder.pre, sn: serder.sn };
     case Ilks.exn:
-      return { ilk, said };
+    case Ilks.xip: {
+      const prior = serder.sad?.p;
+      const admit = serder.pvrsn.major >= 2 && serder.route === "/ipex/admit" && typeof prior === "string";
+      return { ilk, said, answers: admit ? prior : null };
+    }
     default:
       return null;
   }
@@ -246,7 +279,13 @@ function importTargetAccepted(target: ImportTarget, protocol: ProtocolProcessor,
     case Ilks.bis:
     case Ilks.brv:
       return target.pre !== null && target.sn !== null && reger.tels.getOn(target.pre, target.sn)?.qb64 === target.said;
+    case Ilks.rip:
+    case Ilks.bup:
+      return target.regid !== null && target.sn !== null
+        && protocol.registry?.store.seqSaider(target.regid, target.sn)?.qb64 === target.said;
     case Ilks.exn:
-      return protocol.kvy.db.exns.get([target.said]) !== null;
+    case Ilks.xip:
+      return protocol.exc.complete(target.said)
+        && (target.answers === null || protocol.kvy.db.erpy.get([target.answers])?.qb64 === target.said);
   }
 }

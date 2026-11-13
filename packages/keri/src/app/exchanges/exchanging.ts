@@ -153,6 +153,11 @@ export interface ExchangeRouteHandler {
     mailboxAid?: string | null;
     /** Qualified first receiver receipt, retained through dependency retry. */
     receiverTime?: string;
+    /**
+     * Retained history from a finite local import (`ExchangeInput.retained`), kept through dependency retry: the
+     * caller already holds this exchange, so a handler records it but raises nothing for anyone to act on.
+     */
+    retained?: boolean;
   }): void | Operation<void>;
   /**
    * Retry this route's own escrow of accepted exchanges awaiting later local
@@ -189,6 +194,13 @@ export interface ExchangeInput {
   mailboxAid?: string | null;
   /** Receiver-observed time supplied by local intake, independent of signed wire. */
   receiverTime?: string;
+  /**
+   * Retained history from a finite local import, admitted without KRAM (`DispatchOptions.retained`). Authentication,
+   * route verification and escrow are unchanged. The fact is kept in the exchange's private metadata, so its
+   * handlers see it on a later escrow retry too, and {@link Exchanger.exchangeExpiry} gives it no lifetime: KRAM never
+   * opened a window for it here, and its age says nothing about it.
+   */
+  retained?: boolean;
 }
 
 /** Result of this attempt; complete(said) separately reports any earlier durable acceptance. */
@@ -542,6 +554,8 @@ export class Exchanger {
     const previous = this.hby.db.exchangeMeta.get([said]);
     const receiverTime = storedReceiverTime(previous) ?? args.receiverTime;
     const mailboxAid = args.mailboxAid ?? previous?.mailboxAid ?? null;
+    // Once imported as retained history an exchange stays so; a retry rebuilds its input from the stores.
+    const retained = previous?.retained === true || args.retained === true;
     const nests = args.nests?.length ? args.nests : loadNests(this.hby.db, said);
     if (
       nests.length
@@ -624,11 +638,12 @@ export class Exchanger {
       mailboxAid,
       ...(receiverTime !== undefined ? { receiverTime } : {}),
       gvrsn: previous?.gvrsn ?? args.gvrsn ?? args.serder.gvrsn ?? args.serder.pvrsn,
+      ...(retained ? { retained } : {}),
     };
     // A retry that learns nothing new leaves the stored record as it is rather than committing it again.
     if (
       !previous || previous.mailboxAid !== meta.mailboxAid || previous.receiverTime !== meta.receiverTime
-      || JSON.stringify(previous.gvrsn) !== JSON.stringify(meta.gvrsn)
+      || JSON.stringify(previous.gvrsn) !== JSON.stringify(meta.gvrsn) || (previous.retained === true) !== retained
     ) {
       this.hby.db.exchangeMeta.pin([said], meta);
     }
@@ -640,7 +655,7 @@ export class Exchanger {
       }
       return { decision: pending, cues };
     }
-    return { decision: { kind: "accept", said }, cues, handling };
+    return { decision: { kind: "accept", said }, cues, handling: retained ? { ...handling, retained } : handling };
   }
 
   /** Retry escrows using ordinary LMDB evidence and retained mailbox provenance. */
@@ -689,9 +704,10 @@ export class Exchanger {
         throw new Error("Corrupt exchange escrow key or body.");
       }
       if (schema && new Diger({ qb64: keys[1] }).qb64 !== keys[1]) throw new Error("Corrupt schema escrow dependency.");
+      // Read before ejection removes the metadata that says whether the exchange is retained history.
+      const deadline = this.lifetime(serder);
       const expired = yield* call(() => this.expirePending(serder));
       if (expired) {
-        const deadline = this.lifetime(serder);
         if (deadline) this.ejected.set(said, deadline);
         consoleLogger.warn("Exchanger ejected exchange escrow", {
           said,
@@ -798,7 +814,8 @@ export class Exchanger {
    * default windows make the deadline itself) and after the escrow sweep ejects an expired pending exchange, so a
    * caller can say why the exchange is gone. A pure read. Null when KRAM is off (no exchange window), while KRAM
    * holds the message without accepting it (an incomplete multi-signature message), for a pruned message that
-   * continues another message's thread, and for an ejected exchange after a restart.
+   * continues another message's thread, for an ejected exchange after a restart, and for retained history a local
+   * import admitted without KRAM ({@link ExchangeInput.retained}), which never had a window here.
    */
   exchangeExpiry(said: string): string | null {
     const db = this.hby.db, serder = db.exns.get([said]) ?? db.epse.get([said]);
@@ -809,11 +826,13 @@ export class Exchanger {
    * The accepted lifetime while KRAM keeps the cache row; once the row is pruned, an exchange that opens its own
    * thread (an `xip`, or an `exn` with no prior, the rule KRAM opened it with) is its own opener, so its stamp
    * plus the exchange window configured now gives the deadline again. Reads no escrow row, so it also works on
-   * the body of an exchange that is being ejected.
+   * the body of an exchange that is being ejected. Retained history never had a cache row here, so its stamp gives
+   * no deadline: it would only report an old exchange expired for its age.
    */
   private lifetime(serder: SerderKERI): string | null {
     const accepted = this.exchangeDeadline(serder), key = transactionCacheKey(serder);
     if (accepted || !key || this.hby.db.tmsc.get(key)) return accepted;
+    if (this.hby.db.exchangeMeta.get([serder.said!])?.retained === true) return null;
     const opener = serder.ilk === "xip" || !serder.ked?.p ? timestampMicros(serder.stamp) : null;
     const window = exchangeWindow(this.hby.db, serder.ilk!, serder.route);
     return opener === null || window === null ? null : this.deadlineDater(opener + BigInt(window) * 1000n).dts;
