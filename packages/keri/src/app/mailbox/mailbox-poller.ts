@@ -3,7 +3,7 @@ import { call, type Operation, scoped, spawn, type Task } from "npm:effection@^3
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { abortable } from "../runtime/abortable.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
-import { type DoerPacing, doEvery, PROTOCOL_PACING } from "../runtime/doing.ts";
+import { type DoerPacing, doEvery, PROTOCOL_TOCK_MS } from "../runtime/doing.ts";
 import { runtimeTurn } from "../runtime/runtime-turn.ts";
 import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { isLegacyCesrMediaRejection, readResponseDetail } from "../transport/cesr-egress.ts";
@@ -35,6 +35,20 @@ interface MailboxPollerOptions {
    */
   onUnauthorized?: (pre: string, mailbox: string) => void;
 }
+
+/** Tocks between the poller's full re-selection of workers: 160 tocks of 31.25 ms is five seconds. */
+export const MAILBOX_POLLER_SWEEP_TOCKS = 160;
+/**
+ * The production pacing of the mailbox poller. Between sweeps it re-selects workers only when the registered
+ * topics or the number of identifiers change, or for an identifier passed to {@link MailboxPoller.prompt} (the
+ * runtime prompts one when a mailbox end role is accepted). Endpoint changes other than an accepted mailbox end
+ * role (a rotated-in witness, a location accepted after its role, another process writing the same store) are
+ * therefore picked up within five seconds.
+ */
+export const MAILBOX_POLLER_PACING: Readonly<DoerPacing> = Object.freeze({
+  tockMs: PROTOCOL_TOCK_MS,
+  sweepTocks: MAILBOX_POLLER_SWEEP_TOCKS,
+});
 
 /**
  * Retrieve recipient messages from remote mailbox or witness endpoints over HTTP/SSE.
@@ -130,7 +144,7 @@ export class MailboxPoller {
    */
   *pollDo(
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
-    pacing: Readonly<DoerPacing> = PROTOCOL_PACING,
+    pacing: Readonly<DoerPacing> = MAILBOX_POLLER_PACING,
   ): Operation<never> {
     const remoteWorkers = new Map<string, Task<void>>();
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.

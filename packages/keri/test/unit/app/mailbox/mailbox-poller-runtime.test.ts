@@ -6,7 +6,11 @@ import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../s
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { KelPublisher } from "../../../../src/app/mailbox/kel-publisher.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
-import { type MailboxPollBatch, MailboxPoller } from "../../../../src/app/mailbox/mailbox-poller.ts";
+import {
+  MAILBOX_POLLER_PACING,
+  type MailboxPollBatch,
+  MailboxPoller,
+} from "../../../../src/app/mailbox/mailbox-poller.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
 import {
   createAgentRuntime,
@@ -840,6 +844,40 @@ Deno.test("settleMailboxPollBatch propagates a dispatch-side ParserError from co
       yield* runtime.close();
       yield* source.close(true);
       yield* provider.close(true);
+    }
+  });
+});
+
+Deno.test("a witness rotated in is polled within one poller sweep", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const witness = hby.makeHab("witness", undefined, { transferable: false, ncount: 0 });
+    const bob = hby.makeHab("bob", undefined, { transferable: true });
+    const url = "http://witness.mailbox.test/";
+    hby.db.locs.pin([witness.pre, "http"], { url });
+    const http = new FakeRuntimeHttpClient();
+    http.registerOrigin(url, () => new Response(null, { status: 204 }));
+    const clock = new ManualRuntimeClock();
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock);
+    poller.registerTopic("/challenge");
+    const worker = yield* spawn(() => poller.pollDo(() => {}, MAILBOX_POLLER_PACING));
+    const settle = function*() {
+      for (let turn = 0; turn < 20; turn++) yield* runtimeTurn();
+    };
+    try {
+      yield* settle();
+      assertEquals(http.requests.length, 0, "no endpoint yet");
+      bob.rotate({ adds: [witness.pre], toad: 1 });
+      // Nothing prompted the poller: the rotation is found by the sweep, at most sweepTocks tocks later.
+      for (let tock = 0; tock < MAILBOX_POLLER_PACING.sweepTocks && http.requests.length === 0; tock++) {
+        clock.advance(MAILBOX_POLLER_PACING.tockMs);
+        yield* settle();
+      }
+      assert(http.requests.some((request) => request.url === url), "the rotated-in witness is polled");
+      assert(MAILBOX_POLLER_PACING.sweepTocks * MAILBOX_POLLER_PACING.tockMs <= 5_000);
+    } finally {
+      yield* waitForTaskHalt(worker);
+      yield* hby.close(true);
     }
   });
 });
