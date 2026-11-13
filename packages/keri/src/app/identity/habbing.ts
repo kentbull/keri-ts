@@ -24,6 +24,7 @@ import {
   SealLast,
   SerderKERI,
   Siger,
+  type Signer,
   type ThresholdSith,
   type Tier,
   Tiers,
@@ -76,6 +77,14 @@ import {
 /** Reserved alias for the local signatory habitat record. */
 export const SIGNER = "__signatory__";
 
+/**
+ * Signers a host borrows into the Habery's `Manager` while it opens (`Manager.hold`), for identifiers whose keys
+ * the host keeps itself (`makeSignedHab`) and never stores in the Keeper. They are held before the Habery is
+ * returned, so before any runtime loop can sign, and they live only in memory: the host owns each `Signer`,
+ * including zeroing its seed, and re-holds them after a reopen.
+ */
+export type HeldSigners = readonly Signer[];
+
 /** Arguments for constructing and reopening a `Habery`. */
 export interface HaberyArgs {
   name: string;
@@ -99,6 +108,8 @@ export interface HaberyArgs {
   salt?: string;
   algo?: Algos;
   tier?: Tier;
+  /** Signers to hold as the Habery opens; see {@link HeldSigners}. */
+  heldSigners?: HeldSigners;
 }
 
 /** A pre-signed inception adopted by `Hab.makeSigned()` / `Habery.makeSignedHab()`. */
@@ -2395,6 +2406,7 @@ export function* openHabery(args: HaberyArgs): Operation<Habery> {
     aeid,
     salt,
     algo,
+    heldSigners,
   } = args;
 
   let db: Baser | undefined;
@@ -2440,6 +2452,8 @@ export function* openHabery(args: HaberyArgs): Operation<Habery> {
       algo,
       salt: normalizeSaltQb64(salt),
     });
+    // Before the Habery exists, so before any runtime built on it can sign. A bad entry fails the open.
+    if (heldSigners) mgr.hold(heldSigners);
 
     const hby = new Habery(
       name,

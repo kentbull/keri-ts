@@ -1,11 +1,12 @@
 /** `openWebWallet` composes lock, IndexedDB stores, runtime and barrier; fakes stand in for the browser. */
-import { concatBytes, Counter, MtrDex, Signer, Vrsn_2_0 } from "cesr-ts";
+import { concatBytes, Counter, MtrDex, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import { Schemer } from "keri-ts/runtime";
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
 import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
+import { incept } from "../../keri/src/core/protocol-eventing.ts";
 import { walletChangeSink } from "../src/web/wallet-api.ts";
 import {
   openWebWallet,
@@ -84,7 +85,14 @@ function page() {
       },
       ...extra,
     } as OpenWebWalletOptions);
-  return { open, poison, held, log, sent, lifecycle, whenReleased: (fn: () => void) => onRelease = fn };
+  const host = {
+    indexedDb: { factory, keyRange },
+    locks,
+    storage: { persist: () => Promise.resolve(true) },
+    http,
+    lifecycle,
+  };
+  return { open, host, poison, held, log, sent, lifecycle, whenReleased: (fn: () => void) => onRelease = fn };
 }
 
 Deno.test("reload: close and reopen with a fresh opener returns identifiers and wallet inventory", async () => {
@@ -418,5 +426,63 @@ Deno.test("pinSchema keeps a schema document, and a group present sends the verb
     );
   } finally {
     await w.close();
+  }
+});
+
+Deno.test("held signers: an open without them stays up and waits; an open with them signs and is served on the first poll", async () => {
+  const mailbox = "http://held-mailbox.test/";
+  /** Mailbox polls only: the KEL publisher also posts the KEL to the same URL. */
+  const polls: string[] = [];
+  const record = (url: string, init?: { body?: unknown }) => {
+    const text = init?.body instanceof ArrayBuffer ? new TextDecoder().decode(init.body) : "";
+    if (text.includes("\"qry\"")) polls.push(url);
+  };
+  const served: HttpClient = {
+    *request(url, init): Operation<HttpResponse> {
+      record(url, init);
+      return { status: 204, ok: true, headers: new Headers(), body: new Uint8Array() };
+    },
+    *open(url, init): Operation<HttpStreamResponse> {
+      record(url, init);
+      return { status: 204, ok: true, headers: new Headers(), body: async function*() {} };
+    },
+  };
+  const p = page();
+  const reopen = (extra: Partial<OpenWebWalletOptions> = {}) => p.open({ host: { ...p.host, http: served }, ...extra });
+  /** Wait until `condition` holds; the runtime's loops run on their own tocks. */
+  const until = async (condition: () => boolean) => {
+    for (let waited = 0; !condition() && waited < 5_000; waited += 20) await sleep(20);
+    assert(condition());
+  };
+
+  // A keyless non-transferable hab whose key the host keeps, authorized on a mailbox.
+  const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+  const first = await p.open();
+  const serder = incept([signer.verfer.qb64], { version: Vrsn_2_0, code: signer.verfer.code, nsith: "0", toad: 0 });
+  const pre = first.hby.makeSignedHab("held", undefined, {
+    serder,
+    sigers: [signer.sign(serder.raw, { index: 0 }) as Siger],
+  }).pre;
+  first.hby.db.locs.pin(["Emailbox", "http"], { url: mailbox });
+  first.hby.db.ends.pin([pre, "mailbox", "Emailbox"], { allowed: true });
+  await first.close();
+
+  // Without the option the open resolves; the first poll finds no signer and the wallet says so.
+  const without = await reopen();
+  try {
+    await until(() => without.health().status === "signer-unavailable");
+    assertEquals(polls, []);
+  } finally {
+    await without.close();
+  }
+
+  // With the option the signer is held before the runtime starts: the first poll is signed and served.
+  const withSigners = await reopen({ heldSigners: [signer] });
+  try {
+    await until(() => polls.length > 0);
+    assertEquals(withSigners.runtime.signerConditions.list(), []);
+    assertEquals(withSigners.health(), { status: "ok" });
+  } finally {
+    await withSigners.close();
   }
 });
