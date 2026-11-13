@@ -595,7 +595,8 @@ export class LMDBer extends BaseDBer {
 
   /** Run `fn` in one native synchronous write transaction; nesting is a child transaction. */
   transaction<T>(fn: () => T): T {
-    return this.writing(this.requireEnv()).transactionSync(fn);
+    // A transaction is not itself a write: the puts and removes inside it count, so one that writes nothing does not.
+    return this.requireEnv().transactionSync(fn);
   }
 
   /**

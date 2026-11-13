@@ -950,9 +950,14 @@ export function* runAgentRuntime(
     ...(runtime.vdr && telReceiptor
       ? [
         yield* alive("tel-publication", () =>
-          doEvery(
+          doEveryOnWrite(
             runtime.clock,
-            pacing.tockMs,
+            pacing,
+            {
+              get writeActivity() {
+                return runtime.hby.db.writeActivity + runtime.vdr!.publication.reger.writeActivity;
+              },
+            },
             () => publishPendingTel(runtime.hby, runtime.vdr!.publication, telReceiptor, runtime.http, runtime.clock),
           )),
       ]
