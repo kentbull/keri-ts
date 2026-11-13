@@ -135,7 +135,7 @@ can be tried again (`proposeGroupInception`, so the CLI behaves the same). A gro
 inventory when it completes, for the custodian and for a member that consented through `proposals.approve`, through
 the same `ChangeSink` reaction as a single-signature issuance. A member may not hold the registry root copy yet; its
 recorder then stays registered and tries again on the next issuance change or when the root copy is retained (the custodian's `issued` result carries
-`recorded`).
+`recorded`). `proposals.approve` for a Grant tracks the recording on every call until the credential is in the inventory, so a page that reloaded after its consent records it on the next call.
 
 ## The workflow contract
 
