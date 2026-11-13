@@ -28,7 +28,7 @@ import { PROTOCOL_TOCK_MS } from "../runtime/doing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { waitOnClock } from "../runtime/workflow-contract.ts";
 import { CesrHttpRefusal } from "../transport/cesr-egress.ts";
-import type { HttpClient } from "../transport/http-client.ts";
+import { type HttpClient, isRequestableHttpUrl } from "../transport/http-client.ts";
 import { HTTPMessenger } from "../transport/http-messenger.ts";
 import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
@@ -106,11 +106,24 @@ function queryAttesters(hab: Hab, pre: string): string[] {
 }
 
 /**
+ * The location a query can be sent to, preferring HTTPS, then HTTP, then TCP. An accepted location comes from a remote
+ * `/loc/scheme` reply, so one the HTTP client refuses by construction (embedded credentials) is no location: sending
+ * to it would throw a refusal that is not a send outcome.
+ *
+ * @param urls Accepted locations of one endpoint, by scheme.
+ * @returns The preferred usable location, or null when none is usable.
+ */
+function preferredLocation(urls: Record<string, string>): string | null {
+  for (const url of [urls[Schemes.https], urls[Schemes.http]]) if (url && isRequestableHttpUrl(url)) return url;
+  return urls[Schemes.tcp] ?? null;
+}
+
+/**
  * Resolve the actual transport URL for one query destination AID.
  *
  * An explicit witness uses its own location records. Ordinary queries use only
  * the selected controller, agent or witness endpoint; mailbox providers are not
- * query attesters. Missing/unsupported locations do not promote another endpoint.
+ * query attesters. Missing, unsupported or unusable locations do not promote another endpoint.
  *
  * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
  * @param queriedPre Subject AID whose state is requested.
@@ -128,15 +141,12 @@ function resolveQueryDestinationUrl(
     explicitWitness?: boolean;
   } = {},
 ): string | null {
-  if (explicitWitness) {
-    const urls = hab.fetchUrls(destination);
-    return urls[Schemes.https] ?? urls[Schemes.http] ?? urls[Schemes.tcp] ?? null;
-  }
+  if (explicitWitness) return preferredLocation(hab.fetchUrls(destination));
 
   const ends = hab.endsFor(queriedPre);
   for (const role of [Roles.controller, Roles.agent, Roles.witness]) {
     const urls = ends[role]?.[destination];
-    if (urls) return urls[Schemes.https] ?? urls[Schemes.http] ?? urls[Schemes.tcp] ?? null;
+    if (urls) return preferredLocation(urls);
   }
 
   return null;

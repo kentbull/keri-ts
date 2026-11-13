@@ -147,6 +147,54 @@ Deno.test("job stays queued while the relay answers 404", async () => {
   });
 });
 
+Deno.test("a relay that answers garbage fails the job and does not end the loop", async () => {
+  await withRelayScene(function*(scene) {
+    const clock = new ManualRuntimeClock(1_000_000);
+    const http = new FakeRuntimeHttpClient();
+    const posted: SerderKERI[] = [];
+    const garbage = `http://third.test:5643/oobi/${scene.third.pre}/controller`;
+    const waiting = `http://third.test:5643/oobi/${scene.agent.pre}/controller`;
+    http.registerOrigin(
+      RELAY_ORIGIN,
+      scriptedRelay(posted, (request) =>
+        new URL(request.url).pathname === `/oobi/${scene.third.pre}/controller`
+          ? new Response("<html>not CESR</html>", { headers: { "Content-Type": "application/cesr" } })
+          : new Response("Not Found", { status: 404 })),
+    );
+    const runtime = yield* edgeRuntime(scene, http, clock);
+    try {
+      runtime.oobiery.resolve(garbage);
+      runtime.oobiery.resolve(waiting);
+      for (let pass = 0; pass < 4; pass++) yield* runtime.oobiery.processOnce();
+      assertEquals(scene.edgeHby.db.oobis.get(garbage), null, "the failed job is not re-read");
+      assertEquals(scene.edgeHby.db.eoobi.get(garbage)?.state, "unparseable-response");
+      // A relay that does not hold the answer yet is still a bounded wait, not a failure.
+      assertEquals(scene.edgeHby.db.oobis.get(waiting)?.state, "relay-requested");
+      assertEquals(scene.edgeHby.db.eoobi.get(waiting), null);
+    } finally {
+      yield* runtime.close();
+    }
+  });
+});
+
+Deno.test("a refused well-known URL ends that authentication", async () => {
+  await withRelayScene(function*(scene) {
+    const http = new FakeRuntimeHttpClient();
+    const runtime = yield* edgeRuntime(scene, http, new ManualRuntimeClock());
+    try {
+      // The edge's egress guard refuses a third party's origin before any I/O.
+      const url = `http://third.test:5643/.well-known/keri/oobi/${scene.third.pre}`;
+      scene.edgeHby.db.mfa.pin(url, { state: "auth-pending", cid: scene.third.pre });
+      yield* runtime.authenticator.processOnce();
+      assertEquals(scene.edgeHby.db.mfa.get(url), null, "the refused authentication is not re-read");
+      assertEquals(scene.edgeHby.db.rmfa.get(url)?.state, "egress-refused");
+      assertEquals(http.requests, [], "nothing reached the network");
+    } finally {
+      yield* runtime.close();
+    }
+  });
+});
+
 Deno.test("schema OOBI resolves from the relay", async () => {
   await withRelayScene(function*(scene) {
     const schemer = new Schemer({

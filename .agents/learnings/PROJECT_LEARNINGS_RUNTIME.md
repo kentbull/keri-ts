@@ -401,9 +401,13 @@ keeps config creation after store acquisition, so a failed store open leaves no 
 
 ## OOBI, DID, mailbox and notices
 
-OOBI keeps its durable job row until terminal intake and joined cleanup. Failure
-clears in-flight markers but retains retry ownership and accepted events. Validate
-all child URLs before writes, then publish cues. Retrieval completion is not universal
+OOBI keeps its durable job row until terminal intake and joined cleanup. Cancellation
+clears in-flight markers but retains retry ownership and accepted events. What a remote
+party causes (`oobiJobFailure`: refused URL, relay-only refusal, `TransportError`,
+`WireParseError`, other `ParserError`/`SyntaxError`/`RangeError` from a frame) ends that
+job in `eoobi.`/`rmfa.` and removes its queued row; anything else propagates. Refuse at
+intake what `isRequestableHttpUrl` refuses (`/oobis`, `/introduce`, multi-OOBI children).
+Validate all child URLs before writes, then publish cues. Retrieval completion is not universal
 acceptance; accepted resolution convergence excludes unsolicited receipt delivery
 to static OOBI servers. Ingress/query/escrow dependencies still matter. Authenticator
 uses status-only GET; cleanup failure cannot publish authorization.

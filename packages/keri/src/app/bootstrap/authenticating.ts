@@ -5,8 +5,11 @@ import type { Habery } from "../identity/habbing.ts";
 import { persistResolvedContact } from "../identity/organizing.ts";
 import { type DoerPacing, doEveryOnWrite, PROTOCOL_PACING } from "../runtime/doing.ts";
 import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
-import type { HttpClient } from "../transport/http-client.ts";
-import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
+import { type HttpClient, isRequestableHttpUrl } from "../transport/http-client.ts";
+import { isWellKnownOobiUrl, type OobiJobFailure, oobiJobFailure, parseOobiUrl } from "./oobiery.ts";
+
+/** Terminal `rmfa.` state of one well-known authentication. */
+type AuthState = "resolved" | `http-${number}` | OobiJobFailure;
 
 /**
  * Return true when a well-known URL has been authorized into `wkas.`.
@@ -130,7 +133,9 @@ export class Authenticator {
   }
 
   /**
-   * Fetch one `mfa.` record and persist the terminal auth result.
+   * Fetch one `mfa.` record and persist the terminal auth result. A URL the HTTP client refuses, a refused or failed
+   * request, or a non-OK status each end this authentication as failed in `rmfa.` and remove its `mfa.` row, so the
+   * next pass takes the next one; any other error is a fault and propagates.
    *
    * @param url Exact pending well-known authentication URL.
    * @param record Durable mfa record retained until response handling and cleanup establish terminal state.
@@ -139,17 +144,12 @@ export class Authenticator {
     url: string,
     record: OobiRecord,
   ): Operation<void> {
-    // Only HTTP status is needed; the response owner still joins body cleanup.
     const cid = record.cid
       ?? parseOobiUrl(url, record.oobialias ?? undefined).cid
       ?? null;
-    const http = this.http;
-    const response = yield* scoped(function*() {
-      const response = yield* http.open(url);
-      return { ok: response.ok, status: response.status };
-    });
+    const state = yield* this.authenticate(url);
     const date = new Date().toISOString();
-    const state = response.ok ? "resolved" : `http-${response.status}`;
+    const ok = state === "resolved";
 
     this.hby.db.mfa.rem(url);
     this.hby.db.rmfa.pin(url, {
@@ -159,12 +159,34 @@ export class Authenticator {
       cid,
     });
 
-    if (response.ok && cid) {
+    if (ok && cid) {
       this.hby.db.wkas.add(cid, { url, dt: date });
       persistResolvedContact(this.hby, cid, {
         alias: record.oobialias,
         oobi: url,
       });
+    }
+  }
+
+  /**
+   * Request one well-known URL and read only its status; the response owner still joins body cleanup.
+   *
+   * @param url Pending well-known authentication URL.
+   * @returns The terminal state: `resolved` for an OK status, `http-<status>` otherwise, or the
+   *   {@link OobiJobFailure} of a URL the client refuses or a refused or failed request.
+   */
+  private *authenticate(url: string): Operation<AuthState> {
+    if (!isRequestableHttpUrl(url)) return "url-refused";
+    const http = this.http;
+    try {
+      return yield* scoped(function*(): Operation<AuthState> {
+        const response = yield* http.open(url);
+        return response.ok ? "resolved" : `http-${response.status}`;
+      });
+    } catch (error) {
+      const failure = oobiJobFailure(error);
+      if (failure === null) throw error;
+      return failure;
     }
   }
 }

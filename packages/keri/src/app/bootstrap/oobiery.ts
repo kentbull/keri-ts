@@ -1,4 +1,4 @@
-import { type Cigar, Diger, Ilks, Prefixer, SerderKERI } from "cesr-ts";
+import { type Cigar, Diger, Ilks, ParserError, Prefixer, SerderKERI, WireParseError } from "cesr-ts";
 import { call, type Operation, resource, scoped } from "npm:effection@^3.6.0";
 import type { AgentCue, OobiResolvedCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
@@ -14,7 +14,14 @@ import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision
 import { Schemer } from "../../core/scheming.ts";
 import type { Baser } from "../../db/basing.ts";
 import type { Poster } from "../delivery/forwarding.ts";
-import { isRelayOrigin, type Relay, relayAuthorized, relayEndpoint, relayRefusal } from "../delivery/relaying.ts";
+import {
+  isRelayOrigin,
+  type Relay,
+  relayAuthorized,
+  relayEndpoint,
+  RelayOnlyError,
+  relayRefusal,
+} from "../delivery/relaying.ts";
 import type { Exchanger, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { persistResolvedContact } from "../identity/organizing.ts";
@@ -25,8 +32,7 @@ import { abortable } from "../runtime/abortable.ts";
 import { type DoerPacing, doEveryOnWrite, PROTOCOL_PACING } from "../runtime/doing.ts";
 import { type RuntimeClock, systemClock } from "../runtime/runtime-clock.ts";
 import { collectBytes } from "../transport/byte-source.ts";
-import type { HttpStreamResponse } from "../transport/http-client.ts";
-import type { HttpClient } from "../transport/http-client.ts";
+import { type HttpClient, type HttpStreamResponse, isRequestableHttpUrl } from "../transport/http-client.ts";
 import { processMessages } from "../transport/message-source.ts";
 import { TransportError } from "../transport/transport-error.ts";
 
@@ -143,6 +149,45 @@ export function oobiTerminalState(
 }
 
 type OobiQueueKind = "oobis" | "woobi";
+
+/**
+ * Why one OOBI or well-known authentication job failed because of its URL or what its remote party answered. It is
+ * the failed row's `state` (`eoobi.` or `rmfa.`) and the `oobiFailed` cue's `reason`.
+ * - `url-refused`: the URL is one the HTTP client refuses by construction ({@link isRequestableHttpUrl}), so it is
+ *   failed before any request;
+ * - `egress-refused`: an edge's relay-only guard refused the origin (`RelayOnlyError`);
+ * - `transport-failed`: connecting, requesting or reading the body failed (`TransportError`);
+ * - `unparseable-response`: the body is not CESR (`WireParseError`);
+ * - `invalid-response-frame`: a frame parsed but a field in it did not decode while it was dispatched (any other
+ *   cesr `ParserError`, or the `SyntaxError`/`RangeError` that `BigInt` and number decoding throw on a remote value).
+ */
+export type OobiJobFailure =
+  | "url-refused"
+  | "egress-refused"
+  | "transport-failed"
+  | "unparseable-response"
+  | "invalid-response-frame";
+
+/**
+ * Classify an error that ended one OOBI or authentication job: the {@link OobiJobFailure} a remote party can cause,
+ * or null for a fault that must propagate and end the runtime (a store error such as `DatabaseError`, corrupt
+ * durable state, a programmer error such as `TypeError`, a plain `Error`).
+ *
+ * Limits: a cesr `ParserError`, `SyntaxError` or `RangeError` raised while decoding local stored state during the
+ * same dispatch is indistinguishable by class from one raised by a remote field, so it also ends only that job.
+ *
+ * @param error What escaped the job's request or response ingestion.
+ * @returns The failure to record, or null to rethrow.
+ */
+export function oobiJobFailure(error: unknown): OobiJobFailure | null {
+  if (error instanceof RelayOnlyError) return "egress-refused";
+  if (error instanceof TransportError) return "transport-failed";
+  if (error instanceof WireParseError) return "unparseable-response";
+  if (error instanceof ParserError || error instanceof SyntaxError || error instanceof RangeError) {
+    return "invalid-response-frame";
+  }
+  return null;
+}
 
 /**
  * Durable OOBI processing component for one `Habery`.
@@ -324,7 +369,7 @@ export class Oobiery {
    * Stores touched:
    * - `oobis.` / `woobi.` as the durable queued worklists
    * - `coobi.` while a fetched response is being processed
-   * - `eoobi.` on HTTP failure
+   * - `eoobi.` on HTTP failure or an {@link OobiJobFailure}; the queued row is removed so it is not re-read
    * - `roobi.` after parser/routing success
    *
    * @param kind Durable OOBI queue family identifying the job path.
@@ -336,6 +381,12 @@ export class Oobiery {
     url: string,
     record: OobiRecord,
   ): Operation<void> {
+    if (!isRequestableHttpUrl(url)) {
+      // Neither this host nor a relay can fetch it; fail it before any request instead of on every pass.
+      this.remQueueStore(kind, url);
+      this.failFetchedOobi(url, record, "url-refused");
+      return;
+    }
     if (this.relaying && !isRelayOrigin(this.hby, this.relaying.relay, url)) {
       this.relayCursor = url;
       yield* this.processRelayJob(this.relaying, kind, url, record);
@@ -380,6 +431,12 @@ export class Oobiery {
         this.hby.db.eoobi.pin(url, result);
         this.cues.push({ kin: "oobiFailed", url, reason: `HTTP ${refused}` });
       }
+    } catch (error) {
+      // What the remote party caused ends this job only; the response scope has closed.
+      const failure = oobiJobFailure(error);
+      if (failure === null) throw error;
+      this.remQueueStore(kind, url);
+      this.failFetchedOobi(url, queuedRecord, failure);
     } finally {
       this.hby.db.coobi.rem(url);
     }
@@ -491,8 +548,9 @@ export class Oobiery {
    * writes nothing. It waits while the relay answers 404, is unreachable, or answers a controller OOBI without the
    * controller's KEL. It fails at {@link RELAY_OOBI_TIMEOUT_MS}: `relay-unresolved` when the relay was asked,
    * `relay-unserved` when it never could be (no accepted relay location, or no local identifier authorized the
-   * relay as its mailbox). Another non-OK answer fails at once as `http-<status>`, as a direct fetch does, and a URL
-   * that names neither an identifier nor a SAID fails at once as `relay-unmappable-oobi`.
+   * relay as its mailbox). Another non-OK answer fails at once as `http-<status>`, as a direct fetch does, an answer
+   * that is not CESR or whose frames do not decode fails at once with its {@link OobiJobFailure}, and a URL that names
+   * neither an identifier nor a SAID fails at once as `relay-unmappable-oobi`.
    *
    * @param relaying Relay collaborators of this edge.
    * @param kind Durable OOBI queue family identifying the job path.
@@ -551,10 +609,15 @@ export class Oobiery {
     if (base) {
       const refused = yield* this.fetchFromRelay(kind, url, waiting, meta, new URL(path, withSlash(base)).href);
       if (refused === "resolved") return;
-      if (refused !== "waiting") {
+      if (typeof refused === "number") {
         this.remQueueStore(kind, url);
         this.hby.db.eoobi.pin(url, { ...waiting, date: new Date().toISOString(), state: `http-${refused}` });
         this.cues.push({ kin: "oobiFailed", url, reason: `HTTP ${refused}` });
+        return;
+      }
+      if (refused !== "waiting") {
+        this.remQueueStore(kind, url);
+        this.failFetchedOobi(url, waiting, refused);
         return;
       }
     }
@@ -572,8 +635,8 @@ export class Oobiery {
    * @param record Waiting durable job metadata.
    * @param meta Parsed OOBI URL metadata selecting the response interpretation.
    * @param relayUrl URL on the relay's origin that serves the job's answer.
-   * @returns `resolved` after a terminal write, `waiting` when the relay does not hold the answer yet, or the
-   * refusing HTTP status.
+   * @returns `resolved` after a terminal write, `waiting` when the relay does not hold the answer yet or cannot be
+   * reached, the refusing HTTP status, or the {@link OobiJobFailure} of an answer that cannot be ingested.
    */
   private *fetchFromRelay(
     kind: OobiQueueKind,
@@ -614,8 +677,11 @@ export class Oobiery {
       });
     } catch (error) {
       // An unreachable relay is the same wait as a relay that has not resolved the job yet.
-      if (error instanceof TransportError) return "waiting";
-      throw error;
+      if (error instanceof TransportError && !(error instanceof RelayOnlyError)) return "waiting";
+      // A relay answering what cannot be ingested fails the job, as a direct fetch does.
+      const failure = oobiJobFailure(error);
+      if (failure === null) throw error;
+      return failure;
     } finally {
       // Remove only a row this fetch left; a pass that changed nothing writes nothing.
       if (this.hby.db.coobi.get(url)) this.hby.db.coobi.rem(url);
@@ -705,7 +771,7 @@ export class Oobiery {
     serder: SerderKERI,
   ): void {
     const data = serder.ked?.a as Record<string, unknown> | undefined;
-    const cid = typeof data?.aid === "string" ? new Prefixer({ qb64: data.aid }).qb64 : null;
+    const cid = remotePrefix(data?.aid);
     const urls = Array.isArray(data?.urls)
       ? [
         ...new Set(
@@ -714,15 +780,16 @@ export class Oobiery {
       ]
       : [];
 
+    // A child the HTTP client would refuse fails the whole reply, before the first queue write: no partial fanout.
     if (
       !cid || cid !== (record.cid ?? parseOobiUrl(url).cid ?? null)
-      || urls.length === 0
+      || urls.length === 0 || !urls.every(isRequestableHttpUrl)
     ) {
       this.failFetchedOobi(url, record, "invalid-multi-oobi");
       return;
     }
 
-    // Normalize every child before the first queue write; malformed later URLs cannot leave partial fanout.
+    // Normalize every child before the first queue write.
     const children = urls.map((childUrl) => {
       const meta = parseOobiUrl(childUrl, record.oobialias ?? undefined);
       return { url: childUrl, kind: queueKindFor(childUrl), meta, record: this.queuedRecord(meta) };
@@ -831,18 +898,15 @@ export class Oobiery {
     }
 
     const data = args.serder.ked?.a as Record<string, unknown> | undefined;
-    const cid = typeof data?.cid === "string" ? new Prefixer({ qb64: data.cid }).qb64 : null;
+    const cid = remotePrefix(data?.cid);
     const oobi = typeof data?.oobi === "string" ? data.oobi : null;
     const dt = typeof args.serder.ked?.dt === "string" ? args.serder.ked.dt : new Date().toISOString();
     if (!cid || !oobi) {
-      throw new ValidationError("Missing cid/oobi in /introduce reply.");
+      throw new ValidationError("Missing or invalid cid/oobi in /introduce reply.");
     }
-
-    const parsed = new URL(oobi);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new ValidationError(
-        `Invalid introduced OOBI scheme ${parsed.protocol}.`,
-      );
+    // Refused at intake: a URL the HTTP client refuses by construction can never resolve.
+    if (!isRequestableHttpUrl(oobi)) {
+      throw new ValidationError(`Introduced OOBI ${oobi} is not an HTTP(S) URL without credentials.`);
     }
 
     const proof = this.rvy.decideReply({
@@ -912,7 +976,8 @@ export function loadOobiHandlers(
  *
  * Local `keri-ts` adaptation:
  * - verification stays lightweight and route-local: we only require a string
- *   `oobi` payload with an `http:` or `https:` scheme
+ *   `oobi` payload that is an `http:` or `https:` URL without embedded
+ *   credentials, which is what the HTTP client can request
  * - durable follow-on work still belongs to `Oobiery` itself; this handler is
  *   just the exchange ingress seam that translates an EXN into queued resolver
  *   state
@@ -949,7 +1014,8 @@ export class OobiRequestHandler implements ExchangeRouteHandler {
   }
 
   /**
-   * Accept a request carrying an HTTP(S) `oobi`; on a relaying host, only from a served sender.
+   * Accept a request carrying an `oobi` the HTTP client can request ({@link isRequestableHttpUrl}: HTTP(S), no
+   * embedded credentials); on a relaying host, only from a served sender. Anything else could never resolve.
    *
    * @param args Authenticated exchange and the receiving hosted endpoint, if the request named one.
    * @returns False to reject the exchange.
@@ -962,15 +1028,7 @@ export class OobiRequestHandler implements ExchangeRouteHandler {
       return false;
     }
     const payload = args.serder.ked?.a as Record<string, unknown> | undefined;
-    if (typeof payload?.["oobi"] !== "string") {
-      return false;
-    }
-    try {
-      const parsed = new URL(payload.oobi);
-      return parsed.protocol === "http:" || parsed.protocol === "https:";
-    } catch {
-      return false;
-    }
+    return typeof payload?.["oobi"] === "string" && isRequestableHttpUrl(payload.oobi);
   }
 
   handle(args: {
@@ -1089,8 +1147,8 @@ function findPathSequence(parts: string[], sequence: string[]): number {
   return -1;
 }
 
-/** Outcome of one relay fetch: a terminal write, a wait for the relay, or the refusing HTTP status. */
-type RelayFetchResult = "resolved" | "waiting" | number;
+/** Outcome of one relay fetch: a terminal write, a wait for the relay, the refusing HTTP status, or a failure. */
+type RelayFetchResult = "resolved" | "waiting" | number | OobiJobFailure;
 
 /**
  * Path, relative to the relay's location, at which the relay serves what an OOBI job names. The relay's OOBI
@@ -1115,6 +1173,22 @@ function relayOobiPath(job: OobiRecordShape): string | null {
 /** A base URL that resolves relative paths beneath it rather than beside its last segment. */
 function withSlash(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
+}
+
+/**
+ * The qualified prefix a remote reply names, or null when the value is not a string or does not decode as one.
+ *
+ * @param value Remote field value.
+ * @returns The prefix's qb64, or null.
+ */
+function remotePrefix(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    return new Prefixer({ qb64: value }).qb64;
+  } catch (error) {
+    if (error instanceof ParserError) return null;
+    throw error;
+  }
 }
 
 function queueKindFor(url: string): OobiQueueKind {
