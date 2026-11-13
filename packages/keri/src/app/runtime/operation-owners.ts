@@ -16,6 +16,7 @@ import { action, type Operation } from "npm:effection@^3.6.0";
 import { BaserDerivedUpdateStore, type DerivedUpdateStore } from "../../acdc/custody.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import type { RegistryRoot } from "../../acdc/salting.ts";
+import type { Deck } from "../../core/deck.ts";
 import { RootReplicator } from "../credentials/root-replicator.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
@@ -115,6 +116,8 @@ export interface OwnerParts {
   mux: Multiplexor;
   /** Counsels the group anchor of a custodian's registry update. */
   counselor: Counselor;
+  /** The deck the Counselor puts changed groups on; the root replicator drains it. */
+  groupChanges?: Deck<string>;
   /** Delivery retry delays of the owners; the production policy when absent. */
   retry?: Readonly<RetryPolicy>;
   /** Milliseconds between issuer query resends; one second when absent. */
@@ -181,7 +184,9 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       changes,
     }),
   };
-  const rootReplicator = registryRoot ? new RootReplicator({ root: registryRoot, postman, clock, changes }) : null;
+  const rootReplicator = registryRoot
+    ? new RootReplicator({ root: registryRoot, postman, clock, changes, changed: parts.groupChanges })
+    : null;
   return { operations, rootReplicator };
 }
 

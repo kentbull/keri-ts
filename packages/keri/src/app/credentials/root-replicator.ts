@@ -16,8 +16,11 @@
  * A pass runs for a group on the replicator's first pass, after its latest establishment
  * changes (an accepted rotation) or its stored members change (they follow accepted state once
  * every member's KEL is known), and when the Dhke completion cue prompts it, so a cue lost in a
- * crash is recovered by the next start. Sending a root a member already holds to
- * the group's current members is not a new consent, so nothing here asks anyone.
+ * crash is recovered by the next start. The Counselor puts a group on the `changed` deck when it
+ * completes the group's establishment event or aligns its stored members, so the next pass
+ * re-derives it; the sweep finds the same changes later for a group nobody put there. Sending a
+ * root a member already holds to the group's current members is not a new consent, so nothing
+ * here asks anyone.
  *
  * A copy that cannot be prepared or delivered stays owed and is retried with a
  * process-local backoff; `status` reports it until it goes.
@@ -25,6 +28,7 @@
 import type { Operation } from "effection";
 import type { DhkeReplicate } from "../../acdc/dhking.ts";
 import type { RegistryRoot } from "../../acdc/salting.ts";
+import type { Deck } from "../../core/deck.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
@@ -57,6 +61,11 @@ export interface RootReplicatorDeps {
   postman: Poster;
   clock: RuntimeClock;
   changes?: ChangeSink;
+  /**
+   * Prefixes of groups whose establishment event or stored members changed, which the Counselor pushes. Each pass
+   * drains it as if each group were prompted.
+   */
+  changed?: Deck<string>;
 }
 
 interface Pending extends OwedCopyStatus {
@@ -80,7 +89,8 @@ function derivedFrom(hby: Habery, hab: Hab): string | null {
  * Holds no durable state of its own beyond `Baser.rrsn`; what is pending and the
  * backoff are process-local and rebuilt from state. A host calls `prompt` (or
  * `replicate`) for each Dhke cue and `processOnce` on its loop; both are safe to repeat,
- * and overlapping `processOnce` calls never send one copy twice.
+ * and overlapping `processOnce` calls never send one copy twice. Groups on the `changed`
+ * deck are prompted by the next pass.
  */
 export class RootReplicator {
   readonly #deps: RootReplicatorDeps;
@@ -116,8 +126,8 @@ export class RootReplicator {
   }
 
   /**
-   * The fixed-tock pass: re-derive only the groups that were prompted, then send up to {@link RootSendsPerPass}
-   * due copies. A rotation nobody prompted for waits for {@link RootReplicator.sweep}.
+   * The fixed-tock pass: re-derive only the groups that were prompted or are on the `changed` deck, then send up
+   * to {@link RootSendsPerPass} due copies. A rotation nobody prompted for waits for {@link RootReplicator.sweep}.
    */
   *processDue({ timeoutMs = RootResealBudgetMs }: { timeoutMs?: number } = {}): Operation<RootCopyResult[]> {
     const { clock } = this.#deps, deadline = clock.now() + Math.max(timeoutMs, 0);
@@ -166,7 +176,7 @@ export class RootReplicator {
 
   /** Whether a copy is owed or a group is waiting to be re-derived; in memory, reads no store. */
   pending(): boolean {
-    return this.#pending.size > 0 || this.#dirty.size > 0;
+    return this.#pending.size > 0 || this.#dirty.size > 0 || !(this.#deps.changed?.empty ?? true);
   }
 
   /** Pure read: what is owed and why it has not gone yet. */
@@ -194,9 +204,10 @@ export class RootReplicator {
     }
   }
 
-  /** Re-derive the owed copies of each prompted local group. */
+  /** Prompt each group on the `changed` deck, then re-derive the owed copies of each prompted local group. */
   #refreshDirty(): void {
-    const hby = this.#deps.root.hby;
+    const { root, changed } = this.#deps, hby = root.hby;
+    for (let group = changed?.pull(); group !== undefined; group = changed?.pull()) this.prompt(group);
     for (const group of [...this.#dirty]) {
       const hab = hby.habs.get(group);
       const derived = hab ? derivedFrom(hby, hab) : null;

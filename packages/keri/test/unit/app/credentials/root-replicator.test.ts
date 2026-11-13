@@ -13,6 +13,7 @@ import { RootReplicator, RootSendsPerPass } from "../../../../src/app/credential
 import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { rootCopyLine } from "../../../../src/cli/messaging/root-copy-lines.ts";
+import { Deck } from "../../../../src/core/deck.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { httpClient } from "../../../support/http-client.ts";
 import {
@@ -45,9 +46,9 @@ function reachable(from: Side, to: Side): void {
   from.hby.db.ends.pin([to.hab.pre!, Roles.controller, to.hab.pre!], { allowed: true });
 }
 
-function replicator(side: Side, changes?: MemoryChangeSink) {
+function replicator(side: Side, changes?: MemoryChangeSink, changed?: Deck<string>) {
   const { root, runtime } = side;
-  return new RootReplicator({ root, postman: runtime.postman, clock: runtime.clock, changes });
+  return new RootReplicator({ root, postman: runtime.postman, clock: runtime.clock, changes, changed });
 }
 
 /** One processing pass while the side's Poster delivers. */
@@ -146,6 +147,23 @@ Deno.test("root replicator: a deferred or undelivered copy stays owed, backs off
     assertEquals((yield* pass(w.alice, replicating)).map(report => report.kin), ["sent"]);
     assertEquals(replicating.status().owed, []);
     assertEquals(posted.length, 1);
+  });
+});
+
+Deno.test("a changed member list makes a backed-off copy due at once", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted);
+    yield* seed(w);
+    const changed = new Deck<string>();
+    const replicating = replicator(w.alice, undefined, changed);
+    assertEquals((yield* pass(w.alice, replicating)).map(report => report.kin), ["deferred"]);
+    yield* storeGrant(w.alice, [w.credential]);
+    reachable(w.alice, w.bob);
+    assertEquals(yield* pass(w.alice, replicating), [], "the deferred copy is backed off");
+    changed.push(w.gid);
+    assertEquals((yield* pass(w.alice, replicating)).map(report => report.kin), ["sent"]);
+    assertEquals([changed.length, posted.length], [0, 1]);
   });
 });
 

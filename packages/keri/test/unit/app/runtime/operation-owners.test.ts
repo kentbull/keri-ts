@@ -114,6 +114,30 @@ Deno.test("runtime loop: an accepted rotation that adds a member re-seals the he
   });
 });
 
+Deno.test("a completed group rotation makes the new member's root copy due on the next owner tock", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted, { ...OWNERS, newcomer: true });
+    yield* seed(w);
+    w.alice.rgy.store.retainOpening(w.event, w.opening);
+    reachable(w.alice, w.bob);
+    reachable(w.alice, w.outsider);
+    // Only tock 0 sweeps, so a later copy is due only because the Counselor put the group on the replicator's deck.
+    yield* running(w.alice, { tockMs: OWNER_TOCK_MS, sweepTocks: 1_000_000 });
+    yield* until(() => posted.length >= 1);
+    const current = [w.alice, w.bob, w.outsider];
+    const said = yield* rotate(w, current, current, "2");
+    const { counselor, hby } = w.alice.runtime;
+    const event = { pre: w.gid, sn: hby.db.getKever(w.gid)!.sn, said };
+    counselor.start(event);
+    yield* counselor.processOnce();
+    assert(counselor.complete(event));
+    const sentTo = (recipient: Side) => hby.db.rrsn.get([w.gid, w.registry, recipient.hab.pre!]);
+    yield* until(() => !!sentTo(w.outsider));
+    assert(sentTo(w.outsider), "the member rotated in is sent its copy");
+  });
+});
+
 Deno.test("an idle runtime passes every tock and reads no protocol store; the first pass scans once", async () => {
   await run(function*() {
     const posted: Uint8Array[] = [];
