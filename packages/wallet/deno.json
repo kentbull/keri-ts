@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/wallet",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "exports": {
     ".": "./mod.ts",
     "./web": "./web.ts",
