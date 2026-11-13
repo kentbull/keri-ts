@@ -392,6 +392,11 @@ Deno.test("tufa/protocol-handler - serves the OOBI of an identifier whose accept
       assertEquals(yield* status(`/oobi/${group.pre}/mailbox/${agent.pre}`), 404, "another role is not served");
       assertEquals(yield* status(`/oobi/${plain.pre}/agent/${agent.pre}`), 404, "an identifier with no end role here");
 
+      const scoped = createProtocolHandler(runtime, { hostedPrefixes: [group.pre!] });
+      const response = yield* call(() => scoped(new Request(`http://127.0.0.1/oobi/${group.pre}/agent/${agent.pre}`)));
+      yield* call(() => response.body?.cancel());
+      assertEquals(response.status, 404, "a local agent outside a non-empty hostedPrefixes is out of scope");
+
       yield* sleep(5);
       yield* runtime.reactor.processBytes(group.makeEndRole(agent.pre!, "agent", false));
       assertEquals(yield* status(`/oobi/${group.pre}/agent/${agent.pre}`), 404, "a cut end role is not served");
