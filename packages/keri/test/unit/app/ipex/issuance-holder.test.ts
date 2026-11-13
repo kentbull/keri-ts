@@ -19,6 +19,7 @@ import {
   issuanceStatus,
   pendingIssuanceGrants,
   prepareIssuanceGrant,
+  rebuildIssuanceAdmit,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
@@ -96,6 +97,8 @@ Deno.test("holder: consent, exchange, wait for the registry update, finish, then
     assertEquals(issuanceStatus(holderOps, grant), { state: "done", role: "holder", phase: "admitted" });
     assert(s.holder.runtime.exc.complete(admitted.admit.said!));
     assertEquals(s.issuer.runtime.exc.complete(admitted.admit.said!), false, "not delivered yet");
+    const rebuilt = yield* rebuildIssuanceAdmit(holderOps.deps, admitted.admit.said!);
+    assertEquals([rebuilt.wire, rebuilt.dest, rebuilt.admit.said], [admitted.wire, admitted.dest, admitted.admit.said]);
     assertEquals(yield* deliverIssuanceAdmit(holderOps.deps, holderHab, admitted), [s.issuer.habs[0].pre]);
     assertEquals(s.issuer.hby.db.erpy.get([grant])!.qb64, admitted.admit.said);
     assert(s.holderChanges.some((c) => c.id === grant));
