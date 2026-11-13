@@ -19,6 +19,7 @@ import {
   AppError,
   type ChangeSink,
   createAgentRuntime,
+  type CredentialViews,
   FetchHttpClient,
   type Habery,
   type HttpClient,
@@ -232,12 +233,20 @@ function* compose(
             tracked,
             () => hostChanges ?? (signaler ? signalerChangeSink(signaler) : undefined),
           );
+          // Presentation selects credentials from the wallet's inventory, which needs the runtime to exist first.
+          let inventoryWallet: Wallet | undefined;
+          const views: CredentialViews = {
+            issued: (said) => inventoryWallet!.issued(said),
+            issuedRegistry: (said) => inventoryWallet!.issuedRegistry(said),
+            held: (grant, held) => inventoryWallet!.held(grant, held),
+          };
           const runtime = yield* createAgentRuntime(hby, http, host.clock ?? systemClock, {
             ...options.runtime,
             // The operation owners record blind-derivation coordinates where the wallet's own custody
             // reads them back; a process-local default would hide them from `recordIssued`.
             operationStores: {
               derived: new WalletDerivedUpdates(inventory),
+              views,
               ...options.runtime?.operationStores,
               changes,
             },
@@ -247,7 +256,12 @@ function* compose(
           try {
             const worker = yield* spawn(() => runAgentRuntime(runtime, { pollMailbox: true }));
             try {
-              const wallet = new Wallet({ hby, registry: runtime.acdc!.store, exc: runtime.exc, db: inventory });
+              const wallet = inventoryWallet = new Wallet({
+                hby,
+                registry: runtime.acdc!.store,
+                exc: runtime.exc,
+                db: inventory,
+              });
               deliver({
                 hby,
                 runtime,

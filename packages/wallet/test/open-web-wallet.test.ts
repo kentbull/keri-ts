@@ -260,3 +260,26 @@ Deno.test("health reports owner faults, and calls on a closed wallet are refused
   assertEquals(w.health(), { status: "closed" });
   await assertRejects(() => w.identifiers.incept({ alias: "late" }), WalletStoppedError);
 });
+
+Deno.test("presentation, Unblind, Admit resend and mailbox removal are wired and refuse what they cannot do", async () => {
+  const w = await page().open();
+  try {
+    const a = await w.identifiers.incept({ alias: "a" }), b = await w.identifiers.incept({ alias: "b" });
+    // Presentation selects from the wallet's inventory.
+    const views = w.runtime.operations!.presentation.deps.views;
+    assert(views);
+    assertEquals(views.issuedRegistry("Eunknown"), undefined);
+    assertEquals(w.credentials.presentations(), []);
+    const applied = await w.credentials.requestProof(a.pre, { message: "", recipient: b.pre, plan: [] }, {
+      timeoutMs: 300,
+    });
+    assertEquals(applied.status.verb, "apply");
+    assertEquals(applied.recipient, b.pre);
+    assertEquals(w.credentials.presentationStatus(applied.said).verb, "apply");
+    await assertRejects(() => w.credentials.unblind("Eunknown"), Error, "not addressed to a local identifier");
+    await assertRejects(() => w.credentials.resendAdmit("Eunknown"), Error, "has not admitted");
+    await assertRejects(() => w.mailboxes.remove(a.pre, "Emailbox"), Error, "No endpoint URL");
+  } finally {
+    await w.close();
+  }
+});

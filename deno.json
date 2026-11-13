@@ -145,6 +145,8 @@
     "@keri-ts/verifier": "./packages/verifier/mod.ts",
     "@keri-ts/hosting": "./packages/hosting/mod.ts",
     "@keri-ts/wallet": "./packages/wallet/mod.ts",
+    "@keri-ts/wallet/web": "./packages/wallet/web.ts",
+    "@keri-ts/wallet/lmdb": "./packages/wallet/lmdb.ts",
     "@keri-ts/registrar": "./packages/registrar/mod.ts",
     "@keri-ts/observer": "./packages/observer/mod.ts",
     "@keri-ts/multisync/v2": "./packages/multisync/v2/mod.ts"

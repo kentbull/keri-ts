@@ -922,6 +922,7 @@ export {
   pendingIssuanceGrants,
   posterDelivery,
   prepareIssuanceGrant,
+  rebuildIssuanceAdmit,
   waitForIssuance,
 } from "../app/ipex/issuance.ts";
 
@@ -946,6 +947,8 @@ export {
   resendPresentation,
   waitForPresentation,
 } from "../app/ipex/presenting.ts";
+
+export { type PendingPresentation, pendingPresentations } from "../app/ipex/pending-presentations.ts";
 
 // Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
 export {

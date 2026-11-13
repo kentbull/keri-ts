@@ -3,7 +3,8 @@
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { selectNewcomerCopies } from "@keri-ts/multisync/v2";
-import { createWalletBaser, Wallet, WalletAuthor } from "@keri-ts/wallet";
+import { Wallet, WalletAuthor } from "@keri-ts/wallet";
+import { createWalletBaser } from "@keri-ts/wallet/lmdb";
 import {
   type CesrFrame,
   collectPayload,

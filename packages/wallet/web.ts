@@ -1,4 +1,5 @@
-/** Browser-safe wallet entrypoint: the root surface without LMDB, opened through any `StoreOpener`. */
+/** Browser wallet application entrypoint: the root surface plus `openWebWallet` and its wallet-level API.
+ * The root surface is listed again, not re-exported from `mod.ts`: a browser target must not import another entrypoint, whose DNT build carries the Node polyfill import. */
 export { type AcdcV2UpdateOptions, WalletAuthor } from "./src/authoring.ts";
 export { RegistryCustody } from "./src/custody.ts";
 export {
@@ -27,7 +28,10 @@ export {
 export {
   type AdmitDelivery,
   Credentials,
+  DEFAULT_UNBLIND_STATES,
+  type EndedPresentation,
   type EndedStatus,
+  type EndedUnblinding,
   type IdentifierEvent,
   Identifiers,
   type InceptOptions,
@@ -37,8 +41,11 @@ export {
   type MailboxOutcome,
   type OobiOutcome,
   Oobis,
+  type PresentInput,
+  type PresentOutcome,
   type ReceiveOutcome,
   type RotateOptions,
+  type UnblindOutcome,
   WALLET_TIMEOUTS,
   type WalletApi,
   WalletStoppedError,

@@ -169,7 +169,7 @@ return open stores, or `lmdbBaser`, `lmdbKeeper`, `lmdbNoter` and `lmdbMailboxer
 which return closed stores, all from `keri-ts/db/lmdb`.
 
 `WalletBaser` and `VerifierCueBaser` changed the same way. Use
-`createWalletBaser` and `createVerifierCueBaser`. The statics
+`createWalletBaser` (from `@keri-ts/wallet/lmdb`) and `createVerifierCueBaser`. The statics
 `VerifierCueBaser.TailDirPath`, `AltTailDirPath`, `CompatAltTailDirPath` and
 `TempPrefix` are replaced by `VerifierCueBaser.Family`.
 

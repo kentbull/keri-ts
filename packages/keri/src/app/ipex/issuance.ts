@@ -86,10 +86,12 @@ import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
+import { RetryBackoff } from "../runtime/retry-backoff.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
 import {
+  deriveGroupCustody,
   type GroupBegin,
   GroupIssuance,
   type GroupIssuanceDeps,
@@ -227,9 +229,27 @@ export interface LiveIssuance {
   /** Group party state, for an operation of a local group; such an operation has no {@link issuer} part. */
   readonly group?: GroupIssuance;
   phase: IssuancePhase;
+  /** Signed bytes the steps decided to send and delivery has not yet taken, in order. */
+  readonly outbox: Outbound[];
+  /** Delivery failures of the head of {@link outbox}; a member briefly offline is retried, not failed. */
+  readonly retry: RetryBackoff;
+  /** The steps are done; the operation ends once the outbox is empty. */
+  finished: boolean;
   /** A step is running; overlapping `processOnce` calls skip it. */
   busy: boolean;
 }
+
+/** One message waiting for delivery. */
+export interface Outbound {
+  src: string;
+  dest: string;
+  /** The signed bytes, or a producer called at delivery for a message that must be timely when it leaves (a query). */
+  msg: Uint8Array | (() => Uint8Array);
+  topic?: string;
+}
+
+/** How long delivery failures may last on an operation that has no Grant deadline yet before it ends `failed`. */
+export const ISSUANCE_RETRY_BOUND_MS = 600_000;
 
 /** What `beginIssuance` selected. */
 export interface IssuanceBegun {
@@ -314,7 +334,7 @@ export class IssuanceOperations {
         const left = op.expires === null ? null : op.expires - BigInt(this.deps.clock.now()) * 1000n;
         if (left !== null && left <= 0n) this.end(op, "expired", EXPIRED);
         else if (
-          (yield* race([this.step(op), ...(left === null ? [] : [this.timer(Number(left) / 1000)])])) === "expired"
+          (yield* race([this.advance(op), ...(left === null ? [] : [this.timer(Number(left) / 1000)])])) === "expired"
         ) this.end(op, "expired", EXPIRED);
       } catch (error) {
         this.end(op, "failed", message(error));
@@ -371,7 +391,12 @@ export class IssuanceOperations {
 
   /** Rebuild the live entry of a resumable Grant from the stored Grant and the held roots. */
   private *adopt({ hab, grant, role }: Resumable): Operation<void> {
-    const { retained, credential, deadline, expires } = selectGrant(this, hab, grant, role);
+    const group = isLocalGroupHab(this.deps.hby, hab);
+    const { retained, credential, deadline, expires } = selectGrant(this, hab, grant, role, group);
+    if (group) {
+      this.adoptGroup(hab, grant, role, retained, credential.regid!, deadline, expires);
+      return;
+    }
     const wires = role === "issuer" ? yield* grantWires(retained) : null;
     const dh = this.deps.dhkes.dhke(hab), xid = dh.resume(grant);
     this.ended.delete(grant);
@@ -387,6 +412,60 @@ export class IssuanceOperations {
       expires,
       issuer: wires ? { credential, ...wires, query: null, sent: true, nextQuery: 0 } : undefined,
       phase: "rootRetained",
+      outbox: [],
+      retry: new RetryBackoff(),
+      finished: false,
+      busy: false,
+    });
+    this.deps.changes?.push({ kind: "issuance", id: grant });
+    this.deps.wake?.();
+  }
+
+  /**
+   * Adopt a group custodian's completed exchange after a restart, signing nothing: the coordinator and custodian
+   * the exchange was frozen with are derived from the stores ({@link deriveGroupCustody}), the holder's root is
+   * already held, and the group steps finish the Grant against the accepted update. The only signature is the
+   * endorsement of the public proof wrapper the original consent already covers.
+   */
+  private adoptGroup(
+    hab: Hab,
+    grant: string,
+    role: IssuanceRole,
+    retained: ExchangeInput,
+    registry: string,
+    deadline: string,
+    expires: bigint,
+  ): void {
+    const sel = deriveGroupCustody(this.deps, hab)!, { coordinator, custodian } = sel;
+    const dh = this.deps.dhkes.dhke(hab), xid = dh.resume(grant, { coordinator, custodian });
+    const frozen = retained.serder;
+    this.ended.delete(grant);
+    this.live.set(grant, {
+      grant,
+      xid,
+      role,
+      deadline,
+      hab,
+      dh,
+      peer: role === "issuer" ? frozen.sad!.ri as string : frozen.pre!,
+      registry,
+      expires,
+      group: new GroupIssuance({
+        grant,
+        xid,
+        role,
+        sel,
+        frozen,
+        nodes: retained.nests ?? [],
+        registry,
+        peer: role === "issuer" ? frozen.sad!.ri as string : frozen.pre!,
+        approved: true,
+        resumed: true,
+      }),
+      phase: "rootRetained",
+      outbox: [],
+      retry: new RetryBackoff(),
+      finished: false,
       busy: false,
     });
     this.deps.changes?.push({ kind: "issuance", id: grant });
@@ -398,8 +477,46 @@ export class IssuanceOperations {
     return "expired";
   }
 
-  private *send(op: LiveIssuance, dest: string, msg: Uint8Array): Operation<void> {
-    yield* this.deps.delivery.deliver({ src: op.hab.pre!, dest, msg });
+  /**
+   * Queue signed bytes for delivery from the identifier that signed them. Steps decide what to send; {@link drain}
+   * sends it, so a member that is briefly offline delays the operation instead of ending it.
+   */
+  enqueue(op: LiveIssuance, message: Outbound): void {
+    op.outbox.push(message);
+  }
+
+  /**
+   * Deliver the queued messages in order. A failure keeps the message and schedules a retry with a doubling delay;
+   * it ends the operation only where nothing else bounds it: the Grant deadline ends one that has it, and failures
+   * lasting {@link ISSUANCE_RETRY_BOUND_MS} end one that has none yet. True when the outbox is empty.
+   */
+  private *drain(op: LiveIssuance): Operation<boolean> {
+    while (op.outbox.length) {
+      const now = this.deps.clock.now();
+      if (!op.retry.due(now)) return false;
+      try {
+        const { src, dest, msg, topic } = op.outbox[0];
+        yield* this.deps.delivery.deliver({ src, dest, msg: typeof msg === "function" ? msg() : msg, topic });
+        op.outbox.shift();
+        op.retry.succeeded();
+      } catch (error) {
+        op.retry.failed(now, error);
+        if (op.expires === null && op.retry.exhausted(now, ISSUANCE_RETRY_BOUND_MS)) throw error;
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** One pass: send what is queued, step only once the queue is empty, send what the step queued. */
+  private *advance(op: LiveIssuance): Operation<"stepped"> {
+    if (!(yield* this.drain(op))) return "stepped";
+    if (!op.finished) yield* this.step(op);
+    if ((yield* this.drain(op)) && op.finished) {
+      this.release(op);
+      this.deps.changes?.push({ kind: "issuance", id: op.grant });
+    }
+    return "stepped";
   }
 
   /** Record a phase change of a live operation and tell the sink; the group steps call it too. */
@@ -439,6 +556,9 @@ export class IssuanceOperations {
         : begin.role === "issuer"
         ? "awaitingGrantSignatures"
         : "exchangingKeys",
+      outbox: [],
+      retry: new RetryBackoff(),
+      finished: false,
       busy: false,
     });
     deps.changes?.push({ kind: "issuance", id: begin.grant });
@@ -449,25 +569,26 @@ export class IssuanceOperations {
   /** One pass of the issuer loop, in the order of the CLI loop it replaces. */
   private *step(op: LiveIssuance): Operation<"stepped"> {
     if (op.group) {
-      if (yield* stepGroup(this, op)) {
-        this.release(op);
-        this.deps.changes?.push({ kind: "issuance", id: op.grant });
-      }
+      op.finished = yield* stepGroup(this, op);
       return "stepped";
     }
     const issuer = op.issuer;
     if (issuer && !issuer.sent) {
-      yield* this.send(op, op.peer, concatBytes(this.discloser.proofSupport(issuer.raw, op.hab), issuer.grantWire));
+      this.enqueue(op, {
+        src: op.hab.pre!,
+        dest: op.peer,
+        msg: concatBytes(this.discloser.proofSupport(issuer.raw, op.hab), issuer.grantWire),
+      });
       issuer.sent = true;
     }
     while (op.dh.outgoing.length) {
       const queued = op.dh.outgoing.pull()!;
       if (queued.kin === "sign") throw new ValidationError("Individual issuance cannot process group contributions");
-      yield* this.send(op, queued.dest, queued.msg);
+      this.enqueue(op, { src: op.hab.pre!, dest: queued.dest, msg: queued.msg });
     }
     if (!op.dh.complete(op.xid)) {
       if (issuer?.query && this.deps.clock.now() >= issuer.nextQuery) {
-        yield* this.send(op, op.peer, this.renewed(op, issuer));
+        this.enqueue(op, { src: op.hab.pre!, dest: op.peer, msg: () => this.renewed(op, issuer) });
         issuer.nextQuery = this.deps.clock.now() + ISSUANCE_QUERY_RESEND_MS;
       }
     } else if (issuer) yield* this.finish(op, issuer);
@@ -502,8 +623,7 @@ export class IssuanceOperations {
     this.setPhase(op, "proving");
     yield* op.dh.finish(op.xid);
     if (!this.deps.exc.complete(op.grant)) throw new ValidationError("Issued Grant remains unaccepted");
-    this.release(op);
-    this.deps.changes?.push({ kind: "issuance", id: op.grant });
+    op.finished = true;
   }
 
   /** DH is complete: stage and anchor the BUP under the live authorisation, finish the Grant, send proof support. */
@@ -522,9 +642,8 @@ export class IssuanceOperations {
     this.setPhase(op, "proving");
     yield* op.dh.finish(op.xid);
     if (!this.deps.exc.complete(op.grant)) throw new ValidationError("Issued Grant remains unaccepted");
-    yield* this.send(op, op.peer, this.discloser.proofSupport(issuer.raw, op.hab));
-    this.release(op);
-    this.deps.changes?.push({ kind: "issuance", id: op.grant });
+    this.enqueue(op, { src: op.hab.pre!, dest: op.peer, msg: this.discloser.proofSupport(issuer.raw, op.hab) });
+    op.finished = true;
   }
 }
 
@@ -540,8 +659,8 @@ function reached(deps: Pick<IssuanceDeps, "clock">, expires: bigint | null): boo
  * anchor would be signed after the restart. A pure read of stores.
  */
 function resumable(deps: IssuanceDeps, hab: Hab, grant: string, role: IssuanceRole): boolean {
-  // The frozen coordinator and custodian are not stored, so a group exchange is never resumed after a restart.
-  if (isLocalGroupHab(deps.hby, hab)) return false;
+  // A group exchange resumes only on the member the stores show to be its custodian.
+  if (isLocalGroupHab(deps.hby, hab) && !deriveGroupCustody(deps, hab)) return false;
   const scope = resumableExchange({ hab, exc: deps.exc }, grant);
   if (!scope || (scope.issuer === hab.pre) !== (role === "issuer")) return false;
   return role === "holder" || scope.registries.every((r) => deps.rgy.store.headEvent(r)?.ilk === "bup");
@@ -623,9 +742,9 @@ function requireIndividual(deps: IssuanceDeps, hab: Hab): void {
  * The exact unanchored pending Grant a local party may consent to, with its deadline. Refuses a group
  * identifier, an issuance already begun, a Grant that is not this party's, and an issuer without its registry.
  */
-function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: IssuanceRole) {
+function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: IssuanceRole, group = false) {
   const { deps } = ops;
-  requireIndividual(deps, hab);
+  if (!group) requireIndividual(deps, hab);
   if (ops.live.has(grant) || deps.exc.complete(grant)) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
@@ -685,6 +804,9 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
     expires,
     issuer: { credential, raw, grantWire, query, auths, sent: false, nextQuery: 0 },
     phase: "exchangingKeys",
+    outbox: [],
+    retry: new RetryBackoff(),
+    finished: false,
     busy: false,
   });
   deps.changes?.push({ kind: "issuance", id: grant });
@@ -841,6 +963,9 @@ export function approveIssuanceExchange(
     registry: credential.regid!,
     expires,
     phase: "exchangingKeys",
+    outbox: [],
+    retry: new RetryBackoff(),
+    finished: false,
     busy: false,
   });
   deps.changes?.push({ kind: "issuance", id: grant });
@@ -897,6 +1022,29 @@ export function* deliverIssuanceAdmit(
   { dest, wire }: IssuanceAdmit,
 ): Operation<string[]> {
   return yield* deps.delivery.deliver({ src: hab.pre!, dest, msg: wire });
+}
+
+/**
+ * Rebuild an Admit this process signed earlier so it can be delivered again, after a failed delivery or a
+ * restart. The wire is rebuilt from the stored signatures or source seal, so it is the bytes first made and
+ * nothing is signed. Delivery stays with {@link deliverIssuanceAdmit}. A peer that already took the Admit
+ * may drop the repeat as a replay.
+ *
+ * @throws ValidationError for an Admit no local identifier signed or whose retained factors no longer authenticate.
+ */
+export function* rebuildIssuanceAdmit(
+  deps: Pick<AdmitDeps, "hby" | "rgy" | "exc" | "receiptor">,
+  admit: string,
+): Operation<IssuanceAdmit> {
+  const retained = deps.exc.retainedInput(admit), serder = retained?.serder;
+  const hab = serder?.pre ? deps.hby.habs.get(serder.pre) : undefined;
+  if (!retained || !serder || serder.route !== "/ipex/admit" || !hab || typeof serder.sad?.ri !== "string") {
+    throw new ValidationError("No Admit was signed by a local identifier with this SAID");
+  }
+  const support = retained.sourceSeals?.length
+    ? new IpexDiscloser(deps.hby, deps.rgy.store, deps.exc, deps.receiptor).kel(hab)
+    : new Uint8Array();
+  return { admit: serder, wire: concatBytes(support, yield* storedExchangeWire(retained)), dest: serder.sad.ri };
 }
 
 /**

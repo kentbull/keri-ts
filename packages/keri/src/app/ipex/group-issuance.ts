@@ -88,6 +88,8 @@ import type { IssuanceBegun, IssuanceOperations, LiveIssuance } from "./issuance
 const QUERY_RESEND_MS = 1000;
 /** Milliseconds between scans of the stored wrappers for the final proof. */
 const PROOF_SCAN_MS = 1000;
+/** How many of the group's latest accepted events {@link deriveGroupCustody} considers as coordinators. */
+const GROUP_COORDINATOR_SEARCH = 16;
 const ALLOWED_CHILD_FACTORS = ["TransIdxSigGroups", "TransLastIdxSigGroups", "ControllerIdxSigs"];
 
 /** Collaborators only a group needs; an owner without them issues as an individual alone. */
@@ -219,6 +221,34 @@ function* retainLocalGrant(ops: Pick<IssuanceOperations, "deps">, child: CesrFra
     nests: child.nests,
     gvrsn: Vrsn_2_0,
   });
+}
+
+/**
+ * The selection a restarted group custodian was frozen with, derived from the stores: the local member that holds
+ * the group's registry root is the custodian (only it retains one before the Grant completes), and the coordinator
+ * is the latest accepted group event whose threshold evidence elects that member. DH only checks that the frozen
+ * coordinator still elects the frozen custodian, so any such event serves. Null when no accepted event elects the
+ * local member. A non-custodian that already holds a replicated root copy for a Grant still pending is the one case
+ * this can mistake for a custodian; it then finishes its own Grant from the root and update, which verifies, and
+ * broadcasts a proof wrapper that the other members reject because it is not the custodian's.
+ */
+export function deriveGroupCustody(
+  deps: Pick<IssuanceOperations["deps"], "hby">,
+  hab: Hab,
+): Selected | null {
+  const { hby } = deps;
+  if (!isLocalGroupHab(hby, hab) || !hab.kever) return null;
+  const member = localGroupMember(hby, hab.pre!);
+  const events = [...hby.db.getKelItemIter(hab.pre!)].slice(-GROUP_COORDINATOR_SEARCH);
+  for (const [, said] of events.reverse()) {
+    const event = hby.db.getEvtSerder(hab.pre!, said);
+    if (!event || event.sn === null) continue;
+    const coordinator = { sn: event.sn, said: event.said! };
+    if (groupElectedMember(hby, hab.pre!, coordinator) === member.pre) {
+      return { hab, member, coordinator, custodian: member.pre!, lead: true };
+    }
+  }
+  return null;
 }
 
 /**
@@ -517,6 +547,8 @@ export interface GroupBegin {
   counsel?: Omit<CounselInputs, "auths">;
   /** Only verify and accept the custodian's final proof. */
   proofOnly?: boolean;
+  /** A custodian adopted after a restart: DH is complete, so no evidence, query or approval is sent again. */
+  resumed?: boolean;
 }
 
 /** The per-operation state `IssuanceOperations` keeps for a group party; memory only. */
@@ -544,6 +576,7 @@ export class GroupIssuance {
   readonly xid: string;
   readonly origin: SerderACDC;
   readonly proofOnly: boolean;
+  readonly resumed: boolean;
   readonly auths?: WitnessAuthMap;
   readonly counsel?: Omit<CounselInputs, "auths">;
 
@@ -557,6 +590,7 @@ export class GroupIssuance {
     this.proposal = begin.proposal;
     this.approved = begin.approved ?? false;
     this.proofOnly = begin.proofOnly ?? false;
+    this.resumed = begin.resumed ?? false;
     this.auths = begin.auths;
     this.counsel = begin.counsel;
   }
@@ -727,7 +761,7 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
   const g = op.group!, { deps } = ops, { hab, member, lead, coordinator, custodian } = g.sel;
   const { grant, xid } = op, dh = op.dh, issuer = g.role === "issuer";
   const send = function*(dest: string, msg: Uint8Array, topic = "multisig") {
-    yield* deps.delivery.deliver({ src: member.pre!, dest, msg, topic });
+    ops.enqueue(op, { src: member.pre!, dest, msg, topic });
   };
   const others = () => groupSigningMembers(deps.hby, hab.pre!).filter((peer) => peer !== member.pre);
   const broadcast = function*(msg: Uint8Array) {
@@ -761,6 +795,7 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
     g.approved = true;
     ops.setPhase(op, "exchangingKeys");
   }
+  if (lead && !g.nodeBytes && g.resumed) g.nodeBytes = yield* nodeStream(g.nodes);
   if (lead && !g.nodeBytes) {
     g.nodeBytes = yield* nodeStream(g.nodes);
     const input = deps.exc.retainedInput(grant, { pending: true })!;
@@ -821,9 +856,9 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
   if (!lead || !dh.complete(xid)) return false;
   const { rgy, receiptor, derived, hby } = deps, registry = op.registry;
   if (issuer) {
-    const reg = rgy.regs.get(registry);
-    if (!reg || reg.hab !== hab) throw new ValidationError("Issuer custodian requires its managed registry");
     if (!g.anchor && rgy.store.headEvent(registry)?.ilk === "rip") {
+      const reg = rgy.regs.get(registry);
+      if (!reg || reg.hab !== hab) throw new ValidationError("Issuer custodian requires its managed registry");
       ops.setPhase(op, "awaitingAnchor");
       const custody = new RegistryCustody({ hby, hab, registry: rgy.store, store: derived });
       const staged = new RegistryAuthor(rgy, receiptor, custody).stage(reg, g.origin, "issued", { auths: g.auths });
