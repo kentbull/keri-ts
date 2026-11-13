@@ -327,7 +327,8 @@ Group work is a set of explicit library calls plus the `Counselor`.
   group is derived from the Grant, the proposal or the credential's registry, not passed in:
   `proposeGroupIssuance(ops, draft, options?)` (prepare, then the custodian's own approval in one consent),
   `approveGroupIssuance(ops, grant, options?)` (an issuer member's consent),
-  `approveGroupIssuanceExchange(ops, grant, coordinator?)` (a holder group member), `followGroupIssuanceProof` and
+  `approveGroupIssuanceExchange(ops, grant, coordinator?)` (a holder group member), `followGroupIssuanceProof` (an
+  issuer or holder member that contributes nothing, such as one of signing weight 0; signs nothing) and
   `groupIssuanceProof`. `groupIssuanceElection(ops, group, coordinator?)` is a pure read of the custodian a coordinator
   elects and whether the local member is it; the coordinator is an optional pin that defaults to the group's latest
   establishment event, and the custodian is always the election's. `approveGroupIssuance` refuses a proposal the elected
