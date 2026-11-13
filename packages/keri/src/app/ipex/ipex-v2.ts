@@ -454,8 +454,12 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     return { pending, registries };
   }
 
-  /** Notify only after Exchanger has durably accepted the parent and its evidence. */
-  handle({ serder }: Parameters<ExchangeRouteHandler["handle"]>[0]): void {
+  /**
+   * Notify only after Exchanger has durably accepted the parent and its evidence. A retained exchange (history a
+   * local import replayed, such as an already admitted Grant and its Admit) is not news: no notice asks anyone to act.
+   */
+  handle({ serder, retained }: Parameters<ExchangeRouteHandler["handle"]>[0]): void {
+    if (retained) return;
     this.notifier?.add({ r: `/exn${serder.route}`, d: serder.said, m: (serder.sad!.a as Record<string, unknown>).m });
   }
 

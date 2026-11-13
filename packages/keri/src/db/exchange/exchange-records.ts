@@ -9,6 +9,8 @@ export interface ExchangeRecordShape {
   receiverTime?: string;
   /** Attachment genus needed to reconstruct the received exchange wire. */
   gvrsn?: Versionage;
+  /** Imported as retained history from a finite local stream, without KRAM; absent for live intake. */
+  retained?: true;
 }
 
 /** Private metadata; the ordinary KERIpy exchange tables retain their wire schema. */
@@ -19,6 +21,8 @@ export class ExchangeRecord extends RawRecord<ExchangeRecordShape> implements Ex
   declare receiverTime?: string;
   /** Original attachment genus, independent of a non-native body version. */
   declare gvrsn?: Versionage;
+  /** Retained history: no KRAM window was opened for it here, and its handlers raise nothing to act on. */
+  declare retained?: true;
 }
 
 /** Latest registry observation authenticated by a successful accepted Grant verification. */

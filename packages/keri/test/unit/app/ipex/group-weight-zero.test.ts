@@ -12,6 +12,10 @@
  * The second test uses the deployed shape: the edge member is a non-transferable, inception-only identifier whose
  * signer the host holds (`makeSignedHab`), so its wrappers carry non-indexed signatures, and the group later rotates
  * to another such edge member with the custodian supplying the rotation key.
+ *
+ * The import tests feed the exported disclosure stream to a fresh store with KRAM on whose clock runs an hour ahead,
+ * so every exchange in it is far past its KRAM window: the finite import accepts it as retained history, ordinary
+ * intake refuses it.
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
 import {
@@ -27,10 +31,14 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, ensure, type Operation, run, sleep, spawn, type Task } from "effection";
-import { assert, assertEquals, assertExists } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertFalse, assertThrows } from "jsr:@std/assert";
 import { RegistryAuthor } from "../../../../src/acdc/authoring.ts";
 import type { RegBaser } from "../../../../src/acdc/regbasing.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
+import {
+  type CredentialImportResult,
+  importCredentialStream,
+} from "../../../../src/app/credentials/credential-importing.ts";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
@@ -45,16 +53,19 @@ import {
   waitForGroupIpex,
 } from "../../../../src/app/ipex/group-ipex.ts";
 import { approveGroupIssuanceExchange, followGroupIssuanceProof } from "../../../../src/app/ipex/group-issuance.ts";
-import { proposeIssuance, waitForIssuance } from "../../../../src/app/ipex/issuance.ts";
+import { issuanceStatus, proposeIssuance, waitForIssuance } from "../../../../src/app/ipex/issuance.ts";
 import { groupSigningMembers } from "../../../../src/app/multisig/group-members.ts";
 import { proposeGroupRotation } from "../../../../src/app/multisig/proposing.ts";
 import { replaceGroupMember } from "../../../../src/app/multisig/replace-member.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
-import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
+import { type RuntimeClock, systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import type { Receiptor } from "../../../../src/app/witness/receipting.ts";
+import type { AgentCue } from "../../../../src/core/cues.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { KramRefusedError, ValidationError } from "../../../../src/core/errors.ts";
+import { isKramLateReason } from "../../../../src/core/mailbox/kram-time.ts";
 import { incept, interact, reply } from "../../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../../src/core/roles.ts";
@@ -607,6 +618,167 @@ Deno.test("a weight-0 custodian holds the group's credential when the edge membe
     // The custodian still holds the credential, and its record follows the rotated membership.
     assertCustodianHolds(g, granted);
     assertEquals(groupSigningMembers(custodian.hby, group), smids, "the custodian's record names the new edge member");
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+/** How far the late receiver's clock runs ahead: past every window of {@link KRAM}. */
+const LATE_MS = 3_600_000;
+
+/** A fresh store with KRAM on, a signator (so its runtime keeps notices) and a clock {@link LATE_MS} ahead. */
+interface LateReceiver {
+  hby: Habery;
+  runtime: AgentRuntime;
+}
+
+/** One disclosure exported from the edge member's store and imported into a late receiver. */
+interface ImportedDisclosure {
+  g: WeightZeroGroup;
+  granted: Granted;
+  stream: Uint8Array;
+  receiver: LateReceiver;
+  result: CredentialImportResult;
+}
+
+function* lateReceiver(): Operation<LateReceiver> {
+  const hby = yield* createHabery({
+    name: `late-${crypto.randomUUID()}`,
+    bran: "lateReceiverWeightZeroPasscode",
+    temp: true,
+    skipConfig: true,
+  });
+  const baser = yield* openLmdbRegistry({ name: `late-${crypto.randomUUID()}`, temp: true });
+  const clock: RuntimeClock = {
+    now: () => Date.now() + LATE_MS,
+    setTimeout: systemClock.setTimeout,
+    clearTimeout: systemClock.clearTimeout,
+  };
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), clock, {
+    acdc: new Regery(hby, baser),
+    kram: KRAM,
+  });
+  yield* ensure(function*() {
+    yield* runtime.close();
+    yield* hby.close(true);
+    yield* baser.close(true);
+  });
+  assertExists(runtime.notifier, "the receiver keeps notices");
+  return { hby, runtime };
+}
+
+/** Import `bytes` into `receiver` through the finite credential importer. */
+function* imports(receiver: LateReceiver, bytes: Uint8Array, timeoutMs?: number): Operation<CredentialImportResult> {
+  const { runtime } = receiver;
+  return yield* importCredentialStream(runtime.protocol, runtime.vdr!.reger, bytes, runtime.clock, timeoutMs);
+}
+
+/** Grant to the group, export the disclosure from the edge member's store and import it into a late receiver. */
+function* importedDisclosure(): Operation<ImportedDisclosure> {
+  const g = yield* weightZeroGroup(false);
+  const granted = yield* grantToGroup(g);
+  const stream = yield* exported(g.edge, g.edge.hab, granted.grant);
+  const receiver = yield* lateReceiver();
+  const result = yield* imports(receiver, stream);
+  return { g, granted, stream, receiver, result };
+}
+
+/** What an import could change in `receiver`: exchanges, replies, escrows, KELs, the registry TEL and notices. */
+function receiverState(receiver: LateReceiver, g: WeightZeroGroup, regk: string): string {
+  const { hby, runtime } = receiver, db = hby.db;
+  return JSON.stringify({
+    exns: [...db.exns.getTopItemIter()].map(([keys, body]) => [keys, body.said]),
+    erpy: [...db.erpy.getTopItemIter()].map(([keys, said]) => [keys, said.qb64]),
+    meta: [...db.exchangeMeta.getTopItemIter()].map(([keys, meta]) => [keys, meta]),
+    epse: [...db.epse.getTopItemIter()].map(([keys]) => keys),
+    emse: [...db.emse!.getTopItemIter()].map(([keys]) => keys),
+    kels: [g.group, g.issuer.hab.pre!].map((pre) => [...db.fels.getAllItemIter(pre)].map(([, , said]) => said)),
+    tel: [...runtime.acdc!.store.baser.tels.getAllItemIter(regk)].map(([, , said]) => said.qb64),
+    notices: runtime.notifier!.count(),
+  });
+}
+
+Deno.test("import accepts a retained Grant and Admit past their KRAM window", async () => {
+  await run(function*() {
+    const { g, granted, receiver, result } = yield* importedDisclosure();
+    const { grant, admit, regk } = granted, { hby, runtime } = receiver;
+    assertEquals(result, { saved: [], complete: true, unaccepted: [] });
+    assertEquals(hby.db.getKever(g.group)?.said, g.edge.hby.db.getKever(g.group)?.said, "the group KEL");
+    assertEquals(runtime.acdc!.store.headEvent(regk)?.said, g.edge.runtime.acdc!.store.headEvent(regk)?.said);
+    assert(runtime.exc.complete(grant), "the Grant is accepted");
+    assert(runtime.exc.complete(admit), "the Admit is accepted");
+    assertEquals(hby.db.erpy.get([grant])?.qb64, admit, "the Grant's reply row names the Admit");
+    // KRAM never saw them: no transaction cache row, and the Exchanger records them as retained history.
+    assertEquals(runtime.exc.exchangeDeadline(hby.db.exns.get([grant])!), null);
+    assertEquals([grant, admit].map((said) => hby.db.exchangeMeta.get([said])?.retained), [true, true]);
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("network intake still refuses the same stale Grant", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { grant, admit, regk } = yield* grantToGroup(g);
+    const stream = yield* exported(g.edge, g.edge.hab, grant);
+    const { runtime } = yield* lateReceiver();
+    yield* runtime.reactor.processBytes(stream);
+    // The KELs and the TEL are not KRAM's concern and are accepted; the exchanges are refused as late.
+    assertEquals(runtime.acdc!.store.headEvent(regk)?.said, g.edge.runtime.acdc!.store.headEvent(regk)?.said);
+    assertFalse(runtime.exc.complete(grant), "ordinary intake refuses the stale Grant");
+    assertFalse(runtime.exc.complete(admit), "and its Admit");
+    assertEquals(runtime.hby.db.epse.get([grant]), null, "nothing is escrowed for it");
+    const cues: AgentCue[] = [];
+    while (!runtime.cues.empty) cues.push(runtime.cues.pull()!);
+    const refused = cues.find((cue) => cue.kin === "kramRefused" && cue.said === grant);
+    assert(refused?.kin === "kramRefused" && isKramLateReason(refused.reason), "KRAM refuses the Grant as late");
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("import reports an unaccepted registry event", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { regk } = yield* grantToGroup(g);
+    const store = g.edge.runtime.acdc!.store;
+    const tel = [...store.baser.tels.getAllItemIter(regk)].map(([, , said]) => said.qb64);
+    const receiver = yield* lateReceiver();
+    // The TEL alone, without the issuer's KEL that anchors it: neither event can be accepted.
+    const result = yield* imports(receiver, store.cloneTel(regk), 50);
+    assertEquals(result, { saved: [], complete: false, unaccepted: tel });
+    assertEquals(receiver.runtime.acdc!.store.head(regk), null);
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("a retained Grant leaves no pending operation, notice or escrowed exchange", async () => {
+  await run(function*() {
+    const { g, granted, receiver, result } = yield* importedDisclosure();
+    const { grant, admit } = granted, { hby, runtime } = receiver;
+    assert(result.complete);
+    // A later escrow pass on the late clock changes nothing either.
+    yield* runtime.protocol.processEscrowsOnce();
+    assert(runtime.exc.complete(grant) && runtime.exc.complete(admit));
+    assertEquals(runtime.notifier!.count(), 0, "no notice asks anyone to act on history");
+    assertEquals([...hby.db.epse.getTopItemIter()].length, 0, "no partially signed exchange escrow");
+    assertEquals([...hby.db.emse!.getTopItemIter()].length, 0, "no missing-schema exchange escrow");
+    // Their age is not a lifetime here: neither is reported expired.
+    assertEquals([grant, admit].map((said) => runtime.exc.exchangeExpiry(said)), [null, null]);
+    // No issuance operation, live or resumable, and none reported expired.
+    const issuance = runtime.operations!.issuance;
+    assertEquals(issuance.grantsOf(g.group), []);
+    const refused = assertThrows(() => issuanceStatus(issuance, grant), ValidationError, "No issuance was begun");
+    assertFalse(refused instanceof KramRefusedError, "the Grant is not refused as lapsed");
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("a second import of the same stream changes nothing", async () => {
+  await run(function*() {
+    const { g, granted, stream, receiver, result } = yield* importedDisclosure();
+    assert(result.complete);
+    const before = receiverState(receiver, g, granted.regk);
+    const again = yield* imports(receiver, stream);
+    assertEquals(again, { saved: [], complete: true, unaccepted: [] });
+    assertEquals(receiverState(receiver, g, granted.regk), before);
     for (const task of g.hosts) yield* task.halt();
   });
 });

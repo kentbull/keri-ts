@@ -29,14 +29,28 @@ import {
  */
 export const ESCROW_TOCK_MS = 31.25;
 
-/** Protocol choices for a frame; input owners separately own cancellation and parsing. */
-export interface DispatchOptions {
+/** Protocol choices any input may make for a frame; input owners separately own cancellation and parsing. */
+export interface IntakeOptions {
   /** Whether the frame arrived through local witness/controller intake. */
   local?: boolean;
   /** Hosted mailbox endpoint provenance, independent of the signed sender. */
   mailboxAid?: string | null;
   /** Advance durable escrows after capturing this frame's decision and direct replies. */
   escrows?: boolean;
+}
+
+/** Intake choices plus `retained`, which only a finite, caller-initiated local import sets. */
+export interface DispatchOptions extends IntakeOptions {
+  /**
+   * The frame is retained history the caller already holds, read back from a store (an exported disclosure stream),
+   * not a message arriving now. A v2 `exn`/`xip` then skips KRAM intake: its original stamp is long past the
+   * receiver's window by design, and KRAM's replay protection guards live intake, not a local copy of accepted
+   * history. Nothing else is relaxed: sender policy still applies, the Exchanger still authenticates every signature
+   * against the sender's key state and runs the route's verify, escrows behave as usual, and queries and replies
+   * still pass KRAM. The Exchanger keeps the fact (see `ExchangeInput.retained`). Network inputs (HTTP, TCP, mailbox,
+   * witness ingress, the Reactor) take {@link IntakeOptions}, which cannot carry it.
+   */
+  retained?: boolean;
 }
 
 /** Exact processed evidence and mailbox authorization captured at the query decision. */
@@ -134,7 +148,8 @@ export class ProtocolProcessor {
    * Process one frame and publish its committed protocol cues before returning decision data.
    *
    * @param frame Complete hydrated frame whose evidence remains valid for this operation.
-   * @param options Local intake policy, hosted mailbox provenance and whether to advance escrows.
+   * @param options Local intake policy, hosted mailbox provenance, whether to advance escrows, and whether the frame is
+   *   retained history from a finite local import.
    * @param kvy Input-specific Kevery in this domain; defaults to the shared owner.
    * @returns Exact dispatch result and current mailbox authorization at its synchronous query decision.
    *   A message refused by validation after extraction is an `invalidMessage` drop, so the caller
@@ -143,7 +158,7 @@ export class ProtocolProcessor {
    */
   dispatch(
     frame: CesrFrame,
-    { local = this.kvy.local, mailboxAid, escrows = false }: DispatchOptions = {},
+    { local = this.kvy.local, mailboxAid, escrows = false, retained = false }: DispatchOptions = {},
     kvy: Kevery = this.kvy,
   ): Operation<ProtocolDispatchResult> {
     // A short-lived input processor must publish into this owner's private cue flow.
@@ -169,6 +184,7 @@ export class ProtocolProcessor {
             self.kvy, // One authoritative v2 sender policy and KRAM intake across all inputs.
             self.registry ?? undefined,
             self.qvy,
+            retained,
           );
         } catch (error) {
           if (!isInvalidMessageError(error)) throw error;

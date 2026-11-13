@@ -192,7 +192,12 @@ presentation registries use the retained trusted receipt; hidden and unfinished
 graph paths remain guarded under the [IPEX contract](IPEX.md).
 
 Completed KRAM intake passes receiver time explicitly through parser dispatch;
-disabled, exempt and v1 forwarding supply no KRAM time. This is local composition
+disabled, exempt and v1 forwarding supply no KRAM time, nor does a retained exchange
+from a finite local import, which skips KRAM intake (`DispatchOptions.retained`,
+see [ingress and egress](../runtime/INGRESS_AND_EGRESS.md)). A retained Grant in
+which a Grantor re-presents a credential that names its presentation registry
+(`a.rd`) therefore lacks the receipt that registry needs and is refused on import;
+a direct issuance Grant needs none. This is local composition
 data, not a branded capability or a field extracted from signed wire. Exchanger retains
 the first qualified `receiverTime` in private exchange metadata with accepted or
 dependency-escrow evidence, supplies it to route verification/handling and reuses

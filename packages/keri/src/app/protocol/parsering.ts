@@ -75,6 +75,8 @@ export interface ExchangerLike {
     mailboxAid?: string | null;
     /** Receiver-observed time supplied by local intake, independent of signed wire. */
     receiverTime?: string;
+    /** Retained history from a finite local import, admitted without KRAM (`DispatchOptions.retained`). */
+    retained?: boolean;
   }): Operation<void | ExchangeDecision>;
 }
 
@@ -194,6 +196,8 @@ export interface DispatchResult {
  * @param messageKevery Authoritative shared message-policy/KRAM processor when distinct from input Kevery.
  * @param registry V2 registry intake over accepted public KEL state, without requiring a local alias.
  * @param qvy Optional auxiliary query owner; receives full evidence after v2 message admission.
+ * @param retained Whether this is retained history from a finite local import (`DispatchOptions.retained`): a v2
+ *   `exn`/`xip` then skips KRAM intake and reaches the Exchanger marked retained. Network intake never sets it.
  * @returns The processed envelope and protocol-specific decision data.
  * @throws Unsupported input and infrastructure/handler failures follow their owning processor contracts.
  */
@@ -209,6 +213,7 @@ export function* dispatchEnvelope(
   messageKevery: Kevery = kevery,
   registry?: RegistryObserver,
   qvy?: AuxiliaryQueryProcessor,
+  retained = false,
 ): Operation<DispatchResult> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
@@ -236,7 +241,7 @@ export function* dispatchEnvelope(
     serder.pvrsn.major >= 2
     && [Ilks.qry, Ilks.rpy, Ilks.exn, Ilks.xip, Ilks.pro, Ilks.bar].some((ilk) => ilk === serder.ilk)
   ) {
-    return yield* dispatchMessage(envelope, revery, messageKevery, exchanger, tevery, mailboxAid, qvy);
+    return yield* dispatchMessage(envelope, revery, messageKevery, exchanger, tevery, mailboxAid, qvy, retained);
   }
 
   switch (serder.ilk) {
@@ -310,6 +315,7 @@ export function* dispatchEnvelope(
  * processMsg boundary: sender policy precedes optional KRAM and proof
  * prerequisites and delegation. Downstream processors authenticate their own
  * evidence; this layer borrows the envelope and never owns its payloads.
+ * A retained exchange (finite local import) skips only the KRAM step.
  */
 function* dispatchMessage(
   envelope: KeriDispatchEnvelope,
@@ -319,6 +325,7 @@ function* dispatchMessage(
   tevery: Tevery | undefined,
   mailboxAid?: string | null,
   qvy?: AuxiliaryQueryProcessor,
+  retained = false,
 ): Operation<DispatchResult> {
   const serder = envelope.serder;
   const sender = serder.pre;
@@ -334,7 +341,10 @@ function* dispatchMessage(
   ) {
     return { envelope, decision: { kind: "drop", reason: "missingProcessor" } };
   }
-  const result = kevery.kramer?.intake(envelope);
+  // Retained history was KRAM-admitted where it was first received; its window here has passed by design. Queries
+  // and replies are never retained history and always pass KRAM.
+  const history = retained && (serder.ilk === Ilks.exn || serder.ilk === Ilks.xip);
+  const result = history ? undefined : kevery.kramer?.intake(envelope);
   if (result && result.kind !== "ready") return { envelope, decision: result };
   const ready = result?.kind === "ready" ? result.envelope : envelope;
   const decision = yield* dispatchReadyMessage(
@@ -346,6 +356,7 @@ function* dispatchMessage(
     mailboxAid,
     result?.kind === "ready" ? result.receiverTime : undefined,
     qvy,
+    history,
   );
   return { envelope: ready, decision };
 }
@@ -360,6 +371,7 @@ function* dispatchReadyMessage(
   mailboxAid?: string | null,
   receiverTime?: string,
   qvy?: AuxiliaryQueryProcessor,
+  retained = false,
 ): Operation<DispatchDecision> {
   const serder = envelope.serder;
   switch (serder.ilk) {
@@ -387,7 +399,7 @@ function* dispatchReadyMessage(
         return { kind: "drop", reason: "missingAuthentication" };
       }
       if (!exchanger) return { kind: "drop", reason: "missingProcessor" };
-      return yield* dispatchExchange(envelope, exchanger, mailboxAid, receiverTime);
+      return yield* dispatchExchange(envelope, exchanger, mailboxAid, receiverTime, retained);
     default:
       // processPro/processBar remain pass stubs at the selected reference.
       return { kind: "drop", reason: "referenceStub" };
@@ -407,6 +419,7 @@ function* dispatchExchange(
   exchanger: ExchangerLike,
   mailboxAid?: string | null,
   receiverTime?: string,
+  retained = false,
 ): Operation<void | ExchangeDecision> {
   return yield* exchanger.processEvent({
     serder: envelope.serder,
@@ -422,6 +435,7 @@ function* dispatchExchange(
     nests: envelope.nests,
     mailboxAid,
     receiverTime,
+    ...(retained ? { retained } : {}),
   });
 }
 

@@ -2,11 +2,14 @@
 import { parse } from "cesr-ts";
 import { call, ensure, on, type Operation, race } from "npm:effection@^3.6.0";
 import type { Kevery } from "../../core/kel/eventing.ts";
-import type { DispatchOptions, ProtocolProcessor } from "../protocol/protocol-processing.ts";
+import type { IntakeOptions, ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { rethrowCleanupFailure } from "../runtime/abortable.ts";
 
-/** Protocol choices plus cancellation of this concrete source/parser lifetime. */
-export interface IngressOptions extends DispatchOptions {
+/**
+ * Intake choices plus cancellation of this concrete source/parser lifetime. A byte source is live input, so it never
+ * carries `DispatchOptions.retained`; only the finite credential importer dispatches retained history.
+ */
+export interface IngressOptions extends IntakeOptions {
   /** Stops source reads and dispatch waiting, joining active cleanup before return. */
   signal?: AbortSignal;
 }
@@ -63,7 +66,12 @@ export function* processMessages(
         pending = undefined;
         signal.throwIfAborted();
         if (result.done) return;
-        yield* protocol.dispatch(result.value, options, kvy);
+        // Only the intake choices: nothing a caller adds to its options can mark live input as retained history.
+        yield* protocol.dispatch(
+          result.value,
+          { local: options.local, mailboxAid: options.mailboxAid, escrows: options.escrows },
+          kvy,
+        );
       }
     } finally {
       controller.abort();

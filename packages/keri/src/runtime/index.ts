@@ -24,6 +24,7 @@ export {
 export {
   createProtocolProcessor,
   type DispatchOptions,
+  type IntakeOptions,
   type ProtocolDispatchResult,
   ProtocolProcessor,
 } from "../app/protocol/protocol-processing.ts";
