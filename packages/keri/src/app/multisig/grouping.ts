@@ -39,6 +39,7 @@ import {
   nestedMultisigIlks,
 } from "../../core/exchange/protocol-exchanging.ts";
 import { Kevery } from "../../core/kel/eventing.ts";
+import { Kever } from "../../core/kel/kever.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../../core/routing.ts";
 import { Exchanger, type ExchangeRouteHandler, type ExchangeRouteVerification } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
@@ -46,7 +47,7 @@ import { IpexV2Handler } from "../ipex/ipex-v2.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../protocol/parsering.ts";
 import { abortable, rethrowCleanupFailure } from "../runtime/abortable.ts";
-import { groupSigningMembers, localIpexContribution } from "./group-members.ts";
+import { groupSigningMembers, isLocalGroupHab, localIpexContribution } from "./group-members.ts";
 import { multisigEmbeddedSection, multisigPayloadSaid } from "./multisig-messaging.ts";
 
 /** KERIpy multisig route constants. */
@@ -859,6 +860,11 @@ export class Multiplexor {
         // The parent is durable, but approval never lends its signatures to the child.
         if (serder.pvrsn.major === 1) yield* this.processLegacyApproved(serder);
         else yield* this.processApproved(nests);
+      } else if (!unreplayed && this.alreadyComplete(serder, nests, route)) {
+        // Consent only adds this member's signature; an event the other members' signatures already complete needs
+        // none, so a member that only receives it takes it on receipt instead of waiting for an approval it need not give.
+        if (serder.pvrsn.major === 1) yield* this.processLegacyApproved(serder);
+        else yield* this.processApproved(nests);
       } else if (serder.pvrsn.major === 2 || firstSubmission) {
         // Legacy approval polling consumes its first notice; repeated v1 notices would re-propose it.
         this.notifier?.add(firstSubmission ? { r: route, d: said } : { r: route, d: said, e: embeddedSaid });
@@ -876,6 +882,32 @@ export class Multiplexor {
       route,
       sender,
     };
+  }
+
+  /**
+   * Whether the proposed group interaction (or the anchor of a registry proposal) is already signed by enough of the
+   * group's current signing keys to be the group's next event. Rotations and replies are not judged here: they need
+   * their own keys or reply proofs, and wait for approval.
+   */
+  private alreadyComplete(serder: SerderKERI, nests: readonly CesrFrame[], route: string): boolean {
+    let event: SerderKERI | undefined, frame: CesrFrame | undefined;
+    if (serder.pvrsn.major === 1) {
+      if (route !== MULTISIG_IXN_ROUTE) return false;
+      const child = multisigChild(this.hby, serder, "ixn");
+      const gid = isRecord(serder.ked?.a) ? serder.ked.a.gid : undefined;
+      if (!child?.attachment.length || gid !== child.event.pre) return false;
+      frame = parseBytes(concatBytes(Counter.makeGVC(child.genus), child.event.raw, child.attachment))[0];
+      event = child.event;
+    } else if (isV2RegistryRoute(route)) {
+      const anchor = acdcV2RegistryProposal(serder, nests, this.registry?.store ?? null)?.anchor;
+      frame = nests.find((nest) => nest.body.said === anchor?.said);
+      event = anchor;
+    }
+    if (!event || !frame || event.ilk !== "ixn" || !event.pre || !this.isLocalGroup(event.pre)) return false;
+    const kever = this.hby.db.getKever(event.pre);
+    if (!kever?.tholder || event.sn !== kever.sn + 1 || event.prior !== kever.said) return false;
+    const { indices } = Kever.verifyIndexedSignatures(event.raw, envelopeFromFrame(frame).sigers, kever.verfers);
+    return kever.tholder.satisfy(indices);
   }
 
   /** Return true when this wrapper can be accepted for local group work. */
@@ -1064,6 +1096,8 @@ export class Multiplexor {
     if (membership) {
       return { ok: false, said, reason: membership };
     }
+    const stray = this.strayReason(serder, request);
+    if (stray) return { ok: false, said, reason: stray };
 
     return {
       ok: true,
@@ -1090,6 +1124,27 @@ export class Multiplexor {
     return exns;
   }
 
+  /**
+   * Why a remote wrapper is not for this runtime's members, or null. It must be addressed to a member held here and,
+   * for a proposal about a group, come from one of that group's signing members: a wrapper for a member the receiver
+   * does not hold, or from an identifier that is not in the group, is not stored, noticed or listed.
+   */
+  private strayReason(serder: SerderKERI, request: MultisigMembership | MultisigRejection): string | null {
+    const sender = serder.pre ?? "";
+    if (this.isLocalHab(sender)) return null;
+    const recipient = serder.sad?.rp;
+    if (typeof recipient === "string" && recipient.length > 0 && !this.isLocalHab(recipient)) {
+      return `Multisig wrapper is addressed to ${recipient}, which is not a local identifier.`;
+    }
+    if (
+      request.kind !== "reject" && request.kind !== "join" && this.isLocalGroup(request.group)
+      && !groupSigningMembers(this.hby, request.group).includes(sender)
+    ) {
+      return `Multisig wrapper sender ${sender} is not a signing member of group ${request.group}.`;
+    }
+    return null;
+  }
+
   /** Apply local habitat membership to an already decoded request. */
   private verifyMembership(request: MultisigMembership): string | null {
     if (request.kind === "participate") {
@@ -1103,6 +1158,11 @@ export class Multiplexor {
     return request.members.some((member) => this.isLocalHab(member))
       ? null
       : `Invalid request to join group; no local member in mids=${request.members.join(",")}.`;
+  }
+
+  private isLocalGroup(pre: string): boolean {
+    const hab = this.hby.habs.get(pre);
+    return !!hab && isLocalGroupHab(this.hby, hab);
   }
 
   private isLocalHab(pre: string): boolean {

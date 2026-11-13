@@ -95,6 +95,26 @@ Deno.test("approveGroupProposal reports an unreachable member, still starts the 
   });
 });
 
+Deno.test("a member that only receives takes an interaction the proposer's signature already completes, without approving", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const { signed, ixn } = yield* peerInteraction(s, [{ n: 1 }]);
+      assertEquals(s.left.db.kels.getLast(s.group, ixn.serder.sn!), ixn.serder.said, "accepted on receipt");
+      assertEquals(s.left.db.getKever(s.group)!.sn, ixn.serder.sn);
+      assertEquals(findGroupProposal(readDeps(s), signed.exnSaid)?.local, "inapplicable", "nothing is left to sign");
+    }, "1");
+  });
+});
+
+Deno.test("an interaction the proposer's signature does not complete waits for approval", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const { ixn } = yield* peerInteraction(s, [{ n: 1 }]);
+      assertEquals(s.left.db.kels.getLast(s.group, ixn.serder.sn!), null, "one of two signatures is not the event");
+    }, "2");
+  });
+});
+
 Deno.test("approveGroupProposal cannot approve a proposal the caller did not name", async () => {
   await run(function*() {
     yield* scenario(function*(s) {
