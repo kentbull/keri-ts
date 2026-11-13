@@ -1087,6 +1087,8 @@ class PythonPeer implements DerivedIpexPeer {
     });
     const text = await response.text();
     assertEquals(response.status, 200, `${action}: ${text}`);
+    // The fixture answers "null" for no result; an empty body means the answer was lost, not that there was none.
+    if (text === "") throw new Error(`${action}: the KERIpy fixture answered 200 with an empty body`);
     return JSON.parse(text);
   }
 
