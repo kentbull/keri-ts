@@ -140,8 +140,10 @@ Changed:
 [2.2.2](../../versioning/2.2.2-release-notes.md). 2.2.3 adds
 `replaceGroupMember` for a group's local member; see the
 [2.2.3 notes](../../versioning/2.2.3-release-notes.md). 2.2.4 cuts the CPU cost of an idle runtime
-and changes no call; see the [2.2.4 notes](../../versioning/2.2.4-release-notes.md). 2.2.2 changes types a 2.2.0 caller may
-already use:
+and changes no call; see the [2.2.4 notes](../../versioning/2.2.4-release-notes.md). 2.2.5 removes
+`settleProposedRotation` and `ProposedRotation`: a local group's stored members follow each accepted establishment
+event with no call (`Habery.alignGroupMembers`, run by the Counselor), so drop the call. 2.2.2 changes types a 2.2.0
+caller may already use:
 
 - The IPEX disclosure options take `priorSaid` only; `prior` is a type error and is refused
   with a `ValidationError` when untyped.

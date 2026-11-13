@@ -2306,7 +2306,7 @@ Deno.test("Habery rotateGroupHab maps prior commitments independently of signing
   });
 });
 
-Deno.test("Habery reopen commits members of an accepted rotation whose live commit was interrupted", async () => {
+Deno.test("Habery reopen aligns members of an accepted rotation that no runtime followed", async () => {
   const name = `group-member-recovery-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   let pre = "";
@@ -2321,13 +2321,17 @@ Deno.test("Habery reopen commits members of an accepted rotation whose live comm
       const before = [alice.pre, bob.pre];
       const group = hby.makeGroupHab("team", alice, before, before, undefined, { isith: "2", nsith: "2", toad: 0 });
       pre = group.hab.pre;
+      const stale = { record: hby.db.getHab(pre)!, smids: hby.ks.getSmids(pre), rmids: hby.ks.getRmids(pre) };
       alice.rotate();
       bob.rotate();
       mids = [alice.pre, bob.pre, fresh.pre];
       hby.rotateGroupHab("team", mids, mids, { isith: ["0", "0", "1"], nsith: "2", toad: 0 });
       assertEquals(group.hab.kever?.sn, 1);
-      // The process stopped after acceptance but before the member commit.
-      hby.commitGroupHabMembers(pre, before, before);
+      assertEquals(hby.db.getHab(pre)?.smids, mids, "a rotation accepted on local signatures is followed at once");
+      // The process stopped after acceptance but before the members followed it.
+      hby.db.pinHab(pre, stale.record);
+      hby.ks.pinSmids(pre, stale.smids);
+      hby.ks.pinRmids(pre, stale.rmids);
       assertEquals(hby.db.getHab(pre)?.smids, before);
     } finally {
       yield* hby.close();
@@ -2341,7 +2345,7 @@ Deno.test("Habery reopen commits members of an accepted rotation whose live comm
         assertEquals(hby.db.getHab(pre)?.smids, mids);
         assertEquals(hby.db.getHab(pre)?.rmids, mids);
         assertEquals(hby.ks.getSmids(pre).map(([prefixer]) => prefixer.qb64), mids);
-        assertEquals(hby.recoverAcceptedGroupMembers(pre), false, "recovery is idempotent");
+        assertEquals(hby.alignGroupMembers(pre), "unchanged", "alignment is idempotent");
       } finally {
         yield* hby.close(reopen === 1);
       }

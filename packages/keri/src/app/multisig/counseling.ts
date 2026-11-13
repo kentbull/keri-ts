@@ -197,6 +197,8 @@ export class Counselor {
   /** Completed events this member, as the elected one, still owes to other members; memory only. */
   private readonly forwards = new Map<string, Forward>();
   private readonly forwarded = new Map<string, GroupDelivery[]>();
+  /** Per local group, the latest establishment SAID its stored members were found to follow; memory only. */
+  private readonly aligned = new Map<string, string>();
 
   /**
    * @param hby Borrowed identities and stores; the Counselor opens nothing.
@@ -340,8 +342,12 @@ export class Counselor {
     return this.forwards.size > 0;
   }
 
-  /** One pass over all stages, as KERIpy `processEscrows`. */
+  /**
+   * One pass over all stages, as KERIpy `processEscrows`, after aligning stored group members with accepted state
+   * so that a completion in this pass forwards to the members of the event that completed.
+   */
   *processOnce(): Operation<void> {
+    this.alignMembers();
     // A runtime calls this every turn; with nothing counseled, three row counts are the whole cost.
     const db = this.hby.db;
     if (db.gpse.cnt() === 0 && db.gdee.cnt() === 0 && db.gpwe.cnt() === 0 && this.forwards.size === 0) return;
@@ -472,6 +478,31 @@ export class Counselor {
       db.gpwe.add([event.pre], row);
     });
     this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
+  }
+
+  /**
+   * Bring each local group's stored members in line with its latest accepted establishment event, whoever proposed
+   * it and however late its last signature arrived (`Habery.alignGroupMembers`). A group is re-read only when that
+   * event differs from the one its members were last found to follow; one that cannot be attributed yet (a member's
+   * KEL is missing) is left as it is and read again on a later pass, which the arriving KEL's write brings about.
+   *
+   * After a change, an elected member whose latest establishment event already completed owes it again to the
+   * members it now has. Other components read the stored members themselves (the root replicator re-derives a
+   * group whose stored members changed); nothing here tells them.
+   */
+  private alignMembers(): void {
+    const db = this.hby.db;
+    for (const pre of [...db.groups]) {
+      const est = db.getKever(pre)?.lastEst;
+      if (!est || this.aligned.get(pre) === est.d) continue;
+      const alignment = this.hby.alignGroupMembers(pre);
+      if (alignment === "unattributed") continue;
+      this.aligned.set(pre, est.d);
+      if (alignment === "unchanged") continue;
+      this.changes?.push({ kind: "group", id: `${pre}:${est.s}` });
+      const event = { pre, sn: est.s, said: est.d };
+      if (this.completed(pre, est.s) === est.d) this.owe(event);
+    }
   }
 
   /** The elected member owes the completed event to the members that did not sign it into existence. */

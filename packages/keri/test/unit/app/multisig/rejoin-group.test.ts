@@ -122,8 +122,11 @@ interface RejoinCall {
   timeoutMs?: number;
 }
 
+/** The wallet's runtime as rejoin collaborators; the runtime has no change sink as null, the deps as absent. */
+const runtimeDeps = (w: Wallet): RejoinDeps => ({ ...w.runtime, changes: w.runtime.changes ?? undefined });
+
 /** Run `rejoinGroup` with the wallet's runtime workers around it. */
-function* rejoin(w: Wallet, input: RejoinCall, deps: RejoinDeps = w.runtime): Operation<RejoinResult> {
+function* rejoin(w: Wallet, input: RejoinCall, deps: RejoinDeps = runtimeDeps(w)): Operation<RejoinResult> {
   return yield* withRuntimeWorkers(
     w.runtime,
     { pollMailbox: false },
@@ -275,8 +278,11 @@ Deno.test("rejoinGroup is idempotent for the recorded member", async () => {
     const other = heldMember();
     const otherHab = w.hby.makeSignedHab("other", undefined, { serder: other.serder, sigers: other.sigers });
     const base = { oobi, group: gid, alias: "g", timeoutMs: 1_000 };
-    yield* assertRefused(rejoinGroup(w.runtime, { ...base, member: otherHab }), "use replaceGroupMember");
-    yield* assertRefused(rejoinGroup(w.runtime, { ...base, member: w.hby.habs.get(gid)! }), "is a group identifier");
+    yield* assertRefused(rejoinGroup(runtimeDeps(w), { ...base, member: otherHab }), "use replaceGroupMember");
+    yield* assertRefused(
+      rejoinGroup(runtimeDeps(w), { ...base, member: w.hby.habs.get(gid)! }),
+      "is a group identifier",
+    );
     assertEquals(ag.http.requests.length, requests);
     assertEquals(w.hby.db.getHab(gid), record);
   });

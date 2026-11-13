@@ -69,7 +69,6 @@ import {
   type ReplacedGroupMember,
   replaceGroupMember,
   requestUnblind,
-  settleProposedRotation,
   unblindingStatus,
   ValidationError,
   waitForGroupEvent,
@@ -260,8 +259,8 @@ export class Groups {
   }
 
   /**
-   * Propose a rotation of `group` (member changes included, through `smids` and `rmids`) and wait for it. When the
-   * rotation completes, the members it named are committed.
+   * Propose a rotation of `group` (member changes included, through `smids` and `rmids`) and wait for it. The
+   * group's stored members follow the rotation once it is accepted, whether or not that happens within this wait.
    *
    * @throws ValidationError for an unknown identifier or one that is not a local group.
    */
@@ -277,9 +276,7 @@ export class Groups {
         { smids, rmids, isith, nsith, toad, cuts, adds, data },
         inputs,
       );
-      const settled = yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs, proposed.members);
-      if (settled.outcome === "complete") settleProposedRotation({ hby: this.#scope.parts.hby }, proposed);
-      return settled;
+      return yield* settleEvent(this.#scope.parts.runtime, proposed.event, timeoutMs, proposed.members);
     }.bind(this));
   }
 

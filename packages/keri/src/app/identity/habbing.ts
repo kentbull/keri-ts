@@ -176,6 +176,15 @@ export interface GroupHabRotation {
   message: Uint8Array;
 }
 
+/**
+ * What `Habery.alignGroupMembers` did to a local group's stored members:
+ * - `aligned`: they differed from the latest accepted establishment event and now follow it
+ * - `unchanged`: they already follow it, or there is nothing to align (not a local group, a read-only Habery)
+ * - `unattributed`: the event's keys cannot all be attributed to locally known members yet, usually because a
+ *   member's KEL has not arrived; nothing was written, and a later call aligns once it has
+ */
+export type GroupMemberAlignment = "aligned" | "unchanged" | "unattributed";
+
 /** Result of creating one locally signed group interaction event. */
 export interface GroupHabInteraction {
   hab: Hab;
@@ -1713,40 +1722,43 @@ export class Habery {
       }
       hab.reconfigure();
     }
-    // Restart recovery: commit members of an accepted establishment event
-    // whose live commit was interrupted. Read-only openings never write.
-    for (const pre of this.readonly ? [] : this.habs.keys()) {
-      this.recoverAcceptedGroupMembers(pre);
+    // Restart recovery: a group whose establishment event was accepted while no runtime aligned its members.
+    for (const pre of this.habs.keys()) {
+      this.alignGroupMembers(pre);
     }
   }
 
   /**
-   * Commit the members of a local group's latest accepted establishment event
-   * when the stored record is stale (KERIpy `GroupHab.recoverAcceptedMembers`).
+   * Bring a local group's stored members (`smids`/`rmids` on its habitat record and in the keeper) in line with
+   * the group's latest accepted establishment event. This is the one writer of a local group's member lists after
+   * its record is created; acceptance, reopen recovery, member replacement and a proposer's immediate acceptance
+   * all reach it, and the runtime's Counselor calls it on its pass after each accepted establishment event, so a
+   * rotation that completes late (a co-member's signature arriving after the proposer stopped waiting) is followed
+   * without any caller asking.
    *
-   * A process that stopped after a rotation was accepted but before its live
-   * `commitAcceptedGroupMembers` leaves `smids`/`rmids` stale. Members are
-   * derived from local KELs, trying the stored members first and every AID
-   * with local key state only when they do not account for every key. They
-   * are committed only when they differ from the stored record and the local
-   * member contributes to that event; a record that does not yet include the
-   * local member is a pending join, not a stale commit. Only the latest
-   * accepted event is committed, so this never rolls members back, and
-   * repeating it changes nothing. Returns whether stale members were committed.
+   * Members come from accepted key state only (`acceptedGroupMembers`, KERIpy `GroupHab.acceptedMembers`), never
+   * from a proposal's or caller's lists: the stored members are tried first, then every AID with local key state.
+   * When a key cannot be attributed yet nothing is written and the result is `unattributed`; a partial list is
+   * never stored. Only the latest accepted event is followed, so members never roll back, and repeating it
+   * changes nothing.
+   *
+   * The recorded local member (`mid`) is never changed here; replacing it stays `joinGroupHab`'s explicit
+   * replacement. Diverging from KERIpy `GroupHab.recoverAcceptedMembers`, the lists follow accepted state even
+   * when it does not include the local member (a member rotated out, or one whose join is not accepted yet).
+   * Weight plays no part: a member whose signing weight is 0 is a member like any other.
    */
-  recoverAcceptedGroupMembers(pre: string): boolean {
+  alignGroupMembers(pre: string): GroupMemberAlignment {
     const record = this.db.getHab(pre);
-    if (!record?.mid || record.sid || !this.habs.has(record.mid)) return false;
+    if (this.readonly || !record?.mid || record.sid || !this.habs.has(record.mid)) return "unchanged";
     const smids = [...(record.smids ?? [])], rmids = [...(record.rmids ?? [])];
     const accepted = acceptedGroupMembers(this.db, pre, new Set([...smids, ...rmids]))
       ?? acceptedGroupMembers(this.db, pre, [...this.db.states.getTopItemIter()].map(([keys]) => keys.join(".")));
-    if (!accepted) return false;
+    if (!accepted) return "unattributed";
     const same = (left: readonly string[], right: readonly string[]) =>
       left.length === right.length && left.every((aid, index) => aid === right[index]);
-    if (same(accepted.smids, smids) && same(accepted.rmids, rmids)) return false;
-    if (!accepted.smids.includes(record.mid) && !accepted.rmids.includes(record.mid)) return false;
+    if (same(accepted.smids, smids) && same(accepted.rmids, rmids)) return "unchanged";
     this.commitGroupHabMembers(pre, accepted.smids, accepted.rmids);
-    return true;
+    return "aligned";
   }
 
   /** Local AID prefixes currently managed by this habery. */
@@ -2058,8 +2070,8 @@ export class Habery {
     }
     this.habs.set(pre, hab);
     if (replacing && !this.readonly) {
-      // The stored lists must follow accepted state, which the old member's record kept from being committed.
-      this.recoverAcceptedGroupMembers(pre);
+      // The stored lists must follow accepted state, whatever lists the caller passed.
+      this.alignGroupMembers(pre);
       this.retireGroupMemberState(pre, existingRecord!.mid!);
     }
     return hab;
@@ -2084,8 +2096,8 @@ export class Habery {
     }
   }
 
-  /** Commit accepted group member metadata after the corresponding group event is accepted. */
-  commitGroupHabMembers(
+  /** Write member lists already derived from accepted state; only `alignGroupMembers` calls this. */
+  private commitGroupHabMembers(
     pre: string,
     smids: readonly string[],
     rmids: readonly string[] = smids,
@@ -2195,8 +2207,9 @@ export class Habery {
       throw new ValidationError(decision.message);
     }
 
+    // Accepted on local signatures alone: the members follow it now. Otherwise they follow when it is accepted.
     if (serder.sn !== null && serder.said && this.db.kels.getLast(hab.pre, serder.sn) === serder.said) {
-      this.commitGroupHabMembers(hab.pre, signingMembers, rotationMembers);
+      this.alignGroupMembers(hab.pre);
     }
 
     return {
