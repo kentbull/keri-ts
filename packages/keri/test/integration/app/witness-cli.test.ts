@@ -4,7 +4,7 @@ import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { type GuardedChild, spawnGuardedChild } from "../../support/child-lifetime.ts";
-import { randomPort } from "./interop-test-helpers.ts";
+import { randomPort, tufaCommand } from "./interop-test-helpers.ts";
 
 interface CmdResult {
   code: number;
@@ -62,11 +62,8 @@ function spawnChild(
 }
 
 async function runTufa(args: string[]): Promise<CmdResult> {
-  return await runCmd(
-    Deno.execPath(),
-    ["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", ...args],
-    packageRoot(),
-  );
+  const tufa = tufaCommand(args);
+  return await runCmd(tufa.command, tufa.args, packageRoot());
 }
 
 async function requireSuccess(
