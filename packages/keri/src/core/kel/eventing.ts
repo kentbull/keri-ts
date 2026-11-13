@@ -325,9 +325,9 @@ export class Kevery {
     if (envelope.serder.route !== "mbx") return false;
     const query = envelope.serder.ked?.q as Record<string, unknown> | undefined;
     const pre = typeof query?.i === "string" ? query.i : null;
-    if (!pre || queryRequester(envelope) !== pre) return false;
+    if (!pre) return false;
     const recipient = this.db.getKever(pre, { refresh: true });
-    return !!recipient && authenticatesMailboxQuery(envelope, recipient);
+    return !!recipient && authenticatesMailboxQuery(envelope, recipient, this.db);
   }
 
   /**
@@ -434,14 +434,11 @@ export class Kevery {
         }]);
       }
       case "mbx": {
-        if (dest !== pre) {
-          return dropQuery("unauthorizedMailboxRequester");
-        }
         const recipient = this.db.getKever(pre, { refresh: true });
         if (!recipient) {
           return escrowQuery("missingKever");
         }
-        if (!authenticatesMailboxQuery(envelope, recipient)) {
+        if (!authenticatesMailboxQuery(envelope, recipient, this.db)) {
           return dropQuery("unauthorizedMailboxRequester");
         }
         return acceptQuery([{
@@ -3064,9 +3061,10 @@ function queryRequester(envelope: QueryEnvelope): string | null {
 /**
  * Mailbox reads authorize private recipient bytes, unlike public KEL queries.
  * Require the recipient's current signing threshold; merely naming its prefix
- * in endorsement material is not authentication. Repeated indices count once.
+ * in endorsement material is not authentication. Repeated indices count once. *
+ * A group recipient is also read by one of its members, which signs the poll with its own keys.
  */
-function authenticatesMailboxQuery(envelope: QueryEnvelope, recipient: Kever): boolean {
+function authenticatesMailboxQuery(envelope: QueryEnvelope, recipient: Kever, db: Baser): boolean {
   if (!recipient.transferable) {
     return (envelope.cigars ?? []).some((cigar) =>
       cigar.verfer?.qb64 === recipient.pre
@@ -3074,13 +3072,26 @@ function authenticatesMailboxQuery(envelope: QueryEnvelope, recipient: Kever): b
       && cigar.verfer.verify(cigar.raw, envelope.serder.raw)
     );
   }
-  if (envelope.source?.qb64 !== recipient.pre) return false;
+  const requester = envelope.source?.qb64;
+  if (!requester) return false;
+  if (requester === recipient.pre) return satisfiesThreshold(envelope, recipient);
+  // A group's poll is signed by one of its local members (the poller cannot sign for the group alone). Accept
+  // a member whose own key state this host holds when its signature meets its own threshold and its signing
+  // key is in the group's current key list: the group's KEL names it as one of the keys that act for the group.
+  const member = db.getKever(requester, { refresh: true });
+  if (!member?.transferable || !satisfiesThreshold(envelope, member)) return false;
+  const groupKeys = new Set(recipient.verfers.map((verfer) => verfer.qb64));
+  return member.verfers.some((verfer) => groupKeys.has(verfer.qb64));
+}
+
+/** The indexed signatures on `envelope` that verify against `kever`'s current keys meet its signing threshold. */
+function satisfiesThreshold(envelope: QueryEnvelope, kever: Kever): boolean {
   const indices = new Set<number>();
   for (const siger of envelope.sigers ?? []) {
-    const verfer = recipient.verfers[siger.index];
+    const verfer = kever.verfers[siger.index];
     if (verfer && verfer.verify(siger.raw, envelope.serder.raw)) indices.add(siger.index);
   }
-  return recipient.tholder?.satisfy([...indices]) ?? false;
+  return kever.tholder?.satisfy([...indices]) ?? false;
 }
 
 /** Return the reply destination derived from one normalized query envelope. */
