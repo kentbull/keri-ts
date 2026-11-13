@@ -325,6 +325,7 @@ export class Baser extends StoreOwner {
   public ctyp!: Komer<CacheTypeRecord>; // KRAM cache-type records.
   public msgc!: Komer<MsgCacheRecord>; // KRAM message-cache records.
   public xdt!: CesrSuber<Dater>; // Shared KRAM exchange opener time keyed by XID.
+  public heldq!: BytesSuber; // Authenticated DH queries received before consent, keyed by XID.
   public tmsc!: Komer<TxnMsgCacheRecord>; // KRAM transactioned message-cache records.
   public ulgs!: CesrIoSetSuber<Prefixer>; // Foreign last references unresolved at original receipt.
   public cigs!: CatCesrIoSetSuber<VerferCigarCouple>; // Independently owned foreign cigar proofs.
@@ -915,6 +916,7 @@ export class Baser extends StoreOwner {
         },
       );
 
+      this.heldq = new BytesSuber(this.store, { subkey: "heldq." });
       this.ulgs = new CesrIoSetSuber<Prefixer>(this.store, { subkey: "ulgs.", ctor: Prefixer });
       this.cigs = new CatCesrIoSetSuber<VerferCigarCouple>(this.store, { subkey: "cigs.", ctor: [Verfer, Cigar] });
 

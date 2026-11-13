@@ -52,7 +52,7 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
     private readonly now: () => number,
     /** Whether the runtime's KRAM is on; DH and Unblind approval need the rows only KRAM writes. */
     private readonly kram: boolean,
-    /** Whether peer queries are taken at all; false drops them before KRAM records them. */
+    /** Whether Unblind peer queries are taken; false drops them before KRAM records them. */
     private readonly queries: boolean = true,
   ) {}
 
@@ -129,8 +129,8 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
   }
 
   private select(serder: SerderKERI): Owner | null {
-    if (!this.queries) return null;
     const kind = serder.route === Dhke.Route ? "dhke" : serder.route === Unblind.Route ? "unblind" : null;
+    if (!this.queries && kind === "unblind") return null;
     return kind && this.claimant(kind, serder.pre, (serder.sad?.q as { x?: unknown } | undefined)?.x);
   }
 
