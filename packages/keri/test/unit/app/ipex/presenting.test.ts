@@ -90,6 +90,26 @@ Deno.test("an offer is signed and accepted locally at present; processOnce deliv
   });
 });
 
+Deno.test("the prior exchange is named by priorSaid; the builder's prior is refused, not silently ignored", async () => {
+  await run(function*() {
+    const { hab, credential, s, ops } = yield* setup();
+    // `options` is the closed DisclosureBodyOptions: `prior` is a type error, and untyped input that carries it is refused.
+    const untyped = { recipient: s.holder.habs[0].pre!, message: "offer", plan: [], prior: { said: "Eignored" } };
+    let refused = "";
+    try {
+      yield* present(ops, {
+        verb: "offer",
+        hab,
+        selection: { said: credential.said! },
+        options: untyped as never,
+      });
+    } catch (error) {
+      refused = (error as Error).message;
+    }
+    assert(refused.includes("priorSaid"), refused);
+  });
+});
+
 Deno.test("a failing transport is retried with a doubling delay and ends the operation only at its deadline", async () => {
   await run(function*() {
     const { s, ops, offer } = yield* setup();
@@ -173,7 +193,12 @@ Deno.test("status after a reload equals status before, once the peer answered", 
     });
     const first = yield* offer(offering);
     yield* offering.processOnce();
-    const agree = yield* present(answering, { verb: "agree", hab: s.holder.habs[0], prior: first.said, message: "ok" });
+    const agree = yield* present(answering, {
+      verb: "agree",
+      hab: s.holder.habs[0],
+      priorSaid: first.said,
+      message: "ok",
+    });
     yield* answering.processOnce();
     const before = presentationStatus(offering, first.said);
     const after = presentationStatus(new PresentationOperations(deps()), first.said);
@@ -227,7 +252,7 @@ Deno.test("the disclosee answers an accepted Offer with an Agree it signs and de
     });
     const first = yield* offer(offering);
     yield* offering.processOnce();
-    const agree = yield* present(answering, { verb: "agree", hab: holder, prior: first.said, message: "ok" });
+    const agree = yield* present(answering, { verb: "agree", hab: holder, priorSaid: first.said, message: "ok" });
     assertEquals(agree.recipient, s.issuer.habs[0].pre);
     yield* answering.processOnce();
     assert(text(s.log.at(-1)!.msg).includes("/ipex/agree"));
@@ -327,7 +352,7 @@ Deno.test("refusals: unknown presentation registry, unaccepted prior", async () 
       assert(error instanceof ValidationError && error.message === "Unknown presentation registry.", String(error));
     }
     try {
-      yield* present(ops, { verb: "spurn", hab, prior: "Eabsent" });
+      yield* present(ops, { verb: "spurn", hab, priorSaid: "Eabsent" });
       throw new Error("expected refusal");
     } catch (error) {
       assert(error instanceof ValidationError && error.message.includes("must be accepted"), String(error));

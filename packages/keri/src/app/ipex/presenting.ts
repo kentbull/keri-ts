@@ -72,6 +72,7 @@ import {
 import type { IpexV2BodyOptions } from "./ipex-building.ts";
 import {
   type CredentialViews,
+  type DisclosureBodyOptions,
   type DisclosureSelection,
   IpexDiscloser,
   type PreparedDisclosure,
@@ -139,8 +140,7 @@ export interface PresentationDeps {
 }
 
 /** Body options of a selecting message, plus the presentation registry that carries a Grant's proof. */
-export interface PresentationOptions extends IpexV2BodyOptions {
-  priorSaid?: string;
+export interface PresentationOptions extends DisclosureBodyOptions {
   auths?: WitnessAuthMap;
   /** Alias of a local registry whose presented-state update this Grant anchors. */
   presentationRegistry?: string;
@@ -155,7 +155,7 @@ export type PresentationInput =
     verb: "agree" | "spurn";
     hab: Hab;
     /** SAID of the accepted, authenticated exchange being answered. */
-    prior: string;
+    priorSaid: string;
     message?: string;
     recipient?: string;
     auths?: WitnessAuthMap;
@@ -339,7 +339,7 @@ export function* preparePresentation(
       prepared = yield* discloser.prepareReply(
         sender,
         input.verb,
-        input.prior,
+        input.priorSaid,
         input.message ?? "",
         input.recipient,
         input.auths,

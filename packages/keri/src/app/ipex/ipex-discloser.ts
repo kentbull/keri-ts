@@ -69,6 +69,25 @@ export interface PreparedGrantBody {
   raw: Uint8Array;
   nests: Uint8Array;
 }
+/**
+ * What a disclosure body takes beyond the exchange builder's own options. The prior exchange is named by its SAID
+ * in `priorSaid` everywhere in the IPEX API; the builder's `prior` (a parsed exchange) is not an option here, so a
+ * caller that passes it gets a type error, and untyped input that carries it is refused at run time.
+ */
+export interface DisclosureBodyOptions extends Omit<IpexV2BodyOptions, "prior"> {
+  priorSaid?: string;
+}
+/** Grant preparation: a disclosure body plus the optional presented-state registry and witness authorization. */
+export interface GrantPreparationOptions extends DisclosureBodyOptions {
+  presentation?: Registry;
+  auths?: WitnessAuthMap;
+}
+/** Refuse the builder's `prior` where the disclosure API names the prior exchange by `priorSaid`. */
+function refuseBuilderPrior(options: object): void {
+  if ((options as { prior?: unknown }).prior !== undefined) {
+    throw new ValidationError("Name the prior exchange with priorSaid; prior is not a disclosure option.");
+  }
+}
 /** Fresh origin and explicit far-node proofs; preparation grants neither DH nor inventory consent. */
 export interface IssuanceGrantOptions extends Omit<IpexV2BodyOptions, "prior"> {
   recipient: string;
@@ -131,8 +150,10 @@ export function exchangeWire(
 }
 
 /**
- * Re-encode a signed exchange from its retained, authenticated factors: the wire its signer sent, rebuilt
- * from the stored signatures or source seal and the stored nests. Signs nothing, so it needs no keys.
+ * Re-encode a signed exchange from its retained, authenticated factors: the exact bytes its signer presented,
+ * rebuilt from the stored signatures or source seal and the stored nests (`runtime.exc.retainedInput(said)` supplies
+ * them). Signs nothing, so it needs no keys. Public: a host that must hand the presented bytes to a third party
+ * reads them with this instead of re-signing.
  */
 export function* storedExchangeWire(retained: ExchangeInput, gvrsn: Versionage = Vrsn_2_0): Operation<Uint8Array> {
   const nests = [...retained.nests ?? []];
@@ -637,8 +658,9 @@ export class IpexDiscloser {
   *prepareOffer(
     sender: string,
     selection: DisclosureSelection,
-    options: IpexV2BodyOptions & { priorSaid?: string },
+    options: DisclosureBodyOptions,
   ): Operation<PreparedDisclosure> {
+    refuseBuilderPrior(options);
     const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0), prior = yield* this.prior(options.priorSaid);
     const raw = yield* this.selected(selection, true);
     const [exn, nests] = yield* prepareIpexExn(sender, "/ipex/offer", raw, { ...options, prior });
@@ -652,7 +674,7 @@ export class IpexDiscloser {
   *prepareGrantBody(
     sender: string,
     selection: DisclosureSelection,
-    options: IpexV2BodyOptions & { priorSaid?: string },
+    options: DisclosureBodyOptions,
   ): Operation<PreparedGrantBody> {
     return yield* this.grantBody(sender, selection, options, false);
   }
@@ -660,7 +682,7 @@ export class IpexDiscloser {
   *prepareGrantFileBody(
     sender: string,
     selection: DisclosureSelection,
-    options: IpexV2BodyOptions & { priorSaid?: string },
+    options: DisclosureBodyOptions,
   ): Operation<PreparedGrantBody> {
     return yield* this.grantBody(sender, selection, options, true);
   }
@@ -668,9 +690,10 @@ export class IpexDiscloser {
   protected *grantBody(
     sender: string,
     selection: DisclosureSelection,
-    options: IpexV2BodyOptions & { priorSaid?: string },
+    options: DisclosureBodyOptions,
     pendingPresentation: boolean,
   ): Operation<PreparedGrantBody> {
+    refuseBuilderPrior(options);
     const hab = this.hby.habs.get(sender);
     if (!hab?.kever || (options.gvrsn ?? Vrsn_2_0).major < 2) {
       throw new ValidationError("ACDC v2 Grant preparation requires an accepted local sender and attachment genus 2.");
@@ -687,7 +710,7 @@ export class IpexDiscloser {
   *prepareGrant(
     sender: string,
     selection: DisclosureSelection,
-    options: IpexV2BodyOptions & { priorSaid?: string; presentation?: Registry; auths?: WitnessAuthMap },
+    options: GrantPreparationOptions,
   ): Operation<PreparedDisclosure> {
     const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0);
     const prepared = yield* this.prepareGrantBody(sender, selection, options);

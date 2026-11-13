@@ -266,15 +266,18 @@ export {
 export {
   anchorExchange as anchorIpexExchange,
   type CredentialViews,
+  type DisclosureBodyOptions,
   type DisclosureSelection,
   exchangeWire,
   type GrantFileSelection,
+  type GrantPreparationOptions,
   type HeldCredential,
   type InspectedGrantFile,
   IpexDiscloser,
   type IssuanceGrantOptions,
   type PreparedDisclosure,
   type PreparedGrantBody,
+  storedExchangeWire,
 } from "../app/ipex/ipex-discloser.ts";
 export { type IpexGraph, walkIpexGraph } from "../app/ipex/ipex-graph.ts";
 export type { DisclosurePlan } from "../app/ipex/ipex-graph.ts";
