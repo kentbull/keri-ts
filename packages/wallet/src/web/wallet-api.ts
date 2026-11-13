@@ -554,8 +554,12 @@ export type ReceiveOutcome =
 export interface IssueOptions {
   /** The issuing identifier. */
   pre: string;
-  /** Registry name; incepted on the first use and reused after. A DH-issued registry has no custody root. */
-  registry: string;
+  /**
+   * Registry name, incepted on first use. A DH exchange derives the registry's root with the recipient and
+   * the registry takes that exchange once, so a registry carries one credential: leave this out and the
+   * wallet incepts a fresh registry for each issuance. A DH-issued registry has no custody root.
+   */
+  registry?: string;
   /** The credential: issuee, attributes, schema, edges and rules. */
   credential: Omit<AcdcMapOptions, "regid">;
   /** Recipient of the Grant; defaults to the credential's issuee. */
@@ -667,7 +671,7 @@ export class Credentials extends Surface {
    */
   async issue(options: IssueOptions): Promise<IssueOutcome> {
     const { hby, runtime, wallet, inventory } = this.parts;
-    const { pre, registry: name, timeoutMs = WALLET_TIMEOUTS.issue } = options;
+    const { pre, registry: name = `credential-${crypto.randomUUID()}`, timeoutMs = WALLET_TIMEOUTS.issue } = options;
     const hab = this.individual(pre), ops = this.owner();
     const recipient = options.recipient ?? options.credential.issuee;
     if (!recipient) throw new ValidationError("A recipient or an issuee is required.");
@@ -700,7 +704,8 @@ export class Credentials extends Surface {
       } catch {
         // A caller's notification must not break the issuance it reports.
       }
-      // The credential's derivation opening is read from the registry head the finished exchange leaves.
+      // The credential's derivation opening is read from the registry head the finished exchange leaves. The
+      // registry took one DH exchange, so that head is this credential's update.
       const record = (): IssuedCredential => {
         const known = inventory.issued.get([credential.said!]);
         if (known) return known;

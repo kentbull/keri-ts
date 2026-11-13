@@ -44,7 +44,6 @@ if (got.outcome === "admitted" && got.delivery.state === "undelivered") {
 // Issuer: one call; `onBegun` hands out the Grant SAID while the exchange runs.
 const issued = await w.credentials.issue({
   pre: icp.pre,
-  registry: "members",
   credential: { issuee: holder, attribute: { role: "member" } },
 });
 
