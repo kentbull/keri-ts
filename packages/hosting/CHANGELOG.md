@@ -1,5 +1,15 @@
 # @keri-ts/hosting
 
+## 2.2.0
+
+### Minor Changes
+
+- b544564: `tufa oobi resolve`, `tufa dkr resolve` and the hosted DID resolver wait on the OOBI they were asked for (`waitForOobi` / `oobiStatus`) instead of on every pending runtime job. Unrelated pending group proposals, delegation escrows or queries no longer make an OOBI resolution time out. A timeout now reads `OOBI <url> did not resolve within <ms>ms.`
+
+### Patch Changes
+
+- 80d3943: The CORS preflight now allows the `CESR-Genus` and `Authorization` request headers. A browser page could not send a v2 detached CESR POST (which carries `CESR-Genus`) or a witness TOTP code (`Authorization`) to a Tufa-hosted witness or mailbox: the preflight refused them.
+
 ## 2.1.0
 
 ### Minor Changes
@@ -20,6 +30,7 @@
   - Grants walk open by default, as in KERIpy. `walkIpexGraph` takes a `"open" | "closed"` policy instead of a boolean and `AcdcGraph` carries it as `walk`; pass `grantWalk: "closed"` for the 2.0 refusal of every Grant that omits a far node.
   - Edge chain evaluation follows KERIpy more strictly: unrecognized unary operators and `NOT` are non-retryable unknowns, every schema pin is checked, and a list, falsy or `n`/`w`-bearing Edge Section is malformed.
   - A v2 ACDC attribute, edge or rule section without a top-level `d` is no longer given one. The bytes and SAID built for such a body change to KERIpy's; credentials authored by 2.0.x keep their inserted `d` and still verify.
+
 - d80ccc5: Move to `cesr-ts` and `keri-ts` 2.1.0 so this package and its dependents no longer install libsodium.
 
 ### Patch Changes

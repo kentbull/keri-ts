@@ -1,5 +1,0 @@
----
-"keri-ts": patch
----
-
-An unreachable mailbox no longer fails the whole runtime. A connection failure (refused, DNS, or a reset while the response body is read) raised a `TransportError` that nothing in the mailbox poll worker caught, and the worker is a child of the runtime, so one dead mailbox stopped it. The worker is now an explicit state machine: each poll ends in a `PollOutcome` (`served`, `no-response`, `unreachable`, `unauthorized`, `refused`) and `nextPoll` turns it and the backoff state into the next action. Only a served poll resets the backoff; a host that sends no headers now backs off too (it used to retry at once after the header wait). The poller no longer posts the KEL itself: a 403 calls the new `onUnauthorized` option, which the runtime wires to `KelPublisher.repair` (forget what the mailbox was given, so the publisher posts the KEL again), and the worker backs off. `nextPoll`, `backOff`, `classifyPollRefusal` and the outcome types are exported from the poller module.
