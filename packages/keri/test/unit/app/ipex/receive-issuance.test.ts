@@ -15,7 +15,8 @@ import {
   proposeIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
 import { admitAndDeliver, receiveIssuance } from "../../../../src/app/ipex/receive-issuance.ts";
-import { type Scenario, scenario } from "./issuance-fixtures.ts";
+import { KramRefusedError } from "../../../../src/core/errors.ts";
+import { deadlineOf, pastDeadline, type Scenario, scenario } from "./issuance-fixtures.ts";
 
 /** The issuer has begun a fresh issuance to the holder and its Grant and query are on the way. */
 function* begun(s: Scenario) {
@@ -90,6 +91,24 @@ Deno.test("receiveIssuance reports an exchange that ended", async () => {
     const ended = yield* receiveIssuance(holderOps, { grant, timeoutMs: 20 });
     assert(ended.outcome === "ended");
     assertEquals(ended.status.state, "abandoned");
+  });
+});
+
+Deno.test("receive after escrow ejection throws KramRefusedError", async () => {
+  await run(function*() {
+    const s = yield* scenario(), { holderOps, grant } = yield* begun(s);
+    const deadline = deadlineOf(s.holder, grant);
+    s.clock.skew = pastDeadline(s.holder, grant);
+    yield* s.holder.runtime.protocol.processEscrowsOnce(); // prunes the KRAM row, then ejects the Grant
+    assertEquals(s.holder.hby.db.epse.get([grant]), null);
+    let refused: unknown;
+    try {
+      yield* receiveIssuance(holderOps, { grant, timeoutMs: 20 });
+    } catch (error) {
+      refused = error;
+    }
+    assert(refused instanceof KramRefusedError, String(refused));
+    assertEquals([refused.said, refused.refusal], [grant, { kind: "drop", reason: "lifetime", deadline }]);
   });
 });
 

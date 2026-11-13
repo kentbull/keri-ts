@@ -23,7 +23,7 @@ import {
   rebuildIssuanceAdmit,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
-import { ValidationError } from "../../../../src/core/errors.ts";
+import { KramRefusedError, ValidationError } from "../../../../src/core/errors.ts";
 import { deadlineOf, pastDeadline, route, type Scenario, scenario } from "./issuance-fixtures.ts";
 
 /** Assert that an operation refuses with a ValidationError containing `message`. */
@@ -166,6 +166,40 @@ Deno.test("holder expiry and abandon end the exchange locally", async () => {
     const before = other.log.length;
     yield* second.holderOps.processOnce();
     assertEquals(other.log.length, before, "an abandoned exchange answers nothing");
+  });
+});
+
+Deno.test("expired issuance status carries the Grant deadline", async () => {
+  await run(function*() {
+    const s = yield* scenario(), { holderOps, grant } = yield* started(s);
+    const deadline = deadlineOf(s.holder, grant);
+    s.clock.skew = pastDeadline(s.holder, grant);
+    assertEquals(issuanceStatus(holderOps, grant), {
+      state: "expired",
+      role: "holder",
+      reason: "The selected Grant reached its original exchange deadline",
+      deadline,
+    });
+  });
+});
+
+Deno.test("approveIssuanceExchange after the deadline throws KramRefusedError with the deadline", async () => {
+  await run(function*() {
+    const s = yield* scenario(), { holderOps, grant } = yield* started(s);
+    const deadline = deadlineOf(s.holder, grant);
+    s.clock.skew = pastDeadline(s.holder, grant);
+    /** The refusal names the lifetime and the deadline that passed. */
+    const refusal = () => {
+      const error = assertThrows(() => approveIssuanceExchange(holderOps, grant), KramRefusedError);
+      assertEquals([error.said, error.refusal], [grant, { kind: "drop", reason: "lifetime", deadline }]);
+    };
+    refusal(); // the pending Grant is stored, but past its deadline
+    // One escrow pass prunes the KRAM cache row and then ejects the Grant from escrow: nothing of it is stored.
+    yield* s.holder.runtime.protocol.processEscrowsOnce();
+    assertEquals(s.holder.hby.db.epse.get([grant]), null);
+    refusal();
+    const status = assertThrows(() => issuanceStatus(holderOps, grant), KramRefusedError);
+    assertEquals(status.refusal.deadline, deadline);
   });
 });
 

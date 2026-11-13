@@ -185,6 +185,17 @@ it again after `timed-out` resumes. `admitAndDeliver(deps, input)` signs the Adm
 before delivery (the wallet records its consent in its inventory there) and delivers within a budget; a failed or
 expired delivery is a value, and `deliver: false` leaves the bytes to the caller.
 
+An exchange lives until its KRAM deadline: the opener's stamp plus the exchange window `xl`. Once it passes,
+`issuanceStatus` reads `expired` with the Grant's `deadline` while the pending Grant is still stored. KRAM prunes the
+Grant's cache row at that deadline and the escrow sweep then ejects the Grant itself; from then on `issuanceStatus`,
+`approveIssuanceExchange`, `beginIssuance` and `receiveIssuance` throw `KramRefusedError` (a `ValidationError`) with
+`refusal.reason` `lifetime` and `refusal.deadline`, so a wallet can say the Grant expired, and when, instead of
+reporting an unknown Grant. `Exchanger.exchangeExpiry(said)` is the read behind this: it keeps answering after the
+prune from the stored opener's own stamp, and after the ejection from what this process remembered when it ejected the
+Grant. That memory is not durable, so after a restart an ejected Grant reads as unknown again. `pendingApplies` uses the
+same read, so an Apply past its deadline stays out of the list after the prune; with KRAM off an Apply has no lifetime
+and is listed with `deadline: null`.
+
 A Habery can hold both parties of one Grant (a host with two tenants: a member of the issuing group and a member of the
 receiving group, or an issuer and a holder). The issuance owner then keeps one live operation per party,
 keyed by the Grant and the party (`partyKey(grant, role)`; read them with `liveOf(grant, role?)` and `endedOf`). The

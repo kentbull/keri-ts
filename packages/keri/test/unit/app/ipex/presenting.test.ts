@@ -10,6 +10,7 @@ import type { SerderACDC } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertNotEquals, assertThrows } from "jsr:@std/assert";
 import { beginIssuance, issuanceStatus, proposeIssuance } from "../../../../src/app/ipex/issuance.ts";
+import { pendingApplies } from "../../../../src/app/ipex/pending-presentations.ts";
 import {
   abandonPresentation,
   present,
@@ -20,16 +21,17 @@ import {
   waitForPresentation,
 } from "../../../../src/app/ipex/presenting.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
+import type { KramConfig } from "../../../../src/core/mailbox/kraming.ts";
 import { timestampMicros } from "../../../../src/time/mod.ts";
-import { deadlineOf, pastDeadline, pump, route, scenario } from "./issuance-fixtures.ts";
+import { deadlineOf, KRAM, pastDeadline, pump, route, scenario } from "./issuance-fixtures.ts";
 
 const text = (msg: Uint8Array) => new TextDecoder().decode(msg);
 
 type Ctx = ReturnType<typeof setup> extends Operation<infer T> ? T : never;
 
 /** The issuer presents (offers or grants) a credential it issued, as a wallet's views would select it. */
-function* setup() {
-  const s = yield* scenario();
+function* setup(kram: KramConfig = KRAM) {
+  const s = yield* scenario(1, () => {}, true, kram);
   const reg = yield* s.registry(0), credential: SerderACDC = reg.credential();
   const hab = s.issuer.habs[0];
   const changes: string[] = [];
@@ -154,6 +156,44 @@ Deno.test("a failing transport is retried with a doubling delay and ends the ope
       verb: "apply",
       reason: "The presentation reached its original exchange deadline",
     });
+  });
+});
+
+/** The issuer asks the holder with an Apply and delivers it; returns the Apply SAID and the holder's listing. */
+function* deliveredApply({ s, ops }: Ctx) {
+  const { said } = yield* present(ops, {
+    verb: "apply",
+    hab: s.issuer.habs[0],
+    options: { recipient: s.holder.habs[0].pre!, message: "apply", plan: [] },
+  });
+  yield* ops.processOnce();
+  assert(s.holder.runtime.exc.complete(said), "the holder accepted the Apply");
+  const listing = () => pendingApplies({ hby: s.holder.hby, exc: s.holder.runtime.exc, clock: s.clock });
+  return { apply: said, listing };
+}
+
+Deno.test("pendingApplies omits an Apply whose KRAM record was pruned", async () => {
+  await run(function*() {
+    const ctx = yield* setup(), { s } = ctx, { apply, listing } = yield* deliveredApply(ctx);
+    const deadline = deadlineOf(s.holder, apply);
+    assertEquals(listing().map((item) => [item.apply, item.state, item.deadline]), [[apply, "pending", deadline]]);
+    s.clock.skew = pastDeadline(s.holder, apply);
+    assertEquals(listing(), [], "past its deadline the Apply is not pending");
+    yield* s.holder.runtime.protocol.processEscrowsOnce(); // KRAM prunes the Apply's cache row
+    const exn = s.holder.hby.db.exns.get([apply])!;
+    assertEquals(s.holder.runtime.exc.exchangeDeadline(exn), null, "the KRAM cache row is gone");
+    assert(s.holder.runtime.exc.complete(apply), "the accepted Apply itself is kept");
+    assertEquals(s.holder.runtime.exc.exchangeExpiry(apply), deadline, "its own stamp still gives the deadline");
+    assertEquals(listing(), [], "after the prune the expired Apply is still not pending");
+  });
+});
+
+Deno.test("pendingApplies without KRAM lists an Apply with no deadline", async () => {
+  await run(function*() {
+    const ctx = yield* setup({ enabled: false }), { s } = ctx, { apply, listing } = yield* deliveredApply(ctx);
+    assertEquals(listing().map((item) => [item.apply, item.state, item.deadline]), [[apply, "pending", null]]);
+    s.clock.skew = 3_600_000; // with no exchange window, time does not end it
+    assertEquals(listing().map((item) => item.apply), [apply]);
   });
 });
 

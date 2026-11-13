@@ -76,7 +76,7 @@ import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
 import { Dhke, grantTransactionId, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
 import type { Regery } from "../../acdc/registraring.ts";
-import { ValidationError } from "../../core/errors.ts";
+import { KramRefusedError, ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import type { Poster } from "../delivery/forwarding.ts";
@@ -169,7 +169,13 @@ export type IssuanceStatus =
     failure?: DeliveryFailure;
   }
   | { state: "done"; role: IssuanceRole; phase: "issued" | "admitted" }
-  | { state: IssuanceEndState; role: IssuanceRole; reason: string };
+  | {
+    state: IssuanceEndState;
+    role: IssuanceRole;
+    reason: string;
+    /** On `expired`: the Grant's exchange deadline (ISO 8601) that passed. */
+    deadline?: string;
+  };
 
 /** Delivery of signed bytes; resolves once the transport reports an outcome and throws when it failed. */
 export interface IssuanceDelivery {
@@ -313,6 +319,8 @@ interface EndedIssuance {
   role: IssuanceRole;
   state: IssuanceEndState;
   reason: string;
+  /** On `expired`: the Grant deadline that passed. */
+  deadline?: string;
 }
 
 /**
@@ -413,7 +421,8 @@ export class IssuanceOperations {
   /** End a live operation: release its DH approval, remember why until the process ends, tell the sink. */
   end(op: LiveIssuance, state: IssuanceEndState, reason: string): void {
     this.release(op);
-    this.ended.set(partyKey(op.grant, op.role), { role: op.role, state, reason });
+    const deadline = state === "expired" ? op.deadline : null;
+    this.ended.set(partyKey(op.grant, op.role), { role: op.role, state, reason, ...(deadline && { deadline }) });
     this.deps.changes?.push({ kind: "issuance", id: op.grant });
   }
 
@@ -722,6 +731,21 @@ function reached(clock: RuntimeClock, expires: bigint | null): boolean {
 }
 
 /**
+ * Refuse a Grant whose exchange deadline has passed with the KRAM lifetime refusal that names that deadline,
+ * so a caller learns why the Grant can no longer be acted on rather than that it is unknown. The deadline
+ * outlives the Grant's KRAM cache row and its ejection from escrow ({@link Exchanger.exchangeExpiry}). Returns
+ * when the Grant has no known deadline or is still inside it; the caller then raises its own refusal.
+ *
+ * @throws KramRefusedError (reason `lifetime`) once the deadline has passed.
+ */
+function refuseLapsedGrant(deps: IssuanceDeps, grant: string): void {
+  const deadline = deps.exc.exchangeExpiry(grant);
+  if (deadline && reached(deps.clock, timestampMicros(deadline))) {
+    throw new KramRefusedError(grant, { kind: "drop", reason: "lifetime", deadline });
+  }
+}
+
+/**
  * Whether a restarted process can complete this Grant without a new key exchange: it is pending inside its
  * deadline, `hab` is the party `role` names, and {@link resumableExchange} finds the roots. An issuer
  * additionally needs its update already accepted; one that is not anchored cannot be resumed, since the
@@ -806,7 +830,8 @@ function requireIndividual(deps: IssuanceDeps, hab: Hab): void {
 
 /**
  * The exact unanchored pending Grant a local party may consent to, with its deadline. Refuses a group
- * identifier, an issuance already begun, a Grant that is not this party's, and an issuer without its registry.
+ * identifier, an issuance already begun, a Grant that is not this party's, and an issuer without its registry;
+ * a Grant past its deadline is refused with `KramRefusedError`.
  */
 function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: IssuanceRole, group = false) {
   const { deps } = ops;
@@ -821,6 +846,7 @@ function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: Iss
     || (role === "issuer" ? retained.serder.pre : retained.serder.sad!.ri) !== hab.pre
     || retained.sourceSeals?.length || retained.ptds?.length || retained.essrs?.length
   ) {
+    refuseLapsedGrant(deps, grant);
     throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
   }
   const reg = deps.rgy.regs.get(credential.regid);
@@ -859,7 +885,8 @@ function* grantWires(retained: ExchangeInput): Operation<{ raw: Uint8Array; gran
  *
  * @throws ValidationError for a Grant that is not this identifier's exact
  * unanchored pending issuance, an unmanaged registry, a group identifier, or
- * an issuance already begun or completed.
+ * an issuance already begun or completed; its subclass `KramRefusedError`
+ * (reason `lifetime`, with the deadline) for a Grant past its exchange deadline.
  */
 export function* beginIssuance(
   ops: IssuanceOperations,
@@ -867,7 +894,10 @@ export function* beginIssuance(
   auths?: WitnessAuthMap,
 ): Operation<IssuanceBegun> {
   const { deps } = ops, hab = grantParties(deps.hby, grant)?.issuer;
-  if (!hab) throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
+  if (!hab) {
+    refuseLapsedGrant(deps, grant);
+    throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
+  }
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "issuer");
   const { raw, grantWire } = yield* grantWires(retained);
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant), query = dh.start(grant);
@@ -909,6 +939,8 @@ export function* proposeIssuance(
  * operation holds reads `interrupted` (or `expired` once the Grant deadline has passed); that is a
  * statement, not a write.
  *
+ * @throws KramRefusedError (reason `lifetime`, with the deadline) when the Grant's deadline has passed and the
+ * stores no longer hold what a status needs: KRAM pruned its cache row, or the escrow sweep ejected the Grant.
  * @throws ValidationError when `grant` is not a v2 Grant this runtime's identifiers are party to.
  */
 export function issuanceStatus(
@@ -919,7 +951,10 @@ export function issuanceStatus(
   const { deps } = ops, parties = grantParties(deps.hby, grant);
   const chosen = chooseParty(parties, party);
   const ended = ops.endedOf(grant, chosen), live = ops.liveOf(grant, chosen);
-  if (ended) return { state: ended.state, role: ended.role, reason: ended.reason };
+  if (ended) {
+    const { state, role, reason, deadline } = ended;
+    return { state, role, reason, ...(deadline && { deadline }) };
+  }
   if (live && !reached(deps.clock, live.expires)) {
     return {
       state: "active",
@@ -929,7 +964,10 @@ export function issuanceStatus(
       ...(live.outbox.failure && { failure: live.outbox.failure }),
     };
   }
-  if (!parties) throw new ValidationError("No issuance was begun for this Grant");
+  if (!parties) {
+    refuseLapsedGrant(deps, grant);
+    throw new ValidationError("No issuance was begun for this Grant");
+  }
   const { serder, issuer, holder } = parties, db = deps.hby.db;
   if (partyComplete(deps, grant, chosen!)) {
     const admitted = !!db.erpy.get([grant]);
@@ -942,12 +980,16 @@ export function issuanceStatus(
   // A group issuer's partial Grant has no accepted lifetime until its members' contributions authenticate it.
   const lifetime = deps.exc.exchangeDeadline(serder) ?? undefined;
   const deadline = lifetime, expires = lifetime ? timestampMicros(lifetime) : null;
-  if (!group && (!deadline || expires === null)) throw new ValidationError("No issuance was begun for this Grant");
+  if (!group && (!deadline || expires === null)) {
+    // KRAM pruned the Grant's cache row at its deadline, before the escrow sweep ejected the Grant.
+    refuseLapsedGrant(deps, grant);
+    throw new ValidationError("No issuance was begun for this Grant");
+  }
   if (reached(deps.clock, expires)) {
     const credential = deps.exc.retainedInput(grant)?.nests?.[0]?.body;
     const registry = credential instanceof SerderACDC ? credential.regid : undefined;
     const late = role === "holder" && registry && deps.rgy.store.headEvent(registry)?.ilk === "bup";
-    return { state: "expired", role, reason: late ? EXPIRED_LATE : EXPIRED };
+    return { state: "expired", role, reason: late ? EXPIRED_LATE : EXPIRED, deadline };
   }
   if (resumable(deps, hab, grant, role)) return { state: "active", role, phase: "rootRetained", deadline };
   if ((role === "holder" || group) && !heldRoot(deps, hab, grant)) {
@@ -1094,10 +1136,16 @@ export function* waitForIssuance(
  * The holder's consent to the DH exchange for one pending Grant addressed to a local identifier. Approves DH and records the
  * consent; `processOnce` then answers the issuer's query, waits for its registry update and finishes the Grant.
  * Admitting the credential is a separate consent ({@link admitIssuance}).
+ *
+ * @throws KramRefusedError (reason `lifetime`, with the deadline) for a Grant past its exchange deadline, and
+ * ValidationError for any other Grant this holder cannot consent to.
  */
 export function approveIssuanceExchange(ops: IssuanceOperations, grant: string): IssuanceBegun {
   const { deps } = ops, hab = grantParties(deps.hby, grant)?.holder;
-  if (!hab) throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
+  if (!hab) {
+    refuseLapsedGrant(deps, grant);
+    throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
+  }
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "holder");
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant);
   ops.begin({

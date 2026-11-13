@@ -77,7 +77,7 @@ export interface PendingApply {
   message: string;
   /** The disclosure the applicant asks for; empty when the Apply names none. */
   plan: DisclosurePlan;
-  /** The Apply's exchange deadline (ISO 8601), when it has one. */
+  /** The Apply's exchange deadline (ISO 8601); null when KRAM is off, so the exchange has no lifetime. */
   deadline: string | null;
   state: ApplyState;
   /** SAID of the exchange that answered it (an Offer or a Spurn); null while `pending`. */
@@ -95,7 +95,9 @@ export interface ApplyListOptions {
 /**
  * The accepted v2 Applies addressed to a local identifier (to `hab` when given) that no exchange has answered
  * (no `erpy` pointer) and whose deadline has not passed; with `includeAnswered`, the answered ones too. Mutates
- * nothing. A group member lists the Applies of its group once the group has accepted them.
+ * nothing. A group member lists the Applies of its group once the group has accepted them. The deadline is the
+ * Apply's own stamp plus the exchange window once KRAM has pruned its cache row, so an expired Apply stays
+ * omitted after the prune.
  */
 export function pendingApplies(
   deps: { readonly hby: Habery; readonly exc: Exchanger; readonly clock: RuntimeClock },
@@ -110,7 +112,7 @@ export function pendingApplies(
     if (!exc.complete(apply)) continue;
     const answer = hby.db.erpy.get([apply])?.qb64 ?? null;
     if (answer && !includeAnswered) continue;
-    const deadline = exc.exchangeDeadline(serder), expiry = deadline ? timestampMicros(deadline) : null;
+    const deadline = exc.exchangeExpiry(apply), expiry = deadline ? timestampMicros(deadline) : null;
     if (!answer && expiry !== null && now >= expiry) continue;
     const q = serder.sad?.q as { dp?: unknown } | undefined;
     found.push({
