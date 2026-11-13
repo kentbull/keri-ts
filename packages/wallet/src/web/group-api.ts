@@ -48,6 +48,7 @@ import {
   listGroupProposals,
   type MailboxStatus,
   mailboxStatus,
+  partyComplete,
   type PendingGrant,
   pendingGroupGrants,
   type PresentationOptions,
@@ -546,7 +547,7 @@ export class Proposals {
             group: item.group,
             proposer: item.proposer,
             recipient: item.recipient,
-            local: issuance.live.has(item.grant) ? "approved" : "unapproved",
+            local: issuance.liveOf(item.grant, "issuer") ? "approved" : "unapproved",
             complete: item.complete,
           });
         }
@@ -607,7 +608,7 @@ export class Proposals {
       const hab = this.#scope.group(grant.group);
       const parts = this.#scope.parts;
       return await this.#scope.go(function*(): Operation<ProposalOutcome> {
-        if (!issuance.live.has(id) && !issuance.deps.exc.complete(id)) {
+        if (!issuance.liveOf(id, "issuer") && !partyComplete(issuance.deps, id, "issuer")) {
           try {
             yield* approveGroupIssuance(issuance, id);
           } catch (error) {

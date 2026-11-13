@@ -272,7 +272,7 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       const draft = { credential, options: { recipient: holder.hab.pre!, message: "Group issuance" } };
       const { grant } = yield* proposeGroupIssuance(ops(lead), draft, { coordinator: coordinator.said! });
       assertEquals(issuanceStatus(ops(lead), grant).state, "active");
-      assertEquals(ops(lead).live.get(grant)!.group!.xid, grant, "the derived transaction id is the Grant's own");
+      assertEquals(ops(lead).liveOf(grant)!.group!.xid, grant, "the derived transaction id is the Grant's own");
       let leadHost = yield* host(lead);
       const holderHost = yield* host(holder);
 
@@ -309,7 +309,7 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
         refusedForged = (error as Error).message;
       }
       assert(refusedForged.includes("elected custodian's signature"), refusedForged);
-      assertEquals(ops(peer).live.has(grant), false, "a refused proposal records nothing");
+      assertEquals(ops(peer).liveOf(grant) !== undefined, false, "a refused proposal records nothing");
 
       yield* approveGroupIssuance(ops(peer), grant, { coordinator: coordinator.said! });
       assertEquals((issuanceStatus(ops(peer), grant) as { phase: string }).phase, "awaitingGrantSignatures");

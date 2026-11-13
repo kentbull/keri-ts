@@ -195,8 +195,8 @@ Deno.test("a delivery that throws is retried, not failed, and the loop keeps ser
       credential: reg.credential(),
       options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
     });
-    yield* until(() => (operations!.issuance.live.get(grant)?.outbox.attempts ?? 0) > 0, 1500);
-    assertEquals(operations!.issuance.live.get(grant)?.outbox.attempts, 1, "the refusal was seen and the message kept");
+    yield* until(() => (operations!.issuance.liveOf(grant)?.outbox.attempts ?? 0) > 0, 1500);
+    assertEquals(operations!.issuance.liveOf(grant)?.outbox.attempts, 1, "the refusal was seen and the message kept");
     assertEquals(issuanceStatus(operations!.issuance, grant).state, "active", "one failure does not end the issuance");
     assertEquals(operations!.health.faults, 0, "a delivery failure is not an owner fault");
 

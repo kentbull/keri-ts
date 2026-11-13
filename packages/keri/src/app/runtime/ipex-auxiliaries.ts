@@ -130,30 +130,47 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
   }
 
   claims(serder: SerderKERI): boolean {
-    return this.select(serder) !== null;
-  }
-
-  processQuery(envelope: KeriDispatchEnvelope): DispatchDecision {
-    return this.select(envelope.serder)?.processQuery(envelope) ?? { kind: "drop", reason: "missingProcessor" };
-  }
-
-  private reply(kind: Kind, args: ReplyArgs) {
-    const owner = this.claimant(kind, args.serder.pre, (args.serder.sad?.a as { x?: unknown } | undefined)?.x);
-    if (!owner) throw new ValidationError(`No resource is registered to handle route ${args.route}`);
-    return owner.processReply(args);
-  }
-
-  private select(serder: SerderKERI): Owner | null {
-    const kind = serder.route === Dhke.Route ? "dhke" : serder.route === Unblind.Route ? "unblind" : null;
-    return kind && this.claimant(kind, serder.pre, (serder.sad?.q as { x?: unknown } | undefined)?.x);
+    return this.select(serder).length > 0;
   }
 
   /**
-   * The owner of the one local identifier party to the transaction, created now if needed; absent or
-   * ambiguous means unowned. Parties come from live owners (approved operations) and from the store.
+   * Every local party to the transaction takes the query: a Habery that holds both sides of a Grant has the sender's
+   * owner (its own threshold query) and the recipient's (the query received), and each decides by its own role.
    */
-  private claimant(kind: Kind, sender: string | null, xid: unknown): Owner | null {
-    if (!sender || typeof xid !== "string") return null;
+  processQuery(envelope: KeriDispatchEnvelope): DispatchDecision {
+    const decisions = this.select(envelope.serder).map((owner) => owner.processQuery(envelope));
+    return decisions.find((decision) => decision.kind === "accept") ?? decisions[0]
+      ?? { kind: "drop", reason: "missingProcessor" };
+  }
+
+  private reply(kind: Kind, args: ReplyArgs) {
+    const owners = this.claimants(kind, args.serder.pre, (args.serder.sad?.a as { x?: unknown } | undefined)?.x);
+    if (!owners.length) throw new ValidationError(`No resource is registered to handle route ${args.route}`);
+    let accepted: ReturnType<Owner["processReply"]> | undefined, failure: unknown;
+    for (const owner of owners) {
+      try {
+        const decision = owner.processReply(args);
+        accepted ??= decision;
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    if (accepted === undefined) throw failure;
+    return accepted;
+  }
+
+  private select(serder: SerderKERI): Owner[] {
+    const kind = serder.route === Dhke.Route ? "dhke" : serder.route === Unblind.Route ? "unblind" : null;
+    return kind ? this.claimants(kind, serder.pre, (serder.sad?.q as { x?: unknown } | undefined)?.x) : [];
+  }
+
+  /**
+   * The owners of the local identifiers party to the transaction, created now if needed; none means unowned.
+   * Parties come from live owners (approved operations) and from the store. Usually one; two when this Habery
+   * holds both the sender and the recipient.
+   */
+  private claimants(kind: Kind, sender: string | null, xid: unknown): Owner[] {
+    if (!sender || typeof xid !== "string") return [];
     const owners = kind === "dhke" ? this.dhkes : this.unblinds;
     const habs = this.exc.hby.habs;
     const parties = new Set<string>();
@@ -169,19 +186,24 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
     }
     const group = habs.get(sender);
     if (group && isLocalGroupHab(this.exc.hby, group)) parties.add(sender);
-    if (parties.size !== 1) return null;
-    const [pre] = parties;
-    const hab = habs.get(pre);
-    if (!hab) {
-      this.release(pre);
-      return null;
+    // Two parties are one transaction only when the sender is itself a local group: its owner and the recipient's.
+    if (parties.size < 1 || (parties.size > 1 && !(kind === "dhke" && parties.size === 2 && parties.has(sender)))) {
+      return [];
     }
-    try {
-      return kind === "dhke" ? this.dhke(hab) : this.unblind(hab);
-    } catch (error) {
-      // A group without a local signing member cannot own the route.
-      if (error instanceof ValidationError) return null;
-      throw error;
+    const owned: Owner[] = [];
+    for (const pre of parties) {
+      const hab = habs.get(pre);
+      if (!hab) {
+        this.release(pre);
+        continue;
+      }
+      try {
+        owned.push(kind === "dhke" ? this.dhke(hab) : this.unblind(hab));
+      } catch (error) {
+        // A group without a local signing member cannot own the route.
+        if (!(error instanceof ValidationError)) throw error;
+      }
     }
+    return owned;
   }
 }

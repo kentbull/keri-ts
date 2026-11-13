@@ -172,6 +172,19 @@ it again after `timed-out` resumes. `admitAndDeliver(deps, input)` signs the Adm
 before delivery (the wallet records its consent in its inventory there) and delivers within a budget; a failed or
 expired delivery is a value, and `deliver: false` leaves the bytes to the caller.
 
+A Habery can hold both parties of one Grant (a host with two tenants: a member of the issuing group and a member of the
+receiving group, or an issuer and a holder). The issuance owner then keeps one live operation per party,
+keyed by the Grant and the party (`partyKey(grant, role)`; read them with `liveOf(grant, role?)` and `endedOf`). The
+consents name their party by the call (`beginIssuance` and `approveGroupIssuance` are the issuer's, `approveIssuanceExchange`
+and `approveGroupIssuanceExchange` the holder's), so none can pick the wrong side. The reads and waits, `issuanceStatus`,
+`waitForIssuance` and `abandonIssuance`, take an optional `IssuanceParty` (`{ role }`); without it a Habery that holds both
+answers for the issuer and says so in the status `role`, and one that holds a single party answers for it as before. A
+side of the Grant is finished (`partyComplete`) when its own exchange has retained its root, not merely when the Grant is
+accepted. An outbox message for a recipient that is an identifier of the same Habery takes the ordinary reactor path in
+process, and a local group's members that are not held there are delivered to. Presentation and group IPEX operations are
+the sender's alone, so they need no party. Unblind keeps one live operation per Grant and does not yet support a Habery
+that holds both the requester and the responder of one Grant; that is the same re-keying.
+
 ### Pacing
 
 Background loops are fixed-tock doers (`doEvery` in `app/runtime/doing.ts`): a pass, then a wait of one tock on the

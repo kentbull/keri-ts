@@ -82,7 +82,8 @@ import { timestampMicros } from "../../time/mod.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { ExchangeInput, Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
-import { isLocalGroupHab } from "../multisig/group-members.ts";
+import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../multisig/group-members.ts";
+import { remoteGroupMembers } from "../multisig/multisig-messaging.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import {
@@ -124,6 +125,19 @@ export const ISSUANCE_SWEEP_MS = 5_000;
 
 /** Which side of the exchange the local identifier is. */
 export type IssuanceRole = "issuer" | "holder";
+
+/**
+ * Which party to read or act for when one Habery holds both sides of a Grant (a host with two tenants). Absent, the
+ * Habery's only party is meant; when it holds both, a read answers for the issuer and says so in its `role`.
+ */
+export interface IssuanceParty {
+  role?: IssuanceRole;
+}
+
+/** The key of one party's operation on a Grant. */
+export function partyKey(grant: string, role: IssuanceRole): string {
+  return `${role}:${grant}`;
+}
 
 /** Terminal states that are not completion; each carries a reason. */
 export type IssuanceEndState = "abandoned" | "interrupted" | "expired" | "failed";
@@ -307,9 +321,9 @@ interface EndedIssuance {
  * {@link IssuanceOperations.live}.
  */
 export class IssuanceOperations {
-  /** Operations live in this process. Internal to this module's functions. */
+  /** Operations live in this process, by {@link partyKey}. Read them through {@link liveOf}. */
   readonly live = new Map<string, LiveIssuance>();
-  /** Operations that ended in this process with their reasons; not durable, see the module doc. */
+  /** Operations that ended in this process with their reasons, by {@link partyKey}; not durable, see the module doc. */
   readonly ended = new Map<string, EndedIssuance>();
   readonly discloser: IpexDiscloser;
   /** The DH child handlers this owner registered on the multiplexor, once a group operation began. */
@@ -325,6 +339,20 @@ export class IssuanceOperations {
     this.discloser = new IpexDiscloser(deps.hby, deps.rgy.store, deps.exc, deps.receiptor);
   }
 
+  /** The live operation of one party of `grant`; without `role`, the issuer's when this Habery holds both. */
+  liveOf(grant: string, role?: IssuanceRole): LiveIssuance | undefined {
+    return role
+      ? this.live.get(partyKey(grant, role))
+      : this.live.get(partyKey(grant, "issuer")) ?? this.live.get(partyKey(grant, "holder"));
+  }
+
+  /** The operation of one party of `grant` that ended in this process; without `role`, as {@link liveOf}. */
+  endedOf(grant: string, role?: IssuanceRole): EndedIssuance | undefined {
+    return role
+      ? this.ended.get(partyKey(grant, role))
+      : this.ended.get(partyKey(grant, "issuer")) ?? this.ended.get(partyKey(grant, "holder"));
+  }
+
   /** Whether a pass has work: a live operation, or the one-time scan for resumable Grants has not run. */
   active(): boolean {
     return this.live.size > 0 || this.stale.length > 0 || this.deps.clock.now() >= this.nextSweep;
@@ -338,18 +366,19 @@ export class IssuanceOperations {
   *processOnce(): Operation<void> {
     if (this.deps.clock.now() >= this.nextSweep) {
       this.nextSweep = this.deps.clock.now() + ISSUANCE_SWEEP_MS;
-      const known = new Set(this.stale.map(({ grant }) => grant));
+      const known = new Set(this.stale.map(({ grant, role }) => partyKey(grant, role)));
       this.stale.push(
-        ...resumableGrants(this.deps).filter(({ grant }) =>
-          !this.live.has(grant) && !known.has(grant) && !this.refused.has(grant) && !this.ended.has(grant)
-        ),
+        ...resumableGrants(this.deps).filter(({ grant, role }) => {
+          const key = partyKey(grant, role);
+          return !this.live.has(key) && !known.has(key) && !this.refused.has(key) && !this.ended.has(key);
+        }),
       );
     }
     for (const found of [...this.stale]) {
       if (yield* this.settle(found)) this.stale.splice(this.stale.indexOf(found), 1);
     }
     for (const op of [...this.live.values()]) {
-      if (op.busy || !this.live.has(op.grant)) continue;
+      if (op.busy || this.live.get(partyKey(op.grant, op.role)) !== op) continue;
       op.busy = true;
       try {
         const left = op.expires === null ? null : op.expires - BigInt(this.deps.clock.now()) * 1000n;
@@ -368,13 +397,13 @@ export class IssuanceOperations {
   /** End a live operation: release its DH approval, remember why until the process ends, tell the sink. */
   end(op: LiveIssuance, state: IssuanceEndState, reason: string): void {
     this.release(op);
-    this.ended.set(op.grant, { role: op.role, state, reason });
+    this.ended.set(partyKey(op.grant, op.role), { role: op.role, state, reason });
     this.deps.changes?.push({ kind: "issuance", id: op.grant });
   }
 
   /** Drop the live entry and the DH approval; a missing approval means the owner already closed. */
   private release(op: LiveIssuance): void {
-    this.live.delete(op.grant);
+    this.live.delete(partyKey(op.grant, op.role));
     try {
       op.dh.abandon(op.xid);
     } catch (error) {
@@ -388,7 +417,8 @@ export class IssuanceOperations {
    * dropped and reads from the stores. False means the Keeper is locked and the Grant is retried.
    */
   private *settle(found: Resumable): Operation<boolean> {
-    if (this.live.has(found.grant)) return true;
+    const key = partyKey(found.grant, found.role);
+    if (this.live.has(key)) return true;
     try {
       found.hab.mgr.requireRegistryRootAccess();
     } catch (error) {
@@ -397,17 +427,17 @@ export class IssuanceOperations {
     }
     // Another operations table over this runtime reached the Grant first (a command's own, beside the host's).
     if (this.deps.dhkes.dhke(found.hab).holds(found.grant)) {
-      this.refused.add(found.grant);
+      this.refused.add(key);
       return true;
     }
     try {
       yield* this.adopt(found);
     } catch (error) {
-      this.refused.add(found.grant);
+      this.refused.add(key);
       // A refusal means the stores no longer prove it resumable and status reads from them; anything else is
       // this Grant's failure alone and must not stop the other operations.
       if (!(error instanceof ValidationError)) {
-        this.ended.set(found.grant, { role: found.role, state: "failed", reason: message(error) });
+        this.ended.set(key, { role: found.role, state: "failed", reason: message(error) });
         this.deps.changes?.push({ kind: "issuance", id: found.grant });
       }
     }
@@ -424,8 +454,8 @@ export class IssuanceOperations {
     }
     const wires = role === "issuer" ? yield* grantWires(retained) : null;
     const dh = this.deps.dhkes.dhke(hab), xid = dh.resume(grant);
-    this.ended.delete(grant);
-    this.live.set(grant, {
+    this.ended.delete(partyKey(grant, role));
+    this.live.set(partyKey(grant, role), {
       grant,
       xid,
       role,
@@ -455,8 +485,8 @@ export class IssuanceOperations {
     const party = GroupParty.resolve(this.deps, hab, election.coordinator.said);
     const group = new GroupIssuance(party, role, retained.serder, retained.nests ?? [], { mode: "resumed" });
     const dh = this.deps.dhkes.dhke(hab), xid = dh.resume(grant, party);
-    this.ended.delete(grant);
-    this.live.set(grant, this.liveGroup(group, dh, xid, "rootRetained"));
+    this.ended.delete(partyKey(grant, role));
+    this.live.set(partyKey(grant, role), this.liveGroup(group, dh, xid, "rootRetained"));
     this.deps.changes?.push({ kind: "issuance", id: grant });
   }
 
@@ -487,6 +517,26 @@ export class IssuanceOperations {
   }
 
   /**
+   * The delivery the outboxes use. A recipient that is an identifier of this Habery takes the bytes through the
+   * ordinary reactor path, so the checks a remote delivery meets run too; for a local group its members that are
+   * not held here are still delivered to, each through the host's delivery.
+   */
+  private readonly transport: IssuanceDelivery = { deliver: (message) => this.deliverToParty(message) };
+
+  private *deliverToParty(message: DeliveryMessage): Operation<string[]> {
+    const { hby, reactor, delivery } = this.deps, recipient = hby.habs.get(message.dest);
+    if (!recipient) return yield* delivery.deliver(message);
+    yield* reactor.processBytes(message.msg);
+    const reached = [`local:${recipient.pre}`];
+    if (!isLocalGroupHab(hby, recipient)) return reached;
+    const member = localGroupMember(hby, recipient.pre!);
+    for (const dest of remoteGroupMembers(hby, member, groupSigningMembers(hby, recipient.pre!))) {
+      reached.push(...yield* delivery.deliver({ ...message, dest }));
+    }
+    return reached;
+  }
+
+  /**
    * Queue signed bytes for delivery from the identifier that signed them. Steps decide what to send; {@link drain}
    * sends it, so a member that is briefly offline delays the operation instead of ending it.
    */
@@ -501,7 +551,7 @@ export class IssuanceOperations {
    */
   private *drain(op: LiveIssuance): Operation<boolean> {
     return yield* op.outbox.drain(
-      this.deps.delivery,
+      this.transport,
       this.deps.clock,
       op.expires === null ? this.deps.retry?.boundMs ?? ISSUANCE_RETRY_BOUND_MS : undefined,
     );
@@ -543,15 +593,17 @@ export class IssuanceOperations {
       : group.role === "issuer"
       ? "awaitingGrantSignatures"
       : "exchangingKeys";
-    this.ended.delete(group.said);
-    this.live.set(group.said, this.liveGroup(group, dh, xid, phase));
+    this.ended.delete(partyKey(group.said, group.role));
+    this.live.set(partyKey(group.said, group.role), this.liveGroup(group, dh, xid, phase));
     deps.changes?.push({ kind: "issuance", id: group.said });
     return { grant: group.said, xid };
   }
 
-  /** Whether the live operation for `grant` still holds a message the transport has not taken. */
-  owes(grant: string): boolean {
-    return (this.live.get(grant)?.outbox.length ?? 0) > 0;
+  /** Whether a live operation for `grant` (or only its party `role`) still holds a message the transport has not taken. */
+  owes(grant: string, role?: IssuanceRole): boolean {
+    return role
+      ? (this.liveOf(grant, role)?.outbox.length ?? 0) > 0
+      : this.owes(grant, "issuer") || this.owes(grant, "holder");
   }
 
   /** One pass of the issuer loop, in the order of the CLI loop it replaces. */
@@ -675,7 +727,8 @@ function resumableGrants(deps: IssuanceDeps): Resumable[] {
     if (!parties) continue;
     if (parties.issuer && resumable(deps, parties.issuer, grant, "issuer")) {
       found.push({ hab: parties.issuer, grant, role: "issuer" });
-    } else if (parties.holder && resumable(deps, parties.holder, grant, "holder")) {
+    }
+    if (parties.holder && resumable(deps, parties.holder, grant, "holder")) {
       found.push({ hab: parties.holder, grant, role: "holder" });
     }
   }
@@ -729,7 +782,7 @@ function requireIndividual(deps: IssuanceDeps, hab: Hab): void {
 function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: IssuanceRole, group = false) {
   const { deps } = ops;
   if (!group) requireIndividual(deps, hab);
-  if (ops.live.has(grant) || deps.exc.complete(grant)) {
+  if (ops.live.has(partyKey(grant, role)) || partyComplete(deps, grant, role)) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const retained = deps.exc.retainedInput(grant, { pending: true });
@@ -748,6 +801,16 @@ function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: Iss
   const deadline = deps.exc.exchangeDeadline(retained.serder), expires = timestampMicros(deadline);
   if (!deadline || expires === null) throw new Error("Authenticated pending Grant has a missing or corrupt deadline");
   return { retained, credential, deadline, expires };
+}
+
+/**
+ * Whether one party's side of a Grant is finished. The accepted Grant is one fact of the Habery, but a Habery that
+ * holds both parties finishes the holder's side only when the holder's own exchange has retained its root.
+ */
+export function partyComplete(deps: IssuanceDeps, grant: string, role: IssuanceRole): boolean {
+  if (!deps.exc.complete(grant)) return false;
+  const parties = grantParties(deps.hby, grant);
+  return role === "issuer" || !parties?.issuer || !parties.holder || heldRoot(deps, parties.holder, grant);
 }
 
 /** The Grant body with its nested disclosure (the input of proof support) and the Grant as sent to the holder. */
@@ -779,8 +842,8 @@ export function* beginIssuance(
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "issuer");
   const { raw, grantWire } = yield* grantWires(retained);
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant), query = dh.start(grant);
-  ops.ended.delete(grant);
-  ops.live.set(grant, {
+  ops.ended.delete(partyKey(grant, "issuer"));
+  ops.live.set(partyKey(grant, "issuer"), {
     grant,
     xid,
     role: "issuer",
@@ -823,8 +886,11 @@ export function* proposeIssuance(
 export function issuanceStatus(
   ops: IssuanceOperations,
   grant: string,
+  party: IssuanceParty = {},
 ): IssuanceStatus {
-  const { deps } = ops, ended = ops.ended.get(grant), live = ops.live.get(grant);
+  const { deps } = ops, parties = grantParties(deps.hby, grant);
+  const chosen = chooseParty(parties, party);
+  const ended = ops.endedOf(grant, chosen), live = ops.liveOf(grant, chosen);
   if (ended) return { state: ended.state, role: ended.role, reason: ended.reason };
   if (live && !reached(deps.clock, live.expires)) {
     return {
@@ -835,16 +901,15 @@ export function issuanceStatus(
       ...(live.outbox.failure && { failure: live.outbox.failure }),
     };
   }
-  const parties = grantParties(deps.hby, grant);
   if (!parties) throw new ValidationError("No issuance was begun for this Grant");
   const { serder, issuer, holder } = parties, db = deps.hby.db;
-  if (deps.exc.complete(grant)) {
+  if (partyComplete(deps, grant, chosen!)) {
     const admitted = !!db.erpy.get([grant]);
-    if (!holder || (issuer && !admitted)) return { state: "done", role: "issuer", phase: "issued" };
+    if (chosen === "issuer") return { state: "done", role: "issuer", phase: "issued" };
     if (admitted) return { state: "done", role: "holder", phase: "admitted" };
     return { state: "active", role: "holder", phase: "awaitingAdmitConsent", needs: "admit" };
   }
-  const role: IssuanceRole = issuer ? "issuer" : "holder", hab = (issuer ?? holder)!;
+  const role: IssuanceRole = chosen!, hab = (role === "issuer" ? issuer : holder)!;
   const group = isLocalGroupHab(deps.hby, hab);
   // A group issuer's partial Grant has no accepted lifetime until its members' contributions authenticate it.
   const lifetime = deps.exc.exchangeDeadline(serder) ?? undefined;
@@ -866,6 +931,24 @@ export function issuanceStatus(
   }
   const [state, reason] = orphaned(deps, hab, grant);
   return { state, role, reason };
+}
+
+/**
+ * The party a read is for: the one asked for, else the Habery's only party, else (it holds both) the issuer. Null
+ * when the Grant has no local party.
+ *
+ * @throws ValidationError when `choice` names a party this Habery does not hold.
+ */
+function chooseParty(parties: ReturnType<typeof grantParties>, choice: IssuanceParty): IssuanceRole | undefined {
+  if (!parties) return choice.role;
+  const held: IssuanceRole[] = [
+    ...(parties.issuer ? ["issuer" as const] : []),
+    ...(parties.holder ? ["holder" as const] : []),
+  ];
+  if (choice.role && !held.includes(choice.role)) {
+    throw new ValidationError(`This Habery holds no ${choice.role} of this Grant`);
+  }
+  return choice.role ?? held[0];
 }
 
 /** A pending Grant addressed to a local identifier that no one has consented to yet. */
@@ -895,7 +978,7 @@ export function pendingIssuanceGrants(ops: IssuanceOperations, { hab }: { hab?: 
     const holder = grantParties(deps.hby, grant)?.holder;
     if (!holder || (hab && holder.pre !== hab.pre)) continue;
     try {
-      const status = issuanceStatus(ops, grant);
+      const status = issuanceStatus(ops, grant, { role: "holder" });
       if (status.state !== "active" || status.needs !== "exchange") continue;
       const { retained, credential, deadline } = selectGrant(ops, holder, grant, "holder");
       found.push({
@@ -925,7 +1008,7 @@ export function pendingGroupGrants(ops: IssuanceOperations, { group }: { group?:
     const parties = grantParties(deps.hby, grant), holder = parties?.holder;
     if (!parties || !holder || !isLocalGroupHab(deps.hby, holder) || (group && holder.pre !== group.pre)) continue;
     try {
-      const status = issuanceStatus(ops, grant);
+      const status = issuanceStatus(ops, grant, { role: "holder" });
       if (status.state !== "active" || status.needs !== "exchange") continue;
       const credential = deps.exc.retainedInput(grant, { pending: true })?.nests?.[0]?.body;
       const deadline = deps.exc.exchangeDeadline(parties.serder);
@@ -953,7 +1036,7 @@ function heldRoot(deps: IssuanceDeps, hab: Hab, grant: string): boolean {
 }
 
 /** Options for {@link waitForIssuance}. */
-export interface IssuanceWaitOptions {
+export interface IssuanceWaitOptions extends IssuanceParty {
   /** Wall-clock budget. */
   timeoutMs: number;
   clock?: RuntimeClock;
@@ -968,14 +1051,14 @@ export interface IssuanceWaitOptions {
 export function* waitForIssuance(
   ops: IssuanceOperations,
   grant: string,
-  { timeoutMs, clock = ops.deps.clock, until = (status) => status.state !== "active" }: IssuanceWaitOptions,
+  { timeoutMs, clock = ops.deps.clock, until = (status) => status.state !== "active", role }: IssuanceWaitOptions,
 ): Operation<WaitResult<IssuanceStatus>> {
   // A phase is not reached while the step that produced it still owes a delivery: the host would stop its workers first.
-  const settled = yield* observeUntil(() => until(issuanceStatus(ops, grant)) && !ops.owes(grant), {
+  const settled = yield* observeUntil(() => until(issuanceStatus(ops, grant, { role })) && !ops.owes(grant, role), {
     timeoutMs,
     clock,
   });
-  const status = issuanceStatus(ops, grant);
+  const status = issuanceStatus(ops, grant, { role });
   return settled ? { outcome: "settled", status } : { outcome: "timed-out", status, timeoutMs };
 }
 
@@ -989,8 +1072,8 @@ export function approveIssuanceExchange(ops: IssuanceOperations, grant: string):
   if (!hab) throw new ValidationError("Select the exact unanchored pending issuance Grant for this local party");
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "holder");
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant);
-  ops.ended.delete(grant);
-  ops.live.set(grant, {
+  ops.ended.delete(partyKey(grant, "holder"));
+  ops.live.set(partyKey(grant, "holder"), {
     grant,
     xid,
     role: "holder",
@@ -1091,13 +1174,18 @@ export function* rebuildIssuanceAdmit(deps: AdmitDeps, admit: string): Operation
  *
  * @throws ValidationError when no issuance was begun for `grant`.
  */
-export function abandonIssuance(ops: IssuanceOperations, grant: string, reason = "Abandoned by the user"): void {
-  const status = issuanceStatus(ops, grant);
+export function abandonIssuance(
+  ops: IssuanceOperations,
+  grant: string,
+  reason = "Abandoned by the user",
+  party: IssuanceParty = {},
+): void {
+  const status = issuanceStatus(ops, grant, party);
   if (status.state !== "active") return;
-  const live = ops.live.get(grant);
+  const live = ops.liveOf(grant, status.role);
   if (live) ops.end(live, "abandoned", reason);
   else {
-    ops.ended.set(grant, { role: status.role, state: "abandoned", reason });
+    ops.ended.set(partyKey(grant, status.role), { role: status.role, state: "abandoned", reason });
     ops.deps.changes?.push({ kind: "issuance", id: grant });
   }
 }

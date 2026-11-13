@@ -703,6 +703,8 @@ export class Dhke implements AuxiliaryQueryProcessor {
       found.add(registry);
     }
     if (found.size !== op.registries.length) throw new ValidationError("Approved registry scope is absent");
+    // The Grant is already accepted when the other party of this Habery finished first: nothing is left to accept.
+    if (this.exc.complete(op.grant)) return { kind: "accept", said: op.grant };
     for (const { nest, opening } of openings) {
       nest.attachments.push(parseAttachmentGroup(publicOpeningAttachment(opening), Vrsn_2_0, "txt").group);
     }
@@ -851,7 +853,9 @@ export class Dhke implements AuxiliaryQueryProcessor {
   private pending(op: DhkeOperation): ExchangeInput {
     this.hab.mgr.requireRegistryRootAccess();
     this.custody(op);
-    const input = this.exc.retainedInput(op.grant, { pending: true });
+    // A Habery that holds both parties may have accepted the Grant through the other party's exchange already.
+    const input = this.exc.retainedInput(op.grant, { pending: true })
+      ?? (this.exc.complete(op.grant) ? this.exc.retainedInput(op.grant) : undefined);
     if (op.abandoned || !input || !bytesEqual(input.serder.raw, op.raw)) {
       throw new ValidationError("DH operation is unavailable, terminated or expired");
     }

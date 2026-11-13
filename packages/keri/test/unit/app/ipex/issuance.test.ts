@@ -423,7 +423,7 @@ Deno.test("a wait does not settle while the operation still owes a delivery for 
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);
     const { grant } = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
-    const outbox = ops.live.get(grant)!.outbox;
+    const outbox = ops.liveOf(grant)!.outbox;
     outbox.enqueue({ src: s.issuer.habs[0].pre!, dest: s.holder.habs[0].pre!, msg: new Uint8Array([1]) });
     // Any phase satisfies the condition, yet the queued message keeps the wait open.
     const early = yield* waitForIssuance(ops, grant, { timeoutMs: 40, until: () => true });
