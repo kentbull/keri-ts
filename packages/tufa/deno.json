@@ -19,7 +19,7 @@
     "tufa": "deno run --allow-all --unstable-ffi mod.ts",
     "test": "DENO_CERT=test/verifier/localhost.pem deno test -A test",
     "test:verifier": "DENO_CERT=test/verifier/localhost.pem deno test -A test/verifier test/integration/verifier-workflow.test.ts",
-    "test:quality": "DENO_CERT=test/verifier/localhost.pem deno test -A test",
+    "test:quality": "DENO_CERT=test/verifier/localhost.pem DENO_JOBS=3 deno test -A --parallel test",
     "test:integration:server": "deno test -A test/integration/server.test.ts",
     "test:e2e:kf-boot": "DENO_CERT=test/verifier/localhost.pem deno test -A test/integration/kf-boot-e2e.test.ts",
     "test:contract": "DENO_CERT=test/verifier/localhost.pem deno test -A test/contract"

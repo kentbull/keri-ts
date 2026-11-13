@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { interop, required } from "./keri-test-suites.ts";
-import { requestedScope, selectScope } from "./pr-test-scope.ts";
+import { requestedScope, selectScope, selectUnitShards, unitShards } from "./pr-test-scope.ts";
 
 const head = "a".repeat(40);
 const block = (value: unknown) => `\`\`\`keri-ci\n${JSON.stringify(value)}\n\`\`\``;
@@ -144,4 +144,15 @@ Deno.test("PR scope selects the browser lane from an explicit flag or from the p
     selectScope({ ...input, release: true, files: ["packages/keri/src/db/core/webdber.ts"] }).browser,
     false,
   );
+});
+
+Deno.test("unit shards cover every required suite once and list only shards with selected work", () => {
+  const members = Object.values(unitShards).flat();
+  for (const suite of required) assertEquals(members.filter((member) => member === suite).length, 1, suite);
+  assertEquals(selectUnitShards([]), []);
+  assertEquals(selectUnitShards(["ci"]).map((shard) => shard.name), ["keri-app", "keri-runtime", "small"]);
+  assertEquals(selectUnitShards(["tufa", "core-fast-a"]), [
+    { name: "tufa", targets: JSON.stringify(["tufa"]) },
+    { name: "small", targets: JSON.stringify(["core-fast-a"]) },
+  ]);
 });
