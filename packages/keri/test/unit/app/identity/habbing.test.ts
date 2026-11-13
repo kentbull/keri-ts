@@ -364,6 +364,13 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
         communicationHab: proxy,
       });
       assertEquals(started.pre, delegate.pre);
+      // A communication habitat that cannot sign yet keeps the row: nothing is sent and the phase stays.
+      const canSign = proxy.canSign;
+      proxy.canSign = () => false;
+      const kept = yield* coordinator.processAllOnce();
+      assertEquals(kept.map((result) => result.kind), ["keep"]);
+      assertEquals([sent.length, hby.db.dpwe.cnt()], [0, 1]);
+      proxy.canSign = canSign;
       const initial = yield* coordinator.processAllOnce();
       assertEquals(initial[0]?.kind, "advance");
       assertEquals(

@@ -256,6 +256,8 @@ export class UnblindingOperations {
       try {
         const left = op.expires - BigInt(deps.clock.now()) * 1000n;
         if (left <= 0n) this.end(op, "expired", this.expiry(op));
+        // A habitat that cannot sign yet waits for its signer; only its Grant deadline ends the operation meanwhile.
+        else if (!op.hab.canSign()) continue;
         else if ((yield* race([this.advance(op), this.timer(Number(left) / 1000)])) === "expired") {
           this.end(op, "expired", this.expiry(op));
         }
@@ -278,6 +280,9 @@ export class UnblindingOperations {
   private adopt(): void {
     const { deps } = this;
     for (const owner of deps.unblinds.unblindOwners()) {
+      // Finding what is owed reprocesses held queries, which answers them (signs); an owner whose habitat cannot
+      // sign yet is asked on a later pass.
+      if (!owner.hab.canSign()) continue;
       for (const { xid, grant } of owner.awaitingReply()) {
         if (this.live.has(unblindingKey(grant, "responder"))) continue;
         let input, deadline, expires;

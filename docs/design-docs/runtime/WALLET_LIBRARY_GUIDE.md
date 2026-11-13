@@ -81,8 +81,11 @@ Manager is built and before the Habery exists, so before any runtime loop can si
 every opener built on `openHabery` (`createHabery` included) takes it, and `openWebWallet` forwards its own
 `heldSigners`. It is a list, not a callback, because holding needs nothing but the signers.
 
-A signer released later (`Manager.release`) does not end the runtime: the poll for that identifier waits, the wallet's
-`health()` reports `signer-unavailable`, and a later `Manager.hold` resumes it at once.
+Opening without a signer stays legal and does not end the runtime. Signer availability is state, read where it is
+needed: every background loop reads `Hab.canSign()` on its tock and skips an identifier that cannot sign, `health()`
+reports `signer-unavailable` with `Habery.unsignable()` (derived on read), and a later `Manager.hold` lets the
+identifier act on the next tock. Held signers only grow while the store is open; retiring an identifier drops its
+own (`Manager.forget`), and there is no other release.
 
 ## The wallet-level API
 

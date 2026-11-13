@@ -9,6 +9,7 @@
  */
 // Host lifecycle, direct ingress and concrete I/O boundaries.
 export {
+  type CueOutcome,
   Respondant,
 } from "../app/delivery/respondant.ts";
 export {
@@ -234,6 +235,7 @@ export {
 } from "../app/identity/habbing.ts";
 export {
   Algos,
+  type ForgottenKeys,
   Manager,
   type ManagerArgs,
   type ManagerDecryptArgs,
@@ -467,7 +469,6 @@ export {
   Signal,
   Signaler,
 } from "../app/notifications/signaling.ts";
-export { type SignerCondition, SignerConditions } from "../app/runtime/signer-conditions.ts";
 export { RawRecord } from "../core/records.ts";
 
 export {
@@ -1153,9 +1154,10 @@ export {
   waitForChallengeResponse,
 } from "../app/identity/challenging.ts";
 
-// Pre-signed hab adoption (Habery.makeSignedHab) and store-level retirement (Habery.retireHab).
-export type { RetiredHab, SignedHabArgs } from "../app/identity/habbing.ts";
-// Runtime-level retirement: retireHab plus held signers, mailbox workers, cursors and KEL publisher rows.
+// Pre-signed hab adoption (Habery.makeSignedHab), store-level retirement (Habery.retireHab) and the habitats
+// that cannot sign now (Habery.unsignable).
+export type { RetiredHab, SignedHabArgs, UnsignableHab } from "../app/identity/habbing.ts";
+// Runtime-level retirement: retireHab plus mailbox workers, cursors and KEL publisher rows.
 export {
   type RetiredIdentifier,
   retireIdentifier,

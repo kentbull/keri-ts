@@ -469,7 +469,7 @@ Deno.test("pinSchema keeps a schema document, and a group present sends the verb
   }
 });
 
-Deno.test("held signers: an open without them stays up and waits; an open with them signs and is served on the first poll", async () => {
+Deno.test("held signers: a store opens without its signer, health lists it until a later hold lets it act; an open with them is served on the first poll", async () => {
   const mailbox = "http://held-mailbox.test/";
   /** Mailbox polls only: the KEL publisher also posts the KEL to the same URL. */
   const polls: string[] = [];
@@ -507,20 +507,28 @@ Deno.test("held signers: an open without them stays up and waits; an open with t
   first.hby.db.ends.pin([pre, "mailbox", "Emailbox"], { allowed: true });
   await first.close();
 
-  // Without the option the open resolves; the first poll finds no signer and the wallet says so.
+  // Without the option the open resolves; health lists the identifier, and nothing is polled for it.
   const without = await reopen();
   try {
-    await until(() => without.health().status === "signer-unavailable");
+    assertEquals(without.health(), {
+      status: "signer-unavailable",
+      identifiers: [{ pre, missing: [signer.verfer.qb64] }],
+    });
+    await sleep(200);
     assertEquals(polls, []);
+    // A later hold lets it act: health clears on read, and the next poll is signed.
+    without.hby.mgr.hold([signer]);
+    assertEquals(without.health(), { status: "ok" });
+    await until(() => polls.length > 0);
   } finally {
     await without.close();
   }
+  polls.length = 0;
 
   // With the option the signer is held before the runtime starts: the first poll is signed and served.
   const withSigners = await reopen({ heldSigners: [signer] });
   try {
     await until(() => polls.length > 0);
-    assertEquals(withSigners.runtime.signerConditions.list(), []);
     assertEquals(withSigners.health(), { status: "ok" });
   } finally {
     await withSigners.close();
@@ -603,7 +611,6 @@ Deno.test("wallet health is ok after replacing and retiring a member", async () 
     assertEquals(w.hby.habs.has(a.pre), false);
     // Let the poller and publisher take their next tocks, then read health with no special case.
     await sleep(1_500);
-    assertEquals(w.runtime.signerConditions.list(), []);
     assertEquals(w.runtime.kelPublisher.statusOf(a.pre), []);
     assertEquals(w.health(), { status: "ok" });
   } finally {

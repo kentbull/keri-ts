@@ -732,6 +732,17 @@ export class Anchorer {
       };
     }
 
+    // The request is signed by the communication habitat; one that cannot sign yet keeps the row for a later pass.
+    if (!communicationHab.canSign()) {
+      return {
+        kind: "keep",
+        pre,
+        said,
+        phase: "waitingWitnessReceipts",
+        reason: `Communication habitat ${communicationHab.pre} cannot sign yet; its signer is not held.`,
+      };
+    }
+
     // Do not ask the delegator to approve until the delegate's own witnesses
     // have receipted the event. That preserves the KERIpy approval ordering
     // and avoids anchoring an event the delegate cannot yet complete.

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-12
-- Scope: `Manager.hold` / `Manager.release` and `Habery.makeSignedHab` in
+- Scope: `Manager.hold` and `Habery.makeSignedHab` in
   `packages/keri`
 - Related: [Manager derived-path signing](adr-0006-manager-derived-path-signing.md),
   [pluggable store contract](adr-0015-pluggable-store-contract.md),
@@ -37,7 +37,7 @@ live in the process.
 
 Add two general mechanisms. Neither knows about any product.
 
-1. `Manager.hold(signers)` and `Manager.release(pubs?)` (this change).
+1. `Manager.hold(signers)` (this change).
 2. `Habery.makeSignedHab(name, ns, { serder, sigers, hidden? })`.
 
 ### Held signers
@@ -47,9 +47,13 @@ by `signer.verfer.qb64`. The one private lookup every signature and decryption
 resolves a key through, `Manager.getSignerByPub`, consults that table before
 `pris.`. The table is never written to any Keeper table, so a held key leaves no
 row in `pris.`, `prms.`, `sits.`, `pubs.`, `gbls.` or any other, with or without
-an AEID. `release()` drops every held reference; `release(pubs)` drops those.
-After release the lookup falls through to `pris.` and fails with the unchanged
-`Missing prikey in db for pubkey=...` error.
+an AEID. A pub that is neither held nor stored fails with the unchanged
+`Missing prikey in db for pubkey=...` error (`SignerNotHeldError`).
+`Manager.hasSigner(pub)` reads whether a signer is held or stored without
+decrypting, and `Hab.canSign()` applies it to the keys `Hab.sign` would use.
+Held signers only grow while the Manager lives: there is no public release.
+Retirement (`Manager.forget`, from `Habery.retireHab`) drops the retired
+identifier's own; the rest go when the host drops the closed Habery and its Manager.
 
 Paths that resolve a private key, all through `getSignerByPub`: `Manager.sign`
 with `pubs` or `verfers`, `Manager.decrypt`, `Manager.open` (ESSR), the randy
@@ -62,7 +66,7 @@ bypasses the lookup; no Hab caller uses it.
 
 Held signers are borrowed. The host owns each `Signer` and its seed bytes,
 including zeroing them. The Manager keeps a reference and nothing else: it copies
-no seed bytes and `release` does not erase anything.
+no seed bytes, and dropping a reference erases nothing.
 
 Encoding matters. The same raw Ed25519 key is `D...` when transferable and
 `B...` when not, and the table is keyed by the qualified form. The host must hold
@@ -133,7 +137,7 @@ Unlike `makeHab`, bootstrap config replies are not applied (they need a key).
 
 Key derivation and its parameters, the marker saying a hab is keyless, any
 escrow or recovery of secrets, group membership and threshold policy, session
-lifetime and when to hold and release, and password or secret change flows. keri-ts
+lifetime and when to hold, and password or secret change flows. keri-ts
 supplies the two mechanisms and a missing-key error; it needs no product marker.
 
 ## Consequences
@@ -146,5 +150,5 @@ supplies the two mechanisms and a missing-key error; it needs no product marker.
   refusals, reopen, rotation refusal and a held member at index 3 of a
   five-member group. `test/unit/app/identity/held-signers.test.ts` covers sign by pubs and
   verfers, both encodings, decrypt and ESSR open, precedence over a stored key,
-  a byte-exact Keeper snapshot around hold and sign, release in whole and part,
+  a byte-exact Keeper snapshot around hold and sign, `hasSigner`, retirement's drop,
   reopen, and an AEID change.

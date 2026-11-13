@@ -1220,6 +1220,11 @@ export class CryptSignerSuber extends SignerSuber {
     return this.db.setVal(this.sdb, this._tokey(keys), signerToStored(stored));
   }
 
+  /** Whether a signer is stored at `keys`; reads the raw row and never decrypts it. */
+  has(keys: Keys): boolean {
+    return this.db.getVal(this.sdb, this._tokey(keys)) !== null;
+  }
+
   /**
    * Read one signer, decrypting the stored ciphertext when a decrypter exists.
    *

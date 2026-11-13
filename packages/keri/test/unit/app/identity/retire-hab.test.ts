@@ -145,7 +145,7 @@ Deno.test("retireHab deletes keeper key material", async () => {
       assertEquals(localTrace(hby, bob.pre), bobTrace);
       assertExists(bob.sign(b("still signs"), true));
       // The keeper forgets the prefix: a second forget finds nothing.
-      assertEquals(hby.mgr.forget(pre), 0);
+      assertEquals(hby.mgr.forget(pre, []), { deleted: 0, released: [] });
     } finally {
       yield* hby.close(true);
     }
@@ -164,6 +164,8 @@ Deno.test("retireHab on a keyless habitat", async () => {
       const retired = hby.retireHab(hab.pre);
 
       assertEquals(retired.keys, 0);
+      assertEquals(retired.released, [signer.verfer.qb64], "retirement drops the held signer");
+      assertEquals(hby.mgr.hasSigner(signer.verfer.qb64), false);
       assertEquals(retired.name, "held");
       assertEquals(hby.db.getHab(hab.pre), null);
       assertEquals(hby.habs.has(hab.pre), false);
@@ -175,7 +177,7 @@ Deno.test("retireHab on a keyless habitat", async () => {
       // A retry after the Keeper committed and the Baser did not finds a habitat with only `pres.` rows left.
       const keyed = single(hby, "keyed");
       const aliases = presAliases(hby, keyed.pre);
-      assert(hby.mgr.forget(keyed.pre) > 0);
+      assert(hby.mgr.forget(keyed.pre, []).deleted > 0);
       assertExists(hby.db.getHab(keyed.pre));
       assertEquals(hby.retireHab(keyed.pre).keys, 0);
       assertEquals(hby.db.getHab(keyed.pre), null);

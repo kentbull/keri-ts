@@ -200,7 +200,23 @@ export interface RetiredHab {
   domain?: string;
   /** Private keys deleted from the Keeper's `pris.`; 0 for a keyless habitat. */
   keys: number;
+  /** Current public keys whose held signers were dropped; empty for keys the Keeper stored. */
+  released: string[];
 }
+
+/** A local habitat that cannot sign now, and the current public keys whose signers are neither held nor stored. */
+export interface UnsignableHab {
+  readonly pre: string;
+  readonly missing: readonly string[];
+}
+
+/**
+ * The keys `Hab.sign` signs with: the accepted current keys, or a group's single local-member contribution with its
+ * index in the group's key list (`index` is null for an individual habitat). `none` says why there are none.
+ */
+type SigningKeys =
+  | { kind: "keys"; pubs: string[]; index: number | null }
+  | { kind: "none"; reason: string };
 
 /**
  * Fixed KERI version tuple used when emitting bootstrap counters.
@@ -464,18 +480,23 @@ export class Hab {
   }
 
   /**
-   * Whether the held or stored signing keys currently allow this habitat to sign.
-   * False for a keyless habitat (`makeSignedHab`) until the host holds its signer.
+   * Whether this habitat can sign now: every key `sign` would use has a held or stored signer
+   * (`Manager.hasSigner`). A pure read that signs nothing. False for a keyless habitat (`makeSignedHab`) until the
+   * host holds its signer, and for a habitat with no signing keys (no accepted state, or a group whose local member
+   * has no contribution). A group answers through its local member's contribution.
+   *
+   * Background loops read it before they sign and skip a habitat that cannot sign yet; a later `Manager.hold` lets
+   * the habitat act on the next tock.
    */
   canSign(): boolean {
-    try {
-      const probe = new Uint8Array(1);
-      if (this.kever?.transferable === false) this.sign(probe, false);
-      else this.sign(probe, true);
-      return true;
-    } catch {
-      return false;
-    }
+    const keys = this.signingKeys();
+    return keys.kind === "keys" && keys.pubs.every((pub) => this.mgr.hasSigner(pub));
+  }
+
+  /** The current public keys `sign` would use whose signers are neither held nor stored; empty when it can sign. */
+  missingSigners(): string[] {
+    const keys = this.signingKeys();
+    return keys.kind === "keys" ? keys.pubs.filter((pub) => !this.mgr.hasSigner(pub)) : [];
   }
 
   /** Return the live accepted-state `Kever` for this habitat when available. */
@@ -954,41 +975,38 @@ export class Hab {
   sign(ser: Uint8Array, indexed: true): Siger[];
   sign(ser: Uint8Array, indexed?: false): Cigar[];
   sign(ser: Uint8Array, indexed = false): Siger[] | Cigar[] {
-    if (!this.pre) {
-      throw new ValidationError("Signing requires a local habitat prefix.");
-    }
-    const kever = this.kever;
-    if (!kever) {
-      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
-    }
-    const pubs = kever.verfers.map((verfer) => verfer.qb64);
-    const member = this.db.getHab(this.pre)?.mid;
-    if (member) {
-      const state = this.db.getKever(member);
-      if (!state) throw new ValidationError(`Missing accepted member key state for ${member}.`);
-      // KERIpy GroupHab.sign/fetchLatestContribTo: a member may have rotated
-      // ahead of its contribution to the group's currently accepted key list.
-      const contribution = latestGroupContribution(this.db, member, kever.verfers);
-      if (contribution) {
-        const { index, verfer } = contribution;
-        if (indexed) {
-          // Endorsement proves current authority only. Rotation signatures have
-          // a separate prior-next commitment path in rotateGroupHab().
-          return this.mgr.sign(ser, {
-            pubs: [verfer.qb64],
-            indexed: true,
-            indices: [index],
-            ondices: [null],
-          });
-        }
-        return this.mgr.sign(ser, [verfer.qb64], false);
-      }
-      throw new ValidationError(`Member ${member} has no contribution to group ${this.pre}.`);
+    const keys = this.signingKeys();
+    if (keys.kind === "none") throw new ValidationError(keys.reason);
+    const { pubs, index } = keys;
+    if (index !== null && indexed) {
+      // Endorsement proves current authority only. Rotation signatures have
+      // a separate prior-next commitment path in rotateGroupHab().
+      return this.mgr.sign(ser, { pubs, indexed: true, indices: [index], ondices: [null] });
     }
     if (indexed) {
       return this.mgr.sign(ser, pubs, true);
     }
     return this.mgr.sign(ser, pubs, false);
+  }
+
+  /**
+   * Select the keys `sign` uses. A group habitat uses only its designated member's latest single-key contribution,
+   * located in its accepted KEL; any other habitat uses its accepted current keys.
+   */
+  private signingKeys(): SigningKeys {
+    if (!this.pre) return { kind: "none", reason: "Signing requires a local habitat prefix." };
+    const kever = this.kever;
+    if (!kever) return { kind: "none", reason: `Missing accepted key state for ${this.pre}.` };
+    const member = this.db.getHab(this.pre)?.mid;
+    if (!member) return { kind: "keys", pubs: kever.verfers.map((verfer) => verfer.qb64), index: null };
+    if (!this.db.getKever(member)) {
+      return { kind: "none", reason: `Missing accepted member key state for ${member}.` };
+    }
+    // KERIpy GroupHab.sign/fetchLatestContribTo: a member may have rotated
+    // ahead of its contribution to the group's currently accepted key list.
+    const contribution = latestGroupContribution(this.db, member, kever.verfers);
+    if (!contribution) return { kind: "none", reason: `Member ${member} has no contribution to group ${this.pre}.` };
+    return { kind: "keys", pubs: [contribution.verfer.qb64], index: contribution.index };
   }
 
   /**
@@ -2448,8 +2466,9 @@ export class Habery {
    * and the kept Keeper `pres.` rows make `makeHab` refuse an inception that derives the retired keys again.
    * Retirement deletes the stored keys and the ability to act as a local habitat, not the secret's
    * derivability: a rooted salty habitat's seeds stay derivable from the Keeper's root salt plus its name.
-   * No event is made and nothing is signed. Runtime state (pollers, held signers, cursors, operations) is the
-   * caller's to clean up.
+   * No event is made and nothing is signed. The held signers of the identifier's current keys are dropped
+   * (`Manager.forget`) once the rows are deleted. Runtime state (pollers, cursors, operations) is the caller's to
+   * clean up.
    *
    * Refused with a `ValidationError`, before any write, when `pre` is not a local habitat, is a group
    * habitat, is the recorded local member (`mid`) of a local group, is an accepted signing or rotation
@@ -2465,17 +2484,34 @@ export class Habery {
     const record = this.db.getHab(pre)!;
     const name = record.name!;
     const ns = record.domain ?? "";
-    const keys = this.db.transaction(() => {
+    const current = this.db.getKever(pre)?.verfers.map((verfer) => verfer.qb64) ?? [];
+    const { deleted, released } = this.db.transaction(() => {
       this.db.habs.rem(pre);
       if (this.db.getName(ns, name) === pre) this.db.names.rem([ns, name]);
-      return this.mgr.forget(pre);
+      return this.mgr.forget(pre, current);
     });
 
     this.db.prefixes.delete(pre);
     this.habs.delete(pre);
     const deferred = this.deferredReconfigure.indexOf(pre);
     if (deferred >= 0) this.deferredReconfigure.splice(deferred, 1);
-    return { pre, name, domain: record.domain, keys };
+    return { pre, name, domain: record.domain, keys: deleted, released };
+  }
+
+  /**
+   * The accepted local habitats that cannot sign now, each with the current public keys whose signers are neither
+   * held nor stored. Derived on every call from `Hab.missingSigners`; nothing records it. A store opened without a
+   * habitat's signer lists that habitat until the host calls `Manager.hold`. A habitat with no signing keys at all
+   * (a group whose local member has no contribution) is not listed: that is not a missing signer.
+   */
+  unsignable(): UnsignableHab[] {
+    const unsignable: UnsignableHab[] = [];
+    for (const hab of this.habs.values()) {
+      if (!hab.accepted) continue;
+      const missing = hab.missingSigners();
+      if (missing.length) unsignable.push({ pre: hab.pre, missing });
+    }
+    return unsignable;
   }
 
   /**

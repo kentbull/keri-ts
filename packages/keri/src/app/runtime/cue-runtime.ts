@@ -24,6 +24,8 @@ function resolveCueHab(runtime: AgentRuntime, hab?: Hab): Hab | null {
  *
  * Transfer query instructions to the sender, stream cues to mailbox correlation
  * and produced responder messages to Poster. No network delivery runs inline.
+ * A responder cue whose signing habitat cannot sign yet moves to the tail and is
+ * tried again on a later pass; the cues behind it still go now.
  * Saved key-state facts transfer once to the command's optional query Deck;
  * its noticer never competes with this worker over the runtime source Deck.
  * Admission and source removal run synchronously within this finite batch.
@@ -51,8 +53,14 @@ export function* processCuesOnce(
       runtime.querying.enqueueCue(cue, interpreter);
     } else if (cue.kin === "stream") {
       runtime.mailboxDirector.retainQueryCue(cue);
-    } else if (interpreter && runtime.respondant.enqueueCue(interpreter, runtime.cues, hab)) {
-      continue;
+    } else if (interpreter) {
+      const outcome = runtime.respondant.enqueueCue(interpreter, runtime.cues, hab);
+      if (outcome === "taken") continue;
+      if (outcome === "unsignable") {
+        // Kept for a later pass, behind the cues that can go now; `count` bounds this pass.
+        runtime.cues.append(runtime.cues.pull()!);
+        continue;
+      }
     }
     runtime.cues.pull();
     if (cue.kin === "keyStateSaved") queryCues?.append(cue);
