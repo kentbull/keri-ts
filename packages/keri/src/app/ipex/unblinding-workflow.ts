@@ -66,8 +66,11 @@ export function unblindingKey(grant: string, role: UnblindingRole): string {
   return `${role}:${grant}`;
 }
 
-/** Terminal states that are not completion; each carries a reason. */
-export type UnblindingEndState = "abandoned" | "interrupted" | "expired" | "failed";
+/**
+ * Terminal states that are not completion; each carries a reason. `unneeded` is not a failure: the presentation
+ * closed (its verifier answered it) with the opening already delivered, so the discloser's answer was not needed.
+ */
+export type UnblindingEndState = "abandoned" | "interrupted" | "expired" | "failed" | "unneeded";
 
 /** Where an active Unblind is. */
 export type UnblindingPhase = "awaitingReply" | "proving";
@@ -162,6 +165,9 @@ export interface UnblindingOptions {
 }
 
 const EXPIRED = "The presentation reached its original exchange deadline";
+const NOT_ANSWERED =
+  "No answer is begun for this presentation here; a group discloser's members begin it with answerUnblind";
+const UNNEEDED = "The presentation was already answered with its opening delivered, so this answer was not needed";
 const CHANGED = "Original presentation deadline changed";
 
 function message(error: unknown): string {
@@ -233,12 +239,14 @@ export class UnblindingOperations {
       op.busy = true;
       try {
         const left = op.expires - BigInt(deps.clock.now()) * 1000n;
-        if (left <= 0n) this.end(op, "expired", EXPIRED);
+        if (left <= 0n) this.end(op, "expired", this.expiry(op));
         else if ((yield* race([this.advance(op), this.timer(Number(left) / 1000)])) === "expired") {
-          this.end(op, "expired", EXPIRED);
+          this.end(op, "expired", this.expiry(op));
         }
       } catch (error) {
-        this.end(op, "failed", message(error));
+        // A discloser whose presentation closed before it was asked had nothing left to answer; that is not a failure.
+        if (op.role === "responder" && deps.hby.db.erpy.get([op.grant])) this.end(op, "unneeded", UNNEEDED);
+        else this.end(op, "failed", message(error));
       } finally {
         op.busy = false;
       }
@@ -293,6 +301,12 @@ export class UnblindingOperations {
         deps.changes?.push({ kind: "unblinding", id: grant });
       }
     }
+  }
+
+  /** The reason an operation reached its deadline; a query still waiting for the issuer's anchoring event says so. */
+  private expiry(op: LiveUnblinding): string {
+    const missing = op.role === "responder" ? op.owner.missingSource(op.xid) : null;
+    return missing ? `${EXPIRED}; ${missing}` : EXPIRED;
   }
 
   /** End a live operation: release the approval, remember why until the process ends, tell the sink. */
@@ -547,6 +561,14 @@ function consent(
   if (role === "responder" && !isLocalGroupHab(deps.hby, hab)) {
     throw new ValidationError("An individual discloser answers an authenticated query without consent");
   }
+  if (role === "responder" && deps.hby.db.erpy.get([grant])) {
+    // The verifier already answered the presentation, so no query will come: nothing to approve or answer.
+    const closed = selected.input.serder;
+    const xid = closed.ilk === "xip" ? closed.said! : String(closed.sad!.x);
+    ops.settled.set(unblindingKey(grant, "responder"), { role: "responder", state: "unneeded", reason: UNNEEDED });
+    deps.changes?.push({ kind: "unblinding", id: grant });
+    return { op: null, begun: { grant, xid, role } };
+  }
   const owner = deps.unblinds.unblind(hab), xid = owner.approve(grant, { states: options.states });
   const begun = { grant, xid, role };
   // A current authenticated view needs no empty auxiliary query or new proof writes.
@@ -624,9 +646,10 @@ export function answerUnblind(
 ): UnblindingBegun {
   const { deps } = ops;
   const { op, begun } = consent(ops, grant, "responder", options);
+  if (!op) return begun;
   registerUnblindRoutes(ops);
   ops.settled.delete(unblindingKey(grant, "responder"));
-  ops.live.set(unblindingKey(grant, "responder"), op!);
+  ops.live.set(unblindingKey(grant, "responder"), op);
   deps.changes?.push({ kind: "unblinding", id: grant });
   return begun;
 }
@@ -723,6 +746,13 @@ export function unblindingStatus(
     };
   }
   const input = deps.exc.retainedInput(grant), recipient = input?.serder.sad?.ri;
+  if (role === "responder" && input && input.serder.pre && deps.hby.habs.has(input.serder.pre)) {
+    // A discloser that has not begun (a group member before its answer) reads as not begun, not as an error.
+    const lifetime = deps.exc.exchangeDeadline(input.serder);
+    return lifetime && lapsed(deps.clock, lifetime)
+      ? { state: "expired", role: "responder", reason: EXPIRED }
+      : { state: "interrupted", role: "responder", reason: NOT_ANSWERED };
+  }
   if (!input || typeof recipient !== "string" || !deps.hby.habs.has(recipient)) {
     throw new ValidationError("No Unblind was begun for this Grant");
   }

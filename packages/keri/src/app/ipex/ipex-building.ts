@@ -64,7 +64,10 @@ export function ipexExnBody(
       throw new Error("IPEX reply parties do not match the prior.");
     }
     if (verb === "spurn" && prior.route === "/ipex/grant" && prior.sad!.p) {
-      throw new Error("Only an opening grant may be spurned.");
+      throw new Error(
+        "Only a flow-starting Grant (one with no prior) may be spurned; a Grant that answers an Apply or Agree has no "
+          + "rejection message, so do not Admit it and keep it as evidence.",
+      );
     }
     recipient = prior.pre!;
     xid = prior.ilk === "xip" ? prior.said! : prior.sad!.x as string;

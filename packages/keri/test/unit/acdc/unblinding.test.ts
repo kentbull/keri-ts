@@ -32,6 +32,7 @@ import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import {
   answerUnblind,
   requestUnblind,
+  unblindingStatus,
   waitForUnblinding,
 } from "../../../src/app/ipex/unblinding-workflow.ts";
 import { isLocalGroupHab, localGroupMember } from "../../../src/app/multisig/group-members.ts";
@@ -641,6 +642,11 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       () => answerUnblind(sender.runtime.operations!.unblinding, grant.said!),
       ValidationError,
       "current signing member proposer",
+    );
+    // A group discloser that has not begun reads as not begun, so a wallet can read first and then answer.
+    assertEquals(
+      unblindingStatus(sender.runtime.operations!.unblinding, grant.said!, { role: "responder" }).state,
+      "interrupted",
     );
     const parties = { unsettled: 4 };
     const peerRequest = yield* spawn(() =>

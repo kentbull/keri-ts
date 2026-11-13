@@ -15,6 +15,7 @@ import {
   MtrDex,
   parseAttachmentGroup,
   parseBytes,
+  Saider,
   Salter,
   Vrsn_2_0,
 } from "cesr-ts";
@@ -162,9 +163,13 @@ Deno.test("the disclosee consents; the discloser answers on its own and the owne
     assert(!f.sent.some((m) => text.decode(m.msg).includes(f.root.qb64)), "the root is never on the wire");
     // The finished view is stored on the Grant, so it outlives the owner and its record.
     assert(f.observer.runtime.exc.verifyAccepted(g, "/ipex/grant"));
-    // With no store, a reopened requester reads the same from the stored Grant; a responder has nothing to read.
+    // With no store, a reopened requester reads the same from the stored Grant; a responder reads as not begun.
     assertEquals(unblindingStatus(f.mk(f.observer), g), { state: "done", role: "requester" });
-    assertThrows(() => unblindingStatus(f.mk(f.presenter), g), ValidationError, "No Unblind");
+    assertEquals(
+      unblindingStatus(f.mk(f.presenter), g).state,
+      "interrupted",
+      "a discloser with nothing begun reads as not begun",
+    );
   });
 });
 
@@ -387,5 +392,49 @@ Deno.test("one Habery holding both the discloser and the disclosee of a presenta
     }
     assertEquals(unblindingStatus(ops, g, { role: "requester" }), { state: "done", role: "requester" });
     assertEquals(unblindingStatus(ops, g, { role: "responder" }), { state: "done", role: "responder" });
+  });
+});
+
+Deno.test("a discloser whose presentation closed before it was asked ends unneeded, not failed", async () => {
+  await run(function*() {
+    const f = yield* fixture();
+    const requester = f.mk(f.observer), responder = f.mk(f.presenter), g = f.grant.said!;
+    requestUnblind(requester, g, { states: STATES });
+    yield* requester.processOnce();
+    // The verifier answers the presentation before the discloser's reply goes out.
+    const admit = ipexExnBody(f.verifier.pre!, "/ipex/admit", [], { prior: f.grant, message: "Accept" });
+    f.presenter.hby.db.erpy.pin([g], new Saider({ qb64: admit.said! }));
+    yield* responder.processOnce();
+    const status = unblindingStatus(responder, g, { role: "responder" });
+    assertEquals(status.state, "unneeded");
+    assert(status.state === "unneeded" && status.reason.includes("not needed"), "it says why");
+  });
+});
+
+Deno.test("a discloser that lacks the KEL event anchoring a registry update holds the query and answers once it arrives", async () => {
+  await run(function*() {
+    const f = yield* fixture();
+    const requester = f.mk(f.observer), responder = f.mk(f.presenter), g = f.grant.said!;
+    // The anchoring events of the later registry updates have not reached the discloser's KEL yet.
+    const db = f.presenter.hby.db, pre = f.sender.pre!, lacking: [number, string][] = [];
+    for (let sn = f.sender.kever!.sn; sn > f.sender.kever!.sn - 3; sn--) lacking.push([sn, db.kels.getLast(pre, sn)!]);
+    for (const [sn, said] of lacking) db.kels.remOn(pre, sn, said);
+    requestUnblind(requester, g, { states: STATES });
+    for (let i = 0; i < 3; i++) {
+      yield* requester.processOnce();
+      yield* responder.processOnce();
+    }
+    // Not dropped as invalid, not failed: the query waits, and the issuer's KEL was asked for.
+    const owner = f.presenter.runtime.ipex!.unblind(f.sender);
+    assert(owner.missingSource(requester.liveOf(g)!.xid)?.includes("never received"), "it names the missing anchor");
+    assertEquals(unblindingStatus(requester, g, { role: "requester" }).state, "active");
+    assertEquals(unblindingStatus(responder, g, { role: "responder" }).state, "active");
+    const missing = f.presenter.runtime.cues.toArray().filter((cue) => cue.kin === "query");
+    assert(missing.length > 0, "the issuer's KEL is requested through the ordinary query cue");
+    // The events arrive; the held query is answered with no resend needed.
+    for (const [sn, said] of lacking) db.kels.addOn(pre, sn, said);
+    yield* drive(requester, responder, g);
+    assertEquals(unblindingStatus(requester, g), { state: "done", role: "requester" });
+    assertEquals(unblindingStatus(responder, g), { state: "done", role: "responder" });
   });
 });
