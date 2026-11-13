@@ -28,6 +28,7 @@ import { groupEndorseReply } from "../../../src/app/identity/endpoint-roleing.ts
 import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { credentialPresentationArtifacts, ipexCredentialGrant } from "../../../src/app/ipex/ipex-credentialing.ts";
+import { attachPresentationProof } from "../../../src/app/ipex/ipex-discloser.ts";
 import {
   approveMultisigIpex,
   prepareAcdcV2GroupIpex,
@@ -608,7 +609,7 @@ Deno.test({
             );
             presentationHead = update.said!;
             const anchor = holderGroup.kever!.serder;
-            const prepared = yield* holder.discloser.attachPresentationProof(selected, opening, {
+            const prepared = yield* attachPresentationProof(selected, opening, {
               s: NumberPrimitive.fromNum(BigInt(anchor.sn!)),
               d: new Diger({ qb64: anchor.said! }),
             });

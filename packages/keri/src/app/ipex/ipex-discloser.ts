@@ -178,6 +178,44 @@ export function* storedExchangeWire(retained: ExchangeInput, gvrsn: Versionage =
   return yield* call(() => collectPayload(framePayload(frame)));
 }
 
+/**
+ * Extend a frozen Grant's exact origin proof with its presented-state opening and the KEL seal of the registry update
+ * that commits to it; the Grant body and its SAID are unchanged. Ordinary intake still authenticates the supplied
+ * presentation evidence. Reads no store and signs nothing.
+ *
+ * @throws ValidationError when the opening does not target this exact Grant's disclosed Issuee in the `presented` state.
+ */
+export function* attachPresentationProof(
+  prepared: PreparedGrantBody,
+  opening: RegistryDisclosure,
+  source: SealSource,
+): Operation<PreparedGrantBody> {
+  const frames = parseBytes(prepared.raw), node = frames[0].body as SerderACDC;
+  if (!node.issuee || opening.td.nonce !== prepared.exn.said || opening.ts.label !== "presented") {
+    throw new ValidationError("Presentation proof must target this exact Grant and disclosed Issuee.");
+  }
+  const seal = Counter.enclose({
+    code: "SealSourceTriples",
+    qb64: concatBytes(new Prefixer({ qb64: node.issuee }).qb64b, source.s.qb64b, source.d.qb64b),
+    version: Vrsn_2_0,
+  });
+  const first = concatBytes(
+    node.raw,
+    Counter.enclose({
+      qb64: concatBytes(...frames[0].attachments.map(group => group.raw), publicOpeningAttachment(opening), seal),
+      version: Vrsn_2_0,
+    }),
+  );
+  const rest = yield* call(() =>
+    Promise.all(frames.slice(1).map(frame => collectPayload(nestedPayload(frame, Vrsn_2_0))))
+  );
+  const raw = concatBytes(Counter.makeGVC(Vrsn_2_0), first, ...rest);
+  const payloads = yield* call(() =>
+    Promise.all(parseBytes(raw).map(frame => collectPayload(nestedPayload(frame, Vrsn_2_0))))
+  );
+  return { exn: prepared.exn, raw, nests: concatBytes(...payloads) };
+}
+
 /** Exact admitted node streams; no fuller cached section replaces retained disclosure. */
 export interface HeldCredential {
   credential: SerderACDC;
@@ -567,37 +605,6 @@ export class IpexDiscloser {
     const prior = yield* this.prior(priorSaid);
     return ipexExnBody(sender, `/ipex/${verb}`, [], { message, prior, recipient });
   }
-  /** Extend the frozen Grant's exact origin proof; ordinary intake still authenticates the supplied presentation evidence. */
-  *attachPresentationProof(
-    prepared: PreparedGrantBody,
-    opening: RegistryDisclosure,
-    source: SealSource,
-  ): Operation<PreparedGrantBody> {
-    const frames = parseBytes(prepared.raw), node = frames[0].body as SerderACDC;
-    if (!node.issuee || opening.td.nonce !== prepared.exn.said || opening.ts.label !== "presented") {
-      throw new ValidationError("Presentation proof must target this exact Grant and disclosed Issuee.");
-    }
-    const seal = Counter.enclose({
-      code: "SealSourceTriples",
-      qb64: concatBytes(new Prefixer({ qb64: node.issuee }).qb64b, source.s.qb64b, source.d.qb64b),
-      version: Vrsn_2_0,
-    });
-    const first = concatBytes(
-      node.raw,
-      Counter.enclose({
-        qb64: concatBytes(...frames[0].attachments.map(group => group.raw), publicOpeningAttachment(opening), seal),
-        version: Vrsn_2_0,
-      }),
-    );
-    const rest = yield* call(() =>
-      Promise.all(frames.slice(1).map(frame => collectPayload(nestedPayload(frame, Vrsn_2_0))))
-    );
-    const raw = concatBytes(Counter.makeGVC(Vrsn_2_0), first, ...rest);
-    const payloads = yield* call(() =>
-      Promise.all(parseBytes(raw).map(frame => collectPayload(nestedPayload(frame, Vrsn_2_0))))
-    );
-    return { exn: prepared.exn, raw, nests: concatBytes(...payloads) };
-  }
   /** Select immutable admitted/transferred nests; proof refresh changes attachments only when explicitly requested. */
   protected *selected(selection: DisclosureSelection, offer = false): Operation<Uint8Array> {
     if (
@@ -767,7 +774,7 @@ export class IpexDiscloser {
       if (reg.store.seqEvent(reg.regk!, Number(BigInt(`0x${update.sad!.n}`)))?.said !== update.said) {
         throw new ValidationError("Presentation BUP remains pending authenticated acceptance.");
       }
-      ({ raw, nests } = yield* this.attachPresentationProof({ exn, raw, nests }, proof, seal));
+      ({ raw, nests } = yield* attachPresentationProof({ exn, raw, nests }, proof, seal));
     }
     const source = (exn.sad!.a as { ax?: boolean[] }).ax?.[0]
       ? yield* anchorExchange(this.hby, this.receiptor, hab, exn, options.auths)

@@ -5,10 +5,23 @@
  * auxiliary_deadline`, `test_expired_evicted_grant_cannot_acquire_a_new_lifetime`) and an expired exchange is
  * not delivered. The remaining KERIpy cases exercise the receiver's escrows (missing openings, bad openings,
  * sender thresholds, authorization scope) and live in the Exchanger tests.
+ *
+ * The group cases at the end cover a group Grant that waits for its presentation registry update: the group IPEX
+ * owner holds that wait as data and signs the member's contribution itself once it reads the update accepted.
  */
-import type { SerderACDC } from "cesr-ts";
-import { type Operation, run } from "effection";
-import { assert, assertEquals, assertNotEquals, assertThrows } from "jsr:@std/assert";
+import { parseBytes, type SerderACDC, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import { call, type Operation, run } from "effection";
+import { assert, assertEquals, assertMatch, assertNotEquals, assertThrows } from "jsr:@std/assert";
+import { RegistryAuthor } from "../../../../src/acdc/authoring.ts";
+import { type RegistryEventRef, registryEventStatus } from "../../../../src/app/credentials/registry-settling.ts";
+import type { Poster, PosterEvent, PosterOutcome } from "../../../../src/app/delivery/forwarding.ts";
+import type { Hab } from "../../../../src/app/identity/habbing.ts";
+import {
+  GroupIpexOperations,
+  type GroupIpexPrerequisite,
+  type GroupIpexStatus,
+  groupIpexStatus,
+} from "../../../../src/app/ipex/group-ipex.ts";
 import { beginIssuance, issuanceStatus, proposeIssuance } from "../../../../src/app/ipex/issuance.ts";
 import { pendingApplies } from "../../../../src/app/ipex/pending-presentations.ts";
 import {
@@ -17,13 +30,27 @@ import {
   type PresentationDeps,
   PresentationOperations,
   presentationStatus,
+  proposeGroupPresentation,
   resendPresentation,
   waitForPresentation,
 } from "../../../../src/app/ipex/presenting.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import type { KramConfig } from "../../../../src/core/mailbox/kraming.ts";
+import { interact } from "../../../../src/core/protocol-eventing.ts";
+import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { timestampMicros } from "../../../../src/time/mod.ts";
-import { deadlineOf, KRAM, pastDeadline, pump, route, scenario } from "./issuance-fixtures.ts";
+import {
+  deadlineOf,
+  KRAM,
+  type Party,
+  party,
+  pastDeadline,
+  pump,
+  route,
+  scenario,
+  TestClock,
+} from "./issuance-fixtures.ts";
 
 const text = (msg: Uint8Array) => new TextDecoder().decode(msg);
 
@@ -398,5 +425,262 @@ Deno.test("refusals: unknown presentation registry, unaccepted prior", async () 
       assert(error instanceof ValidationError && error.message.includes("must be accepted"), String(error));
     }
     assertEquals(ops.live.size, 0, "a refused consent queues nothing");
+  });
+});
+
+/**
+ * Past KRAM's timeliness reach for a group-signed message (drift plus the multi-signature window, 61 s with `KRAM`):
+ * a Grant stamped this long before its member signs is refused by that member's own KRAM.
+ */
+const PAST_TIMELINESS_MS = 120_000;
+
+/** A 2-of-2 group whose first member presents; the second member only signs group KEL events. */
+interface GroupPresenter {
+  clock: TestClock;
+  one: Party;
+  group: Hab;
+  /** The first member's group IPEX owner, composed with group registry collaborators. */
+  ops: GroupIpexOperations;
+  deps: PresentationDeps;
+  /** Every stream the first member published, in order. */
+  sent: Uint8Array[];
+  /** A credential the first member's local issuer issued to the group; `rd` declares its presentation registry. */
+  issue(rd: boolean): Operation<SerderACDC>;
+  /** The second member's signature on an event the first member proposed, taken into the first member's intake. */
+  approve(event: SerderKERI): Operation<void>;
+  /** An event both members signed, taken into the first member's intake. */
+  adopt(event: SerderKERI): Operation<void>;
+  /** Process the first member's escrows until the registry event is accepted. */
+  settle(ref: RegistryEventRef): Operation<void>;
+}
+
+/** Poster whose sends all succeed at once and are recorded; the group's own steps, not delivery, are under test. */
+function recordingPoster(sent: Uint8Array[]): Poster {
+  const done = (evt: PosterEvent): PosterOutcome => ({ kin: "sent", evt, deliveries: [] });
+  return {
+    send: (evt: PosterEvent & { msg: Uint8Array }) => (sent.push(evt.msg), { ...evt, kin: "msg" }),
+    sendStream: (evt: PosterEvent & { msgs: Uint8Array[] }) => (sent.push(...evt.msgs), { ...evt, kin: "stream" }),
+    wait: (evt: PosterEvent): Operation<PosterOutcome> => call(() => Promise.resolve(done(evt))),
+  } as unknown as Poster;
+}
+
+/**
+ * Two members of a 2-of-2 group on KRAM, driven by one test clock. The group's presentation registry is incepted and
+ * sealed by both members; a single-signature issuer in the first member's Habery issues credentials to the group with
+ * public openings, so the first member can select them without DH.
+ */
+function* groupPresenter(): Operation<GroupPresenter> {
+  const clock = new TestClock();
+  const one = yield* party(clock, "MemberOne", ["one", "issuer"], undefined, false);
+  const two = yield* party(clock, "MemberTwo", ["two"], undefined, false);
+  for (const [from, to] of [[one, two], [two, one]] as const) {
+    for (const wire of from.hby.db.clonePreIter(from.habs[0].pre!, 0)) {
+      yield* dispatchEnvelope(envelopeFromFrame(parseBytes(wire)[0]), to.hby.rvy, to.hby.kevery);
+    }
+  }
+  const signing = [one.habs[0].pre!, two.habs[0].pre!];
+  const [first, second] = [one, two].map((member) =>
+    member.hby.makeGroupHab("group", member.habs[0], signing, signing, undefined, { isith: "2", nsith: "2" })
+  );
+  const inception =
+    parseBytes(messagize(first.serder, { sigers: [...first.sigers, ...second.sigers], gvrsn: Vrsn_2_0 }))[0];
+  for (const member of [one, two]) {
+    yield* dispatchEnvelope(envelopeFromFrame(inception, true), member.hby.rvy, member.hby.kevery);
+  }
+  const group = first.hab, peer = second.hab;
+  const signedByBoth = (event: SerderKERI) =>
+    messagize(event, { sigers: [...group.sign(event.raw, true), ...peer.sign(event.raw, true)], gvrsn: Vrsn_2_0 });
+
+  // The group's presentation registry, its inception sealed by both members.
+  const presentation = one.rgy.makeRegistry("presented", group.pre!);
+  const rip = presentation.store.event(presentation.regk!)!;
+  const state = group.kever!;
+  const seal = interact(group.pre!, state.said, state.sn + 1, [{ i: rip.said!, s: rip.sad!.n, d: rip.said! }], {
+    version: Vrsn_2_0,
+  });
+  for (const member of [one, two]) yield* member.runtime.reactor.processBytes(signedByBoth(seal), { local: true });
+  yield* one.runtime.reactor.processBytes(rip.raw);
+  yield* one.runtime.protocol.processEscrowsOnce();
+  assert(one.rgy.store.seqEvent(presentation.regk!, 0), "the group's presentation registry is accepted");
+
+  const issuer = one.habs[1], author = new RegistryAuthor(one.rgy, one.receiptor);
+  yield* author.incept("issued", issuer.pre!);
+  const issued = author.registry("issued", issuer.pre!);
+  const credentials = new Map<string, SerderACDC>();
+  const sent: Uint8Array[] = [], postman = recordingPoster(sent);
+  const ops = new GroupIpexOperations({
+    hby: one.hby,
+    rgy: one.rgy,
+    exc: one.runtime.exc,
+    protocol: one.runtime.protocol,
+    postman,
+    clock,
+    registry: {
+      hby: one.hby,
+      protocol: one.runtime.protocol,
+      postman,
+      counselor: { start: () => true },
+      registryStore: one.rgy.store,
+    },
+  });
+  const deps: PresentationDeps = {
+    hby: one.hby,
+    rgy: one.rgy,
+    exc: one.runtime.exc,
+    receiptor: one.receiptor,
+    reactor: one.runtime.reactor,
+    protocol: one.runtime.protocol,
+    delivery: {
+      *deliver() {
+        throw new Error("a group Grant is delivered by the elected lead, not through this delivery");
+      },
+    },
+    clock,
+    views: {
+      issued: (said) => credentials.get(said)!,
+      issuedRegistry: () => issued.regk!,
+      held: () => Promise.reject(new ValidationError("no held credential")),
+    },
+  };
+  return {
+    clock,
+    one,
+    group,
+    ops,
+    deps,
+    sent,
+    *issue(rd) {
+      const credential = author.create(issued, {
+        issuee: group.pre!,
+        attribute: { name: crypto.randomUUID(), ...(rd ? { rd: presentation.regk! } : {}) },
+      });
+      yield* author.update(issued, credential, "issued", { public: true });
+      credentials.set(credential.said!, credential);
+      return credential;
+    },
+    *approve(event) {
+      yield* one.runtime.reactor.processBytes(
+        messagize(event, { sigers: peer.sign(event.raw, true), gvrsn: Vrsn_2_0 }),
+      );
+    },
+    *adopt(event) {
+      yield* one.runtime.reactor.processBytes(signedByBoth(event), { local: true });
+    },
+    *settle(ref) {
+      const read = { db: one.hby.db, store: one.rgy.store };
+      for (let i = 0; i < 5 && registryEventStatus(read, ref).state !== "accepted"; i++) {
+        yield* one.runtime.protocol.processEscrowsOnce();
+      }
+      assertEquals(registryEventStatus(read, ref).state, "accepted", "the group accepted the registry update");
+    },
+  };
+}
+
+/** What the first member's consent to a Grant with a presentation proof left waiting, and the anchor it proposed. */
+interface ProposedWithProof {
+  said: string;
+  awaited: GroupIpexPrerequisite;
+  /** The group KEL event that seals the registry update, signed so far by the first member only. */
+  anchor: SerderKERI;
+}
+
+/** The first member proposes a Grant whose presented-state proof needs a group registry update. */
+function* proposeWithProof(g: GroupPresenter): Operation<ProposedWithProof> {
+  const credential = yield* g.issue(true);
+  const { said } = yield* proposeGroupPresentation(g.deps, g.ops, {
+    hab: g.group,
+    selection: { said: credential.said! },
+    options: {
+      recipient: g.one.habs[1].pre!,
+      message: "grant",
+      plan: [[(credential.schema as { $id: string }).$id, "/", []]],
+      presentationRegistry: "presented",
+    },
+  });
+  const awaited = g.ops.live.get(said)!.prerequisite!;
+  const anchor = g.one.hby.db.getEvtSerder(awaited.anchor.anchor.pre, awaited.anchor.anchor.said)!;
+  return { said, awaited, anchor };
+}
+
+Deno.test("a group presentation Grant is signed on the tock after its registry update is accepted", async () => {
+  await run(function*() {
+    const g = yield* groupPresenter();
+    const { said, awaited, anchor } = yield* proposeWithProof(g);
+    const waiting: GroupIpexStatus = { state: "active", phase: "awaitingRegistryUpdate" };
+    assertEquals(groupIpexStatus(g.ops, said), waiting);
+    const proposed = g.sent.length;
+    yield* g.ops.processOnce();
+    assertEquals(groupIpexStatus(g.ops, said), waiting, "the second member has not signed the anchor");
+    assertEquals(g.sent.length, proposed, "nothing is signed or published while the update is pending");
+    yield* g.approve(anchor);
+    yield* g.settle(awaited.anchor);
+    yield* g.ops.processOnce();
+    assertEquals(groupIpexStatus(g.ops, said), { state: "active", phase: "awaitingMembers" });
+    assertEquals(g.ops.live.get(said)!.prerequisite, null, "the awaited update is consumed");
+    const published = g.sent.slice(proposed).map((msg) => new TextDecoder().decode(msg));
+    assert(published.some((msg) => msg.includes(said)), "this member's contribution to the Grant was published");
+    assert(
+      published.some((msg) => msg.includes(said) && msg.includes(anchor.said!)),
+      "the contribution carries the proof sealed by the accepted anchor",
+    );
+  });
+});
+
+Deno.test("a superseded registry update ends the Grant operation failed, naming the superseding event", async () => {
+  await run(function*() {
+    const g = yield* groupPresenter();
+    const { said, awaited } = yield* proposeWithProof(g);
+    const { pre, sn } = awaited.anchor.anchor;
+    // Both members sign a different event at the anchor's sequence number, so the proposed anchor can never be accepted.
+    const rival = interact(pre, g.group.kever!.said, sn, [], { version: Vrsn_2_0 });
+    yield* g.adopt(rival);
+    assertEquals(g.one.hby.db.kels.getLast(pre, sn), rival.said, "the rival event took the anchor's place");
+    const proposed = g.sent.length;
+    yield* g.ops.processOnce();
+    assertEquals(groupIpexStatus(g.ops, said), {
+      state: "failed",
+      reason: `The registry update was superseded by ${rival.said}`,
+    });
+    assertEquals(g.ops.live.size, 0, "a failed operation stops waiting");
+    assertEquals(g.sent.length, proposed, "nothing was signed for the Grant");
+  });
+});
+
+Deno.test("a Grant past its window when the update is accepted ends expired", async () => {
+  await run(function*() {
+    const g = yield* groupPresenter();
+    const { said, awaited, anchor } = yield* proposeWithProof(g);
+    g.clock.skew += PAST_TIMELINESS_MS;
+    yield* g.approve(anchor);
+    yield* g.settle(awaited.anchor);
+    const proposed = g.sent.length;
+    yield* g.ops.processOnce();
+    const status = groupIpexStatus(g.ops, said);
+    assertEquals(status.state, "expired");
+    assertMatch((status as { reason: string }).reason, /^KRAM refused message \S+: timeliness/);
+    assertEquals(g.ops.live.size, 0, "an expired operation stops retrying");
+    assertEquals(g.sent.length, proposed, "a refused contribution is never published");
+  });
+});
+
+Deno.test("a Grant without a presentation registry begins publishing at once", async () => {
+  await run(function*() {
+    const g = yield* groupPresenter();
+    const credential = yield* g.issue(false);
+    const proposed = g.sent.length;
+    const { said } = yield* proposeGroupPresentation(g.deps, g.ops, {
+      hab: g.group,
+      selection: { said: credential.said! },
+      options: {
+        recipient: g.one.habs[1].pre!,
+        message: "grant",
+        plan: [[(credential.schema as { $id: string }).$id, "/", []]],
+      },
+    });
+    assertEquals(groupIpexStatus(g.ops, said), { state: "active", phase: "publishing" });
+    assertEquals(g.ops.live.get(said)!.prerequisite, null, "no registry update is awaited");
+    assertEquals(g.sent.length, proposed, "no registry update was proposed");
+    yield* g.ops.processOnce();
+    assertEquals(groupIpexStatus(g.ops, said), { state: "active", phase: "awaitingMembers" });
   });
 });
