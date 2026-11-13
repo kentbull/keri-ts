@@ -423,7 +423,31 @@ Deno.test("a wrapper for a member the receiver does not hold, or from a non-memb
   });
 });
 
-Deno.test("a rotation's proposed new member can answer it before it is a signing member of the group", async () => {
+Deno.test("a rotation's proposed new member can answer it once a current member proposed that rotation", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const carol = s.right.makeHab("carol");
+      yield* call(() => learn(s.left, carol));
+      const smids = [...s.mids, carol.pre];
+      const rot = s.right.rotateGroupHab("group", smids, smids, GROUP);
+      const event = messagize(rot.serder, { sigers: rot.sigers });
+      const group = rot.serder.pre!;
+      const proposal = signGroupMessage(
+        s.bob,
+        s.alice.pre,
+        yield* multisigRotateExn(group, s.bob, smids, smids, event),
+      );
+      yield* receive(s, proposal.message);
+      const answer = signGroupMessage(carol, s.alice.pre, yield* multisigRotateExn(group, carol, smids, smids, event));
+      yield* receive(s, answer.message);
+      assertExists(s.left.db.exns.get([answer.exnSaid]), "the proposed member's wrapper is stored");
+      // The rotation is one listed proposal, the member's; the answer is stored evidence for the same event.
+      assertEquals(listGroupProposals(readDeps(s)).map((proposal) => proposal.said), [proposal.exnSaid]);
+    }, "2");
+  });
+});
+
+Deno.test("a stranger that names itself in a rotation wrapper no current member proposed is neither stored nor listed", async () => {
   await run(function*() {
     yield* scenario(function*(s) {
       const carol = s.right.makeHab("carol");
@@ -436,11 +460,8 @@ Deno.test("a rotation's proposed new member can answer it before it is a signing
         yield* multisigRotateExn(rot.serder.pre!, carol, smids, smids, messagize(rot.serder, { sigers: rot.sigers })),
       );
       yield* receive(s, wrapper.message);
-      assertEquals(
-        listGroupProposals(readDeps(s)).map((proposal) => proposal.said),
-        [wrapper.exnSaid],
-        "the proposed member's wrapper is stored and listed",
-      );
+      assertEquals(s.left.db.exns.get([wrapper.exnSaid]), null, "a wrapper that certifies itself is not stored");
+      assertEquals(listGroupProposals(readDeps(s)), []);
     }, "2");
   });
 });
