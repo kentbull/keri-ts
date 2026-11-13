@@ -29,6 +29,7 @@ import {
   admitAndDeliver,
   type AgentRuntime,
   type GroupIpexBegun,
+  groupIpexMessages,
   type GroupIpexOperations,
   type Hab,
   isLocalGroupHab,
@@ -39,7 +40,6 @@ import {
   type PresentationDeps,
   type PresentationInput,
   PresentationOperations,
-  groupIpexMessages,
   proposeGroupIpex,
   proposeGroupPresentation,
   Receiptor,
@@ -90,7 +90,8 @@ function* acdcV2GroupDisclosure(
     // The proposal is published whatever the approval wait: a command that exits with nothing sent has proposed nothing.
     yield* waitForGroupIpex(ops, said, {
       timeoutMs: PROPOSAL_PUBLISH_BUDGET_MS,
-      until: (status) => status.state !== "active" || (status.phase !== "publishing" && status.phase !== "awaitingRegistryUpdate"),
+      until: (status) =>
+        status.state !== "active" || (status.phase !== "publishing" && status.phase !== "awaitingRegistryUpdate"),
     });
     return yield* waitForGroupIpex(ops, said, { timeoutMs: timeout * 1000 });
   });

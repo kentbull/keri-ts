@@ -3,7 +3,8 @@
  *
  * Join approves exactly one stored proposal, the first the user consents to:
  * - an explicit `--said` names the proposal, otherwise the unapproved proposals
- *   the notice store announces are offered in notice order;
+ *   the notice store announces are offered in notice order; `--kind` restricts the
+ *   offer (and a `--said`) to one proposal kind, so a join never signs another kind;
  * - without `--auto` every offered proposal is shown and approved only on a yes;
  * - with `--auto` the first offered proposal is approved without a prompt. This is
  *   the whole of auto consent: it exists only inside the `join` the user ran for
@@ -49,6 +50,8 @@ export interface JoinOptions extends JoinPrompts {
   group?: string;
   /** Wrapper SAID of the one proposal to approve. */
   said?: string;
+  /** Approve only a proposal of this kind (`bup`, `ixn`, ...); other pending proposals are left alone. */
+  kind?: string;
   /** Epoch milliseconds after which an empty search gives up. */
   deadline: number;
 }
@@ -65,17 +68,20 @@ function joinedGroup(hby: Habery, group: string | undefined): string | undefined
 }
 
 /** Candidates for one pass, oldest first. */
-function candidates(deps: JoinDeps, { said, group }: JoinOptions): GroupProposal[] {
+function candidates(deps: JoinDeps, { said, group, kind }: JoinOptions): GroupProposal[] {
   const wanted = joinedGroup(deps.hby, group);
   if (said !== undefined) {
     const proposal = findGroupProposal(deps, said);
+    if (proposal && kind !== undefined && proposal.kind !== kind) {
+      throw new ValidationError(`Multisig exchange ${said} is a ${proposal.kind} proposal, not ${kind}.`);
+    }
     if (proposal && wanted !== undefined && proposal.group !== wanted) {
       throw new ValidationError(`Multisig exchange ${said} belongs to group ${proposal.group}, not ${wanted}.`);
     }
     return proposal ? [proposal] : [];
   }
   return listGroupProposals(deps, wanted === undefined ? {} : { group: wanted })
-    .filter(proposal => proposal.local === "unapproved");
+    .filter(proposal => proposal.local === "unapproved" && (kind === undefined || proposal.kind === kind));
 }
 
 /**
