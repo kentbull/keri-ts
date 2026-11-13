@@ -3076,12 +3076,18 @@ function authenticatesMailboxQuery(envelope: QueryEnvelope, recipient: Kever, db
   if (!requester) return false;
   if (requester === recipient.pre) return satisfiesThreshold(envelope, recipient);
   // A group's poll is signed by one of its local members (the poller cannot sign for the group alone). Accept
-  // a member whose own key state this host holds when its signature meets its own threshold and its signing
-  // key is in the group's current key list: the group's KEL names it as one of the keys that act for the group.
+  // a member whose own key state this host holds when its signature meets its own current threshold and its KEL
+  // shows it controlled one of the group's current keys. The member may have rotated its own identifier ahead
+  // of the group, so its current keys need not be in the group's list; a key from any of its establishment
+  // events is.
   const member = db.getKever(requester, { refresh: true });
   if (!member?.transferable || !satisfiesThreshold(envelope, member)) return false;
   const groupKeys = new Set(recipient.verfers.map((verfer) => verfer.qb64));
-  return member.verfers.some((verfer) => groupKeys.has(verfer.qb64));
+  for (const [, said] of db.getKelItemIter(member.pre)) {
+    const event = db.getEvtSerder(member.pre, said);
+    if (event?.estive && event.keys.some((key) => groupKeys.has(key))) return true;
+  }
+  return false;
 }
 
 /** The indexed signatures on `envelope` that verify against `kever`'s current keys meet its signing threshold. */
