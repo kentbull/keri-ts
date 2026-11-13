@@ -1,5 +1,5 @@
 /** Witness HTTP semantic policies for receipts, log queries and endorsed key state; adapters format decisions. */
-import { Ilks, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import { Ilks, type SerderKERI } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { receipt as receiptEvent, reply as replyEvent } from "../../core/protocol-eventing.ts";
 import { dgKey } from "../../db/core/keys.ts";
@@ -260,10 +260,10 @@ export function witnessKeyStateGet(
     body: serviceHab.endorse(
       replyEvent(`/ksn/${serviceHab.pre}`, kever.state().asDict(), {
         pre: serviceHab.pre,
-        pvrsn: Vrsn_2_0,
-        gvrsn: Vrsn_2_0,
+        pvrsn: serviceHab.kelVersion,
+        gvrsn: serviceHab.kelVersion,
       }),
-      { gvrsn: Vrsn_2_0 },
+      { gvrsn: serviceHab.kelVersion },
     ),
   };
 }

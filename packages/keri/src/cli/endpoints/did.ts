@@ -2,9 +2,10 @@
  * DID-related CLI operations shared by the Tufa command dispatcher.
  */
 import { type Operation } from "effection";
+import { beginOobi, waitForOobi } from "../../app/bootstrap/oobi-resolving.ts";
 import type { Habery } from "../../app/identity/habbing.ts";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
-import { type AgentRuntime, runAgentRuntimeUntil, runtimeOobiConverged } from "../../app/runtime/agent-runtime.ts";
+import type { AgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import {
@@ -18,6 +19,7 @@ import {
 } from "../../did/index.ts";
 import { withAgentRuntime } from "../common/context.ts";
 import { parseBooleanOption, parseStringListOption, parseStringOption, requireNonEmpty } from "../common/parsing.ts";
+import { withRuntimeWorkers } from "../common/runtime-workers.ts";
 
 interface DidBaseArgs {
   name?: string;
@@ -189,13 +191,17 @@ export function* dkrResolveCommand(args: Record<string, unknown>): Operation<voi
     function*({ hby, runtime }) {
       const rgy = runtime.vdr;
       if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
-      for (const oobi of commandArgs.oobis) runtime.oobiery.resolve(oobi);
+      for (const oobi of commandArgs.oobis) beginOobi({ oobiery: runtime.oobiery }, oobi);
       if (commandArgs.oobis.length > 0) {
-        yield* runAgentRuntimeUntil(
-          runtime,
-          () => commandArgs.oobis.every((url) => runtimeOobiConverged(runtime, url)),
-          { timeoutMs: 30_000, pollMailbox: false },
-        );
+        // Each wait observes its own URL's record; the jobs progress together under one set of workers.
+        yield* withRuntimeWorkers(runtime, { pollMailbox: false }, function*() {
+          for (const url of commandArgs.oobis) {
+            const result = yield* waitForOobi({ db: hby.db }, url, { timeoutMs: 30_000 });
+            if (result.outcome === "timed-out") {
+              throw new Error(`OOBI ${url} did not resolve within ${result.timeoutMs}ms.`);
+            }
+          }
+        });
       }
       const result = resolveDidKeri(hby, rgy, did);
       console.log(JSON.stringify(commandArgs.meta ? result.resolution : result.document, null, 2));

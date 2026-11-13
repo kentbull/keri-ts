@@ -14,23 +14,28 @@
 import type { Operation } from "npm:effection@^3.6.0";
 import type { AgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { parseBooleanOption, parseStringListOption, parseStringOption } from "../common/parsing.ts";
+import {
+  parseBooleanOption,
+  parseNumberOption,
+  parseStringListOption,
+  parseStringOption,
+} from "../common/parsing.ts";
 
 import {
   approveDelegation,
+  DELEGATION_APPROVAL_TIMEOUT_MS,
   type DelegationApprovalDeps,
-  delegationApprovalStatus,
-  listPendingDelegations,
   type PendingDelegation,
   proposeGroupDelegationApproval,
   requestDelegatedEvent,
   settleDelegationApproval,
+  waitForDelegationAnchor,
   waitForDelegationApproval,
+  waitForPendingDelegation,
 } from "../../app/identity/delegation-approval.ts";
 import { isLocalGroupHab, localGroupMember } from "../../app/identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { MULTISIG_IXN_ROUTE } from "../../app/multisig/grouping.ts";
-import { observeUntil } from "../../app/runtime/workflow-contract.ts";
 import type { WitnessAuthMap } from "../../app/witness/receipting.ts";
 import { withHabAndAgentRuntime } from "../common/context.ts";
 import { withRuntimeWorkers } from "../common/runtime-workers.ts";
@@ -48,11 +53,15 @@ interface DelegateConfirmArgs {
   authenticate?: boolean;
   code?: string[];
   codeTime?: string;
+  /** Seconds to wait for a delegation request and for the group's anchor; default 30. */
+  timeoutSeconds?: number;
 }
 
-/** Observe until `done`, or fail with the text the CLI has always printed. */
-function* waitForDelegation(done: () => boolean, timeoutMs: number): Operation<void> {
-  if (!(yield* observeUntil(done, { timeoutMs }))) throw new Error(`Runtime did not converge within ${timeoutMs}ms.`);
+/** Wall-clock budget for the request and anchor waits; `--timeout` seconds, else the library default. */
+function waitBudgetMs(confirmArgs: DelegateConfirmArgs): number {
+  return confirmArgs.timeoutSeconds === undefined
+    ? DELEGATION_APPROVAL_TIMEOUT_MS
+    : confirmArgs.timeoutSeconds * 1000;
 }
 
 /**
@@ -70,18 +79,15 @@ function* performDelegationApproval(
   confirmArgs: DelegateConfirmArgs,
 ): Operation<void> {
   const interactionApproval = confirmArgs.interact ?? false;
+  const timeoutMs = waitBudgetMs(confirmArgs);
 
-  yield* waitForDelegation(
-    () => listPendingDelegations(hby, { delegator: hab.pre }).length > 0,
-    15_000,
-  );
-
-  const pending = listPendingDelegations(hby, { delegator: hab.pre });
-  if (pending.length === 0) {
+  const waited = yield* waitForPendingDelegation(hby, { delegator: hab.pre }, { timeoutMs });
+  if (waited.outcome === "timed-out") {
     throw new ValidationError(
-      `No delegated events are awaiting approval for ${hab.pre}.`,
+      `No delegated events are awaiting approval for ${hab.pre} after ${timeoutMs}ms.`,
     );
   }
+  const pending = waited.status;
   if (pending.length > 1 && !confirmArgs.auto) {
     throw new ValidationError(
       `Multiple delegated events are awaiting approval for ${hab.pre}. Re-run with --auto to approve them in order.`,
@@ -161,6 +167,7 @@ function* approveGroupDelegation(
     clock: runtime.clock,
     querying: runtime.querying,
   };
+  const timeoutMs = waitBudgetMs(confirmArgs);
   const sent = yield* proposeGroupDelegationApproval(
     { hby, protocol: runtime.protocol, postman: runtime.postman, counselor: runtime.counselor },
     request,
@@ -179,10 +186,13 @@ function* approveGroupDelegation(
     return;
   }
 
-  yield* waitForDelegation(() => {
-    const status = delegationApprovalStatus(hby, request);
-    return status.state === "approved" || (status.state === "anchored" && status.receipted);
-  }, 30_000);
+  const anchored = yield* waitForDelegationAnchor({ db: hby.db }, request, { timeoutMs });
+  if (anchored.outcome === "timed-out") {
+    throw new ValidationError(
+      `The anchor for delegated ${request.ilk} ${request.said} was not accepted and receipted by ${hab.pre} within ${timeoutMs}ms. `
+        + "The other members must approve the proposal first.",
+    );
+  }
   requestDelegatedEvent(deps, request, localGroupMember(hby, hab.pre).pre);
   const result = yield* waitForDelegationApproval(
     { db: hby.db, settle: () => settleDelegationApproval(deps, request) },
@@ -212,7 +222,11 @@ export function* delegateConfirmCommand(
     authenticate: parseBooleanOption(args.authenticate, "authenticate"),
     code: parseStringListOption(args.code, "code"),
     codeTime: parseStringOption(args.codeTime, "codeTime"),
+    timeoutSeconds: parseNumberOption(args.timeout, "timeout"),
   };
+  if (confirmArgs.timeoutSeconds !== undefined && !(confirmArgs.timeoutSeconds >= 0)) {
+    throw new ValidationError("timeout must not be negative");
+  }
 
   if (!confirmArgs.name) {
     throw new ValidationError("Name is required and cannot be empty");
