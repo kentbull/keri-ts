@@ -932,6 +932,22 @@ export {
   waitForIssuance,
 } from "../app/ipex/issuance.ts";
 
+export {
+  ADMIT_DELIVERY_TIMEOUT_MS,
+  admitAndDeliver,
+  type AdmitAndDeliverInput,
+  type AdmitAndDeliverOutcome,
+  type AdmitDeliveryOutcome,
+  type AdmittedIssuance,
+  type EndedIssuance,
+  type EndedIssuanceStatus,
+  type OnAdmitted,
+  receiveIssuance,
+  type ReceiveIssuanceInput,
+  type ReceiveIssuanceOutcome,
+  type TimedOutIssuance,
+} from "../app/ipex/receive-issuance.ts";
+
 // Runtime-owned single-signature IPEX presentation operations (present, process, status, wait, abandon).
 export {
   abandonPresentation,

@@ -128,7 +128,7 @@ OOBIs first) before it creates the group habitat; otherwise it rejects and nothi
 can be tried again (`proposeGroupInception`, so the CLI behaves the same). A group issuance is recorded in the wallet
 inventory when it completes, for the custodian and for a member that consented through `proposals.approve`, through
 the same `ChangeSink` reaction as a single-signature issuance. A member may not hold the registry root copy yet; its
-recorder then stays registered and tries again on the next issuance change (the custodian's `issued` result carries
+recorder then stays registered and tries again on the next issuance change or when the root copy is retained (the custodian's `issued` result carries
 `recorded`).
 
 ## The workflow contract
@@ -256,9 +256,9 @@ How the poller schedules, backs off and classifies its polls is being rewritten 
 - A failed Admit delivery is reported as `undelivered`; `resendAdmit` repeats it, and an issuer
   that already took the first Admit may drop the repeat as a KRAM replay.
 - A group member that consented to an issuance records the credential only once it can read the exact derivation
-  opening, which needs the registry root copy. The copy arrives after issuance by the replicator and raises no
-  change, so the recording happens on a later issuance change, or never if none comes. The custodian records at
-  completion. **Not exercised end to end.**
+  opening, which needs the registry root copy. The copy arrives after issuance from the replicator; when the
+  runtime retains it, `RegistryRoot` publishes a `root` change (the registry is the id), and the wallet's sink gives
+  every tracked recorder another try. The custodian records at completion. **Not exercised end to end.**
 - A group inception that cannot reach a co-member is refused before anything is created. A proposal that is
   created and then fails to send (the network, after the route check) leaves the group habitat in place; the wallet
   offers no re-send.
