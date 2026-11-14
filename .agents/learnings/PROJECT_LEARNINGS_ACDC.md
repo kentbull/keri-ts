@@ -105,6 +105,8 @@ reverifies the union by unique index against that historical roster; accepted an
 anchorless/partial evidence retains only verified contributions. Exact accepted
 duplicates can add valid late receipts without reapplying state. Ordinary sweeps
 retry partial backer evidence and remove completed family indexes after commit.
+A TEL event first entering anchorless escrow carries a `logs` query (`fn` one past the issuer's
+accepted sn, `s` the anchor sn) in its decision; Tevery publishes it after commit, once.
 [ADR-0014](../../docs/adr/adr-0014-legacy-tel-backer-retirement.md) rejects
 autonomous legacy TEL signing/hosting and backed-registry application authoring.
 Keep externally received backed TEL verification, canonical proof tables, historical
