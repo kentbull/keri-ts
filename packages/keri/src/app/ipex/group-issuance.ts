@@ -95,7 +95,7 @@ import {
 import { remoteGroupMembers } from "../multisig/multisig-messaging.ts";
 import { proposeRegistryEvent, type RegistryProposeDeps } from "../multisig/proposing.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
-import { exchangeWire, type IssuanceGrantOptions } from "./ipex-discloser.ts";
+import { exchangeWire, type IssuanceGrantOptions, type ProofSupportMark } from "./ipex-discloser.ts";
 import { acceptedRegistryEvidence, isIssuanceOrigin } from "./ipex-node-authentication.ts";
 import {
   type GrantDraft,
@@ -731,6 +731,8 @@ export class GroupIssuance {
   /** Proposal wrapper this member still owes the other members. */
   proposal?: Uint8Array;
   nodeBytes?: Uint8Array;
+  /** What the Grant send's proof support carried; absent when this operation did not send it (rebuilt after a restart). */
+  supportMark?: ProofSupportMark;
   readonly mode: GroupIssuanceMode;
   readonly anchor?: CounselInputs;
 
@@ -982,7 +984,9 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
     const input = deps.exc.retainedInput(grant, { pending: true })!;
     const frame = parseBytes(messagize(input.serder, { tsgs: input.tsgs, cigars: input.cigars, gvrsn: Vrsn_2_0 }))[0];
     frame.nests = [...input.nests ?? []];
-    const full = concatBytes(ops.discloser.proofSupport(g.nodeBytes, hab), yield* wire(frame));
+    const support = ops.discloser.proofSupport(g.nodeBytes, hab);
+    g.supportMark = ops.discloser.proofSupportMark(g.nodeBytes, hab);
+    const full = concatBytes(support, yield* wire(frame));
     for (const peer of party.others()) yield* send(peer, full);
     if (issuer) {
       yield* send(g.grant.sad!.ri as string, full, "credential");
@@ -1066,7 +1070,11 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
   yield* dh.finish(xid);
   if (!deps.exc.complete(grant)) throw new ValidationError("Issued group Grant remains unaccepted");
   const completed = parseBytes(yield* storedBytes(deps.exc, grant))[0];
-  const support = ops.discloser.proofSupport(g.nodeBytes!, hab);
+  // The Grant send already carried the support; proving added the anchoring event and the registry update. An
+  // operation without a mark did not send it, so it sends in full.
+  const support = g.supportMark
+    ? ops.discloser.proofSupportSince(g.nodeBytes!, hab, g.supportMark)
+    : ops.discloser.proofSupport(g.nodeBytes!, hab);
   // KERIpy form: the elected member shares the proof with the other members by mailbox.
   const wrapped = yield* party.wrap(completed, MULTISIG_IPEX_PROOF_ROUTE);
   // Kept locally, so the proof the members received is the one {@link groupIssuanceProof} exports.
