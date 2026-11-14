@@ -54,7 +54,7 @@ export function protocolFixture(
     exc,
     tevery ?? null,
     verifier ?? null,
-    registry ? new RegistryObserver(hby.db, registry.store) : null,
+    registry ? new RegistryObserver(hby.db, registry.store, output) : null,
     output,
     cues,
     new QueryReplies(cues),

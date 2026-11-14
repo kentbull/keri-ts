@@ -418,7 +418,7 @@ export function* createAgentRuntime(
   const kramer = options.kram ? new Kramer(hby.db, { config: options.kram, cues: protocolCues, now }) : undefined;
   const kvy = new Kevery(hby.db, { cues: protocolCues, rvy: revery, messagePolicy: options.messagePolicy, kramer });
   const exc = new Exchanger(hby, { cues: protocolCues, now });
-  const registry = acdc ? new RegistryObserver(hby.db, acdc.store) : null;
+  const registry = acdc ? new RegistryObserver(hby.db, acdc.store, protocolCues) : null;
   // Every runtime with a v2 registry store owns the per-identifier DH and Unblind owners: one dispatch path.
   const ipex = registry
     ? yield* resource<IpexAuxiliaries>(function*(provide) {

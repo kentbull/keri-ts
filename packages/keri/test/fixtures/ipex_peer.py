@@ -506,8 +506,23 @@ class IpexPeer:
         self.operation = None
         return dict(accepted=True)
 
+    def send_registry_anchor_cues(self):
+        """Send the signed `logs` query KERIpy's Regery cues when a registry event first lacks its anchor."""
+        cues = getattr(self.rgy, "cues", None)  # upstream main's Regery has no cues
+        while cues:
+            from keri.cli.common.anchorquerying import logsQuery
+            cue = cues.popleft()
+            assert cue["kin"] == "anchor"
+            self.send_anchor_query(cue["dest"], logsQuery(self.hab, cue))
+
+    def send_anchor_query(self, dest, wire):
+        """Send one anchor query to its issuer like the other auxiliary messages; a mailbox or relay peer overrides it."""
+        assert dest == self.remote["pre"]
+        self.post(wire)
+
     def send_auxiliary_cues(self):
         """Transport only real owner cues after explicit approval; never issue, present or Admit automatically."""
+        self.send_registry_anchor_cues()
         if not self.derived:
             return
         owner = self.kvy.qvy

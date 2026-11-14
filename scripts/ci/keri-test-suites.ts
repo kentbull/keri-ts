@@ -122,6 +122,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/acdc/query-resend.test.ts",
       "test/unit/acdc/registry-author.test.ts",
       "test/unit/acdc/registry-custody.test.ts",
+      "test/unit/acdc/registry-missing-anchor-query.test.ts",
       "test/unit/acdc/registry-root-replication.test.ts",
       "test/unit/acdc/unblinding.test.ts",
       "test/unit/app/protocol/message-admission.test.ts",

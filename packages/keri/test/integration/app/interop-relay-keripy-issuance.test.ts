@@ -688,3 +688,22 @@ Deno.test("relay group issues to KERIpy candidate and revokes", async () => {
 Deno.test("KERIpy candidate revokes a credential held by relay single-sig", async () => {
   await withKeriPyPeer((py) => run(() => keriPyRevokesHeld(py)));
 });
+
+Deno.test({
+  name:
+    "a KERIpy holder that lacks the issuer's anchoring events asks keri-ts with a logs query and ends holding the credential",
+  // EXPECTED FAILURE: the harness cannot yet make the holder lack the anchoring events. The edge builds the Grant's
+  // proof support in process (presenting.ts `discloser.kel` and `proofSupport`) and hands it to the agent inside a
+  // signed `/fwd` wrapper, so the test has no seam that leaves the issuer's KEL events out of the support. It needs
+  // an edge-side hook for the support, or an HTTP client that rewrites the wrapper's stream (and, if the wrapper's
+  // signature covers the stream, re-signs it). The pieces that exist: the interop peer drains `rgy.cues` and sends
+  // the `logs` query (ipex_peer.py `send_registry_anchor_cues`, by StreamPoster in relay mode), and keri-ts answers
+  // a `logs` query from KERIpy (interop-witness-kli-tufa.test.ts). The keri-ts side of the ask is covered by
+  // test/unit/vdr/eventing.test.ts "an anchorless TEL event from an unknown issuer asks once...".
+  ignore: true,
+  async fn() {
+    await withKeriPyPeer(() =>
+      Promise.reject(new Error("no seam leaves the anchoring events out of the Grant support"))
+    );
+  },
+});
