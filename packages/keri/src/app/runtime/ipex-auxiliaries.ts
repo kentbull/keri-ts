@@ -107,7 +107,14 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
   unblind(hab: Hab): Unblind {
     const current = this.unblinds.get(hab.pre!);
     if (current?.hab === hab) return current;
-    const owner = new Unblind({ hab, exc: this.exc, registry: this.registry, rvy: this.rvy, kram: this.kram });
+    const owner = new Unblind({
+      hab,
+      exc: this.exc,
+      registry: this.registry,
+      rvy: this.rvy,
+      now: this.now,
+      kram: this.kram,
+    });
     current?.close();
     this.unblinds.set(hab.pre!, owner);
     return owner;

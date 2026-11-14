@@ -57,10 +57,12 @@ import { call, type Operation } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { RegistryCustody } from "../../acdc/custody.ts";
 import { Dhke, grantTransactionId } from "../../acdc/dhking.ts";
+import { ThresholdQueryResend } from "../../acdc/query-resend.ts";
 import { vet } from "../../acdc/regeventing.ts";
 import { RegistryRoot } from "../../acdc/salting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
+import { multiKeyQueryWindow } from "../../core/mailbox/kram-policy.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
 import { timestampMicros } from "../../time/mod.ts";
@@ -721,8 +723,8 @@ export class GroupIssuance {
   started = false;
   /** Exact DH message this member contributes to, once frozen. */
   frozen?: Uint8Array;
-  query?: Uint8Array;
-  nextQuery = 0;
+  /** The frozen threshold query and its resend schedule; a group cannot re-date it (`Dhke.requery` refuses groups). */
+  readonly resend = new ThresholdQueryResend();
   nextProofScan = 0;
   /** The custodian's registry update, once proposed. */
   registryUpdate?: RegistryEventRef;
@@ -1025,12 +1027,18 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
       g.frozen = child.body.raw;
       yield* deps.protocol.dispatch(child, { local: true });
       yield* broadcast(yield* party.wrap(child, MULTISIG_RPY_ROUTE));
-    } else if (message.kin === "query") g.query = message.msg;
+    } else if (message.kin === "query") g.resend.set(message.msg);
     else yield* send(message.dest, message.msg, "credential");
   }
-  if (g.query && deps.clock.now() >= g.nextQuery && !dh.complete(xid)) {
-    yield* send(g.grant.sad!.ri as string, g.query, "credential");
-    g.nextQuery = deps.clock.now() + (deps.queryResendMs ?? ISSUANCE_QUERY_RESEND_MS);
+  // The unchanged query is resent with backoff while the holder can still accept it; the operation keeps waiting
+  // for the holder past that, to its own deadline.
+  const now = deps.clock.now(), base = deps.queryResendMs ?? ISSUANCE_QUERY_RESEND_MS;
+  if (
+    g.resend.ready(now) && g.resend.fresh(now, multiKeyQueryWindow(deps.hby.db, Dhke.Route))
+    && !dh.complete(xid)
+  ) {
+    yield* send(g.grant.sad!.ri as string, g.resend.query!, "credential");
+    g.resend.sent(now, base);
   }
   if (!lead || !dh.complete(xid)) return false;
   const { rgy, receiptor, derived, hby } = deps, registry = op.registry;

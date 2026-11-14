@@ -1192,3 +1192,97 @@ for (const keys of [1, 2]) {
     });
   });
 }
+
+// KERIpy resends identical bytes every second, and a group cannot re-date its threshold query. The first copy is
+// authenticated and answered; an identical copy is a duplicate that is neither verified nor derived again, and the
+// reply it asks for is re-sent at most once per base resend interval. A re-dated query is still a new query.
+Deno.test("identical copies of an accepted DH query are duplicates: not verified again, one bounded reply, re-dated queries still process", async () => {
+  await run(function*() {
+    let skew = 0;
+    const hbys = [];
+    for (const bran of ["IssuerPasscodeSecretAB", "IssueePasscodeSecretAB"]) {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, bran });
+      yield* ensure(() => hby.close(true));
+      hbys.push(hby);
+    }
+    const [issuerHby, issueeHby] = hbys;
+    const issuer = issuerHby.makeHab("issuer");
+    const issuee = issueeHby.makeHab("issuee");
+    const parties = [];
+    for (const [hby, hab] of [[issuerHby, issuer], [issueeHby, issuee]] as const) {
+      const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
+      yield* ensure(() => baser.close(true));
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), {
+        now: () => Date.now() + skew,
+        setTimeout,
+        clearTimeout: timer => clearTimeout(timer as number),
+      }, {
+        acdc: new Regery(hby, baser),
+        kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+      });
+      yield* ensure(() => runtime.close());
+      parties.push({ hby, hab, runtime, dh: runtime.ipex!.dhke(hab) });
+    }
+    const [left, right] = parties;
+    for (const wire of issuerHby.db.clonePreIter(issuer.pre, 0)) yield* right.runtime.reactor.processBytes(wire);
+    for (const wire of issueeHby.db.clonePreIter(issuee.pre, 0)) yield* left.runtime.reactor.processBytes(wire);
+    const stamp = makeNowIso8601(new Date(Date.now() + skew));
+    const rip = regcept(issuer.pre, { stamp });
+    yield* right.runtime.reactor.processBytes(issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] }));
+    for (const party of parties) yield* party.runtime.reactor.processBytes(rip.raw);
+    const credential = acdcmap(issuer.pre, { regid: rip.said!, attribute: { d: "", i: issuee.pre, name: "Ada" } });
+    const grant = ipexExnBody(issuer.pre, "/ipex/grant", [credential], {
+      recipient: issuee.pre,
+      message: "Derived registry root",
+      date: stamp,
+    });
+    const wire = yield* call(() =>
+      collectPayload(framePayload({
+        body: grant,
+        gvrsn: Vrsn_2_0,
+        attachments: parseBytes(issuer.endorse(grant, { pipelined: false }))[0].attachments,
+        nests: [{ body: credential, gvrsn: Vrsn_2_0, attachments: [] }],
+      }))
+    );
+    for (const party of parties) yield* party.runtime.reactor.processBytes(wire);
+    skew += 50;
+    left.dh.approve(grant.said!);
+    right.dh.approve(grant.said!);
+    const query = left.dh.start(grant.said!);
+    const copy = () => envelopeFromFrame(parseBytes(query)[0]);
+
+    // The first copy is answered once.
+    assertEquals(right.dh.processQuery(copy()), { kind: "accept" });
+    assertEquals(right.dh.outgoing.length, 1);
+    const answer = right.dh.outgoing.pull()!;
+    assertEquals(answer.kin, "reply");
+
+    // Nine more identical copies in the same interval are duplicates: accepted, silent.
+    for (let i = 0; i < 9; i++) assertEquals(right.dh.processQuery(copy()), { kind: "accept" });
+    assertEquals(right.dh.outgoing.length, 0, "identical copies queue nothing inside the base interval");
+
+    // The same body under other signatures is not the accepted wire: it is verified and refused, never trusted on
+    // its SAID.
+    const forged = envelopeFromFrame(
+      parseBytes(messagize(copy().serder, {
+        sigers: issuer.sign(new Uint8Array([1, 2, 3]), true),
+        gvrsn: Vrsn_2_0,
+      }))[0],
+    );
+    assertEquals(right.dh.processQuery(forged), { kind: "drop", reason: "missingAuthentication" });
+
+    // After the base interval an identical copy re-sends the reply once, so a peer that lost it recovers.
+    skew += 1000;
+    assertEquals(right.dh.processQuery(copy()), { kind: "accept" });
+    assertEquals(right.dh.outgoing.length, 1);
+    assertEquals(right.dh.outgoing.pull()!.msg, answer.msg, "the stored reply, unchanged");
+    for (let i = 0; i < 9; i++) right.dh.processQuery(copy());
+    assertEquals(right.dh.outgoing.length, 0, "and at most once per interval");
+
+    // A re-dated query is a different wire and is processed and answered as before.
+    yield* sleep(2);
+    const redated = envelopeFromFrame(parseBytes(left.dh.requery(grant.said!))[0]);
+    assertEquals(right.dh.processQuery(redated), { kind: "accept" });
+    assertEquals(right.dh.outgoing.length, 1, "a new query is answered again");
+  });
+});

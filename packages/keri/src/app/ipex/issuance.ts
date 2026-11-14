@@ -79,6 +79,7 @@ import { call, type Operation, race } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
 import { Dhke, grantTransactionId, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
+import { QUERY_RESEND_MS } from "../../acdc/query-resend.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { KramRefusedError, ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
@@ -117,12 +118,13 @@ import { IpexAdmitter } from "./ipex-admitting.ts";
 import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions, storedExchangeWire } from "./ipex-discloser.ts";
 
 /**
- * Milliseconds between resends of the issuer query. Each resend is a new query (new date, SAID and signatures):
- * the peer's KRAM caches every query it accepts, so an identical resend is a replay it drops, which would
- * strand a peer that took the first query and then lost it before consenting (a process that ended, or a
- * retained query that outlived its window).
+ * Milliseconds between the first resends of the issuer query, which the holder may have lost before consenting (a
+ * process that ended, or a retained query that outlived its window). A single-signer issuer re-dates every resend
+ * (new date, SAID and signatures): the peer's KRAM caches every query it accepts, so an identical resend would be
+ * a replay it drops. A group cannot re-date (re-signing needs the members), so it resends the same bytes, doubling
+ * this interval up to a cap and stopping once the query is older than the multi-key acceptance window.
  */
-export const ISSUANCE_QUERY_RESEND_MS = 1000;
+export const ISSUANCE_QUERY_RESEND_MS = QUERY_RESEND_MS;
 
 /**
  * Milliseconds between scans of the pending exchange escrow for Grants a restarted process can finish and group

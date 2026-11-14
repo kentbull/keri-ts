@@ -28,9 +28,10 @@
  */
 import { bytesEqual, type CesrFrame, collectPayload, framePayload, parseBytes, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, race } from "npm:effection@^3.6.0";
+import { QUERY_RESEND_MS, ThresholdQueryResend } from "../../acdc/query-resend.ts";
 import { Unblind } from "../../acdc/unblinding.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { singleKeyQueryWindow } from "../../core/mailbox/kram-policy.ts";
+import { multiKeyQueryWindow, singleKeyQueryWindow } from "../../core/mailbox/kram-policy.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import type { Exchanger, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
@@ -47,8 +48,13 @@ import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { IssuanceDelivery } from "./issuance.ts";
 
-/** Milliseconds between resends of the unchanged disclosee query, as `tufa ipex unblind` does. */
-export const UNBLIND_QUERY_RESEND_MS = 1000;
+/**
+ * Milliseconds between the first resends of the disclosee query, as `tufa ipex unblind` does. A single-signer
+ * requester sends the signed bytes unchanged while they are timely and re-dates them once older than the
+ * single-key window. A group requester cannot re-date (re-signing needs the members), so it resends the same
+ * bytes, doubling this interval up to a cap and stopping once the query is older than the multi-key window.
+ */
+export const UNBLIND_QUERY_RESEND_MS = QUERY_RESEND_MS;
 
 /** Which side of the presentation the local identifier is. */
 export type UnblindingRole = "requester" | "responder";
@@ -146,6 +152,8 @@ class GroupUnblind {
   contributed = false;
   finished = false;
   started = false;
+  /** The frozen threshold query a requester resends unchanged, with its backoff schedule. */
+  readonly resend = new ThresholdQueryResend();
   constructor(readonly member: Hab, readonly proposer: string) {}
 }
 
@@ -449,7 +457,7 @@ export class UnblindingOperations {
       const message = owner.outgoing.pull()!;
       if (message.kin === "sign") {
         if (!g.contributed) yield* broadcast(message.msg);
-      } else if (message.kin === "query") op.query = message.msg;
+      } else if (message.kin === "query") g.resend.set(message.msg);
       else if (!g.finished) {
         yield* owner.finish(xid); // Validate exact evidence; no issuer-state admission policy here.
         g.finished = true;
@@ -466,10 +474,12 @@ export class UnblindingOperations {
       if (!g.finished) yield* owner.finish(xid);
       return this.finishedStep(op);
     }
-    // A threshold query cannot be re-dated by one member: it is resent unchanged.
-    if (op.query && deps.clock.now() >= op.nextQuery) {
-      yield* send(op.peer, op.query);
-      op.nextQuery = deps.clock.now() + UNBLIND_QUERY_RESEND_MS;
+    // A threshold query cannot be re-dated by one member: it is resent unchanged, with backoff, while the
+    // discloser can still accept it. The operation keeps waiting past that, to its own deadline.
+    const now = deps.clock.now();
+    if (g.resend.ready(now) && g.resend.fresh(now, multiKeyQueryWindow(deps.hby.db, Unblind.Route))) {
+      yield* send(op.peer, g.resend.query!);
+      g.resend.sent(now, UNBLIND_QUERY_RESEND_MS);
     }
     return "stepped";
   }
