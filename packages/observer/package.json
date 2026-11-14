@@ -1,13 +1,13 @@
 {
   "name": "@keri-ts/observer",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "description": "Configured-source ACDC evidence observation and cache-only queries",
   "license": "Apache-2.0",
   "dependencies": {
     "cesr-ts": "2.2.1",
-    "keri-ts": "2.2.5",
-    "@keri-ts/hosting": "2.2.5",
-    "@keri-ts/registrar": "2.2.3"
+    "keri-ts": "2.2.6",
+    "@keri-ts/hosting": "2.2.6",
+    "@keri-ts/registrar": "2.2.4"
   },
   "repository": {
     "type": "git",
