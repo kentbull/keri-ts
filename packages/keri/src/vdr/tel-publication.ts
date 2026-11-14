@@ -68,8 +68,20 @@ export class TelPublication {
     this.advance();
   }
 
-  /** Move accepted anchors forward; empty witness/publication cohorts need no I/O. */
+  /**
+   * Move accepted anchors forward; empty witness/publication cohorts need no I/O. Reads decide whether
+   * anything can move, so a pass over nothing opens no writer; the writer then recomputes under its lock.
+   */
   advance(): void {
+    const movable = [...this.reger.tmse.getTopItemIter()].some(([keys, seal]) => {
+      const target = this.target(keys, seal);
+      return !!target && target.said === keys[2];
+    });
+    if (
+      !movable
+      && !this.pendingReceipts().some((target) => target.witnesses.length === 0)
+      && !this.pendingPublications().some((target) => target.witnesses.length === 0)
+    ) return;
     this.reger.transaction(() => {
       for (const [keys, seal] of [...this.reger.tmse.getTopItemIter()]) {
         const target = this.target(keys, seal);

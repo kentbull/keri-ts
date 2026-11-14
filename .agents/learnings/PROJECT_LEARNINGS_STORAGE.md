@@ -15,6 +15,10 @@ Dupsort `scanKeys` yields each key once, unlike entry `scan`; use `seekVal` to s
 within one key's duplicates. Native table-name spellings stay inside `hasTable`.
 Domain code commits through `transaction`, waits through `flushed` and compares
 `writeVersion`; a rebound `Table` handle, not `env`, detects that a store reopened.
+An LMDB write transaction takes the writer lock even when it writes nothing, so work-finding is a
+read: a loop or pass reads first and opens `transaction` only for what it will write, re-checking
+inside. `putVal`, `delVal` and `putVals` answer a no-op from a read. `writeActivity` counts the write
+transactions a handle opened, so a test over the store seam proves an idle runtime opens none.
 `StoreIdentity` names a store on every backend; paths and map size are `LmdbLocation`.
 `PathManager` follows hio `Filer` for persistent stores, so compare against the pinned hio, not KERIpy alone: each open retries the primary head, and `headDirPath` never changes on fallback. Config files are `keri/cf/{base}/{name}.json`. Temp stores deliberately keep one directory per name so tests can reopen them; KERIpy never sees them.
 Domain stores become `StoreOwner`s over an injected `DBer`; a `StoreOpener` places each `StoreFamily`, and `lmdbDefaultsFor` reproduces the established LMDB paths exactly. Domain stores compose this way; the `lmdb*` factories build each default. `openHabery` takes an opener or borrowed `stores`, which it never closes; `createHabery` is its LMDB default. `keri-ts/db` and `keri-ts/runtime` must not reach the addon; LMDB lives behind `keri-ts/db/lmdb`, and the boundary check walks value imports only.

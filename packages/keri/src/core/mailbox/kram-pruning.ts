@@ -112,7 +112,9 @@ export class KramPruner {
           continue;
         }
         const keys = this.keys(physical, this.phase + 2), table = this.phase ? this.db.tmsc : this.db.msgc;
-        const partial = this.db.transaction(() => {
+        // Most rows are not expired: a plain read says so, and only an expired one opens a writer, which re-checks.
+        const seen = table.get(keys);
+        const partial = !seen || !this.expired(seen, when) ? null : this.db.transaction(() => {
           const record = table.get(keys);
           if (!record || !this.expired(record, when)) return null;
           table.rem(keys);

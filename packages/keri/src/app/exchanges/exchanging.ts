@@ -1637,6 +1637,9 @@ export class Exchanger {
   /** Decide expiry and remove pending rows in the same native transaction. */
   private *expirePending(serder: SerderKERI): Operation<EscrowEjection | undefined> {
     const said = serder.said!;
+    // A pending or absent exchange changes nothing, so a plain read ends the pass without a writer.
+    const seen = this.escrowStatus(said).kind;
+    if (seen === "absent" || seen === "pending") return undefined;
     const result = this.hby.db.transaction(() => {
       const status = this.escrowStatus(said);
       if (status.kind === "accepted") {

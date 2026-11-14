@@ -172,7 +172,9 @@ export abstract class BaseDBer {
   abstract get writeVersion(): number;
   /**
    * Increases when this handle writes, and reads no store: a loop can ask whether to scan at all. It does not
-   * see another process's commits, so a loop that must see those also scans on a slow cadence.
+   * see another process's commits, so a loop that must see those also scans on a slow cadence. LMDB counts each
+   * write transaction it opens, one that writes nothing included, so callers read first and a test can prove
+   * an idle owner opens none; an in-memory backend counts commits that wrote rows.
    */
   abstract get writeActivity(): number;
   /** Complete when every earlier commit is durable, or fail with the recorded persistence failure. */

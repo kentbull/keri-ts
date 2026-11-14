@@ -384,6 +384,8 @@ export class Keeper extends StoreOwner {
     if (this.store.inWriteTransaction) {
       throw new DatabaseOperationError("Keeper encryption change must own its write transaction");
     }
+    // Already under the requested AEID: nothing to migrate, so no writer.
+    if (currentAeid === aeid && this.getGbls("aeid") === aeid) return;
     this.store.transaction(() => {
       const storedAeid = this.getGbls("aeid");
       if ((storedAeid ?? "") !== currentAeid) {

@@ -288,16 +288,32 @@ export class Kevery {
     if (this.db.inWriteTransaction) {
       throw new Error("Kevery must own the KEL transaction; process events outside caller-owned writers");
     }
+    // An escrow that is still waiting on the same dependency needs no writer: decide it by reads first. The
+    // delegation families repair hints while rehydrating, so they keep their writer. A decision that does lead to
+    // a write is reused inside the writer when no commit, from any process, came between.
+    let planned: { envelope: KeverEventEnvelope; decision: KeverDecision; version: number } | undefined;
+    if (escrow && escrow.kind !== "partialDels" && escrow.kind !== "delegables") {
+      const version = this.db.writeVersion;
+      const envelope = (input as () => KeverEventEnvelope | null)();
+      if (envelope) {
+        const decision = this.decideEvent(envelope);
+        if (decision.kind === "escrow" && decision.reason === escrow.kind && !decision.sourceSealRepairs?.length) {
+          return decision;
+        }
+        planned = { envelope, decision, version };
+      }
+    }
     let metadata: EventMetadata | undefined;
 
     const write = () => {
+      const reuse = planned && planned.version === this.db.writeVersion ? planned : undefined;
       // Replay hydration may repair an existing delegation source hint; it belongs to this writer too.
-      const envelope = typeof input === "function" ? input() : input;
+      const envelope = reuse ? reuse.envelope : typeof input === "function" ? input() : input;
       if (!envelope) {
         if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
         return null;
       }
-      const decision = this.decideEvent(envelope);
+      const decision = reuse ? reuse.decision : this.decideEvent(envelope);
       // A still-pending replay keeps its existing row and emits no additional cues.
       if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) {
         this.writeSourceSealRepairs(decision);
