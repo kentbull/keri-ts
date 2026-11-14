@@ -123,7 +123,24 @@ else
   log "using npm exec node-gyp"
 fi
 
+apply_source_patch() {
+  # Apply one lmdb-js source patch idempotently: rebuilds reuse the same tree.
+  # GIT_CEILING_DIRECTORIES keeps git from finding the enclosing checkout, so
+  # `git apply` patches these ignored files as plain paths.
+  local dir="$1" patch="$2" ceiling
+  ceiling="$(dirname "${dir}")"
+  if GIT_CEILING_DIRECTORIES="${ceiling}" git -C "${dir}" apply --reverse --check "${patch}" 2>/dev/null; then
+    log "$(basename "${patch}") already applied in ${dir}"
+  elif GIT_CEILING_DIRECTORIES="${ceiling}" git -C "${dir}" apply "${patch}"; then
+    log "applied $(basename "${patch}") in ${dir}"
+  else
+    fail "$(basename "${patch}") does not apply to ${dir}; recheck it against this lmdb version"
+  fi
+}
+
 for LMDB_DIR in "${LMDB_DIRS[@]}"; do
+  # LMDB_DATA_V1 builds never call mdb_env_close() without this patch; see its header.
+  apply_source_patch "${LMDB_DIR}" "${SCRIPT_DIR}/lmdb/env-close-data-v1.patch"
   log "rebuilding ${LMDB_DIR}"
   (
     cd "${LMDB_DIR}"

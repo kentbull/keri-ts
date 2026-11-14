@@ -314,6 +314,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/db/core/keys.test.ts",
       "test/unit/db/core/lmdber-core-parity.test.ts",
       "test/unit/db/core/lmdber-dup.test.ts",
+      "test/unit/db/core/lmdber-close-release.test.ts",
       "test/unit/db/core/lmdber-helpers.test.ts",
       "test/unit/db/core/lmdber-ioset.test.ts",
       "test/unit/db/core/lmdber-lifecycle.test.ts",
