@@ -3,8 +3,8 @@
  * satisfies the threshold `["1", "0"]` while the custodian member carries no weight and holds the group's sole
  * next-key commitment. Every party has a real runtime and HTTP endpoint. `grantToGroup` has the issuer grant a v2 DH
  * credential to the group, admitted on the edge member's signature alone, while the custodian's own runtime follows
- * the final proof with no call from the test; `custodianAccepts` has the custodian accept that Admit, an explicit
- * consent. Shared by `group-weight-zero.test.ts` and the wallet's inventory-rebuild tests, which refill a fresh
+ * the final proof with no call from the test; `custodianAccepts` checks that the custodian took that Admit, which the
+ * edge member's signature completes, without approving it. Shared by `group-weight-zero.test.ts` and the wallet's inventory-rebuild tests, which refill a fresh
  * edge store from the custodian.
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
@@ -29,8 +29,8 @@ import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { exportDisclosureStream } from "../../../../src/app/ipex/disclosure-replaying.ts";
 import {
-  approveGroupIpex,
   groupIpexProposals,
+  groupIpexStatus,
   proposeGroupAdmit,
   waitForGroupIpex,
 } from "../../../../src/app/ipex/group-ipex.ts";
@@ -376,7 +376,13 @@ export function* grantToGroup(g: WeightZeroGroup, steps: GrantSteps = {}): Opera
       timeoutMs: BUDGET_MS,
       until: (status) => status.state !== "active" || status.needs === "admit",
     });
-    assertEquals(shape(followed.status), ["active", "awaitingAdmitConsent", "admit"]);
+    // Once the Grant is accepted the custodian also takes the group's Admit, which the edge member's signature
+    // completes, so its issuance may already read admitted.
+    const after = shape(followed.status);
+    assert(
+      ["active,awaitingAdmitConsent,admit", "done,admitted,"].includes(after.map((part) => part ?? "").join()),
+      JSON.stringify(after),
+    );
   }
   yield* until(() => custodian.runtime.exc.complete(grant), "the custodian to accept the Grant");
   assertCustodianHolds(g, { grant, admit, credential, regk });
@@ -406,16 +412,20 @@ export function assertCustodianHolds(g: WeightZeroGroup, granted: Granted): void
 }
 
 /**
- * As for any member (KERIpy Multiplexor.add replays a child only after local approval), the weight-0 member accepts
- * the group's completed Admit through its own approval; its signature adds no weight.
+ * The weight-0 member takes the group's Admit, which the edge member's signature already completes, from the edge
+ * member's wrapper without approving it: it signs nothing, begins no operation, and its status reads accepted. (KERIpy's
+ * Multiplexor replays a child only after local approval; keri-ts also takes a child the received signatures complete,
+ * so every member holds what the group completed.)
  */
 export function* custodianAccepts(g: WeightZeroGroup, admit: string): Operation<void> {
-  const { custodian } = g;
-  assert(!custodian.runtime.exc.complete(admit), "holding a proposal is not accepting it");
-  yield* approveGroupIpex(custodian.runtime.operations!.groupIpex, admit);
+  const { custodian } = g, ops = custodian.runtime.operations!.groupIpex;
+  yield* until(() => custodian.runtime.exc.complete(admit), "the custodian to accept the group's completed Admit");
+  assertEquals(groupIpexStatus(ops, admit), { state: "done", phase: "accepted" });
+  assertEquals(ops.live.size, 0, "the custodian began no operation");
   assertEquals(
-    (yield* waitForGroupIpex(custodian.runtime.operations!.groupIpex, admit, { timeoutMs: BUDGET_MS })).status,
-    { state: "done", phase: "accepted" },
+    groupIpexProposals(ops, custodian.hab).filter((p) => p.said === admit).map((p) => [p.approved, p.complete]),
+    [[false, true]],
+    "the custodian contributed nothing to the Admit it holds",
   );
 }
 

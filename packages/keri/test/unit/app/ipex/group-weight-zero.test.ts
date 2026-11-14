@@ -8,7 +8,9 @@
  * issuer delivers the Grant to it, the edge member sends it the group's exchange messages, and it ends holding the
  * credential, its TEL state and the registry root, so a wiped co-member could replay from it. Having contributed
  * nothing to the key exchange, it accepts the Grant when its runtime follows the lead's final proof on its own, signing
- * nothing and with no call from the host; its Admit approval stays an explicit consent.
+ * nothing and with no call from the host. It takes any group IPEX message the edge member's signature completes, the
+ * group's Admit among them, without approving it; a message its own weight-0 signature proposes waits for the edge
+ * member's consent.
  *
  * The second test uses the deployed shape: the edge member is a non-transferable, inception-only identifier whose
  * signer the host holds (`makeSignedHab`), so its wrappers carry non-indexed signatures, and the group later rotates
@@ -30,8 +32,16 @@ import {
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { type DisclosureRole, listGroupDisclosures } from "../../../../src/app/ipex/disclosure-replaying.ts";
+import {
+  approveGroupIpex,
+  GROUP_IPEX_COLLECT_MS,
+  groupIpexProposals,
+  groupIpexStatus,
+  waitForGroupIpex,
+} from "../../../../src/app/ipex/group-ipex.ts";
 import { followGroupIssuanceProof } from "../../../../src/app/ipex/group-issuance.ts";
 import { ISSUANCE_SWEEP_MS, IssuanceOperations, issuanceStatus } from "../../../../src/app/ipex/issuance.ts";
+import { proposeGroupNegotiation } from "../../../../src/app/ipex/presenting.ts";
 import { groupSigningMembers } from "../../../../src/app/multisig/group-members.ts";
 import { proposeGroupRotation } from "../../../../src/app/multisig/proposing.ts";
 import { replaceGroupMember } from "../../../../src/app/multisig/replace-member.ts";
@@ -142,6 +152,69 @@ Deno.test("an explicit follow after the automatic one changes nothing", async ()
   });
 });
 
+/** The group Apply `side` proposes to the issuer: its member's consent, and nothing else. */
+function* proposeApply(g: WeightZeroGroup, side: Side): Operation<string> {
+  const ops = side.runtime.operations!;
+  const { said } = yield* proposeGroupNegotiation(ops.presentation.deps, ops.groupIpex, {
+    verb: "apply",
+    hab: side.hab,
+    options: { recipient: g.issuer.hab.pre!, message: `Apply from ${side.name}`, plan: [] },
+  });
+  return said;
+}
+
+Deno.test("a group member that did not sign accepts a completed group message", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { issuer, edge, custodian } = g;
+    const said = yield* proposeApply(g, edge);
+    const edgeOps = edge.runtime.operations!.groupIpex, custodianOps = custodian.runtime.operations!.groupIpex;
+    assertEquals((yield* waitForGroupIpex(edgeOps, said, { timeoutMs: BUDGET_MS })).status, {
+      state: "done",
+      phase: "accepted",
+    }, "the edge member's signature alone completes the Apply");
+    // The custodian holds only the edge member's wrapper, whose child already carries the group's threshold, and takes
+    // it on its own: it adds no signature and begins no operation.
+    yield* until(() => custodian.runtime.exc.complete(said), "the weight-0 member to accept the group's Apply");
+    assertEquals(groupIpexStatus(custodianOps, said), { state: "done", phase: "accepted" });
+    assertEquals(
+      groupIpexProposals(custodianOps, custodian.hab).map((p) => [p.said, p.proposer, p.approved, p.complete]),
+      [[said, edge.member.pre, false, true]],
+    );
+    assertEquals(custodianOps.live.size, 0, "the weight-0 member began no operation");
+    assertEquals(wrappersFrom(edge, custodian.member.pre!), [], "the weight-0 member sent the group nothing");
+    yield* until(() => issuer.runtime.exc.complete(said), "the issuer to accept the group's Apply");
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
+Deno.test("a member does not accept a group message below threshold", async () => {
+  await run(function*() {
+    const g = yield* weightZeroGroup(false);
+    const { issuer, edge, custodian } = g;
+    // The weight-0 member proposes: its signature is valid but carries no weight.
+    const said = yield* proposeApply(g, custodian);
+    const edgeOps = edge.runtime.operations!.groupIpex, custodianOps = custodian.runtime.operations!.groupIpex;
+    yield* until(() => edge.hby.db.meids.get([said]).length > 0, "the edge member to index the weight-0 proposal");
+    yield* sleep(GROUP_IPEX_COLLECT_MS * 4);
+    assertFalse(edge.runtime.exc.complete(said), "a proposal below the threshold is not accepted");
+    assertEquals(groupIpexStatus(edgeOps, said), { state: "active", phase: "awaitingConsent", needs: "approve" });
+    assertFalse(custodian.runtime.exc.complete(said), "the proposer's own weight-0 signature does not complete it");
+    assertEquals(groupIpexStatus(custodianOps, said), { state: "active", phase: "awaitingMembers" });
+    assertFalse(issuer.runtime.exc.complete(said));
+    // The edge member's consent adds the weight; then every member holds it and the lead delivers it.
+    yield* approveGroupIpex(edgeOps, said);
+    for (const ops of [edgeOps, custodianOps]) {
+      assertEquals((yield* waitForGroupIpex(ops, said, { timeoutMs: BUDGET_MS })).status, {
+        state: "done",
+        phase: "accepted",
+      });
+    }
+    yield* until(() => issuer.runtime.exc.complete(said), "the issuer to accept the group's Apply");
+    for (const task of g.hosts) yield* task.halt();
+  });
+});
+
 Deno.test("lists a group's held and issued disclosures", async () => {
   await run(function*() {
     const g = yield* weightZeroGroup(false);
@@ -154,8 +227,6 @@ Deno.test("lists a group's held and issued disclosures", async () => {
       registry: granted.regk,
       role,
     });
-    // Until the weight-0 member accepts the group's Admit, the disclosure is not complete in its store.
-    assertEquals(listGroupDisclosures(custodian.hby, custodian.runtime.exc, group), []);
     yield* custodianAccepts(g, granted.admit);
     for (const side of [custodian, edge]) {
       assertEquals(listGroupDisclosures(side.hby, side.runtime.exc, group), [row("holder")], side.name);

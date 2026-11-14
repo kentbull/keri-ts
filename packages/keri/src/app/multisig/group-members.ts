@@ -202,6 +202,32 @@ export function localIpexContribution(
   return null;
 }
 
+/**
+ * Whether the group signatures a member received on the group-authored message `embedded`, from every copy it holds,
+ * together satisfy the threshold of the accepted group establishment event they name. Only signatures that verify
+ * against that event count, and copies naming different events are not pooled, so a message below the threshold, or
+ * one signed under keys this store has not accepted, reads false.
+ *
+ * This is the rule under which a member takes a group message it did not sign: accepting what already carries the
+ * group's threshold adds no signature, so it is not consent.
+ */
+export function groupThresholdSigned(db: Baser, embedded: SerderKERI, proofs: readonly TransIdxSigGroup[]): boolean {
+  const signed = new Map<string, Set<number>>();
+  for (const proof of proofs) {
+    if (!embedded.pre || proof.pre !== embedded.pre || proof.sn > BigInt(Number.MAX_SAFE_INTEGER)) continue;
+    const said = db.kels.getLast(proof.pre, Number(proof.sn));
+    const event = said && said === proof.said ? db.getEvtSerder(proof.pre, said) : null;
+    if (!said || !event?.estive || !event.tholder) continue;
+    const indices = signed.get(said) ?? new Set<number>();
+    for (const index of Kever.verifyIndexedSignatures(embedded.raw, proof.sigers, event.verfers).indices) {
+      indices.add(index);
+    }
+    signed.set(said, indices);
+    if (event.tholder.satisfy([...indices])) return true;
+  }
+  return false;
+}
+
 /** Members of a group's latest accepted establishment event, ordered by key index. */
 export interface AcceptedGroupMembers {
   event: SerderKERI;
