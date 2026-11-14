@@ -814,7 +814,7 @@ Deno.test({
   },
 });
 
-// --- candidate (kentbull/keripy v2-spec 54cf0a04), for what main cannot perform (above) ---
+// --- candidate (kentbull/keripy v2-spec 4d0ad650), for what main cannot perform (above) ---
 
 Deno.test("KERIpy candidate -> relay single-sig", async () => {
   await withKeriPyPeer("candidate", (py) => run(() => receiveCheck(py, "transferable", "private")));
