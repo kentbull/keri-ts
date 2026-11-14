@@ -146,7 +146,9 @@ retires a replaced group member, adds wallet recovery and refill, and removes or
 exported names: `Manager.release`, `SignerCondition`, `settleProposedRotation`, the poller and
 Revery callbacks, `RuntimeOperations.health` and others, and `OpenWebWalletOptions.delivery` is now
 required. Read the [2.2.5 notes](../../versioning/2.2.5-release-notes.md), especially its Breaking
-changes list, before upgrading. 2.2.2 changes types a 2.2.0
+changes list, before upgrading. 2.2.6 fixes issuer slowdown
+as an event log grows and group issuance failing near 58 credentials, and changes no call; see the
+[2.2.6 notes](../../versioning/2.2.6-release-notes.md). 2.2.2 changes types a 2.2.0
 caller may already use:
 
 - The IPEX disclosure options take `priorSaid` only; `prior` is a type error and is refused
