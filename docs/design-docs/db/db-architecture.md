@@ -1,8 +1,8 @@
 # KERI DB Architecture and Parity Contract (KERIpy -> keri-ts)
 
-`LMDBer` pins `@keri-ts/lmdb-js` 3.5.10-v1.1 ([kentbull/lmdb-js, branch `data-v1`](https://github.com/kentbull/lmdb-js/tree/data-v1)): lmdb-js 3.5.10 compiled for LMDB 0.9.29 (data format
-version 1) with the V8 API off, shipped as prebuilt N-API platform packages for linux-x64, linux-arm64 and
-darwin-arm64. Its `binding.gyp` fixes both settings, so a source fallback cannot build a data-v2 or V8-linked addon.
+`LMDBer` pins `@keri-ts/lmdb-js` 3.5.10-v1.2 ([kentbull/lmdb-js, branch `data-v1`](https://github.com/kentbull/lmdb-js/tree/data-v1)): lmdb-js 3.5.10 compiled for LMDB 0.9.29 (data format
+version 1) with the V8 API off, shipped as prebuilt N-API platform packages for linux-x64 and linux-arm64 (each with a
+glibc and a musl build) and darwin-arm64. Its `binding.gyp` fixes both settings, so a source fallback cannot build a data-v2 or V8-linked addon.
 Node-header V8 symbols are not portable to Deno: the V8 mapped-buffer path for rows above 16 MiB can terminate the
 process despite successful small reads, so Node and Deno both load the N-API addon. This changes native call
 selection, not database layout or the addon ABI. Ordinary reads copy whole rows into caller-owned bytes, including

@@ -85,7 +85,7 @@ Deno.test("a dependency change alters the key", async () => {
   assertNotEquals(await key(relocked), await key(repo));
   const lmdbPin = {
     ...repo,
-    "deno.lock": repo["deno.lock"]!.replaceAll("@keri-ts/lmdb-js@3.5.10-v1.1", "@keri-ts/lmdb-js@3.5.10-v1.2"),
+    "deno.lock": repo["deno.lock"]!.replaceAll("@keri-ts/lmdb-js@3.5.10-v1.2", "@keri-ts/lmdb-js@3.5.10-v1.3"),
   };
   assertNotEquals(lmdbPin["deno.lock"], repo["deno.lock"]);
   assertNotEquals(await key(lmdbPin), await key(repo));

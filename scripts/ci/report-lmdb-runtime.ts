@@ -1,7 +1,7 @@
 /** Require the prebuilt @keri-ts/lmdb-js N-API addon and report its newly written LMDB data format. */
 import { createRequire } from "node:module";
-import { open } from "npm:@keri-ts/lmdb-js@3.5.10-v1.1";
-import * as lmdbBinding from "npm:@keri-ts/lmdb-js@3.5.10-v1.1";
+import { open } from "npm:@keri-ts/lmdb-js@3.5.10-v1.2";
+import * as lmdbBinding from "npm:@keri-ts/lmdb-js@3.5.10-v1.2";
 
 /** Node's module cache is the npm addon loader boundary; filesystem work remains Deno-native. */
 const require = createRequire(import.meta.url);
