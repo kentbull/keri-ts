@@ -18,6 +18,7 @@ import { exchange } from "../../core/exchange/protocol-exchanging.ts";
 import { Roles } from "../../core/roles.ts";
 import type { Mailboxer } from "../../db/mailbox/mailboxing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
+import { holdsHeads, kelHeads } from "../mailbox/kel-publishing.ts";
 import { mailboxTopicKey } from "../mailbox/mailboxing.ts";
 import { transportMailboxTopic } from "../mailbox/topic-routing.ts";
 import { localGroupMember } from "../multisig/group-members.ts";
@@ -32,7 +33,6 @@ import type { HttpClient } from "../transport/http-client.ts";
 import { messengerFrom, messengerUrl, type MessengerUrls, streamMessengerFrom } from "../transport/messengering.ts";
 import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
-import { holdsHeads, kelHeads } from "../mailbox/kel-publishing.ts";
 import { introduce } from "./introducing.ts";
 import { type Relay, relayEndpoint, relayRefusal } from "./relaying.ts";
 
