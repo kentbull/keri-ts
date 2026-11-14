@@ -1734,3 +1734,113 @@ Deno.test("a TEL event that does not verify or has a malformed s or ri is reject
     }
   });
 });
+
+/** Take every cue the Tevery has published so far and keep the routed query cues. */
+function drainQueries(cues: Deck<AgentCue>): AgentCue[] {
+  const queries: AgentCue[] = [];
+  for (let cue = cues.pull(); cue; cue = cues.pull()) if (cue.kin === "query") queries.push(cue);
+  return queries;
+}
+
+Deno.test("an anchorless TEL event from an unknown issuer asks once for the whole KEL and is accepted when it arrives", async () => {
+  await run(function*() {
+    const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(target, new FetchHttpClient(), systemClock);
+    try {
+      const issuer = sender.makeHab("issuer");
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      const anchor = anchorTel(issuer, vcp);
+      const { tvy, reger } = runtime.vdr!;
+
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchor }).kind, "escrow");
+      assertEquals(drainQueries(tvy.cues), [{
+        kin: "query",
+        pre: issuer.pre,
+        route: "logs",
+        q: { fn: "0", s: anchor.seqner.num.toString(16) },
+      }]);
+
+      tvy.processEscrows();
+      tvy.processEscrows();
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchor }).kind, "escrow");
+      assertEquals(drainQueries(tvy.cues), [], "Escrow retries and repeat arrivals do not ask again");
+
+      for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
+      tvy.processEscrows();
+      assertEquals(reger.taes.getOn(vcp.pre!, 0), []);
+      assertEquals(reger.tels.getOn(vcp.pre!, 0)?.qb64, vcp.said);
+      assertEquals(drainQueries(tvy.cues), []);
+    } finally {
+      yield* runtime.close();
+      yield* target.close(true);
+      yield* source.close(true);
+      yield* sender.close(true);
+    }
+  });
+});
+
+Deno.test("an anchorless TEL event asks for the issuer's KEL from the first event the recipient lacks", async () => {
+  await run(function*() {
+    const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(target, new FetchHttpClient(), systemClock);
+    try {
+      const issuer = sender.makeHab("issuer");
+      issuer.interact({ data: [] });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      const anchor = anchorTel(issuer, vcp);
+      const { tvy, reger } = runtime.vdr!;
+      const wires = [...sender.db.clonePreIter(issuer.pre)];
+      assertEquals(wires.length, 3);
+      // The recipient holds the inception and the first interaction, so the anchor at sn 2 is the one it lacks.
+      for (const wire of wires.slice(0, 2)) yield* runtime.reactor.processBytes(wire);
+      assertEquals(target.db.getKever(issuer.pre)?.sn, 1);
+      drainQueries(tvy.cues);
+
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchor }).kind, "escrow");
+      assertEquals(drainQueries(tvy.cues), [{
+        kin: "query",
+        pre: issuer.pre,
+        route: "logs",
+        q: { fn: "2", s: "2" },
+      }]);
+      tvy.processEscrows();
+      assertEquals(drainQueries(tvy.cues), []);
+
+      yield* runtime.reactor.processBytes(wires[2]);
+      tvy.processEscrows();
+      assertEquals(reger.tels.getOn(vcp.pre!, 0)?.qb64, vcp.said);
+    } finally {
+      yield* runtime.close();
+      yield* target.close(true);
+      yield* sender.close(true);
+    }
+  });
+});
+
+Deno.test("an anchorless TEL event whose anchor coordinate the recipient already holds asks for nothing", async () => {
+  await run(function*() {
+    const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(target, new FetchHttpClient(), systemClock);
+    try {
+      const issuer = sender.makeHab("issuer");
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      const anchor = anchorTel(issuer, vcp);
+      const { tvy } = runtime.vdr!;
+      for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
+      drainQueries(tvy.cues);
+
+      // The event at that sn is held but is not this one: more of the KEL cannot supply the missing seal.
+      const wrong = { seqner: anchor.seqner, saider: new Diger({ qb64: vcp.said! }) };
+      assertEquals(tvy.processEvent({ serder: vcp, ...wrong }).kind, "escrow");
+      assertEquals(drainQueries(tvy.cues), []);
+    } finally {
+      yield* runtime.close();
+      yield* target.close(true);
+      yield* sender.close(true);
+    }
+  });
+});
