@@ -258,6 +258,20 @@ export interface InspectedGrantFile {
   completeSigners: string[];
   partialSigners: string[];
 }
+/** What one proof-support send carried: per identifier its last first-seen KEL ordinal, per registry its last TEL ordinal. */
+export interface ProofSupportMark {
+  /** Last first-seen ordinal included per identifier; -1 when it had no accepted events. */
+  readonly kels: ReadonlyMap<string, number>;
+  /** Last TEL ordinal included per registry; -1 when it had no accepted events. */
+  readonly tels: ReadonlyMap<string, number>;
+}
+
+/** The parties proof support names: identifiers in replay order (delegators first) and registries. */
+interface ProofSupportSelection {
+  readonly ordered: ReadonlySet<string>;
+  readonly registries: ReadonlySet<string>;
+}
+
 /** Borrow concrete owners only. No constructor opens a store, starts a worker or loads registry secrets. */
 export class IpexDiscloser {
   constructor(
@@ -373,6 +387,53 @@ export class IpexDiscloser {
    * name. Reads accepted state only and signs nothing, so it needs no keys.
    */
   proofSupportFor(raw: Uint8Array, parties: readonly string[]): Uint8Array {
+    const { ordered, registries } = this.supportSelection(raw, parties);
+    const messages: Uint8Array[] = [Counter.makeGVC(Vrsn_2_0)];
+    // Keep first-seen authorizers and exact stored attachments, including superseded history.
+    // clonePreIter skips broken rows; finite disclosure must instead fail if an accepted row cannot be replayed.
+    for (const aid of ordered) messages.push(...this.supportKel(aid, 0));
+    for (const regid of registries) messages.push(this.registry.cloneTel(regid));
+    return concatBytes(...messages);
+  }
+
+  /**
+   * Record how far `proofSupport(raw, hab)` reaches right now: each KEL's last first-seen ordinal and each
+   * registry's last TEL ordinal. Call it in the same synchronous turn as the send it describes, so the mark is
+   * exactly what that send carried; {@link proofSupportSince} then sends what accepted state has gained.
+   */
+  proofSupportMark(raw: Uint8Array, hab: Hab): ProofSupportMark {
+    const { ordered, registries } = this.supportSelection(raw, [hab.pre]);
+    const kels = new Map<string, number>(), tels = new Map<string, number>();
+    for (const aid of ordered) {
+      let last = -1;
+      for (const [, fn] of this.hby.db.fels.getAllItemIter(aid)) last = fn;
+      kels.set(aid, last);
+    }
+    for (const regid of registries) {
+      let last = -1;
+      for (const [, sn] of this.registry.baser.tels.getAllItemIter(regid)) last = sn;
+      tels.set(regid, last);
+    }
+    return { kels, tels };
+  }
+
+  /**
+   * The part of `proofSupport(raw, hab)` that accepted state gained after `mark` was taken, in the same order and
+   * with the same stored attachments: later first-seen KEL events of each identifier (the anchoring interaction
+   * event of a registry update, say) and later TEL events of each registry. An identifier or registry the mark does
+   * not name (support that grew a new party) is carried whole. A recipient that holds what `mark` describes holds
+   * the same state after this as after a second full `proofSupport`.
+   */
+  proofSupportSince(raw: Uint8Array, hab: Hab, mark: ProofSupportMark): Uint8Array {
+    const { ordered, registries } = this.supportSelection(raw, [hab.pre]);
+    const messages: Uint8Array[] = [Counter.makeGVC(Vrsn_2_0)];
+    for (const aid of ordered) messages.push(...this.supportKel(aid, (mark.kels.get(aid) ?? -1) + 1));
+    for (const regid of registries) messages.push(this.registry.cloneTel(regid, (mark.tels.get(regid) ?? -1) + 1));
+    return concatBytes(...messages);
+  }
+
+  /** The identifiers (each after its delegation ancestry) and registries that support for `raw` and `parties` names. */
+  private supportSelection(raw: Uint8Array, parties: readonly string[]): ProofSupportSelection {
     const aids = new Set(parties), registries = new Set<string>();
     for (const frame of parseBytes(raw)) {
       if (!(frame.body instanceof SerderACDC)) continue;
@@ -387,7 +448,6 @@ export class IpexDiscloser {
         else aids.add(seal.i.qb64);
       }
     }
-    const messages: Uint8Array[] = [Counter.makeGVC(Vrsn_2_0)];
     const db = this.hby.db, ordered = new Set<string>();
     // An ancestry claim selects supporting KELs; it does not establish delegation authority.
     for (const aid of aids) {
@@ -403,13 +463,16 @@ export class IpexDiscloser {
       }
       for (const ancestor of ancestors.reverse()) ordered.add(ancestor);
     }
-    // Keep first-seen authorizers and exact stored attachments, including superseded history.
-    // clonePreIter skips broken rows; finite disclosure must instead fail if an accepted row cannot be replayed.
-    for (const aid of ordered) {
-      for (const [, fn, said] of db.fels.getAllItemIter(aid)) messages.push(db.cloneEvtMsg(aid, fn, said, Vrsn_2_0));
+    return { ordered, registries };
+  }
+
+  /** Stored first-seen events of `aid` from ordinal `from`, each with its exact stored attachments. */
+  private supportKel(aid: string, from: number): Uint8Array[] {
+    const messages: Uint8Array[] = [];
+    for (const [, fn, said] of this.hby.db.fels.getAllItemIter(aid, from)) {
+      messages.push(this.hby.db.cloneEvtMsg(aid, fn, said, Vrsn_2_0));
     }
-    for (const regid of registries) messages.push(this.registry.cloneTel(regid));
-    return concatBytes(...messages);
+    return messages;
   }
 
   /** Public replay includes actual stored witness receipts; it grants no new consent. */
