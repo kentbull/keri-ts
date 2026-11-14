@@ -52,7 +52,7 @@ import {
 import { MULTISIG_EXN_ROUTE, multisigExnBody } from "../../../../src/app/multisig/grouping.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
-import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
+import { type RuntimeClock, systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
@@ -62,6 +62,7 @@ import { Roles } from "../../../../src/core/roles.ts";
 import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
 import { approvePending } from "../multisig/approve-pending.ts";
 import { learn } from "../multisig/proposal-fixture.ts";
+import { TestClock } from "./issuance-fixtures.ts";
 
 const KRAM = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } as const;
 const BUDGET_MS = 60_000;
@@ -99,6 +100,7 @@ function* open(
   name: string,
   bran: string,
   dir?: string,
+  clock: RuntimeClock = systemClock,
 ): Operation<{ hby: Habery; baser: RegBaser; runtime: AgentRuntime }> {
   const hby = yield* createHabery({
     name,
@@ -109,119 +111,140 @@ function* open(
     skipSignator: true,
   });
   const baser = yield* openLmdbRegistry({ name: `${name}-registry`, temp: !dir, headDirPath: dir });
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), clock, {
     acdc: new Regery(hby, baser),
     kram: KRAM,
   });
   return { hby, baser, runtime };
 }
 
+/** The parties of a group issuance, wired to each other: a 2-of-2 issuer group (`lead` is its custodian) and a holder. */
+interface GroupIssuers {
+  sides: Side[];
+  lead: Side;
+  peer: Side;
+  holder: Side;
+  rip: SerderACDC;
+  coordinator: SerderKERI;
+  credential: SerderACDC;
+}
+
+/**
+ * Open the custodian, member and holder with `clock`, every party knowing the others' KELs and serving a real
+ * endpoint; the issuer members form a 2-of-2 group whose managed registry and coordinator every party holds.
+ * `dir` makes the issuer stores durable so they can be closed and opened again.
+ */
+function* openGroupIssuers(clock: RuntimeClock, dir?: string): Operation<GroupIssuers> {
+  const names = ["custodian", "member", "holder"];
+  const sides: Side[] = [];
+  for (const name of names) {
+    const bran = `${name}GroupIssuancePasscodeABC`;
+    const storeName = `${name}-${crypto.randomUUID()}`;
+    const stores = yield* open(storeName, bran, name === "holder" ? undefined : dir, clock);
+    const member = stores.hby.makeHab(name);
+    sides.push({ name, storeName, ...stores, member, hab: member } as Side);
+  }
+  const [lead, peer, holder] = sides;
+  yield* ensure(function*() {
+    for (const side of sides) {
+      yield* side.runtime.close();
+      yield* side.hby.close(side.name === "holder");
+      yield* side.baser.close(side.name === "holder");
+    }
+  });
+  // Each party knows the others' member KELs.
+  for (const source of sides) {
+    for (const target of sides) {
+      if (source === target) continue;
+      for (const wire of source.hby.db.clonePreIter(source.member.pre!, 0)) {
+        yield* dispatchEnvelope(envelopeFromFrame(parseBytes(wire)[0]), target.hby.rvy, target.hby.kevery);
+      }
+    }
+  }
+  // The two issuer members form a 2-of-2 group; each accepts both inception contributions.
+  const signing = [lead.member.pre!, peer.member.pre!];
+  const creations = [lead, peer].map((side) =>
+    side.hby.makeGroupHab("group", side.member, signing, signing, undefined, { isith: "2", nsith: "2" })
+  );
+  const inception = parseBytes(messagize(creations[0].serder, {
+    sigers: [...creations[0].sigers, ...creations[1].sigers],
+    gvrsn: Vrsn_2_0,
+  }))[0];
+  for (const side of sides) {
+    yield* dispatchEnvelope(envelopeFromFrame(inception, true), side.hby.rvy, side.hby.kevery);
+  }
+  lead.hab = creations[0].hab;
+  peer.hab = creations[1].hab;
+  const issuers = [lead, peer];
+  const intakeAll = function*(wire: Uint8Array, local = false) {
+    for (const side of sides) yield* side.runtime.reactor.processBytes(wire, { local });
+  };
+  const groupProof = (body: SerderKERI) =>
+    new TransIdxSigGroup(
+      new Prefixer({ qb64: lead.hab.pre! }),
+      NumberPrimitive.fromNum(0n),
+      new Diger({ qb64: lead.hab.kever!.lastEst.d }),
+      issuers.flatMap((side) => side.hab.sign(body.raw, true)),
+    );
+  const groupInteraction = function*(data: unknown[] = []) {
+    const state = lead.hab.kever!;
+    const body = interact(lead.hab.pre!, state.said, state.sn + 1, data, { version: Vrsn_2_0 });
+    yield* intakeAll(
+      messagize(body, { sigers: issuers.flatMap((side) => side.hab.sign(body.raw, true)), gvrsn: Vrsn_2_0 }),
+      true,
+    );
+    return body;
+  };
+  // The custodian's managed registry, its inception sealed by the group and known to every party.
+  const registry = lead.runtime.acdc!.makeRegistry("group-derived", lead.hab.pre!);
+  const rip = registry.store.event(registry.regk!)!;
+  const coordinator = yield* groupInteraction([{ i: rip.said!, s: rip.sad!.n, d: rip.said! }]);
+  yield* intakeAll(rip.raw);
+  const credential: SerderACDC = acdcmap(lead.hab.pre!, {
+    regid: rip.said!,
+    attribute: { d: "", i: holder.hab.pre, name: "Ada" },
+  });
+
+  // Real endpoints; a group's endpoints are its members'. The handler is swappable so a member can reload.
+  for (const side of sides) {
+    const make = () =>
+      createProtocolHandler(side.runtime, {
+        hostedPrefixes: [side.member.pre!, side.hab.pre!],
+        serviceHab: side.member,
+      });
+    side.handler = make();
+    const server = Deno.serve(
+      { hostname: "127.0.0.1", port: 0, onListen() {} },
+      (request) => side.handler(request),
+    );
+    side.port = server.addr.port;
+    yield* ensure(() =>
+      call(async () => {
+        await server.shutdown();
+        await side.handler.close?.();
+      })
+    );
+    yield* intakeAll(side.member.makeLocScheme(`http://127.0.0.1:${side.port}/`, side.member.pre!, "http"));
+    yield* intakeAll(side.member.makeEndRole(side.member.pre!, Roles.controller, true));
+    if (side !== holder) {
+      const controller = reply("/end/role/add", {
+        cid: side.hab.pre,
+        role: Roles.controller,
+        eid: side.member.pre,
+      }, { pre: side.hab.pre!, pvrsn: Vrsn_2_0 });
+      yield* intakeAll(messagize(controller, { tsgs: [groupProof(controller)], gvrsn: Vrsn_2_0 }));
+    }
+  }
+  // A wallet registers its identifiers' DH owners when it opens.
+  for (const side of sides) side.runtime.ipex!.dhke(side.hab);
+  return { sides, lead, peer, holder, rip, coordinator, credential };
+}
+
 Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder; a member reloads and consents again", async () => {
   const dir = await Deno.makeTempDir();
   try {
     await run(function*() {
-      const names = ["custodian", "member", "holder"];
-      const sides: Side[] = [];
-      for (const name of names) {
-        const bran = `${name}GroupIssuancePasscodeABC`;
-        const storeName = `${name}-${crypto.randomUUID()}`;
-        const stores = yield* open(storeName, bran, name === "holder" ? undefined : dir);
-        const member = stores.hby.makeHab(name);
-        sides.push({ name, storeName, ...stores, member, hab: member } as Side);
-      }
-      const [lead, peer, holder] = sides;
-      yield* ensure(function*() {
-        for (const side of sides) {
-          yield* side.runtime.close();
-          yield* side.hby.close(side.name === "holder");
-          yield* side.baser.close(side.name === "holder");
-        }
-      });
-      // Each party knows the others' member KELs.
-      for (const source of sides) {
-        for (const target of sides) {
-          if (source === target) continue;
-          for (const wire of source.hby.db.clonePreIter(source.member.pre!, 0)) {
-            yield* dispatchEnvelope(envelopeFromFrame(parseBytes(wire)[0]), target.hby.rvy, target.hby.kevery);
-          }
-        }
-      }
-      // The two issuer members form a 2-of-2 group; each accepts both inception contributions.
-      const signing = [lead.member.pre!, peer.member.pre!];
-      const creations = [lead, peer].map((side) =>
-        side.hby.makeGroupHab("group", side.member, signing, signing, undefined, { isith: "2", nsith: "2" })
-      );
-      const inception = parseBytes(messagize(creations[0].serder, {
-        sigers: [...creations[0].sigers, ...creations[1].sigers],
-        gvrsn: Vrsn_2_0,
-      }))[0];
-      for (const side of sides) {
-        yield* dispatchEnvelope(envelopeFromFrame(inception, true), side.hby.rvy, side.hby.kevery);
-      }
-      lead.hab = creations[0].hab;
-      peer.hab = creations[1].hab;
-      const issuers = [lead, peer];
-      const intakeAll = function*(wire: Uint8Array, local = false) {
-        for (const side of sides) yield* side.runtime.reactor.processBytes(wire, { local });
-      };
-      const groupProof = (body: SerderKERI) =>
-        new TransIdxSigGroup(
-          new Prefixer({ qb64: lead.hab.pre! }),
-          NumberPrimitive.fromNum(0n),
-          new Diger({ qb64: lead.hab.kever!.lastEst.d }),
-          issuers.flatMap((side) => side.hab.sign(body.raw, true)),
-        );
-      const groupInteraction = function*(data: unknown[] = []) {
-        const state = lead.hab.kever!;
-        const body = interact(lead.hab.pre!, state.said, state.sn + 1, data, { version: Vrsn_2_0 });
-        yield* intakeAll(
-          messagize(body, { sigers: issuers.flatMap((side) => side.hab.sign(body.raw, true)), gvrsn: Vrsn_2_0 }),
-          true,
-        );
-        return body;
-      };
-      // The custodian's managed registry, its inception sealed by the group and known to every party.
-      const registry = lead.runtime.acdc!.makeRegistry("group-derived", lead.hab.pre!);
-      const rip = registry.store.event(registry.regk!)!;
-      const coordinator = yield* groupInteraction([{ i: rip.said!, s: rip.sad!.n, d: rip.said! }]);
-      yield* intakeAll(rip.raw);
-      const credential: SerderACDC = acdcmap(lead.hab.pre!, {
-        regid: rip.said!,
-        attribute: { d: "", i: holder.hab.pre, name: "Ada" },
-      });
-
-      // Real endpoints; a group's endpoints are its members'. The handler is swappable so a member can reload.
-      for (const side of sides) {
-        const make = () =>
-          createProtocolHandler(side.runtime, {
-            hostedPrefixes: [side.member.pre!, side.hab.pre!],
-            serviceHab: side.member,
-          });
-        side.handler = make();
-        const server = Deno.serve(
-          { hostname: "127.0.0.1", port: 0, onListen() {} },
-          (request) => side.handler(request),
-        );
-        side.port = server.addr.port;
-        yield* ensure(() =>
-          call(async () => {
-            await server.shutdown();
-            await side.handler.close?.();
-          })
-        );
-        yield* intakeAll(side.member.makeLocScheme(`http://127.0.0.1:${side.port}/`, side.member.pre!, "http"));
-        yield* intakeAll(side.member.makeEndRole(side.member.pre!, Roles.controller, true));
-        if (side !== holder) {
-          const controller = reply("/end/role/add", {
-            cid: side.hab.pre,
-            role: Roles.controller,
-            eid: side.member.pre,
-          }, { pre: side.hab.pre!, pvrsn: Vrsn_2_0 });
-          yield* intakeAll(messagize(controller, { tsgs: [groupProof(controller)], gvrsn: Vrsn_2_0 }));
-        }
-      }
-      // A wallet registers its identifiers' DH owners when it opens.
-      for (const side of sides) side.runtime.ipex!.dhke(side.hab);
+      const { sides, lead, peer, holder, rip, coordinator, credential } = yield* openGroupIssuers(systemClock, dir);
 
       // Every sent root copy writes one marker through the runtime's single replicator.
       const sentCopies: string[] = [];
@@ -420,6 +443,58 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+// A group cannot re-date its threshold query, so the custodian resends the same bytes. The holder's KRAM drops
+// identical copies cheaply only while its replay row lives, and refuses them as untimely once the query is older than
+// the multi-key window (60 s here), so resending then is useless work. The schedule doubles from 1 s to 8 s and stops
+// at the window; the operation itself keeps waiting for the holder until its Grant deadline.
+Deno.test("a group issuer backs off its unchanged threshold query and stops resending once the holder cannot accept it", async () => {
+  await run(function*() {
+    const clock = new TestClock();
+    const { lead, peer, holder, coordinator, credential } = yield* openGroupIssuers(clock);
+    // Count the DH queries that reach the holder's endpoint.
+    let queries = 0;
+    const serve = holder.handler;
+    holder.handler = Object.assign(async (request: Request) => {
+      const body = new TextDecoder().decode(await request.clone().arrayBuffer());
+      if (body.includes("\"t\":\"qry\"") && body.includes("/ipex/dhke")) queries++;
+      return serve(request);
+    }, serve) as typeof serve;
+    const host = (side: Side) => spawn(() => runAgentRuntime(side.runtime, { hab: side.member, pollMailbox: false }));
+
+    const draft = { credential, options: { recipient: holder.hab.pre!, message: "Group issuance" } };
+    const { grant } = yield* proposeGroupIssuance(ops(lead), draft, { coordinator: coordinator.said! });
+    const leadHost = yield* host(lead);
+    const peerHost = yield* host(peer);
+    yield* until(
+      () => groupIssuanceProposals(ops(peer), peer.hab).some((proposal) => proposal.grant === grant),
+      "the member to hold the custodian's proposal",
+    );
+    yield* approveGroupIssuance(ops(peer), grant, { coordinator: coordinator.said! });
+
+    // The holder never consents to DH, so it never answers. The first query reaches it once.
+    yield* until(() => queries >= 1, "the first threshold query to reach the holder");
+    yield* sleep(100);
+    assertEquals(queries, 1, "one query before the clock moves");
+
+    // Advance the fake clock a second at a time, giving the custodian's host a few passes of its own (it passes
+    // every 50 ms) at each step, four minutes in all (inside the Grant's five-minute exchange deadline). Resends
+    // fall 1, 3, 7, 15, 23, 31, 39, 47 and 55 s after the first; the next would fall at 63 s, after the 60 s window
+    // closed, so ten queries in all.
+    let atSeventySeconds = 0;
+    for (let second = 1; second <= 240; second++) {
+      clock.skew += 1000;
+      yield* sleep(150);
+      if (second === 70) atSeventySeconds = queries;
+    }
+    yield* sleep(100);
+    assertEquals(atSeventySeconds, 10, "nine backed-off resends inside the window");
+    assertEquals(queries, 10, "no resend after the window closed");
+    assertEquals(issuanceStatus(ops(lead), grant).state, "active", "the issuance keeps waiting for the holder");
+    yield* peerHost.halt();
+    yield* leadHost.halt();
+  });
 });
 
 Deno.test("a member that left after contributing follows the custodian's proof without signing", async () => {

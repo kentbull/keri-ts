@@ -303,6 +303,15 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     yield* presenter.reactor.processBytes(query);
     assertEquals(presenter.route.outgoing.length, 1, "the discloser answers an authenticated query for its live Grant");
     assertEquals(presenter.store.head(rip.said!)!.qb64, events[2].said!, "the authenticated suffix is imported");
+    {
+      // KERIpy resends identical bytes. Once a copy is the accepted query, further identical copies are duplicates:
+      // accepted, but neither verified nor answered again inside the base resend interval.
+      const copy = () => envelopeFromFrame(parseBytes(query)[0]);
+      assertEquals(presenter.route.processQuery(copy()), { kind: "accept" });
+      const queued = presenter.route.outgoing.length;
+      for (let i = 0; i < 9; i++) assertEquals(presenter.route.processQuery(copy()), { kind: "accept" });
+      assertEquals(presenter.route.outgoing.length, queued, "identical copies queue no further reply");
+    }
     assertEquals(presenter.route.approve(pending.said!), xid);
     {
       // The state vocabulary belongs to each approved operation, not to the owner.

@@ -52,6 +52,7 @@ import { fetchStoredTsgs, type ReplyProcessDecision, type Revery, unverifiedRepl
 import type { Baser } from "../db/basing.ts";
 import { prepareNests, publishNests } from "../db/exchange/exchange-nests.ts";
 import type { RegistryObserver } from "./observing.ts";
+import { QUERY_RESEND_MS } from "./query-resend.ts";
 import {
   type RegistryDisclosure,
   validateUpdate,
@@ -73,6 +74,13 @@ interface UnblindOperation {
   scope: PresentationScope;
   query: Uint8Array | null;
   reply: Uint8Array | null;
+  /**
+   * Wire (body, attachments and public evidence) of the last peer query this operation accepted. A copy identical
+   * to it is a duplicate: it was authenticated once and is not verified or derived again.
+   */
+  accepted: Uint8Array | null;
+  /** When the reply was last queued for the recipient (epoch ms); duplicates re-emit it at most once per base interval. */
+  repliedAt: number;
   requested: Selection | null;
   selected: Selection | null;
   openings: Map<string, RegistryDisclosure>;
@@ -160,17 +168,21 @@ export class Unblind implements AuxiliaryQueryProcessor {
   readonly registry: RegistryObserver;
   readonly group: boolean;
   private readonly kram: boolean;
+  private readonly now: () => number;
 
   /** Bind the exact Grant verifier's store; the state vocabulary is chosen per approved operation. */
-  constructor({ hab, exc, registry, rvy = hab.rvy, kram = true }: {
+  constructor({ hab, exc, registry, rvy = hab.rvy, now = Date.now, kram = true }: {
     hab: Hab;
     exc: Exchanger;
     registry: RegistryObserver;
     rvy?: Revery;
+    /** Epoch-millisecond clock that paces reply re-emission for duplicate queries. */
+    now?: () => number;
     /** False when the runtime has KRAM off: its `tmsc`/`msgc` rows never exist, so `approve` refuses. */
     kram?: boolean;
   }) {
     this.kram = kram;
+    this.now = now;
     if (
       !(hab instanceof Hab) || hab.db !== exc.hby.db || registry.db !== hab.db || rvy.db !== hab.db
       || exc.hby.habs.get(hab.pre!) !== hab
@@ -239,6 +251,8 @@ export class Unblind implements AuxiliaryQueryProcessor {
       scope: new Map([...context.registries].map(([regid, nodes]) => [regid, [...nodes]])),
       query: null,
       reply: null,
+      accepted: null,
+      repliedAt: 0,
       requested: null,
       selected: null,
       openings: new Map(),
@@ -407,6 +421,10 @@ export class Unblind implements AuxiliaryQueryProcessor {
       if (own && (!op.proposal || !bytesEqual(op.proposal, serder.raw))) {
         throw new ValidationError("Own Unblind query lacks its exact locally approved proposal");
       }
+      // A group re-sends its frozen query unchanged (one member cannot re-date it), and KERIpy resends identical
+      // bytes. The wire, attachments and evidence included, is compared against the one already authenticated, so
+      // a copy is never trusted on its body or SAID alone.
+      if (!own && op.accepted && bytesEqual(op.accepted, this.queryWire(envelope))) return this.duplicateQuery(op);
       if (!verifyQueryAttachments(this.hab.db, envelope)) return { kind: "drop", reason: "missingAuthentication" };
       if (op.requested && !sameSelection(op.requested, selected)) {
         throw new ValidationError("Conflicting Unblind request");
@@ -449,8 +467,10 @@ export class Unblind implements AuxiliaryQueryProcessor {
       op.requestedByPeer = true;
       // KRAM now holds this query as seen, so a resend of it is a replay and a group cannot re-date it: the
       // owed reply must outlive this owner. The accepted request is the durable record; the operation is a cache.
-      this.hab.db.heldu.pin([this.hab.pre!, op.xid], auxiliaryQueryWire(envelope, this.publicEvents(envelope.nests)));
+      const wire = this.queryWire(envelope);
+      this.hab.db.heldu.pin([this.hab.pre!, op.xid], wire);
       if (!this.group) this.respond(op.xid);
+      op.accepted = wire;
       return { kind: "accept" };
     } catch (error) {
       if (error instanceof ValidationError) return { kind: "drop", reason: "invalidQuery" };
@@ -543,8 +563,28 @@ export class Unblind implements AuxiliaryQueryProcessor {
       }
       op.reply = signed;
     }
-    this.outgoing.push({ kin: "reply", dest: op.recipient, msg: op.reply.slice() });
+    this.emitReply(op);
     return op.reply.slice();
+  }
+
+  /** The query as held and compared: its frame, every attachment group, the public evidence and KRAM's normalized proof. */
+  private queryWire(envelope: KeriDispatchEnvelope): Uint8Array {
+    return auxiliaryQueryWire(envelope, this.publicEvents(envelope.nests));
+  }
+
+  /**
+   * A copy of the accepted query: nothing is verified or derived again. If the reply exists it is queued again for
+   * a peer that lost it, at most once per {@link QUERY_RESEND_MS}.
+   */
+  private duplicateQuery(op: UnblindOperation): { kind: "accept" } {
+    if (op.reply && this.now() - op.repliedAt >= QUERY_RESEND_MS) this.emitReply(op);
+    return { kind: "accept" };
+  }
+
+  /** Queue the stored reply for the recipient and note when. */
+  private emitReply(op: UnblindOperation): void {
+    this.outgoing.push({ kin: "reply", dest: op.recipient, msg: op.reply!.slice() });
+    op.repliedAt = this.now();
   }
 
   /** Independently vet openings before caching them; Revery owns signature threshold and BADA. */

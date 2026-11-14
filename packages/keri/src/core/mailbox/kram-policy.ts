@@ -57,6 +57,15 @@ export function singleKeyQueryWindow(db: Baser, route: string): number | null {
 }
 
 /**
+ * How long a multi-key (group threshold) query on `route` stays timely under the windows this store was configured
+ * with, in milliseconds: the multi-key lag. A group sender uses its own windows as the estimate of its peer's, as
+ * {@link singleKeyQueryWindow} does. Null when this store has no KRAM cache types (KRAM never ran on it).
+ */
+export function multiKeyQueryWindow(db: Baser, route: string): number | null {
+  return storedCacheType(db, "qry", route)?.ll ?? null;
+}
+
+/**
  * How long an exchange of a message of `ilk` on `route` stays open after its opener under the windows this store
  * is configured with now, in milliseconds: the exchange lag `xl`. Null when this store has no KRAM cache types
  * (KRAM never ran on it).
