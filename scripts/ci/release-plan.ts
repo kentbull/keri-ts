@@ -216,9 +216,15 @@ interface RunRecord {
   conclusion: string | null;
 }
 
-/** Successful gate runs on the exact commit or on any commit with the identical tree. */
+/**
+ * Green gate runs on the exact commit or on any commit with the identical tree; `decide` judges their jobs.
+ *
+ * The listing is not filtered by `status=success` on the server: the Actions API omits some completed green
+ * runs from that filtered listing (a dispatched gate the release train had just waited for was missing), so
+ * the event and conclusion are checked here and the jobs in `decide`.
+ */
 export async function matchingRuns(api: Api, repo: string, sha: string, tree: string): Promise<GateRun[]> {
-  const base = `repos/${repo}/actions/workflows/pr-stage-gate.yml/runs?status=success&per_page=100`;
+  const base = `repos/${repo}/actions/workflows/pr-stage-gate.yml/runs?per_page=100`;
   const lists = await Promise.all([
     api.get(`${base}&head_sha=${sha}`),
     api.get(`${base}&event=workflow_dispatch`),
@@ -227,7 +233,7 @@ export async function matchingRuns(api: Api, repo: string, sha: string, tree: st
   const seen = new Map<number, RunRecord>();
   for (const list of lists) {
     for (const run of (list as { workflow_runs: RunRecord[] }).workflow_runs) {
-      if (["push", "workflow_dispatch"].includes(run.event)) seen.set(run.id, run);
+      if (["push", "workflow_dispatch"].includes(run.event) && run.conclusion === "success") seen.set(run.id, run);
     }
   }
   const trees = new Map<string, string>([[sha, tree]]);

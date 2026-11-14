@@ -92,7 +92,9 @@ runner builds. The package's release check is skipped, as a whole job, when a
 
 The package-to-shard mapping comes from the same unit shards the PR gate uses
 (`unitShards` in `scripts/ci/pr-test-scope.ts`; multisync maps to the suite owning
-its one test). Any API error or ambiguity runs the check. When the check runs it
+its one test). Any API error or ambiguity runs the check. The lookup lists the gate's
+runs without the API's `status=success` filter and checks the conclusion itself: that
+filtered listing omitted a green dispatched run the train had just waited for. When the check runs it
 is sharded the same way (`release check (<shard>)` jobs) and the artifact job
 waits for all shards. A merged PR, or a run for a different tree, is not
 evidence. To get the evidence for a release commit, dispatch the gate on it
@@ -120,15 +122,14 @@ workflows, which are unchanged and still release one package when its tag is pus
   Today that is cesr, then keri, then hosting and wallet together, then registrar
   (it depends on hosting), then verifier and observer together, then tufa (all of
   them). Packages within a stage publish in parallel; a stage starts only when the
-  previous one succeeded, and each release first waits until the `name@version` of
-  its dependencies are visible on the npm registry.
+  previous one succeeded.
 - **Qualify once.** For each distinct tag commit with no recorded green stage-gate run
   (the rule above) the train dispatches the stage gate itself and waits; every package's
   release check is then skipped on that evidence, so nothing is tested twice.
 - **Per package.** Each stage job dispatches that package's own `<package>-npm-release.yml`
-  (`keri-ts-npm-release.yml` for keri) on the train's ref with `publish`, the tag, the
-  registry-visibility list and a correlation id, then waits for that run, found by its
-  title, and fails unless it succeeded. The train never publishes directly: npm trusted
+  (`keri-ts-npm-release.yml` for keri) on the train's ref with `publish`, the tag and a
+  correlation id, then waits for that run (polling every 5 s), found by its title, and
+  fails unless it succeeded. The train never publishes directly: npm trusted
   publishing matches the top-level workflow file, so a run whose top-level workflow is
   `release-train.yml` is not a trusted publisher for any package, while the package workflows
   are. Provenance, the `publishing` environment, the artifact smoke tests and the GitHub
@@ -139,8 +140,9 @@ The same inputs let one package be released from an existing tag by dispatching 
 workflow directly: `gh workflow run <package>-npm-release.yml --ref master -f tag=<tag> -f publish=true`
 (the tooling runs from the dispatched ref, the tag's content is what is released).
 
-Old tags. The release tooling (`release-plan.ts`, `release-train.ts`, and the shard
-definitions in `pr-test-scope.ts`) runs from the workflow's own commit, which the
+Old tags. The release tooling (`release-plan.ts`, `release-train.ts`, the shard
+definitions in `pr-test-scope.ts`, the setup action, `release-artifact.sh` and the smoke
+scripts) runs from the workflow's own commit, which the
 shared workflow checks out into `.release-tooling` beside the tag; the package that
 is checked, built and published is always the tag's content. A tag older than the
 tooling therefore releases through the train or a package workflow like any other,
@@ -172,13 +174,48 @@ moves tags.
 
 ## Workflow and artifact ownership
 
-The three package tag workflows call
+The package tag workflows call
 [shared npm release](../../.github/workflows/npm-release.yml). After the plan job
-(skip or shard the package-owned check, see above) it builds and smokes the primary artifact, publishes that
-uploaded tarball to npm, then creates the GitHub release using registry bytes.
-Tufa builds supporting dependency artifacts for smoke and verifies its declared
-CESR/KERI versions are already published. The shared workflow does not itself
-repeat the full interoperability/manual qualification battery.
+(skip or shard the package-owned check, see above) its artifact job builds, verifies
+and smokes the package, then publish uploads that tarball to npm and the GitHub
+release is created from it. The shared workflow does not itself repeat the full
+interoperability/manual qualification battery.
+
+The artifact job (`scripts/ci/release-artifact.sh`) builds and packs only the package
+under release, from the tag's source, and checks its built `npm/package.json` against
+the planned graph. Its smoke installs that one tarball in a clean container with its
+internal dependencies from the npm registry at the exact pinned versions, as users get
+them: Tufa's CLI smoke for `tufa`, the library smokes for `cesr` and `keri`, and the
+installed-package probe (`scripts/smoke-test-package-npm.sh`) for the others. Before
+the smoke, `release-train.ts registry-deps` waits until every internal dependency the
+package's `package.json` pins (the exact versions released with it) is visible on npm, asking for the version document
+(`registry.npmjs.org/<name>/<version>`, whose CDN copy did not lag the way the full
+packument did), for up to ten minutes. This holds for a train and for a single tag
+release alike. A dry run (`publish=false`) publishes nothing, so a dependency released
+in the same train is not on npm: it probes once, builds the missing dependencies (and
+their missing dependencies) from the tag's checkout and installs them beside the
+tarball instead. Nothing in the artifact job loads the LMDB addon, so it does not
+rebuild it. The smoke scripts are release tooling and run from the workflow's commit.
+
+## Dependency cache
+
+One dependency cache serves Warm, the PR stage gate and the release workflows. The
+setup action (`.github/actions/common-release-setup`) restores the Deno cache and
+`node_modules` under the key `scripts/ci/deps-cache-key.ts` computes from the checkout:
+the dependency sections of every `package.json` and `deno.json`, `deno.lock` and
+`package-lock.json` with the workspace packages' versions and internal pins removed,
+the LMDB build (`setup_lmdb_v1.sh`, `packages/keri/scripts/lmdb/*`,
+`report-lmdb-runtime.ts`), the Deno and Node versions, `LMDB_DATA_V1`, and the runner
+OS, architecture, image and compiler. A Version Packages or source-only commit keeps
+the key, so the entry Warm saved on master is the one the release of its tags
+restores. An exact hit installs and compiles nothing.
+
+The entry always contains the rebuilt LMDB addon. Jobs that load it (`lmdb: "true"`:
+unit and interop lanes, release checks, Warm) run `report-lmdb-runtime.ts` on a hit
+and rebuild only on a miss or a failed gate (`scripts/ci/ensure-lmdb-addon.sh`). Only
+such a job saves, after a miss, and only from a branch run; a tag or pull-request run
+would save into a scope nothing else reads. Bump `cachePrefix` in the key script to
+retire every entry.
 
 Verify every selected version's registry metadata, internal dependencies,
 workflow/npm/GitHub tarball equality and final registry-only installs. A merged

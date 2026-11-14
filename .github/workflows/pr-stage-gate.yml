@@ -20,7 +20,6 @@ env:
   NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
   LMDB_DATA_V1: "true"
-  DEPS_CACHE_KEY_PREFIX: ci-deps-v6
   KERIPY_TABLE_SHA: 7143832813cac6a394ab1faf9be83bb3372be87c
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
@@ -31,8 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - id: setup
-        uses: ./.github/actions/common-release-setup
+      - uses: ./.github/actions/common-release-setup
         with:
           do-fmt-check: "false"
 
@@ -104,22 +102,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - id: setup
-        uses: ./.github/actions/common-release-setup
-        with:
-          do-fmt-check: "false"
-          cache-key-extra: lmdb-v1
-
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: rebuild LMDB-js for KERI compatibility
-        run: |
-          if [[ "${{ steps.setup.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
-            deno task setup:compat-lmdb
-            deno run -A scripts/ci/report-lmdb-runtime.ts
-          fi
+      # The shared dependency cache already holds the rebuilt LMDB addon; a miss rebuilds it here.
+      - uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: "false"
+          lmdb:         "true"
 
       - name: run selected unit suites
         shell: bash
@@ -151,24 +142,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - id: setup
-        uses: ./.github/actions/common-release-setup
-        with:
-          do-fmt-check: "false"
-          cache-key-extra: lmdb-v1
-
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: |
             3.13
             ${{ env.PYTHON_VERSION }}
 
-      - name: rebuild LMDB-js for KERI compatibility
-        run: |
-          if [[ "${{ steps.setup.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
-            deno task setup:compat-lmdb
-            deno run -A scripts/ci/report-lmdb-runtime.ts
-          fi
+      # The shared dependency cache already holds the rebuilt LMDB addon; a miss rebuilds it here.
+      - uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: "false"
+          lmdb:         "true"
 
       - name: check out pinned KERIpy table source
         if: matrix.target == 'interop-parity'

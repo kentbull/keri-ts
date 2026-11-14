@@ -3,15 +3,18 @@ import { unitShards } from "./pr-test-scope.ts";
 import {
   compareVersions,
   declaredDependencies,
+  type Dependencies,
   dispatchAndWait,
   type DispatchApi,
   gateSupportsEvidence,
+  internalPins,
   latestTag,
   type Package,
   packages,
   planTrain,
   type Sources,
   stages,
+  standIns,
   workflowFile,
 } from "./release-train.ts";
 
@@ -86,7 +89,6 @@ Deno.test("the plan resolves latest tags, drops packages already on npm and stag
     ["verifier", "observer"],
     ["tufa"],
   ]);
-  assertEquals(plan.stages[0][0].waitFor, ["cesr-ts@1.0.0", "keri-ts@1.0.0"]);
 });
 
 Deno.test("an explicit tag wins, and everything published yields an empty plan", async () => {
@@ -155,7 +157,7 @@ const request = (clock: { t: number }) => ({
   repo: "o/r",
   workflow: "keri-ts-npm-release.yml",
   ref: "refs/heads/master",
-  inputs: { publish: "false", tag: "keri-v1.0.0", wait_for: "[]", train_id: "7-keri" },
+  inputs: { publish: "false", tag: "keri-v1.0.0", train_id: "7-keri" },
   title: "train 7-keri",
   timeoutMs: 60_000,
   pollMs: 10_000,
@@ -191,4 +193,34 @@ Deno.test("dispatch-and-wait fails on a failed run, a refused dispatch and a tim
   );
   const running = { ...done("train 7-keri", "success"), status: "in_progress", conclusion: null };
   await assertRejects(() => dispatchAndWait(dispatchApi(204, [running]), request({ t: 0 })), Error, "Timed out");
+});
+
+/** Workspace manifests at one version set, as `packages/<id>/package.json` pins them. */
+const manifests: Record<Package, Dependencies> = {
+  cesr: {},
+  keri: { "cesr-ts": "2.0.0" },
+  hosting: { "cesr-ts": "2.0.0", "keri-ts": "2.0.1" },
+  wallet: { "cesr-ts": "2.0.0", "keri-ts": "2.0.1" },
+  registrar: { "cesr-ts": "2.0.0", "keri-ts": "2.0.1", "@keri-ts/hosting": "2.0.1" },
+  verifier: { "cesr-ts": "2.0.0", "keri-ts": "2.0.1", "@keri-ts/registrar": "2.0.1" },
+  observer: { "cesr-ts": "2.0.0", "keri-ts": "2.0.1", "@keri-ts/hosting": "2.0.1", "@keri-ts/registrar": "2.0.1" },
+  tufa: {},
+};
+const readManifest = (id: Package) => Promise.resolve(manifests[id]);
+const onNpm = (have: string[]) => (name: string, version: string) =>
+  Promise.resolve(have.includes(`${name}@${version}`));
+
+Deno.test("a publishing release's smoke needs nothing local; a dry run builds what npm lacks, transitively", async () => {
+  const verifier = internalPins(manifests.verifier);
+  assertEquals(verifier.map((pin) => pin.package), ["cesr", "keri", "registrar"]);
+  // Everything pinned is on npm: the smoke installs only the built tarball.
+  const all = ["cesr-ts@2.0.0", "keri-ts@2.0.1", "@keri-ts/hosting@2.0.1", "@keri-ts/registrar@2.0.1"];
+  assertEquals(await standIns(verifier, readManifest, onNpm(all)), []);
+  // A dry run of a whole version set: registrar is new and so is hosting, which only registrar pins.
+  assertEquals(await standIns(verifier, readManifest, onNpm(["cesr-ts@2.0.0", "keri-ts@2.0.1"])), [
+    "hosting",
+    "registrar",
+  ]);
+  // Nothing is on npm yet: the stand-ins come back in dependency order.
+  assertEquals(await standIns(verifier, readManifest, onNpm([])), ["cesr", "keri", "hosting", "registrar"]);
 });

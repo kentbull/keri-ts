@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Rebuild every local lmdb-js package tree that Node or Deno may actually load
-# for this checkout. The key compatibility requirement is LMDB_DATA_V1=true, but
-# on macOS/Deno the more subtle failure mode is addon provenance: Deno may load
-# a shadow copy under node_modules/.deno/.../node_modules/lmdb instead of the
+# Rebuild the local lmdb-js package trees that Node or Deno actually load for
+# this checkout. The key compatibility requirement is LMDB_DATA_V1=true, but on
+# macOS/Deno the more subtle failure mode is addon provenance: Deno may load a
+# shadow copy under node_modules/.deno/.../node_modules/lmdb instead of the
 # top-level node_modules/lmdb tree. If we rebuild only one of those locations,
 # we can still execute the wrong native addon and reintroduce old teardown bugs.
+#
+# The targets are the top-level node_modules/lmdb tree and the tree Deno
+# resolves for the pinned npm:lmdb specifier, each compiled once by real path:
+# node_modules/lmdb is often a symlink to that same .deno tree. Other .deno
+# copies (a stale lockfile specifier such as lmdb@3.4.4) are loaded by nothing
+# and are not rebuilt.
 
 log() {
   printf '[setup_lmdb_v1] %s\n' "$*"
@@ -26,19 +32,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # from, not merely the current working directory.
 ROOT_DIR="$(deno run --allow-read "${SCRIPT_DIR}/lmdb/resolve-install-root.ts")"
 
-collect_lmdb_dirs() {
-  # Collect all already-materialized lmdb package directories that may be
-  # selected at runtime.
-  #
-  # 1. node_modules/lmdb
-  #    This is the classic npm/Node location and is also used by some local
-  #    tooling flows.
-  #
-  # 2. node_modules/.deno/*/node_modules/lmdb
-  #    Deno's npm compatibility layer can shadow the top-level install with a
-  #    per-package copy under .deno. That copy may build or resolve a different
-  #    native addon than the top-level tree, so it must be rebuilt too.
-  ROOT_DIR="${ROOT_DIR}" deno run --allow-read --allow-env=ROOT_DIR "${SCRIPT_DIR}/lmdb/collect-lmdb-dirs.ts"
+real_dir() {
+  # Physical path of a directory, so a symlink and its target compile once.
+  (cd "$1" && pwd -P)
 }
 
 materialize_deno_lmdb_dir() {
@@ -58,27 +54,30 @@ materialize_deno_lmdb_dir() {
 }
 
 LMDB_DIRS=()
-while IFS= read -r LMDB_DIR; do
-  if [[ -n "${LMDB_DIR}" ]]; then
-    LMDB_DIRS+=("${LMDB_DIR}")
-  fi
-done < <(collect_lmdb_dirs)
+add_lmdb_dir() {
+  local dir
+  dir="$(real_dir "$1")"
+  # The +-expansion keeps an empty array safe under `set -u` in macOS bash 3.2.
+  for existing in ${LMDB_DIRS[@]+"${LMDB_DIRS[@]}"}; do
+    if [[ "${existing}" == "${dir}" ]]; then
+      log "${1} is ${dir}, already a rebuild target"
+      return
+    fi
+  done
+  LMDB_DIRS+=("${dir}")
+}
+
+# 1. node_modules/lmdb: the classic npm/Node location, also used by some local
+#    tooling flows.
+if [[ -d "${ROOT_DIR}/node_modules/lmdb" ]]; then
+  add_lmdb_dir "${ROOT_DIR}/node_modules/lmdb"
+fi
+# 2. The tree Deno's npm compatibility layer loads for npm:lmdb, which can
+#    shadow the top-level install and build or resolve a different addon.
 if DENO_LMDB_DIR="$(materialize_deno_lmdb_dir)"; then
   DENO_LMDB_DIR="${DENO_LMDB_DIR%/}"
   if [[ -d "${DENO_LMDB_DIR}" ]]; then
-    # Deno may resolve to a path we did not see in the filesystem scan yet, or
-    # to the same one with slightly different formatting. De-duplicate by exact
-    # path and add it if needed so the runtime-selected tree is always rebuilt.
-    already_present=0
-    for LMDB_DIR in "${LMDB_DIRS[@]}"; do
-      if [[ "${LMDB_DIR}" == "${DENO_LMDB_DIR}" ]]; then
-        already_present=1
-        break
-      fi
-    done
-    if [[ ${already_present} -eq 0 ]]; then
-      LMDB_DIRS+=("${DENO_LMDB_DIR}")
-    fi
+    add_lmdb_dir "${DENO_LMDB_DIR}"
   fi
 fi
 

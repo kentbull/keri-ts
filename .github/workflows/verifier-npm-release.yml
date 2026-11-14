@@ -16,11 +16,6 @@ on:
         required: false
         default: ""
         type: string
-      wait_for:
-        description: JSON array of name@version that must be visible on npm first (the train sets this)
-        required: false
-        default: "[]"
-        type: string
       train_id:
         description: Correlation id the release train sets so it can find this run
         required: false
@@ -42,4 +37,3 @@ jobs:
       package: verifier
       publish: ${{ github.event_name == 'push' || inputs.publish }}
       tag: ${{ inputs.tag }}
-      wait_for: ${{ inputs.wait_for != '' && inputs.wait_for || '[]' }}

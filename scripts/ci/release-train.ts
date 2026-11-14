@@ -5,7 +5,8 @@
  * Modes (first argument):
  *   plan     resolve each package's tag, drop what npm already has, order the rest by dependency stage
  *   qualify  run the stage gate for commits that have no recorded green run, and wait for it
- *   visible  wait until `name@version` entries (env WAIT_FOR, a JSON array) are visible on the registry
+ *   registry-deps  before a package's smoke: wait until its internal dependencies are on npm (publish), or list
+ *                  the ones a dry run must build locally because npm does not have them (argument: package)
  *   dispatch dispatch a package's own release workflow for a tag and wait for that run to finish
  *   verify   check a built package's internal dependencies against the planned graph (argument: package)
  *
@@ -111,8 +112,6 @@ export interface Resolved {
   commit: string;
   version: string;
   dependencies: Package[];
-  /** `name@version` of each internal dependency at this tag, which must be visible before this release builds. */
-  waitFor: string[];
   /**
    * Whether the stage gate at this tag can produce evidence the release check recognizes: it must be
    * dispatchable and name the same unit shards as the current definitions. Otherwise running it would only
@@ -172,11 +171,6 @@ export async function planTrain(
     if (!(await sources.onMaster(commit))) throw new Error(`${tag} (${commit}) is not on master.`);
     const dependencies = declaredDependencies(await sources.file(tag, `packages/${id}/scripts/build_npm.ts`));
     graph[id] = dependencies;
-    const waitFor = await Promise.all(dependencies.map(async (dep) => {
-      const depVersion = (JSON.parse(await sources.file(tag, `packages/${dep}/package.json`)) as { version: string })
-        .version;
-      return `${packages[dep]}@${depVersion}`;
-    }));
     const published = await sources.registry(packages[id]);
     if (published.versions.includes(version) && !(keepPublished && requested[id]?.trim())) {
       dropped.push({ package: id, reason: `${packages[id]}@${version} is already on npm` });
@@ -193,7 +187,6 @@ export async function planTrain(
       commit,
       version,
       dependencies,
-      waitFor,
       qualifiable: await gateSupportsEvidence(sources, tag),
     });
   }
@@ -225,6 +218,19 @@ export async function commitsToQualify(
     }
   }
   return [...needs].map(([commit, tag]) => ({ commit, tag }));
+}
+
+/**
+ * Whether `name@version` is on the registry, asked of the version document itself: the full packument is
+ * served from a CDN that stayed stale for minutes after a publish, the version document did not.
+ */
+export async function onRegistry(name: string, version: string): Promise<boolean> {
+  if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) throw new Error(`${name}@${version} is not an exact version.`);
+  const response = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2F")}/${encodeURIComponent(version)}`);
+  await response.body?.cancel();
+  if (response.status === 404) return false;
+  if (!response.ok) throw new Error(`npm registry ${name}@${version}: HTTP ${response.status}`);
+  return true;
 }
 
 /** Registry metadata over HTTPS; a 404 means never published. */
@@ -292,7 +298,6 @@ async function runPlan(): Promise<void> {
     lines[`stage${n}`] = JSON.stringify((plan.stages[n - 1] ?? []).map((item) => ({
       package: item.package,
       tag: item.tag,
-      wait_for: JSON.stringify(item.waitFor),
     })));
   }
   await output(lines);
@@ -439,28 +444,98 @@ async function runDispatch(): Promise<void> {
     inputs: {
       publish: Deno.env.get("PUBLISH") === "true" ? "true" : "false",
       tag: Deno.env.get("TAG")!,
-      wait_for: Deno.env.get("WAIT_FOR") || "[]",
       train_id: trainId,
     },
     title: `train ${trainId}`,
     timeoutMs: 100 * 60_000,
-    pollMs: 15_000,
+    pollMs: 5_000,
   });
   await summarize(`${id} ${Deno.env.get("TAG")}: ${workflowFile(id)} succeeded, ${url}`);
 }
 
-async function runVisible(): Promise<void> {
-  const wanted = JSON.parse(Deno.env.get("WAIT_FOR") || "[]") as string[];
-  for (const entry of wanted) {
-    const at = entry.lastIndexOf("@");
-    const name = entry.slice(0, at), version = entry.slice(at + 1);
-    for (let attempt = 0;; attempt++) {
-      if ((await registry(name)).versions.includes(version)) break;
-      if (attempt >= 60) throw new Error(`${entry} is not visible on the npm registry.`);
-      await new Promise((resolve) => setTimeout(resolve, 10_000));
+/** One internal dependency as a package manifest pins it. */
+export interface Pin {
+  package: Package;
+  version: string;
+}
+
+/** A manifest's `dependencies`: npm name to version or range. */
+export type Dependencies = Record<string, string>;
+
+/** Internal dependencies a manifest's `dependencies` pins, in train order. */
+export function internalPins(dependencies: Dependencies): Pin[] {
+  return order.filter((id) => packages[id] in dependencies)
+    .map((id) => ({ package: id, version: dependencies[packages[id]] }));
+}
+
+/** A package manifest as the release tooling reads it. */
+interface Manifest {
+  dependencies?: Dependencies;
+}
+
+/** The `dependencies` of a package.json text (empty when it declares none). */
+function dependenciesOf(text: string): Dependencies {
+  return (JSON.parse(text) as Manifest).dependencies ?? {};
+}
+
+/** Reads the `dependencies` of `packages/<id>/package.json` in the checkout; replaced in tests. */
+export type ManifestReader = (id: Package) => Promise<Dependencies>;
+/** Asks the registry whether `name@version` exists; replaced in tests. */
+export type RegistryProbe = (name: string, version: string) => Promise<boolean>;
+
+/**
+ * The internal packages a dry run must build locally so the smoke can install `direct` (the built package's
+ * pins): every pinned `name@version` npm does not have, and, through each of those, its own pins that npm
+ * does not have either. Returned in dependency order. A pin npm has brings its own dependencies along.
+ */
+export async function standIns(direct: Pin[], manifest: ManifestReader, published: RegistryProbe): Promise<Package[]> {
+  const missing = new Map<Package, Package[]>();
+  const visit = async (pins: Pin[]): Promise<void> => {
+    for (const pin of pins) {
+      if (missing.has(pin.package) || await published(packages[pin.package], pin.version)) continue;
+      const own = internalPins(await manifest(pin.package));
+      missing.set(pin.package, own.map((dep) => dep.package));
+      await visit(own);
     }
-    console.log(`${entry} is visible on npm`);
+  };
+  await visit(direct);
+  const graph = Object.fromEntries(order.map((id) => [id, missing.get(id) ?? []])) as Record<Package, Package[]>;
+  return stages([...missing.keys()], graph).flat();
+}
+
+/**
+ * Run before a package's smoke, after its build. A publishing run waits until every internal dependency the
+ * package pins in its `package.json` (the exact versions released with it; the built manifest may widen a pin
+ * to a range, as keri-ts does for cesr-ts) is visible on npm, because the smoke installs them from there, as
+ * users will. A dry run publishes nothing, so a dependency released in the same train is not on npm: it probes
+ * once and outputs `local`, the packages to build from this checkout and install beside the tarball instead.
+ */
+async function runRegistryDeps(id: string): Promise<void> {
+  const direct = internalPins(dependenciesOf(await Deno.readTextFile(`packages/${id}/package.json`)));
+  if (Deno.env.get("PUBLISH") === "true") {
+    for (const pin of direct) {
+      const entry = `${packages[pin.package]}@${pin.version}`;
+      for (let attempt = 0;; attempt++) {
+        if (await onRegistry(packages[pin.package], pin.version)) break;
+        if (attempt >= 60) throw new Error(`${entry} is not visible on the npm registry.`);
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+      }
+      console.log(`${entry} is visible on npm`);
+    }
+    await output({ local: "" });
+    return;
   }
+  const local = await standIns(
+    direct,
+    async (dep) => dependenciesOf(await Deno.readTextFile(`packages/${dep}/package.json`)),
+    onRegistry,
+  );
+  for (const pin of direct) {
+    console.log(
+      `${packages[pin.package]}@${pin.version}: ${local.includes(pin.package) ? "built locally" : "from npm"}`,
+    );
+  }
+  await output({ local: local.join(" ") });
 }
 
 async function runVerify(id: string): Promise<void> {
@@ -480,8 +555,8 @@ if (import.meta.main) {
   const [mode, argument] = Deno.args;
   if (mode === "plan") await runPlan();
   else if (mode === "qualify") await runQualify();
-  else if (mode === "visible") await runVisible();
+  else if (mode === "registry-deps") await runRegistryDeps(argument);
   else if (mode === "dispatch") await runDispatch();
   else if (mode === "verify") await runVerify(argument);
-  else throw new Error("Usage: release-train.ts plan|qualify|visible|verify <package>");
+  else throw new Error("Usage: release-train.ts plan|qualify|dispatch|registry-deps <package>|verify <package>");
 }
