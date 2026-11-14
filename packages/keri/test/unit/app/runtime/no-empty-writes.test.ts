@@ -5,12 +5,15 @@
  */
 import { call, run, spawn } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
+import { Diger, Prefixer } from "../../../../../cesr/mod.ts";
 import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { PROTOCOL_IDLE_TOCKS, PROTOCOL_TOCK_MS } from "../../../../src/app/runtime/doing.ts";
 import { chunkBytes } from "../../../../src/app/transport/byte-source.ts";
+import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
 import { FakeRuntimeHttpClient, ManualRuntimeClock } from "../../../support/runtime-fakes.ts";
 
@@ -91,6 +94,58 @@ Deno.test("a busy runtime still writes: the awaited event is accepted and the es
       assertEquals([...hby.db.ooes.getTopItemIter()].length, 0, "and its escrow is gone");
     } finally {
       yield* source.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+/** A runtime holding one exchange that waits for the second of the two signatures its sender's threshold needs. */
+function* composeExchange() {
+  const clock = new ManualRuntimeClock(0);
+  const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+  const sender = hby.makeHab("sender", undefined, {
+    transferable: true,
+    icount: 2,
+    isith: "2",
+    ncount: 1,
+    nsith: "1",
+    toad: 0,
+  });
+  const recipient = hby.makeHab("recipient", undefined, { transferable: true, toad: 0, wits: [] });
+  const serder = exchangeMessage("/challenge/response", { i: sender.pre, words: ["dede", "fifi"] }, {
+    sender: sender.pre,
+    recipient: recipient.pre,
+  })[0];
+  const sigers = sender.sign(serder.raw, true);
+  const group = new TransIdxSigGroup(
+    new Prefixer({ qb64: sender.pre }),
+    sender.kever!.sner,
+    new Diger({ qb64: sender.kever!.said }),
+    sigers,
+  );
+  const runtime = yield* createAgentRuntime(hby, new FakeRuntimeHttpClient(), clock);
+  const first = new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, [sigers[0]]);
+  const decision = yield* runtime.exc.processEvent({ serder, tsgs: [first] });
+  assertEquals(decision.kind, "escrow", "one signature leaves the exchange waiting on the sender's threshold");
+  return { clock, hby, runtime, said: serder.said!, group, second: sigers[1] };
+}
+
+Deno.test("a pending exchange escrow opens no write transaction, and is accepted when its dependency arrives", async () => {
+  await run(function*() {
+    const { clock, hby, runtime, said, group, second } = yield* composeExchange();
+    try {
+      yield* spawn(() => runAgentRuntime(runtime));
+      yield* settle();
+      yield* elapse(clock, 2); // tock 0's opening passes have finished
+      const before = writeTransactions(runtime);
+      yield* elapse(clock, PROTOCOL_IDLE_TOCKS * 2 + 3); // the sweeps retry the exchange, which still waits
+      assertEquals(writeTransactions(runtime), before, "retrying a still-waiting exchange opens no writer");
+      assert(hby.db.epse.get([said]), "the exchange still waits");
+      hby.db.esigs.add([said, group.pre, group.snh, group.said], second);
+      yield* elapse(clock, 4);
+      assertEquals(hby.db.exns.get([said])?.said, said, "the arriving signature accepts the exchange");
+      assertEquals(hby.db.epse.get([said]), null, "and its escrow is gone");
+    } finally {
       yield* hby.close(true);
     }
   });
