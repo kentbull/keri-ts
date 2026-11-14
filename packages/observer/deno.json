@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/observer",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "exports": "./mod.ts",
   "tasks": {
     "check": "deno check mod.ts scripts/build_npm.ts test/*.ts",

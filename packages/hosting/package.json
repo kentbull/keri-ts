@@ -1,11 +1,11 @@
 {
   "name": "@keri-ts/hosting",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "description": "HTTP host lifecycle, application middleware and protocol route composition",
   "license": "Apache-2.0",
   "dependencies": {
     "cesr-ts": "2.2.1",
-    "keri-ts": "2.2.4"
+    "keri-ts": "2.2.5"
   },
   "repository": {
     "type": "git",
