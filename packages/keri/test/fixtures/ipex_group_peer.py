@@ -31,6 +31,7 @@ class _Owner:
     """Borrow the fixture's live stores and scheduler for one production generator."""
     evidence = IpexV2Issuance.evidence
     public = IpexV2Issuance.public
+    settle = IpexV2Issuance.settle  # The group generators wait through the owner so held anchors are asked for.
 
     def __init__(self, peer, args):
         self.peer, self.args = peer, args
