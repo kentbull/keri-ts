@@ -41,13 +41,16 @@ import {
 import { Kevery } from "../../core/kel/eventing.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../../core/routing.ts";
+import { loadNests } from "../../db/exchange/exchange-nests.ts";
 import { Exchanger, type ExchangeRouteHandler, type ExchangeRouteVerification } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
+import { isIssuanceOrigin } from "../ipex/ipex-node-authentication.ts";
 import { IpexV2Handler } from "../ipex/ipex-v2.ts";
+import { IPEX_GRANT_ROUTE } from "../ipex/ipexing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../protocol/parsering.ts";
 import { abortable, rethrowCleanupFailure } from "../runtime/abortable.ts";
-import { groupSigningMembers, isLocalGroupHab, localIpexContribution } from "./group-members.ts";
+import { groupSigningMembers, groupThresholdSigned, isLocalGroupHab, localIpexContribution } from "./group-members.ts";
 import { multisigEmbeddedSection, multisigPayloadSaid } from "./multisig-messaging.ts";
 
 /** KERIpy multisig route constants. */
@@ -813,7 +816,10 @@ export class Multiplexor {
       && handler.registry === this.registry.store;
   }
 
-  /** Index an authenticated proposal; child acceptance still requires local approval and its own proofs. */
+  /**
+   * Index an authenticated proposal. Its child is accepted, with its own proofs, after local approval, or without one
+   * when the signatures received for it already complete it (see {@link alreadyComplete} and {@link groupIpexFollowable}).
+   */
   *add(serder: SerderKERI, nests: readonly CesrFrame[] = []): Operation<MultisigDecision> {
     const inspection = this.inspect(serder, nests);
     if (!inspection.ok) {
@@ -865,6 +871,15 @@ export class Multiplexor {
         // none, so a member that only receives it takes it on receipt instead of waiting for an approval it need not give.
         if (serder.pvrsn.major === 1) yield* this.processLegacyApproved(serder);
         else yield* this.processApproved(nests);
+      } else if (v2Ipex && groupIpexFollowable(this.hby, this.receivedCopies(nests, existing))) {
+        // The same holds for a group IPEX message: once the copies received for it sign it to the group's threshold,
+        // this member takes it on receipt without signing, so every member holds what the group completed before the
+        // counterparty can answer in its thread. Earlier copies go first so that their signatures join this one's; a
+        // message already accepted here only gains this copy's. What cannot be taken yet (an answer whose prior has
+        // not arrived) the group IPEX owner takes on a later pass.
+        yield* this.processApproved(
+          this.exchanger!.complete(embeddedSaid) ? nests : this.receivedCopies(nests, existing).reverse(),
+        );
       } else if (serder.pvrsn.major === 2 || firstSubmission) {
         // Legacy approval polling consumes its first notice; repeated v1 notices would re-propose it.
         this.notifier?.add(firstSubmission ? { r: route, d: said } : { r: route, d: said, e: embeddedSaid });
@@ -931,6 +946,17 @@ export class Multiplexor {
     }
     return event.ilk === "ixn"
       && kever.tholder.satisfy(Kever.verifyIndexedSignatures(event.raw, envelope.sigers, kever.verfers).indices);
+  }
+
+  /** This wrapper's child first, then the children of the accepted wrappers already indexed for the same message. */
+  private receivedCopies(nests: readonly CesrFrame[], existing: readonly Saider[]): CesrFrame[] {
+    const said = nests[0]?.body.said;
+    return [
+      ...nests.slice(0, 1),
+      ...existing.map((prior) => loadNests(this.hby.db, prior.qb64)[0]).filter((copy) =>
+        !!said && copy?.body.said === said
+      ),
+    ];
   }
 
   /** Whether a rotation proposal names exactly the group's current signing members and rotation members. */
@@ -1228,6 +1254,33 @@ export class Multiplexor {
   private isLocalHab(pre: string): boolean {
     return pre.length > 0 && this.hby.habs.has(pre);
   }
+}
+
+/**
+ * Whether a member takes, without consent, the v2 group IPEX message that `copies` carry: the children of the stored
+ * `/multisig/exn` wrappers it received for that message, the first naming it. It does when the message belongs to a
+ * local group, the copies sign it to the group's threshold ({@link groupThresholdSigned}), the exchange it answers
+ * (if any) is accepted here, and it is not a group issuer's DH Grant, which the issuance owner follows instead.
+ * Accepting such a message adds no signature, so it is not consent; one below the threshold waits for approval.
+ *
+ * KERIpy's `Multiplexor.add` replays a child only after local approval, so a KERIpy member that did not sign holds
+ * only the proposal. keri-ts delivers to, and completes at, every member regardless of weight.
+ */
+export function groupIpexFollowable(hby: Habery, copies: readonly CesrFrame[]): boolean {
+  const first = copies[0], embedded = first?.body;
+  if (
+    !(embedded instanceof SerderKERI) || embedded.pvrsn.major !== 2 || !embedded.pre || !embedded.said
+    || !embedded.route?.startsWith("/ipex/")
+  ) return false;
+  const hab = hby.habs.get(embedded.pre);
+  if (!hab || !isLocalGroupHab(hby, hab)) return false;
+  if (embedded.route === IPEX_GRANT_ROUTE && isIssuanceOrigin(embedded.pre, first.nests?.[0])) return false;
+  const prior = embedded.sad?.p;
+  if (typeof prior === "string" && prior.length > 0 && !hby.db.exns.get([prior])) return false;
+  const proofs = copies.filter((copy) => copy.body.said === embedded.said).flatMap((copy) =>
+    envelopeFromFrame(copy).tsgs
+  );
+  return groupThresholdSigned(hby.db, embedded, proofs);
 }
 
 /** Extract the embedded business EXN SAD from a `/multisig/exn` wrapper. */
