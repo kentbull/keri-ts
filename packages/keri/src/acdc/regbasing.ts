@@ -1,8 +1,6 @@
 /** Public ACDC registry database layout and joined LMDB lifecycle. */
 import { b, Diger, NumberPrimitive, Saider, SerderACDC } from "cesr-ts";
-import type { Operation } from "effection";
 import { DerivedUpdateRecord } from "../core/records.ts";
-import type { StoreIdentity } from "../db/core/dber.ts";
 import type { LMDBerOptions } from "../db/core/lmdber.ts";
 import { type StoreFamily, StoreOwner } from "../db/core/store-owner.ts";
 import { Komer } from "../db/koming.ts";
@@ -42,23 +40,15 @@ export class RegBaser extends StoreOwner {
   /** Insertion-ordered out-of-order event-SAID tuples by registry and ordinal. */
   ooes!: B64OnIoSetSuber<[string]>;
 
-  /** Rebind the same environment's typed tables after every joined reopen. */
-  *reopen(options: StoreIdentity = {}): Operation<boolean> {
-    const opened = yield* this.store.reopen(options);
-    if (!opened) return false;
-    try {
-      this.evts = new SerderSuber(this.store, { subkey: "evts.", ctor: SerderACDC });
-      this.tels = new CesrOnSuber(this.store, { subkey: "tels.", ctor: Saider });
-      this.heads = new CesrSuber(this.store, { subkey: "heds.", ctor: Saider });
-      this.openings = new BytesSuber(this.store, { subkey: "openings." });
-      this.dvus = new Komer(this.store, { subkey: "dvus.", recordClass: DerivedUpdateRecord });
-      this.ancs = new CatCesrSuber(this.store, { subkey: "ancs.", ctor: [NumberPrimitive, Diger] });
-      this.maes = new B64OnIoSetSuber(this.store, { subkey: "maes." });
-      this.ooes = new B64OnIoSetSuber(this.store, { subkey: "ooes." });
-      return true;
-    } catch (error) {
-      yield* this.close();
-      throw error;
-    }
+  /** Rebind the same environment's typed tables; `StoreOwner.reopen` runs this in one transaction. */
+  protected bindTables(): void {
+    this.evts = new SerderSuber(this.store, { subkey: "evts.", ctor: SerderACDC });
+    this.tels = new CesrOnSuber(this.store, { subkey: "tels.", ctor: Saider });
+    this.heads = new CesrSuber(this.store, { subkey: "heds.", ctor: Saider });
+    this.openings = new BytesSuber(this.store, { subkey: "openings." });
+    this.dvus = new Komer(this.store, { subkey: "dvus.", recordClass: DerivedUpdateRecord });
+    this.ancs = new CatCesrSuber(this.store, { subkey: "ancs.", ctor: [NumberPrimitive, Diger] });
+    this.maes = new B64OnIoSetSuber(this.store, { subkey: "maes." });
+    this.ooes = new B64OnIoSetSuber(this.store, { subkey: "ooes." });
   }
 }

@@ -31,7 +31,7 @@ export function* createBaser(options: BaserOptions = {}): Operation<Baser> {
 
 /** Construct a closed LMDB-backed `Keeper` at its established paths. */
 export function lmdbKeeper({ compat, ...options }: KeeperOptions = {}): Keeper {
-  return new Keeper(new LMDBer(options, lmdbDefaultsFor(Keeper.Family, compat)), options.logger);
+  return new Keeper(new LMDBer(options, lmdbDefaultsFor(Keeper.Family, compat)));
 }
 
 /** Constructor-safe async factory for a fully reopened `Keeper`. */

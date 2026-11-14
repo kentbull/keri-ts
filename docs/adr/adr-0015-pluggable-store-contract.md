@@ -48,7 +48,11 @@ is created. A writable store creates an absent table. `openExisting` fails on on
 and on a readonly store an absent table yields no usable handle, so callers probe
 `hasTable(name)`, which never creates, before binding an optional table. The
 trailing-NUL table name spelling seen in Python-created layouts is an LMDB
-backend detail.
+backend detail. `StoreOwner.reopen` binds all of an owner's tables inside one
+write transaction on a writable store, so first creation is one commit and a
+crash leaves all of the tables or none; the next open completes it. Only table
+binding is grouped: key creation, `setVer` and other data writes keep their own
+commits.
 
 **Primitives.** Backends implement only row access. `getVal` and `putVal`
 (insert-if-absent, reporting whether it wrote), `setVal`, `delVal` (with an

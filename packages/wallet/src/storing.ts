@@ -57,18 +57,11 @@ export class WalletBaser extends StoreOwner {
   admitted!: Komer<AdmittedRecord>;
   credentials!: Suber;
 
-  /** Rebind the application's ordinary typed tables on joined reopen. */
-  *reopen(options: StoreIdentity = {}): Operation<boolean> {
-    if (!(yield* this.store.reopen(options))) return false;
-    try {
-      this.issued = new Komer(this.store, { subkey: "issued.", recordClass: IssuedRecord });
-      this.admitted = new Komer(this.store, { subkey: "admitted.", recordClass: AdmittedRecord });
-      this.credentials = new Suber(this.store, { subkey: "credential-grants." });
-      return true;
-    } catch (error) {
-      yield* this.close();
-      throw error;
-    }
+  /** Bind the application's typed tables; `StoreOwner.reopen` runs this in one transaction. */
+  protected bindTables(): void {
+    this.issued = new Komer(this.store, { subkey: "issued.", recordClass: IssuedRecord });
+    this.admitted = new Komer(this.store, { subkey: "admitted.", recordClass: AdmittedRecord });
+    this.credentials = new Suber(this.store, { subkey: "credential-grants." });
   }
 }
 /**

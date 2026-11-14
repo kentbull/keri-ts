@@ -11,9 +11,7 @@
  * - higher-level notification policy lives in `app/notifying.ts`
  */
 import { Cigar, MtrDex, Salter } from "cesr-ts";
-import type { Operation } from "npm:effection@^3.6.0";
 import { DatabaseNotOpenError } from "../core/errors.ts";
-import type { StoreIdentity } from "./core/dber.ts";
 import type { LMDBerOptions } from "./core/lmdber.ts";
 import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
 import { CesrSuber, Suber } from "./subing.ts";
@@ -167,13 +165,8 @@ export class Noter extends StoreOwner {
   public nidx!: Suber<string>;
   public ncigs!: CesrSuber<Cigar>;
 
-  /** Open all notice, reverse-index, and detached-signature families. */
-  *reopen(options: StoreIdentity = {}): Operation<boolean> {
-    const opened = yield* this.store.reopen(options);
-    if (!opened) {
-      return false;
-    }
-
+  /** Bind all notice, reverse-index, and detached-signature families. */
+  protected bindTables(): void {
     this.notes = new NoticeSuber(this.store, {
       subkey: "nots.",
       sep: "/",
@@ -183,7 +176,6 @@ export class Noter extends StoreOwner {
       subkey: "ncigs.",
       ctor: Cigar,
     });
-    return true;
   }
 
   /** Add one new notice iff its `rid` is not already present. */

@@ -6,7 +6,7 @@
  * This is Sally-inspired workflow state, not a claim of exact Sally storage parity.
  */
 import { Dater, Prefixer, SerderACDC } from "cesr-ts";
-import { CesrSuber, openOwner, SerderSuber, type StoreFamily, type StoreIdentity, StoreOwner } from "keri-ts/db";
+import { CesrSuber, openOwner, SerderSuber, type StoreFamily, StoreOwner } from "keri-ts/db";
 import { lmdbDefaultsFor, LMDBer, type LMDBerOptions } from "keri-ts/db/lmdb";
 import { type Operation } from "npm:effection@^3.6.0";
 
@@ -39,13 +39,8 @@ export class VerifierCueBaser extends StoreOwner {
   ack!: SerderSuber<SerderACDC>;
   rack!: SerderSuber<SerderACDC>;
 
-  /** Open ordinary LMDB storage and bind this application's typed tables. */
-  *reopen(options: StoreIdentity = {}): Operation<boolean> {
-    const opened = yield* this.store.reopen(options);
-    if (!opened) {
-      return false;
-    }
-
+  /** Bind this application's typed tables; `StoreOwner.reopen` runs this in one transaction. */
+  protected bindTables(): void {
     this.snd = new CesrSuber<Prefixer>(this.store, { subkey: "snd.", ctor: Prefixer });
     this.iss = new CesrSuber<Dater>(this.store, { subkey: "iss.", ctor: Dater });
     this.rev = new CesrSuber<Dater>(this.store, { subkey: "rev.", ctor: Dater });
@@ -53,7 +48,6 @@ export class VerifierCueBaser extends StoreOwner {
     this.revk = new SerderSuber<SerderACDC>(this.store, { subkey: "revk", ctor: SerderACDC });
     this.ack = new SerderSuber<SerderACDC>(this.store, { subkey: "ack", ctor: SerderACDC });
     this.rack = new SerderSuber<SerderACDC>(this.store, { subkey: "rack", ctor: SerderACDC });
-    return true;
   }
 
   /** Clear workflow records, including the existing local delivered markers. */
