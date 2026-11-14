@@ -231,9 +231,10 @@ function sealDigests(event: SerderKERI): unknown[] {
 export function findRegistryAnchor(db: Baser, issuer: string, registry: SerderACDC): readonly [number, string] | null {
   let earliest: readonly [number, string] | null = null;
   for (const event of currentRegistryBranch(db, issuer)) {
+    // Seal test first: fullyWitnessed walks back to the governing establishment, so it runs only on matches.
     if (
-      db.fullyWitnessed(event)
-      && event.seals.some((seal) => matchesRegistrySeal(seal, registry))
+      event.seals.some((seal) => matchesRegistrySeal(seal, registry))
+      && db.fullyWitnessed(event)
     ) {
       earliest = [event.sn!, event.said!];
     }
@@ -245,7 +246,8 @@ export function findRegistryAnchor(db: Baser, issuer: string, registry: SerderAC
 function findDigestAnchor(db: Baser, issuer: string, digest: string): readonly [number, string] | null {
   let earliest: readonly [number, string] | null = null;
   for (const event of currentRegistryBranch(db, issuer)) {
-    if (db.fullyWitnessed(event) && sealDigests(event).includes(digest)) {
+    // Seal test first: fullyWitnessed walks back to the governing establishment, so it runs only on matches.
+    if (sealDigests(event).includes(digest) && db.fullyWitnessed(event)) {
       earliest = [event.sn!, event.said!];
     }
   }

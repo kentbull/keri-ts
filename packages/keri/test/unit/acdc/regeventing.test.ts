@@ -26,6 +26,7 @@ import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { RegistryEventer } from "../../../src/acdc/regengine.ts";
 import {
+  findRegistryAnchor,
   type RegistryDisclosure,
   type RegistryVerification,
   validateRip,
@@ -1362,6 +1363,45 @@ Deno.test("registry anchors keep their historical receipt requirement after witn
       assertEquals(verifyRegistryAnchor(validated.event, claim), true);
     } finally {
       yield* whby.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("registry anchor search checks witnessing only on events carrying the seal", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `registry-anchor-cost-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    try {
+      const issuer = hby.makeHab("issuer", undefined);
+      const rip = regcept(issuer.pre);
+      for (let i = 0; i < 190; i++) issuer.interact({ data: [] });
+      issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
+      const anchor = issuer.kever!.serder;
+      for (let i = 0; i < 9; i++) issuer.interact({ data: [] });
+      assertEquals(issuer.kever!.sn, 200);
+
+      const db = hby.db;
+      const fullyWitnessed = db.fullyWitnessed.bind(db);
+      let calls = 0;
+      db.fullyWitnessed = (serder) => {
+        calls++;
+        return fullyWitnessed(serder);
+      };
+      try {
+        assertEquals(findRegistryAnchor(db, issuer.pre, rip), [anchor.sn!, anchor.said!]);
+        // One matching event: cost is bounded by the matches, not by the 201-event branch.
+        assertEquals(calls <= 2, true, `fullyWitnessed called ${calls} times for one matching event`);
+        calls = 0;
+        assertEquals(vet({ db, rip }).kind, "verified");
+        assertEquals(calls <= 8, true, `vet called fullyWitnessed ${calls} times for one matching event`);
+      } finally {
+        db.fullyWitnessed = fullyWitnessed;
+      }
+    } finally {
       yield* hby.close(true);
     }
   });
