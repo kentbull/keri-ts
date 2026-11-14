@@ -1,5 +1,24 @@
 # keri-ts
 
+## 2.2.6
+
+### Patch Changes
+
+- 1313114: Registry anchor search now tests each issuer event for the registry seal before checking its witness receipts, so one anchor check no longer costs quadratic time in the length of the issuer's key event log.
+- 611daf2: A group's issuance no longer sends the issuer's whole key event log twice to the holder. After proving, the custodian sends only what the Grant's proof support lacked: the anchoring event and the registry update. A custodian rebuilt after a restart did not send the first support and still sends it in full.
+- ae89408: An edge sending through a relay no longer re-introduces its whole KEL on every forwarded delivery: the relay is
+  introduced to again only when the KEL publisher has not recorded it as holding the sender's latest establishment
+  event. The second proof-support message of an individual issuance now carries only the anchoring event and the
+  registry update that proving added, not the whole support again.
+- 1645497: A TEL event escrowed because its anchoring issuer KEL event is not yet accepted now makes the recipient ask for
+  that KEL. Entering the anchorless escrow publishes one `logs` query cue for the issuer, starting at the first
+  sequence number the recipient lacks, so the existing query path fetches it instead of waiting for the issuer to send it.
+- d1fd9b2: A group's threshold DH and Unblind query, which one member cannot re-date, is no longer resent unchanged every second for the life of the operation. The group resends with a gap that doubles from 1 s to 8 s and stops once the query is older than the multi-key KRAM window, while the operation keeps waiting to its deadline. A receiver now treats a copy byte-identical to the query it already accepted as a duplicate: it is not verified again, adds no group `sign` contribution, and re-sends the stored reply at most once per second.
+- b6667c1: A v2 registry event (`rip` or `bup`) held because its anchoring issuer KEL event is not accepted yet now makes the
+  recipient ask for that KEL. The event's first entry into the anchor escrow publishes one `logs` query cue for the
+  issuer, starting at the first sequence number the recipient lacks and naming the anchor's sequence number when a
+  source seal supplies it, so the existing query path fetches the KEL instead of waiting for the issuer to send it.
+
 ## 2.2.5
 
 ### Patch Changes
