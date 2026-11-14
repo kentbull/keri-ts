@@ -188,7 +188,7 @@ internal dependencies from the npm registry at the exact pinned versions, as use
 them: Tufa's CLI smoke for `tufa`, the library smokes for `cesr` and `keri`, and the
 installed-package probe (`scripts/smoke-test-package-npm.sh`) for the others. Before
 the smoke, `release-train.ts registry-deps` waits until every internal dependency the
-built package pins is visible on npm, asking for the version document
+package's `package.json` pins (the exact versions released with it) is visible on npm, asking for the version document
 (`registry.npmjs.org/<name>/<version>`, whose CDN copy did not lag the way the full
 packument did), for up to ten minutes. This holds for a train and for a single tag
 release alike. A dry run (`publish=false`) publishes nothing, so a dependency released

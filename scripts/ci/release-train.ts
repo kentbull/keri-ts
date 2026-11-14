@@ -225,6 +225,7 @@ export async function commitsToQualify(
  * served from a CDN that stayed stale for minutes after a publish, the version document did not.
  */
 export async function onRegistry(name: string, version: string): Promise<boolean> {
+  if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) throw new Error(`${name}@${version} is not an exact version.`);
   const response = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2F")}/${encodeURIComponent(version)}`);
   await response.body?.cancel();
   if (response.status === 404) return false;
@@ -504,12 +505,13 @@ export async function standIns(direct: Pin[], manifest: ManifestReader, publishe
 
 /**
  * Run before a package's smoke, after its build. A publishing run waits until every internal dependency the
- * built package pins is visible on npm, because the smoke installs them from there (as users will). A dry run
- * publishes nothing, so a dependency released in the same train is not on npm: it probes once and outputs
- * `local`, the packages to build from this checkout and install beside the built tarball instead.
+ * package pins in its `package.json` (the exact versions released with it; the built manifest may widen a pin
+ * to a range, as keri-ts does for cesr-ts) is visible on npm, because the smoke installs them from there, as
+ * users will. A dry run publishes nothing, so a dependency released in the same train is not on npm: it probes
+ * once and outputs `local`, the packages to build from this checkout and install beside the tarball instead.
  */
 async function runRegistryDeps(id: string): Promise<void> {
-  const direct = internalPins(dependenciesOf(await Deno.readTextFile(`packages/${id}/npm/package.json`)));
+  const direct = internalPins(dependenciesOf(await Deno.readTextFile(`packages/${id}/package.json`)));
   if (Deno.env.get("PUBLISH") === "true") {
     for (const pin of direct) {
       const entry = `${packages[pin.package]}@${pin.version}`;
