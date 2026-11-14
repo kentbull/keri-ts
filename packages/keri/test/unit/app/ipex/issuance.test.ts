@@ -5,7 +5,7 @@
  * evidence file of the Python CLI, which `tufa ipex --issue` has no counterpart for (its `--out` is an
  * exclusive-create write of the prepared Grant), so nothing of it is ported.
  */
-import { bytesEqual, parseBytes } from "cesr-ts";
+import { bytesEqual, Counter, parseBytes, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run, sleep } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import {
@@ -94,6 +94,73 @@ Deno.test("issuance completes: Grant, query, reply, anchored BUP, finish, proof 
       ValidationError,
       "unavailable, terminated or expired",
     );
+  });
+});
+
+/** Remove each `chunk` from `wire`; the wires are qb64 text, so a latin-1 string round-trips them. */
+function withoutChunks(wire: Uint8Array, chunks: Uint8Array[]): Uint8Array {
+  const decode = (bytes: Uint8Array) => Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
+  let rest = decode(wire);
+  for (const chunk of chunks) rest = rest.replace(decode(chunk), "");
+  return Uint8Array.from(rest, (char) => char.charCodeAt(0));
+}
+
+Deno.test("a holder whose Grant support leaves out issuer KEL events asks once, is answered from fn, and ends with the credential held", async () => {
+  await run(function*() {
+    const s = yield* scenario(1);
+    const hab = s.issuer.habs[0], holder = s.holder;
+    const reg = yield* s.registry(0);
+    // The holder learned the issuer's inception when the parties met; the events that anchor the registry follow it.
+    const lacking = [...s.issuer.hby.db.clonePreIter(hab.pre!, 1)];
+    assert(lacking.length > 0);
+    // The support goes out without them. A Grant refused for want of an accepted registry is not held, so it is
+    // delivered again once the answer has arrived, as a sender that was told the holder lacked the KEL would.
+    let grantWire: Uint8Array | null = null;
+    const ops = s.owner({
+      delivery: {
+        *deliver(sent) {
+          const kept = withoutChunks(sent.msg, lacking), body = text(kept);
+          if (grantWire || !body.includes("/ipex/grant")) return yield* s.delivery(sent);
+          // The Grant follows the support under a counter of its own.
+          const counter = Counter.makeGVC(Vrsn_2_0);
+          const start = body.lastIndexOf("{\"v\":\"", body.indexOf("\"t\":\"xip\"")) - counter.length;
+          assert(bytesEqual(kept.slice(start, start + counter.length), counter));
+          grantWire = kept.slice(start);
+          return yield* s.delivery({ ...sent, msg: kept.slice(0, start) });
+        },
+      },
+    });
+    const credential = reg.credential();
+    const begun = yield* proposeIssuance(ops, { credential, options: grantOptions(s) });
+    const grant = begun.grant;
+    yield* ops.processOnce();
+    assert(grantWire, "the Grant went out without the issuer KEL events after the inception");
+    assertEquals(holder.hby.db.getKever(hab.pre!)?.sn, 0);
+
+    const queries = [];
+    for (let cue = holder.runtime.cues.pull(); cue; cue = holder.runtime.cues.pull()) {
+      if (cue.kin === "query") queries.push(cue);
+    }
+    assertEquals(queries, [{ kin: "query", pre: hab.pre, route: "logs", q: { fn: "1" } }]);
+    assertEquals(holder.rgy.store.head(reg.regid), null, "the registry inception waits for its anchoring KEL event");
+
+    // Answer as the issuer's host would, replaying from the requested ordinal.
+    for (const wire of lacking) yield* holder.runtime.reactor.processBytes(wire);
+    yield* holder.runtime.protocol.processEscrowsOnce();
+    assertEquals(holder.rgy.store.head(reg.regid)?.qb64, reg.regid);
+    yield* holder.runtime.reactor.processBytes(grantWire);
+    yield* holder.runtime.protocol.processEscrowsOnce();
+    assertEquals([...holder.runtime.cues].filter((cue) => cue.kin === "query"), [], "nothing more is asked");
+
+    // The issuer's first DH query reached a holder that did not hold the Grant yet; it resends after a second.
+    s.clock.skew += 1100;
+    yield* ops.processOnce();
+    yield* pump(holder, route([s.issuer, holder], s.log));
+    holderApproves(s, grant);
+    yield* settle(s, ops, [grant]);
+    assertEquals(issuanceStatus(ops, grant), { state: "done", role: "issuer", phase: "issued" });
+    assertEquals((yield* holder.runtime.ipex!.dhke(holder.habs[0]).finish(grant)).kind, "accept");
+    assert(holder.runtime.exc.complete(grant));
   });
 });
 

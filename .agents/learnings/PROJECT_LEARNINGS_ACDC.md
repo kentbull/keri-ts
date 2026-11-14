@@ -345,6 +345,9 @@ from stored inception. Exact seal/quorum authentication does not establish globa
 registry freshness. Source couples/triples remain unsigned per-intake hints:
 reject resolvable false locators before writes or duplicate success, but never
 persist their conditions or prevent a later clean replay.
+An event first entering the anchor escrow of a known issuer publishes one issuer-KEL `logs` query cue
+(`missingAnchorQuery`: `fn` one past the accepted sn, `s` the highest source-seal sn when one is supplied) to the
+observer's cue flow after commit; retries and repeats never ask, and an update for an unknown registry has no issuer to ask.
 Duplicate replay is read-only and cannot move the head backward. Missing anchors
 precede ordering escrow; unsafe numeric storage ordinals require explicit refusal.
 Retry arbitrates anchored siblings as a set, using earliest anchor then digest
