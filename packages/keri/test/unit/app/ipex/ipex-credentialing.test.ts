@@ -26,6 +26,7 @@ import { storedExchangeMessage } from "../../../../src/app/ipex/ipex-grouping.ts
 import { IPEX_ADMIT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../../src/app/ipex/ipexing.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { attachmentCounterPayloadQb64b } from "../../../../src/core/attachment-countering.ts";
+import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Revery } from "../../../../src/core/routing.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
 import { createReger } from "../../../../src/db/lmdb-stores.ts";
@@ -314,3 +315,89 @@ for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
 
 Deno.test("IPEX stored V1 grant framing preserves V2 child proofs after database reopen", () =>
   assertCredentialArtifactIntake(Vrsn_2_0, Vrsn_1_0));
+
+Deno.test("a holder given a grant without the issuer's KEL asks for it and accepts the credential from the answer", async () => {
+  await run(function*() {
+    const issuerHby = yield* createHabery({ name: `ipex-ask-issuer-${crypto.randomUUID()}`, temp: true });
+    const issuerReger = yield* createReger({ name: `ipex-ask-issuer-${crypto.randomUUID()}`, temp: true });
+    const holderHby = yield* createHabery({ name: `ipex-ask-holder-${crypto.randomUUID()}`, temp: true });
+    const holderReger = yield* createReger({ name: `ipex-ask-holder-${crypto.randomUUID()}`, temp: true });
+    try {
+      const options = { transferable: true, icount: 1, isith: "1", ncount: 1, nsith: "1", toad: 0 };
+      const issuer = issuerHby.makeHab("issuer", undefined, options);
+      const holder = holderHby.makeHab("holder", undefined, options);
+      const schemer = new Schemer({ sed: schemaSed() });
+      issuerHby.db.schema.pin(schemer.said, schemer);
+      holderHby.db.schema.pin(schemer.said, schemer);
+
+      const issuerRevery = new Revery(issuerHby.db);
+      const issuerTvy = new Tevery({ db: issuerHby.db, reger: issuerReger, rvy: issuerRevery });
+      const issuerVry = new Verifier(issuerHby, { reger: issuerReger });
+      const rgy = new Regery(issuerHby, { reger: issuerReger, tvy: issuerTvy, vry: issuerVry });
+      const registry = rgy.makeRegistry("issuer-reg", issuer);
+      const credentialer = new Credentialer(issuerHby, { reger: issuerReger, vry: issuerVry });
+      const creder = credentialer.create({
+        registry,
+        schema: schemer.said,
+        recipient: holder.pre,
+        data: { role: "holder" },
+      });
+      credentialer.issue(registry, creder);
+      const grant = ipexCredentialGrant({
+        hby: issuerHby,
+        hab: issuer,
+        reger: issuerReger,
+        recipient: holder.pre,
+        credentialSaid: creder.said!,
+        message: "grant",
+      });
+
+      const revery = new Revery(holderHby.db);
+      const holderTvy = new Tevery({ db: holderHby.db, reger: holderReger, rvy: revery });
+      const holderVry = new Verifier(holderHby, { reger: holderReger });
+      const holderReactor = new Reactor(protocolFixture(holderHby, {
+        revery,
+        tevery: holderTvy,
+        verifier: holderVry,
+      }));
+      // The holder knows the issuer's inception only; the issuer KEL events in the proof support are left out.
+      const kel = [...issuerHby.db.clonePreIter(issuer.pre)];
+      assertEquals(kel.length > 1, true);
+      yield* holderReactor.processBytes(kel[0]);
+      assertEquals(holderHby.db.getKever(issuer.pre)?.sn, 0);
+      for (const message of grant.support) {
+        if (new SerderKERI({ raw: message }).pre !== issuer.pre) yield* holderReactor.processBytes(message);
+      }
+      loadIpexHandlers(holderHby, holderReactor.protocol.exc);
+      yield* holderReactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_1_0), grant.wire));
+      yield* processCredentialPresentationArtifacts(holderReactor.protocol, grant.artifacts);
+      yield* holderReactor.protocol.processEscrowsOnce();
+      assertEquals(holderReger.saved.get([creder.said!]), null, "Credential waits on the missing KEL");
+
+      const asked: AgentCue[] = [];
+      for (let cue = holderTvy.cues.pull(); cue; cue = holderTvy.cues.pull()) {
+        if (cue.kin === "query") asked.push(cue);
+      }
+      assertEquals(asked.length, 1);
+      const [query] = asked;
+      assertEquals(query.kin === "query" && query.pre, issuer.pre);
+      assertEquals(query.kin === "query" && query.route, "logs");
+
+      // Answer the query as the issuer's host would: replay from the requested ordinal.
+      const fn = Number.parseInt((query as { q: { fn: string } }).q.fn, 16);
+      assertEquals(fn, 1, "The query starts after the inception the holder already has");
+      for (const wire of issuerHby.db.clonePreIter(issuer.pre, fn)) yield* holderReactor.processBytes(wire);
+      yield* holderReactor.protocol.processEscrowsOnce();
+      yield* processCredentialPresentationArtifacts(holderReactor.protocol, grant.artifacts);
+      yield* holderReactor.protocol.processEscrowsOnce();
+
+      assertEquals(holderReger.saved.get([creder.said!])?.qb64, creder.said);
+      assertEquals(new CredentialWallet(holderReger).list({ aid: holder.pre }), [creder.said]);
+    } finally {
+      yield* holderReger.close(true);
+      yield* holderHby.close(true);
+      yield* issuerReger.close(true);
+      yield* issuerHby.close(true);
+    }
+  });
+});

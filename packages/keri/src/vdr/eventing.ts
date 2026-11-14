@@ -66,6 +66,21 @@ type TelIlk =
 
 type TelEscrowKind = "outOfOrder" | "anchorless" | "partialWitness";
 
+/**
+ * Issuer KEL events an anchorless TEL event is waiting for, as the `fn`/`s` filters of a `logs` query.
+ *
+ * `fn` is the first issuer sequence number the recipient lacks and `s` the sequence number of the anchoring
+ * event. Both are lowercase hexadecimal, as on the query wire.
+ */
+export interface MissingAnchorQuery {
+  /** Issuer whose KEL holds the anchoring seal. */
+  pre: string;
+  /** Replay start: one past the issuer's accepted sequence number, or 0 when the issuer is unknown. */
+  fn: string;
+  /** Sequence number the responder must have reached; it names the anchoring event. */
+  s: string;
+}
+
 export type TelProcessDecision =
   | {
     kind: "accept";
@@ -90,6 +105,8 @@ export type TelProcessDecision =
     said: string;
     ilk: TelIlk;
     reason: string;
+    /** Present only when this decision first placed the event in the anchorless escrow and the KEL is missing. */
+    query?: MissingAnchorQuery;
   }
   | {
     kind: "reject";
@@ -639,8 +656,12 @@ export class Tever {
         return reject("Simple issue registry prefix mismatch.", serder, this.regk);
       }
       if (!this.verifyAnchor(serder, args.seqner ?? null, args.saider ?? null)) {
-        this.escrowALEvent(serder, args.seqner ?? null, args.saider ?? null);
-        return escrow("anchorless", "Missing KEL anchor for TEL issue.", serder, this.regk);
+        return this.escrowAnchorless(
+          "Missing KEL anchor for TEL issue.",
+          serder,
+          args.seqner ?? null,
+          args.saider ?? null,
+        );
       }
       this.logEvent({
         pre: okPre(serder),
@@ -704,8 +725,12 @@ export class Tever {
         return reject("Simple revoke is invalid against backer-based registry.", serder, this.regk);
       }
       if (!this.verifyAnchor(serder, args.seqner ?? null, args.saider ?? null)) {
-        this.escrowALEvent(serder, args.seqner ?? null, args.saider ?? null);
-        return escrow("anchorless", "Missing KEL anchor for TEL revoke.", serder, this.regk);
+        return this.escrowAnchorless(
+          "Missing KEL anchor for TEL revoke.",
+          serder,
+          args.seqner ?? null,
+          args.saider ?? null,
+        );
       }
       this.logRevoked(serder, sn, args, undefined, recordPublicationFailure);
       return accept(serder, this.regk);
@@ -777,14 +802,14 @@ export class Tever {
     ).sigers;
 
     if (!this.verifyAnchor(args.serder, args.seqner, args.saider)) {
-      this.escrowALEvent(
+      const decision = this.escrowAnchorless(
+        "Missing KEL anchor for TEL event.",
         args.serder,
         args.seqner,
         args.saider,
         verified,
         [...args.baks],
       );
-      const decision = escrow("anchorless", "Missing KEL anchor for TEL event.", args.serder, this.regk);
       return { kind: "escrow", decision, reason: decision.reason };
     }
 
@@ -833,14 +858,52 @@ export class Tever {
     this.reger.twes.put(pre, okSn(serder), said);
   }
 
-  /** Retain anchorless evidence without changing the source seal representation. */
+  /**
+   * Retain an event whose anchoring issuer KEL event is not accepted yet and decide whether to ask for it.
+   *
+   * The decision names the missing KEL only when this call put the event into the anchorless escrow. Escrow
+   * retries and repeat arrivals find the row present, so they never ask again.
+   */
+  private escrowAnchorless(
+    reason: string,
+    serder: SerderKERI,
+    seqner: NumberPrimitive | null,
+    saider: Diger | null,
+    bigers: readonly Siger[] = [],
+    baks: readonly string[] = [],
+  ): Extract<TelProcessDecision, { kind: "escrow" }> {
+    const added = this.escrowALEvent(serder, seqner, saider, bigers, baks);
+    const decision = escrow("anchorless", reason, serder, this.regk);
+    const query = added ? this.missingAnchorQuery(seqner, saider) : null;
+    return query ? { ...decision, query } : decision;
+  }
+
+  /**
+   * Name the issuer KEL events still missing for a source seal, or null when more KEL cannot supply the anchor.
+   *
+   * Without a complete source seal there is no coordinate to ask for. When the issuer's accepted KEL already
+   * reaches the seal's sequence number, the anchor was found wanting rather than missing, and replay cannot
+   * change that.
+   */
+  private missingAnchorQuery(seqner: NumberPrimitive | null, saider: Diger | null): MissingAnchorQuery | null {
+    if (!seqner || !saider) return null;
+    const known = this.db.getKever(this.pre, { refresh: true })?.sner.num ?? null;
+    if (known !== null && known >= seqner.num) return null;
+    return {
+      pre: this.pre,
+      fn: (known === null ? 0n : known + 1n).toString(16),
+      s: seqner.num.toString(16),
+    };
+  }
+
+  /** Retain anchorless evidence without changing the source seal representation. Returns whether the escrow row is new. */
   private escrowALEvent(
     serder: SerderKERI,
     seqner?: NumberPrimitive | null,
     saider?: Diger | null,
     bigers: readonly Siger[] = [],
     baks: readonly string[] = [],
-  ): void {
+  ): boolean {
     const pre = okPre(serder);
     const said = okSaid(serder);
     const key = dgKey(pre, said);
@@ -853,7 +916,7 @@ export class Tever {
       this.reger.baks.put(key, [...baks]);
     }
     this.reger.tvts.put(key, serder.raw);
-    this.reger.taes.put(pre, okSn(serder), said);
+    return this.reger.taes.put(pre, okSn(serder), said);
   }
 
   /** Persist accepted TEL evidence and the exact qualified source seal. */
@@ -1028,6 +1091,11 @@ export class Tevery {
       return reject(error instanceof Error ? error.message : String(error), args.serder);
     }
     if (accepted) this.tevers.set(accepted.regk, accepted);
+    if (decision.kind === "escrow" && decision.query) {
+      // The event is now escrowed; ask the issuer's KEL holders for what its anchor needs through the ordinary cue path.
+      const { pre, fn, s } = decision.query;
+      this.cues.push({ kin: "query", pre, route: "logs", q: { fn, s } });
+    }
     if (decision.kind === "accept" && (decision.ilk === Ilks.rev || decision.ilk === Ilks.brv)) {
       // Keep publication outside semantic error conversion and after the writer has committed.
       this.cues.push({ kin: "revoked", serder: args.serder });
@@ -1352,7 +1420,8 @@ export class Tevery {
     if (Tevery.registryKey(event) !== regk) return reject("Credential belongs to a different registry.");
     const fields = ["vn", "i", "s", "d", "ri", "dt", "et"] as const;
     if (
-      accepted.qb64 !== record.d || fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(current[key]))
+      accepted.qb64 !== record.d
+      || fields.some((key) => JSON.stringify(record[key]) !== JSON.stringify(current[key]))
       || (["s", "d"] as const).some((key) => record.a[key] !== current.a[key])
       || (["i", "s", "d"] as const).some((key) => record.ra[key] !== current.ra[key])
     ) return reject("Credential state does not match current accepted TEL and anchors.");
