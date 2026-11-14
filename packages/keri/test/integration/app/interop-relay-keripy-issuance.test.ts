@@ -516,21 +516,20 @@ function* sendRevocation(edge: Edge, sender: Hab, issuer: string, regk: string, 
   assert(outcome.kin !== "failed", `the revocation evidence was not sent: ${JSON.stringify(outcome)}`);
 }
 
-/** Wait for the KERIpy peer to accept the revoked head, then check what it reads (see the expected-failure tests). */
+/** Wait for the KERIpy peer to accept the revoked head, then check that it reads the credential as revoked. */
 function* keriPyLearnsRevocation(
   py: KeriPyRelayPeer,
   grant: string,
   credential: string,
   regk: string,
   revoked: string,
-  readsRevoked: boolean,
 ): Operation<void> {
   const held = yield* observe("the KERIpy peer to accept the revoked TEL head", async () => {
     const holding = await py.holding(grant, credential, regk);
     return holding.head === revoked ? holding : undefined;
   });
   assertEquals(held.state, "issued", "the admitted Grant's record is unchanged");
-  if (readsRevoked) assertEquals(held.current, "revoked", "KERIpy reads the credential as revoked");
+  assertEquals(held.current, "revoked", "KERIpy reads the credential as revoked");
 }
 
 /** Wait for the KERIpy peer to accept a Grant of `credential` from `sender`, and return what it recorded. */
@@ -556,9 +555,9 @@ function* keriPyHolds(
  * Single-sig issuer: the edge incepts a v2 registry, issues a publicly opened credential to the KERIpy peer and grants
  * it through the agent (`refresh` attaches the current registry proof); KERIpy admits and records `issued`. The edge
  * revokes (a second public `bup`) and sends the revocation evidence through the agent; KERIpy accepts the revoked
- * `bup` as its TEL head. `readsRevoked` also requires KERIpy to read the state from it.
+ * `bup` as its TEL head and reads `revoked` from the opening published on it.
  */
-function* singleSigIssuesAndRevokes(py: KeriPyRelayPeer, readsRevoked: boolean): Operation<void> {
+function* singleSigIssuesAndRevokes(py: KeriPyRelayPeer): Operation<void> {
   const { agent, edge, hab } = yield* singleSigRelay(py, function*() {});
   const acdc = edge.runtime.acdc!;
   const author = new RegistryAuthor(acdc, unwitnessed(edge.hby));
@@ -574,7 +573,7 @@ function* singleSigIssuesAndRevokes(py: KeriPyRelayPeer, readsRevoked: boolean):
     options: { recipient: py.pre, message: "Relay issuance" },
   });
   const held = yield* keriPyHolds(py, grant, hab.pre!, credential.said!, regk);
-  assertEquals(held, { state: "issued", said: issued.said!, sn: 1, head: issued.said!, current: null });
+  assertEquals(held, { state: "issued", said: issued.said!, sn: 1, head: issued.said!, current: "issued" });
   const admit = yield* call(() => py.admit(grant));
   const answered = yield* waitForPresentation(edge.runtime.operations!.presentation, grant, {
     timeoutMs: BUDGET_MS,
@@ -585,7 +584,7 @@ function* singleSigIssuesAndRevokes(py: KeriPyRelayPeer, readsRevoked: boolean):
   const revoked = yield* author.update(registry, credential, "revoked", { public: true });
   assertEquals(acdc.store.publicOpening(revoked.said!)?.ts.label, "revoked", "the edge published the revoked opening");
   yield* sendRevocation(edge, hab, hab.pre!, regk, py);
-  yield* keriPyLearnsRevocation(py, grant, credential.said!, regk, revoked.said!, readsRevoked);
+  yield* keriPyLearnsRevocation(py, grant, credential.said!, regk, revoked.said!);
   assertOnlyAgent(agent, edge);
 }
 
@@ -594,9 +593,9 @@ function* singleSigIssuesAndRevokes(py: KeriPyRelayPeer, readsRevoked: boolean):
  * `proposeRegistryEvent`, whose anchor the edge member's weight alone satisfies, so no approval by the weight-0
  * custodian is driven; the Grant is a `proposeGroupPresentation` the edge member completes alone. KERIpy accepts the
  * Grant against the group's KEL and records `issued`; the edge member sends the group's revocation evidence through
- * the agent and KERIpy accepts the revoked `bup` as its TEL head. `readsRevoked` as for the single-sig issuer.
+ * the agent and KERIpy accepts the revoked `bup` as its TEL head and reads `revoked` from its published opening.
  */
-function* groupIssuesAndRevokes(py: KeriPyRelayPeer, readsRevoked: boolean): Operation<void> {
+function* groupIssuesAndRevokes(py: KeriPyRelayPeer): Operation<void> {
   const { agent, edge, member, group } = yield* groupRelay(py);
   const runtime = edge.runtime, store = runtime.acdc!.store;
   const proposals = runtime.operations!.groupIpex.deps.registry!;
@@ -633,13 +632,13 @@ function* groupIssuesAndRevokes(py: KeriPyRelayPeer, readsRevoked: boolean): Ope
     { state: "done", phase: "accepted" },
   );
   const held = yield* keriPyHolds(py, grant, group.pre!, credential.said!, regk);
-  assertEquals(held, { state: "issued", said: issued.said!, sn: 1, head: issued.said!, current: null });
+  assertEquals(held, { state: "issued", said: issued.said!, sn: 1, head: issued.said!, current: "issued" });
   const admit = yield* call(() => py.admit(grant));
   yield* until(() => edge.hby.db.erpy.get([grant])?.qb64 === admit, "the edge to poll the KERIpy Admit of the group");
 
   const revoked = yield* update(issued, "revoked");
   yield* sendRevocation(edge, member, group.pre!, regk, py);
-  yield* keriPyLearnsRevocation(py, grant, credential.said!, regk, revoked.said!, readsRevoked);
+  yield* keriPyLearnsRevocation(py, grant, credential.said!, regk, revoked.said!);
   assertOnlyAgent(agent, edge);
 }
 
@@ -679,37 +678,11 @@ function* keriPyRevokesHeld(py: KeriPyRelayPeer): Operation<void> {
 }
 
 Deno.test("relay single-sig issues to KERIpy candidate and revokes", async () => {
-  await withKeriPyPeer((py) => run(() => singleSigIssuesAndRevokes(py, false)));
+  await withKeriPyPeer((py) => run(() => singleSigIssuesAndRevokes(py)));
 });
 
 Deno.test("relay group issues to KERIpy candidate and revokes", async () => {
-  await withKeriPyPeer((py) => run(() => groupIssuesAndRevokes(py, false)));
-});
-
-/*
- * EXPECTED FAILURE: the KERIpy candidate (54cf0a04) accepts the revoked `bup` but cannot read its state. Its Parser
- * routes a TEL event to `Regery.processEvent` (core/parsing.py, the SerderACDC rip/bup branch), which drops the
- * published opening the frame carries (acdc/registraring.py `processEvent` takes `sscs`/`ssts` and ignores the
- * BlindState attachments in `**kwa`); only `Regery.ingest` returns a vetted opening, and retaining it is left to
- * the caller ("opening retention ... caller policy"). So KERIpy holds the revoked head and no opening for it, and
- * `current` reads null. keri-ts, as holder, retains a published opening at intake (the KERIpy-revokes test below).
- * Fix belongs in KERIpy: retain the vetted `disclosedOpening` of an accepted `bup` on the Parser path.
- */
-Deno.test({
-  name: "KERIpy candidate reads a relay single-sig revocation as revoked",
-  ignore: true,
-  async fn() {
-    await withKeriPyPeer((py) => run(() => singleSigIssuesAndRevokes(py, true)));
-  },
-});
-
-/* EXPECTED FAILURE: the group issuer's revocation, for the same cause as the single-sig one above. */
-Deno.test({
-  name: "KERIpy candidate reads a relay group revocation as revoked",
-  ignore: true,
-  async fn() {
-    await withKeriPyPeer((py) => run(() => groupIssuesAndRevokes(py, true)));
-  },
+  await withKeriPyPeer((py) => run(() => groupIssuesAndRevokes(py)));
 });
 
 Deno.test("KERIpy candidate revokes a credential held by relay single-sig", async () => {
