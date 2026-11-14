@@ -183,7 +183,10 @@ export const suites: Record<string, TestSuite> = {
     ],
   },
   "interop-v2-registry": {
-    files: ["test/integration/app/interop-v2-registry.test.ts"],
+    files: [
+      "test/integration/app/interop-v2-registry.test.ts",
+      "test/integration/app/interop-anchor-query.test.ts",
+    ],
   },
   "interop-delegation": {
     processes: 2,
