@@ -89,6 +89,30 @@ Deno.test("a run on a different commit counts only when the git tree is identica
   assertEquals((await matchingRuns(different, "o/r", release, "tree1")).length, 0);
 });
 
+Deno.test("a green run the status-filtered listing omits is still found", async () => {
+  const release = "f".repeat(40);
+  const names = all.map((name) => `unit (${name})`);
+  // Mirrors the Actions API: run 7 is listed unfiltered (and by head_sha) but missing under status=success.
+  const api: Api = {
+    get(path: string): Promise<unknown> {
+      if (path.includes("/actions/workflows/")) {
+        const listed = !path.includes("status=");
+        return Promise.resolve({
+          workflow_runs: listed
+            ? [{ id: 7, head_sha: release, event: "workflow_dispatch", conclusion: "success" }]
+            : [],
+        });
+      }
+      if (path.includes("/actions/runs/7/jobs")) {
+        return Promise.resolve({ jobs: [...jobs(names), { name: "stage-gate", conclusion: "success" }] });
+      }
+      throw new Error(`unexpected ${path}`);
+    },
+  };
+  assertEquals((await matchingRuns(api, "o/r", release, "tree")).map((found) => found.id), [7]);
+  assertEquals((await plan("keri", "o/r", release, "tree", api)).runCheck, false);
+});
+
 Deno.test("any API failure fails closed", async () => {
   const broken: Api = { get: () => Promise.reject(new Error("HTTP 500")) };
   const decision = await plan("tufa", "o/r", "d".repeat(40), "t", broken);
