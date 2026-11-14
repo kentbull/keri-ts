@@ -80,7 +80,7 @@ const APP_FORBIDDEN = [
 ];
 
 /** Host modules that only `keri-ts/runtime/node` may load. */
-const HOST_FORBIDDEN = ["npm:lmdb", "npm:/lmdb@", "node:"];
+const HOST_FORBIDDEN = ["npm:@keri-ts/lmdb-js@", "npm:/@keri-ts/lmdb-js@", "node:"];
 
 const SURFACES: SurfaceCheck[] = [
   {
@@ -98,7 +98,7 @@ const SURFACES: SurfaceCheck[] = [
   {
     label: "keri-ts runtime/node surface",
     entrypoint: new URL("../runtime-node.ts", import.meta.url),
-    forbidden: [...APP_FORBIDDEN, "npm:lmdb", "npm:/lmdb@"],
+    forbidden: [...APP_FORBIDDEN, "npm:@keri-ts/lmdb-js@", "npm:/@keri-ts/lmdb-js@"],
   },
   {
     label: "keri-ts runtime/web surface",

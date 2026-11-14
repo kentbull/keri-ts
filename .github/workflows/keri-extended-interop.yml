@@ -43,12 +43,11 @@ env:
   KERIPY_INTEROP_ROOT: ${{ github.workspace }}/.cache/keripy-mailbox-main
   KERIPY_INTEROP_PYTHON: ${{ github.workspace }}/.cache/keripy-venv/bin/python
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
-  LMDB_DATA_V1: "true"
   NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
   DENO_CACHE_KEY_PREFIX: ci-deno-v1
   NODE_MODULES_CACHE_KEY_PREFIX: ci-node-modules-v1
-  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v3
+  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v4
   KERIPY_CACHE_KEY_PREFIX: keripy-mailbox-main-v1
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
   # Qualification lanes run stock KERIpy timing; scripts/ci/keripy_fast_timing.py stays off.
@@ -110,7 +109,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('packages/keri/scripts/setup_lmdb_v1.sh', 'deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
+          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('deno.lock', 'deno.json', 'package-lock.json', 'package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-
 
@@ -125,12 +124,8 @@ jobs:
             3.13
             ${{ env.PYTHON_VERSION }}
 
-      - name: verify or rebuild LMDB-js data v1 and NAPI compatibility
-        run: |
-          if [[ "${{ steps.interop-node-modules-cache.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
-            deno task setup:compat-lmdb
-            deno run -A scripts/ci/report-lmdb-runtime.ts
-          fi
+      - name: verify the prebuilt LMDB-js data v1 N-API addon
+        run: bash scripts/ci/ensure-lmdb-addon.sh "${{ steps.interop-node-modules-cache.outputs.cache-hit }}"
 
       - name: check out exact mailbox fork qualification peer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

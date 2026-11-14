@@ -86,7 +86,7 @@ host-resolution path and is not an indefinitely blocking port requirement.
    Preserve current ordinal precision, insertion/deduplication order, accepted
    markers and aliases. Old-layout compatibility tests and lazy-table machinery
    are removed; add no migration or old-data reader.
-3. Preserve `LMDB_DATA_V1=true`; LMDB format, body protocol and attachment genus
+3. Preserve LMDB data format v1; LMDB format, body protocol and attachment genus
    are independent. Use disposable stores and one live V1 owner per path/process.
    Compare Python→TS and TS→Python where the reference actually supports the path.
 4. Prove default/injected/readonly runtime ownership and joined construction,

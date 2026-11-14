@@ -19,7 +19,6 @@ env:
   DENO_VERSION: "2.9.8"
   NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
-  LMDB_DATA_V1: "true"
   KERIPY_TABLE_SHA: 7143832813cac6a394ab1faf9be83bb3372be87c
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
@@ -106,7 +105,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # The shared dependency cache already holds the rebuilt LMDB addon; a miss rebuilds it here.
+      # The shared dependency cache already holds the prebuilt LMDB addon; a miss installs it here.
       - uses: ./.github/actions/common-release-setup
         with:
           do-fmt-check: "false"
@@ -148,7 +147,7 @@ jobs:
             3.13
             ${{ env.PYTHON_VERSION }}
 
-      # The shared dependency cache already holds the rebuilt LMDB addon; a miss rebuilds it here.
+      # The shared dependency cache already holds the prebuilt LMDB addon; a miss installs it here.
       - uses: ./.github/actions/common-release-setup
         with:
           do-fmt-check: "false"

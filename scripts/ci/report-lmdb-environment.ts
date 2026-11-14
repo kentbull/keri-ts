@@ -4,7 +4,7 @@
  *
  * CI environment assertions call this instead of embedding a Node heredoc in a
  * shell script. The upward walk mirrors how local commands discover the nearest
- * workspace `node_modules/lmdb` installation.
+ * workspace `node_modules/@keri-ts/lmdb-js` installation.
  */
 
 /** Return the parent directory for a POSIX-style path. */
@@ -28,11 +28,11 @@ function exists(path: string): boolean {
   }
 }
 
-/** Find the nearest ancestor containing `node_modules/lmdb`. */
+/** Find the nearest ancestor containing `node_modules/@keri-ts/lmdb-js`. */
 function findLmdbDir(): string | null {
   let dir = Deno.cwd();
   while (dir !== dirname(dir)) {
-    const candidate = `${dir}/node_modules/lmdb`;
+    const candidate = `${dir}/node_modules/@keri-ts/lmdb-js`;
     if (exists(candidate)) {
       return candidate;
     }
@@ -44,11 +44,11 @@ function findLmdbDir(): string | null {
 try {
   const lmdbDir = findLmdbDir();
   if (!lmdbDir) {
-    throw new Error("lmdb not installed");
+    throw new Error("@keri-ts/lmdb-js not installed");
   }
   const pkg = JSON.parse(Deno.readTextFileSync(`${lmdbDir}/package.json`));
-  console.log(`lmdb: ${pkg.version}`);
-  console.log(`lmdb dir: ${lmdbDir}`);
+  console.log(`@keri-ts/lmdb-js: ${pkg.version}`);
+  console.log(`@keri-ts/lmdb-js dir: ${lmdbDir}`);
 } catch {
-  console.log("lmdb: not installed");
+  console.log("@keri-ts/lmdb-js: not installed");
 }

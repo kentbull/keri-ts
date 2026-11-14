@@ -3,15 +3,13 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { aidCommand } from "../../../../src/cli/identity/aid.ts";
 import { listCommand } from "../../../../src/cli/identity/list.ts";
-import { CLITestHarness, ensureCompatLmdbBuild } from "../../../utils.ts";
+import { CLITestHarness } from "../../../utils.ts";
 
 function identifierLines(lines: string[]): string[] {
   return lines.filter((line) => /^[^:()]+ \([A-Za-z0-9_-]{10,}\)$/.test(line.trim()));
 }
 
 Deno.test("CLI - compat list/aid open a .keri-layout store without config or signator side effects", async () => {
-  await ensureCompatLmdbBuild();
-
   const oldHome = Deno.env.get("HOME");
   const mkdir = Deno.mkdir;
   const home = await Deno.makeTempDir({ prefix: "tufa-compat-home-" });

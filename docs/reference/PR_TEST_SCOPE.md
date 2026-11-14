@@ -144,7 +144,7 @@ It is not in the `browser-tests` job. The servers come from `scripts/ci/browser-
 which runs them in Docker from the interop harness' cached KERIpy volumes (`keri-interop-keripy`,
 `keri-interop-venvs`) and a named volume holding this working tree; state never leaves named
 volumes. Running it in CI would need a native variant of that script: the pinned KERIpy peer from
-`.github/actions/setup-keripy-main-peer`, the LMDB rebuild of `deno task setup:compat-lmdb`, and
+`.github/actions/setup-keripy-main-peer`, `deno install` of the prebuilt LMDB addon, and
 two background processes with a readiness wait, before several more minutes of probes in
 three engines. Selecting `"browser":true` still runs only the store-contract lane. Firefox does
 not launch on the macOS host; run it from a Linux container (the report says how).

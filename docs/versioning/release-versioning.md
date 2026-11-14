@@ -204,15 +204,14 @@ setup action (`.github/actions/common-release-setup`) restores the Deno cache an
 `node_modules` under the key `scripts/ci/deps-cache-key.ts` computes from the checkout:
 the dependency sections of every `package.json` and `deno.json`, `deno.lock` and
 `package-lock.json` with the workspace packages' versions and internal pins removed,
-the LMDB build (`setup_lmdb_v1.sh`, `packages/keri/scripts/lmdb/*`,
-`report-lmdb-runtime.ts`), the Deno and Node versions, `LMDB_DATA_V1`, and the runner
-OS, architecture, image and compiler. A Version Packages or source-only commit keeps
+the Deno and Node versions, and the runner OS, architecture, image and compiler. A Version Packages or source-only commit keeps
 the key, so the entry Warm saved on master is the one the release of its tags
-restores. An exact hit installs and compiles nothing.
+restores. An exact hit installs nothing.
 
-The entry always contains the rebuilt LMDB addon. Jobs that load it (`lmdb: "true"`:
-unit and interop lanes, release checks, Warm) run `report-lmdb-runtime.ts` on a hit
-and rebuild only on a miss or a failed gate (`scripts/ci/ensure-lmdb-addon.sh`). Only
+The entry contains the prebuilt data-v1 addon of `@keri-ts/lmdb-js`. Jobs that load it
+(`lmdb: "true"`: unit and interop lanes, release checks, Warm) run
+`report-lmdb-runtime.ts` on a hit and run `deno install` only on a miss or a failed gate
+(`scripts/ci/ensure-lmdb-addon.sh`). Only
 such a job saves, after a miss, and only from a branch run; a tag or pull-request run
 would save into a scope nothing else reads. Bump `cachePrefix` in the key script to
 retire every entry.

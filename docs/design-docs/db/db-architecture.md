@@ -1,16 +1,18 @@
 # KERI DB Architecture and Parity Contract (KERIpy -> keri-ts)
 
-`LMDBer` pins lmdb-js 3.5.3. The compatibility rebuild retains
-`LMDB_DATA_V1=true` and uses the official `ENABLE_V8_FUNCTIONS=false` option. Node-header V8 symbols are
-not portable to Deno: the V8 mapped-buffer path for rows above 16 MiB can terminate
-the process despite successful small reads. Deno must load the rebuilt NAPI addon; native Node may use the pinned official
-V8 build only when its compiled Node major matches the actual runtime. This changes native call selection, not database
-layout or the addon ABI. Ordinary reads copy whole rows into caller-owned bytes,
-including active writer reads; callers must keep their database owner open.
+`LMDBer` pins `@keri-ts/lmdb-js` 3.5.10-v1.1 ([kentbull/lmdb-js, branch `data-v1`](https://github.com/kentbull/lmdb-js/tree/data-v1)): lmdb-js 3.5.10 compiled for LMDB 0.9.29 (data format
+version 1) with the V8 API off, shipped as prebuilt N-API platform packages for linux-x64, linux-arm64 and
+darwin-arm64. Its `binding.gyp` fixes both settings, so a source fallback cannot build a data-v2 or V8-linked addon.
+Node-header V8 symbols are not portable to Deno: the V8 mapped-buffer path for rows above 16 MiB can terminate the
+process despite successful small reads, so Node and Deno both load the N-API addon. This changes native call
+selection, not database layout or the addon ABI. Ordinary reads copy whole rows into caller-owned bytes, including
+active writer reads; callers must keep their database owner open.
 
-The rebuild also applies `packages/keri/scripts/lmdb/env-close-data-v1.patch` to lmdb-js `src/env.cpp`. Unpatched,
-`closeEnv()` calls `mdb_env_close()` only for environments that LMDB 0.9.90's open callback registered, so a data-v1
-build leaks three descriptors and both maps on every close. Data-v1 (LMDB 0.9.29) and stock (0.9.90, data version 2)
+The package carries the upstream close fix ([kriszyp/lmdb-js#388](https://github.com/kriszyp/lmdb-js/pull/388)).
+Without it, `closeEnv()` calls `mdb_env_close()` only for environments that LMDB 0.9.90's open callback registered,
+so a data-v1 build leaks three descriptors and both maps on every close. Switch back to upstream `lmdb` once it ships
+that fix in a data-v1 release. Data-v1 builds crash on `getUserSharedBuffer`, the `committed` event and
+`attemptLock`/`unlock`; `LMDBer` uses none of them. Data-v1 (LMDB 0.9.29) and stock (0.9.90, data version 2)
 stores use different page headers and cannot open each other; lmdb-js crashes the process instead of returning an
 error, so a consumer must not switch builds over existing stores.
 

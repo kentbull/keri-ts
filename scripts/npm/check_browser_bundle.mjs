@@ -80,7 +80,7 @@ const stubEffectionMain = {
 
 const NODE_MODULES = new Set(builtinModules.map((name) => name.replace(/^node:/, "")));
 const FORBIDDEN_INPUT = [
-  [/node_modules\/lmdb\//, "lmdb"],
+  [/node_modules\/@keri-ts\/lmdb-js(-[^/]+)?\//, "@keri-ts/lmdb-js"],
   [/node_modules\/@deno\/shim-deno/, "@deno/shim-deno"],
   // Scoped to our packages: effection's own `_dnt.shims` is an empty globals proxy that only
   // its (stubbed) `main()` runner pulls in, and the real Deno shim is caught by the line above.

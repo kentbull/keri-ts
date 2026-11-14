@@ -22,8 +22,6 @@
     "version:generate": "deno run -A ../../scripts/generate_versions.ts --only keri",
     "version:check": "deno task manifest:check && deno run -A ../../scripts/generate_versions.ts --check --only keri",
     "build:npm": "deno task version:generate && deno run -A scripts/build_npm.ts",
-    "setup": "deno task setup:compat-lmdb",
-    "setup:compat-lmdb": "bash scripts/setup_lmdb_v1.sh",
     "check:surface": "deno run -A scripts/check_library_boundary.ts",
     "test": "deno run -A ../../scripts/ci/run-keri-test-group.ts full",
     "test:quality": "deno run -A ../../scripts/ci/run-keri-test-group.ts quality",

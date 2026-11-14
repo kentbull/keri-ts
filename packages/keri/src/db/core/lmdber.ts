@@ -3,9 +3,9 @@
  */
 
 import { b, bytesHex, t, toBytes } from "cesr-ts";
+import { open } from "npm:@keri-ts/lmdb-js@3.5.10-v1.1";
+import type { Database, Key, RootDatabase } from "npm:@keri-ts/lmdb-js@3.5.10-v1.1";
 import { action, call, ensure, type Operation } from "npm:effection@^3.6.0";
-import { open } from "npm:lmdb@3.5.3";
-import type { Database, Key, RootDatabase } from "npm:lmdb@3.5.3";
 import { compareBytes, startsWith } from "../../core/bytes.ts";
 import { DatabaseKeyError, DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";

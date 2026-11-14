@@ -72,7 +72,7 @@ profile input; retain the explicit main/1.2/1.3 frozen matrix. Native proof chil
 already own temporary `openHby` stores; scope further isolation repairs to operations
 the candidate lane actually launches.
 
-LMDB V1 needs its own native rebuild/preflight and cache boundary. PR merge-ref
+LMDB V1 needs its own native preflight and cache boundary. PR merge-ref
 caches are invisible to later PRs: the master cache-warming workflow publishes
 both existing dependency variants for reuse across branches. Native caches include
 OS image, architecture, runtime versions, dependency locks and build/preflight sources;

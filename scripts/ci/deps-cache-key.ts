@@ -2,29 +2,28 @@
 /**
  * Compute the one dependency-cache key shared by Warm, the PR stage gate and the release workflows.
  *
- * The cache holds the Deno cache and `node_modules` with the LMDB-js addon already rebuilt for KERI
- * (`setup_lmdb_v1.sh`), so a job that restores an exact hit neither installs nor compiles anything. The key
- * therefore depends on exactly the inputs of that install and build:
+ * The cache holds the Deno cache and `node_modules`, including the prebuilt data-v1 addon of
+ * `@keri-ts/lmdb-js`, so a job that restores an exact hit installs nothing. The key therefore depends on
+ * exactly the inputs of that install:
  *
  *   - the dependency sections of every workspace `package.json` and the dependency settings of every
  *     `deno.json`, without `version` fields and without pins between workspace packages;
- *   - `deno.lock` and `package-lock.json` with the workspace packages' own versions and pins removed (the lmdb
- *     pin and the resolved lmdb versions are ordinary entries of these files and so stay in the key);
- *   - the LMDB build and its gate: `setup_lmdb_v1.sh`, `packages/keri/scripts/lmdb/*` and
- *     `scripts/ci/report-lmdb-runtime.ts`;
- *   - the Deno and Node versions, `LMDB_DATA_V1`, and the runner OS, architecture, image and C++ compiler.
+ *   - `deno.lock` and `package-lock.json` with the workspace packages' own versions and pins removed (the
+ *     resolved `@keri-ts/lmdb-js` version is an ordinary entry of `deno.lock` and so stays in the key);
+ *   - the Deno and Node versions, and the runner OS, architecture, image and C++ compiler (other native
+ *     dependencies may still compile on install).
  *
  * A Version Packages commit (versions and internal pins only) or a source-only commit leaves the key unchanged,
  * so the entry Warm saved on master is the one a release of the next tag restores. Bump `cachePrefix` to
  * retire every entry when the recipe itself changes meaning.
  *
  * Usage (from the checkout whose dependencies are installed, e.g. a release tag):
- *   DENO_VERSION=.. NODE_VERSION=.. LMDB_DATA_V1=.. deno run <permissions> deps-cache-key.ts
+ *   DENO_VERSION=.. NODE_VERSION=.. deno run <permissions> deps-cache-key.ts
  * writes `key` and `restore-prefix` to `$GITHUB_OUTPUT` (or prints them).
  */
 
 /** Prefix of every dependency-cache entry; one value for every workflow, so all of them share entries. */
-export const cachePrefix = "deps-v7";
+export const cachePrefix = "deps-v8";
 
 /** Raw file text by repository-relative path; null when the file does not exist in the checkout. */
 export type Files = Record<string, string | null>;
@@ -34,7 +33,6 @@ export interface KeyInputs {
   files: Files;
   denoVersion: string;
   nodeVersion: string;
-  lmdbDataV1: boolean;
   os: string;
   arch: string;
   /** Runner image identity and `c++ --version` output: a native addon is only valid for its toolchain. */
@@ -46,11 +44,6 @@ export interface CacheKey {
   key: string;
   restorePrefix: string;
 }
-
-/** Files that build or gate the LMDB addon; their bytes enter the key unchanged. */
-export const lmdbBuildFiles = ["packages/keri/scripts/setup_lmdb_v1.sh", "scripts/ci/report-lmdb-runtime.ts"];
-/** Directory of helper scripts `setup_lmdb_v1.sh` runs; every file in it enters the key. */
-export const lmdbHelperDir = "packages/keri/scripts/lmdb";
 
 const packageJsonSections = [
   "dependencies",
@@ -186,7 +179,7 @@ function packageLockDeps(text: string | null, files: Files, internal: Set<string
   return rest;
 }
 
-/** The canonical text of every dependency and LMDB-build input; its digest is the variable part of the key. */
+/** The canonical text of every dependency input; its digest is the variable part of the key. */
 export function dependencyInputs(files: Files): string {
   const internal = internalNames(files);
   const members = workspaceDirs(files);
@@ -197,15 +190,10 @@ export function dependencyInputs(files: Files): string {
   for (const path of ["deno.json", ...members.map((dir) => `${dir}/deno.json`)]) {
     manifests[path] = denoJsonDeps(files[path] ?? null, path);
   }
-  const lmdb: JsonObject = {};
-  for (const [path, text] of Object.entries(files)) {
-    if (lmdbBuildFiles.includes(path) || path.startsWith(`${lmdbHelperDir}/`)) lmdb[path] = text;
-  }
   return canonical({
     manifests,
     denoLock: stripInternalSpecifiers(parse("deno.lock", files["deno.lock"] ?? null), internal),
     packageLock: packageLockDeps(files["package-lock.json"] ?? null, files, internal),
-    lmdb,
   });
 }
 
@@ -218,9 +206,8 @@ async function sha256(text: string): Promise<string> {
 export async function cacheKey(inputs: KeyInputs): Promise<CacheKey> {
   const platform = (await sha256(inputs.platform)).slice(0, 16);
   const dependencies = (await sha256(dependencyInputs(inputs.files))).slice(0, 32);
-  const lmdb = inputs.lmdbDataV1 ? "lmdb-data-v1" : "lmdb-default";
   const restorePrefix =
-    `${cachePrefix}-${inputs.os}-${inputs.arch}-${platform}-deno-${inputs.denoVersion}-node-${inputs.nodeVersion}-${lmdb}-`;
+    `${cachePrefix}-${inputs.os}-${inputs.arch}-${platform}-deno-${inputs.denoVersion}-node-${inputs.nodeVersion}-`;
   return { key: `${restorePrefix}${dependencies}`, restorePrefix };
 }
 
@@ -236,20 +223,11 @@ async function readOrNull(path: string): Promise<string | null> {
 /** Read every key input from the checkout in the working directory. */
 export async function readFiles(): Promise<Files> {
   const files: Files = {};
-  for (const path of ["package.json", "deno.json", "deno.lock", "package-lock.json", ...lmdbBuildFiles]) {
+  for (const path of ["package.json", "deno.json", "deno.lock", "package-lock.json"]) {
     files[path] = await readOrNull(path);
   }
   for (const dir of workspaceDirs(files)) {
     for (const name of ["package.json", "deno.json"]) files[`${dir}/${name}`] = await readOrNull(`${dir}/${name}`);
-  }
-  try {
-    for await (const entry of Deno.readDir(lmdbHelperDir)) {
-      if (entry.isFile) {
-        files[`${lmdbHelperDir}/${entry.name}`] = await Deno.readTextFile(`${lmdbHelperDir}/${entry.name}`);
-      }
-    }
-  } catch (error) {
-    if (!(error instanceof Deno.errors.NotFound)) throw error;
   }
   return files;
 }
@@ -275,7 +253,6 @@ async function main(): Promise<void> {
     files: await readFiles(),
     denoVersion: required("DENO_VERSION"),
     nodeVersion: required("NODE_VERSION"),
-    lmdbDataV1: Deno.env.get("LMDB_DATA_V1") === "true",
     os: Deno.env.get("RUNNER_OS") ?? Deno.build.os,
     arch: Deno.env.get("RUNNER_ARCH") ?? Deno.build.arch,
     platform: `${Deno.env.get("ImageOS") ?? Deno.build.os}\n${await compiler()}`,

@@ -30,7 +30,13 @@ const NPM_DIR = new URL("../npm/", import.meta.url);
 const BROWSER_ENTRYPOINTS = [new URL("../mod.ts", import.meta.url), new URL("../web.ts", import.meta.url)];
 
 /** Host modules and the LMDB-bound wallet module that the browser entries must never load. */
-const WEB_FORBIDDEN = ["npm:lmdb", "npm:/lmdb@", "node:", "/db-lmdb.ts", "/src/lmdb-storing.ts"];
+const WEB_FORBIDDEN = [
+  "npm:@keri-ts/lmdb-js@",
+  "npm:/@keri-ts/lmdb-js@",
+  "node:",
+  "/db-lmdb.ts",
+  "/src/lmdb-storing.ts",
+];
 
 /** Runtime (non-type) module reach of one entrypoint, following `deno info`. */
 async function reach(entrypoint: URL): Promise<string[]> {

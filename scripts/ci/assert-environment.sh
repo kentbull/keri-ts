@@ -39,10 +39,8 @@ else
   echo "Python: not installed"
 fi
 
-echo "LMDB_DATA_V1: ${LMDB_DATA_V1:-unset}"
-
 # LMDB version/path output is especially useful in this repo because KERIpy
-# interop depends on the native addon being rebuilt with LMDB data-format v1.
+# interop depends on the data-format v1 addon of @keri-ts/lmdb-js.
 deno run --allow-read scripts/ci/report-lmdb-environment.ts
 
 if command -v kli >/dev/null 2>&1; then
