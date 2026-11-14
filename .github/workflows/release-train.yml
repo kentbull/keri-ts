@@ -1,8 +1,8 @@
 name: Release train
 
 # Releases several packages from their package tags in one run: independent packages publish in parallel,
-# each stage only after the packages it depends on are visible on npm. npm trusted publishing matches the
-# top-level workflow file, so this workflow never publishes itself: every stage job dispatches the package's
+# each stage only after the stage before it released, and each package's run smokes against its dependencies
+# once they are visible on npm. npm trusted publishing matches the top-level workflow file, so this workflow never publishes itself: every stage job dispatches the package's
 # own `*-npm-release.yml` (the trusted publisher) with the tag and waits for that run. The per-package tag
 # workflows stay for single releases. See docs/versioning/release-versioning.md.
 on:
@@ -156,7 +156,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ matrix.release.package }}
           TAG: ${{ matrix.release.tag }}
-          WAIT_FOR: ${{ matrix.release.wait_for }}
           PUBLISH: ${{ inputs.publish }}
           DISPATCH_REF: ${{ github.ref }}
           TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -188,7 +187,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ matrix.release.package }}
           TAG: ${{ matrix.release.tag }}
-          WAIT_FOR: ${{ matrix.release.wait_for }}
           PUBLISH: ${{ inputs.publish }}
           DISPATCH_REF: ${{ github.ref }}
           TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -220,7 +218,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ matrix.release.package }}
           TAG: ${{ matrix.release.tag }}
-          WAIT_FOR: ${{ matrix.release.wait_for }}
           PUBLISH: ${{ inputs.publish }}
           DISPATCH_REF: ${{ github.ref }}
           TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -252,7 +249,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ matrix.release.package }}
           TAG: ${{ matrix.release.tag }}
-          WAIT_FOR: ${{ matrix.release.wait_for }}
           PUBLISH: ${{ inputs.publish }}
           DISPATCH_REF: ${{ github.ref }}
           TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -284,7 +280,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ matrix.release.package }}
           TAG: ${{ matrix.release.tag }}
-          WAIT_FOR: ${{ matrix.release.wait_for }}
           PUBLISH: ${{ inputs.publish }}
           DISPATCH_REF: ${{ github.ref }}
           TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -316,7 +311,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE: ${{ matrix.release.package }}
           TAG: ${{ matrix.release.tag }}
-          WAIT_FOR: ${{ matrix.release.wait_for }}
           PUBLISH: ${{ inputs.publish }}
           DISPATCH_REF: ${{ github.ref }}
           TRAIN_ID: ${{ github.run_id }}-${{ github.run_attempt }}

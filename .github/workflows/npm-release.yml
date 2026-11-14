@@ -1,53 +1,52 @@
 name: Shared npm release
 
+# Releases one package from a tag: plan (skip or shard the release check), check, build and smoke the
+# artifact, publish it to npm, then create the GitHub release. Called by each `<package>-npm-release.yml`,
+# which npm trusts as the publisher; the release train dispatches those. The release tooling (scripts,
+# smoke tests and the setup action) runs from this workflow's own commit, checked out into
+# `.release-tooling`; the package that is checked, built and published is always the tag's content.
+# Procedure: docs/versioning/release-versioning.md.
+
 on:
   workflow_call:
     inputs:
       package:
         required: true
-        type: string
+        type:     string
       publish:
         required: true
-        type: boolean
-      # Set by the release train: the package tag to build, test and release instead of the triggering ref.
+        type:     boolean
+      # Set by the release train or a dispatch: the package tag to release instead of the triggering ref.
       tag:
         required: false
-        type: string
-        default: ""
-      # Set by the release train: JSON array of `name@version` that must be visible on npm before building.
-      wait_for:
-        required: false
-        type: string
-        default: "[]"
+        type:     string
+        default:  ""
 
 env:
-  DENO_DIR: ${{ github.workspace }}/.deno-cache
+  DENO_DIR:     ${{ github.workspace }}/.deno-cache
   DENO_VERSION: "2.9.8"
   NODE_VERSION: "25.9.0"
   LMDB_DATA_V1: "true"
-  DEPS_CACHE_KEY_PREFIX: release-deps-v6
 
 jobs:
   # Decide before any runner builds: a recorded green stage-gate run on this exact content covering the
   # package skips the release check; otherwise the check runs sharded like the PR gate (release-plan.ts).
   plan:
-    runs-on: ubuntu-latest
+    runs-on:         ubuntu-latest
     timeout-minutes: 10
     outputs:
       check_needed: ${{ steps.plan.outputs.check_needed }}
       check_shards: ${{ steps.plan.outputs.check_shards }}
-      train_owned: ${{ steps.plan.outputs.train_owned }}
+      train_owned:  ${{ steps.plan.outputs.train_owned }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
 
-      # The release tooling runs from the workflow's own commit while the package under release is the
-      # tag's content in the workspace, so a tag older than the tooling can still be released.
       - name: check out the release tooling at the workflow commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref:  ${{ github.sha }}
           path: .release-tooling
 
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
@@ -55,289 +54,136 @@ jobs:
           deno-version: ${{ env.DENO_VERSION }}
 
       - name: look for a recorded green run of this commit
-        id: plan
+        id:   plan
         env:
-          PACKAGE: ${{ inputs.package }}
+          PACKAGE:  ${{ inputs.package }}
           GH_TOKEN: ${{ github.token }}
-        run: deno run --no-config --no-lock --allow-read --allow-write --allow-env --allow-net=api.github.com --allow-run=git .release-tooling/scripts/ci/release-plan.ts
+        run:  deno run --no-config --no-lock --allow-read --allow-write --allow-env --allow-net=api.github.com --allow-run=git .release-tooling/scripts/ci/release-plan.ts
 
   # Whole job skipped when the plan found a green run; one runner per unit shard otherwise.
   check:
     needs: plan
-    if: needs.plan.outputs.check_needed == 'true' && needs.plan.outputs.train_owned != 'true'
-    name: release check (${{ matrix.shard.name }})
+    if:    needs.plan.outputs.check_needed == 'true' && needs.plan.outputs.train_owned != 'true'
+    name:  release check (${{ matrix.shard.name }})
     strategy:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.plan.outputs.check_shards) }}
-    runs-on: ubuntu-latest
+    runs-on:         ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
 
-      - id: setup
-        uses: ./.github/actions/common-release-setup
-        with:
-          do-fmt-check: "false"
-          cache-key-extra: lmdb-v1
-
-      # The release tooling runs from the workflow's own commit while the package under release is the
-      # tag's content in the workspace, so a tag older than the tooling can still be released.
       - name: check out the release tooling at the workflow commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref:  ${{ github.sha }}
           path: .release-tooling
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 
-      - name: rebuild LMDB-js for KERI compatibility
-        run: |
-          if [[ "${{ steps.setup.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
-            deno task setup:compat-lmdb
-            deno run -A scripts/ci/report-lmdb-runtime.ts
-          fi
+      # The shared dependency cache already holds the rebuilt LMDB addon; a miss rebuilds it here.
+      - uses: ./.release-tooling/.github/actions/common-release-setup
+        with:
+          do-fmt-check: "false"
+          lmdb:         "true"
 
       - name: run this shard of the package-owned release check
         env:
-          PACKAGE: ${{ inputs.package }}
-          SHARD_NAME: ${{ matrix.shard.name }}
+          PACKAGE:      ${{ inputs.package }}
+          SHARD_NAME:   ${{ matrix.shard.name }}
           UNIT_TARGETS: ${{ matrix.shard.targets }}
-        run: deno run -A --no-config --no-lock .release-tooling/scripts/ci/release-plan.ts run-check
+        run:  deno run -A --no-config --no-lock .release-tooling/scripts/ci/release-plan.ts run-check
 
+  # Builds, verifies and smokes only the package under release. Nothing here loads the LMDB addon: the
+  # build is a dnt transform and the smoke installs the tarball into a container from the registry.
   artifact:
     needs: [plan, check]
     # Runs after a green check or after the plan skipped it; never after a failed or cancelled check.
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.train_owned != 'true' && (needs.check.result == 'success' || needs.check.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    runs-on:         ubuntu-latest
     timeout-minutes: 25
     outputs:
       artifact: ${{ steps.meta.outputs.artifact }}
       npm_name: ${{ steps.meta.outputs.npm_name }}
-      tarball: ${{ steps.pack.outputs.tarball }}
-      title: ${{ steps.meta.outputs.title }}
-      version: ${{ steps.setup.outputs.package-version }}
+      tarball:  ${{ steps.build.outputs.tarball }}
+      title:    ${{ steps.meta.outputs.title }}
+      version:  ${{ steps.meta.outputs.version }}
+    env:
+      PACKAGE:  ${{ inputs.package }}
+      TOOLING:  .release-tooling/scripts/ci
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
+          ref:         ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
 
-      - name: select package
-        id: meta
-        env:
-          PACKAGE: ${{ inputs.package }}
-        run: |
-          case "$PACKAGE" in
-            cesr)
-              echo "path=packages/cesr/package.json" >> "$GITHUB_OUTPUT"
-              echo "npm_name=cesr-ts" >> "$GITHUB_OUTPUT"
-              echo "artifact=cesr-ts-npm" >> "$GITHUB_OUTPUT"
-              echo "title=cesr-ts" >> "$GITHUB_OUTPUT"
-              ;;
-            keri)
-              echo "path=packages/keri/package.json" >> "$GITHUB_OUTPUT"
-              echo "npm_name=keri-ts" >> "$GITHUB_OUTPUT"
-              echo "artifact=keri-ts-npm" >> "$GITHUB_OUTPUT"
-              echo "title=keri-ts" >> "$GITHUB_OUTPUT"
-              ;;
-            tufa)
-              echo "path=packages/tufa/package.json" >> "$GITHUB_OUTPUT"
-              echo "npm_name=@keri-ts/tufa" >> "$GITHUB_OUTPUT"
-              echo "artifact=tufa-npm" >> "$GITHUB_OUTPUT"
-              echo "title=@keri-ts/tufa" >> "$GITHUB_OUTPUT"
-              ;;
-            verifier)
-              echo "path=packages/verifier/package.json" >> "$GITHUB_OUTPUT"
-              echo "npm_name=@keri-ts/verifier" >> "$GITHUB_OUTPUT"
-              echo "artifact=verifier-npm" >> "$GITHUB_OUTPUT"
-              echo "title=@keri-ts/verifier" >> "$GITHUB_OUTPUT"
-              ;;
-            hosting)
-              echo "path=packages/hosting/package.json" >> "$GITHUB_OUTPUT"
-              echo "npm_name=@keri-ts/hosting" >> "$GITHUB_OUTPUT"
-              echo "artifact=hosting-npm" >> "$GITHUB_OUTPUT"
-              echo "title=@keri-ts/hosting" >> "$GITHUB_OUTPUT"
-              ;;
-            wallet)
-              echo "path=packages/wallet/package.json" >> "$GITHUB_OUTPUT"
-              echo "npm_name=@keri-ts/wallet" >> "$GITHUB_OUTPUT"
-              echo "artifact=wallet-npm" >> "$GITHUB_OUTPUT"
-              echo "title=@keri-ts/wallet" >> "$GITHUB_OUTPUT"
-              ;;
-            registrar)
-              echo "path=packages/registrar/package.json" >> "$GITHUB_OUTPUT"
-              echo "npm_name=@keri-ts/registrar" >> "$GITHUB_OUTPUT"
-              echo "artifact=registrar-npm" >> "$GITHUB_OUTPUT"
-              echo "title=@keri-ts/registrar" >> "$GITHUB_OUTPUT"
-              ;;
-            observer)
-              echo "path=packages/observer/package.json" >> "$GITHUB_OUTPUT"
-              echo "npm_name=@keri-ts/observer" >> "$GITHUB_OUTPUT"
-              echo "artifact=observer-npm" >> "$GITHUB_OUTPUT"
-              echo "title=@keri-ts/observer" >> "$GITHUB_OUTPUT"
-              ;;
-            multisync)
-              echo "path=packages/multisync/package.json" >> "$GITHUB_OUTPUT"
-              echo "npm_name=@keri-ts/multisync" >> "$GITHUB_OUTPUT"
-              echo "artifact=multisync-npm" >> "$GITHUB_OUTPUT"
-              echo "title=@keri-ts/multisync" >> "$GITHUB_OUTPUT"
-              ;;
-            *) exit 2 ;;
-          esac
-
-      - id: setup
-        uses: ./.github/actions/common-release-setup
-        with:
-          do-fmt-check: "true"
-          do-version-check: "true"
-          package-json-path: ${{ steps.meta.outputs.path }}
-          cache-key-extra: ${{ inputs.package }}
-
-      # The release tooling runs from the workflow's own commit while the package under release is the
-      # tag's content in the workspace, so a tag older than the tooling can still be released.
       - name: check out the release tooling at the workflow commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref:  ${{ github.sha }}
           path: .release-tooling
 
-      - name: require a release commit from master
-        if: github.event_name == 'push' || inputs.tag != ''
-        run: git merge-base --is-ancestor HEAD origin/master
+      - uses: ./.release-tooling/.github/actions/common-release-setup
+        with:
+          do-fmt-check: "true"
 
-      - name: wait for the packages this release depends on to be visible on npm
-        if: inputs.wait_for != '[]'
+      - name: read the package and require its tag to match the version
+        id:   meta
         env:
-          WAIT_FOR: ${{ inputs.wait_for }}
-        run: deno run --no-config --no-lock --allow-env --allow-net=registry.npmjs.org .release-tooling/scripts/ci/release-train.ts visible
+          TAG: ${{ inputs.tag }}
+        run:  bash "$TOOLING/release-artifact.sh" meta "$PACKAGE"
 
-      - name: rebuild LMDB-js for KERI compatibility
-        if: inputs.package != 'cesr'
-        run: |
-          if [[ "${{ steps.setup.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
-            deno task setup:compat-lmdb
-            deno run -A scripts/ci/report-lmdb-runtime.ts
-          fi
+      - name: require a release commit from master
+        if:   github.event_name == 'push' || inputs.tag != ''
+        run:  git merge-base --is-ancestor HEAD origin/master
 
       - name: test package tooling
-        run: deno task test:package-tools
+        run:  deno task test:package-tools
 
-      - name: build exact npm artifacts
-        env:
-          PACKAGE: ${{ inputs.package }}
-        run: |
-          export BUILD_METADATA="build.${GITHUB_RUN_NUMBER}.$(git rev-parse HEAD)"
-          deno task version:generate:ci
-          case "$PACKAGE" in
-            cesr) (cd packages/cesr && deno task build:npm) ;;
-            keri) (cd packages/keri && deno task build:npm) ;;
-            tufa|verifier|hosting|wallet|registrar|observer|multisync)
-              (cd packages/cesr && deno run -A scripts/build_npm.ts)
-              (cd packages/keri && deno run -A scripts/build_npm.ts)
-              (cd packages/verifier && deno run -A scripts/build_npm.ts)
-              (cd packages/hosting && deno run -A scripts/build_npm.ts)
-              (cd packages/wallet && deno run -A scripts/build_npm.ts)
-              (cd packages/registrar && deno run -A scripts/build_npm.ts)
-              (cd packages/observer && deno run -A scripts/build_npm.ts)
-              (cd packages/multisync && deno run -A scripts/build_npm.ts)
-              (cd packages/tufa && deno run -A scripts/build_npm.ts)
-              ;;
-          esac
+      - name: build and pack the package
+        id:   build
+        run:  bash "$TOOLING/release-artifact.sh" build "$PACKAGE"
 
       - name: verify the built dependencies match the planned graph
-        if: inputs.package != 'multisync'
-        run: deno run --no-config --no-lock --allow-read .release-tooling/scripts/ci/release-train.ts verify "${{ inputs.package }}"
+        if:   inputs.package != 'multisync'
+        run:  deno run --no-config --no-lock --allow-read "$TOOLING/release-train.ts" verify "$PACKAGE"
 
-      - name: verify Tufa's released dependencies
-        if: inputs.package == 'tufa'
-        run: |
-          KERI_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['keri-ts']")
-          CESR_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['cesr-ts']")
-          npm view "keri-ts@${KERI_DEP}" version >/dev/null
-          npm view "cesr-ts@${CESR_DEP}" version >/dev/null
-          VERIFIER_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['@keri-ts/verifier']")
-          npm view "@keri-ts/verifier@${VERIFIER_DEP}" version >/dev/null
-          HOSTING_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['@keri-ts/hosting']")
-          npm view "@keri-ts/hosting@${HOSTING_DEP}" version >/dev/null
-
-      - name: pack and smoke the primary tarball
-        id: pack
+      # The smoke installs the internal dependencies from npm: a publishing run waits until they are
+      # visible; a dry run lists the ones npm does not have yet, built from this checkout instead.
+      - name: wait for the internal dependencies on npm
+        id:   deps
         env:
-          PACKAGE: ${{ inputs.package }}
+          PUBLISH: ${{ inputs.publish }}
+        run:  deno run --no-config --no-lock --allow-read --allow-write --allow-env --allow-net=registry.npmjs.org "$TOOLING/release-train.ts" registry-deps "$PACKAGE"
+
+      - name: build local stand-ins for dependencies npm does not have (dry run only)
+        if:   steps.deps.outputs.local != ''
+        run:  bash "$TOOLING/release-artifact.sh" build ${{ steps.deps.outputs.local }}
+
+      - name: smoke the packed tarball
+        env:
           SMOKE_NODE_IMAGE: node:20.3.0-bookworm-slim
-        run: |
-          case "$PACKAGE" in
-            cesr)
-              cd packages/cesr/npm
-              TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../..
-              bash scripts/smoke-test-tephra-npm.sh "packages/cesr/npm/$TARBALL"
-              ;;
-            keri)
-              cd packages/keri/npm
-              TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../..
-              bash scripts/smoke-test-keri-npm.sh "packages/keri/npm/$TARBALL"
-              ;;
-            tufa|verifier|hosting|wallet|registrar|observer|multisync)
-              cd packages/cesr/npm
-              CESR_TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../keri/npm
-              KERI_TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../verifier/npm
-              VERIFIER_TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../hosting/npm
-              HOSTING_TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../wallet/npm
-              WALLET_TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../registrar/npm
-              REGISTRAR_TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../observer/npm
-              OBSERVER_TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../multisync/npm
-              MULTISYNC_TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../tufa/npm
-              TARBALL=$(npm pack --silent | tail -n 1)
-              cd ../../..
-              bash scripts/smoke-test-tufa-npm.sh \
-                "packages/tufa/npm/$TARBALL" \
-                "packages/cesr/npm/$CESR_TARBALL" \
-                "packages/keri/npm/$KERI_TARBALL" \
-                "packages/verifier/npm/$VERIFIER_TARBALL" \
-                "packages/hosting/npm/$HOSTING_TARBALL" \
-                "packages/wallet/npm/$WALLET_TARBALL" \
-                "packages/registrar/npm/$REGISTRAR_TARBALL" \
-                "packages/observer/npm/$OBSERVER_TARBALL" \
-                "packages/multisync/npm/$MULTISYNC_TARBALL"
-              if [[ "$PACKAGE" == verifier ]]; then TARBALL="$VERIFIER_TARBALL"; fi
-              if [[ "$PACKAGE" == hosting ]]; then TARBALL="$HOSTING_TARBALL"; fi
-              if [[ "$PACKAGE" == wallet ]]; then TARBALL="$WALLET_TARBALL"; fi
-              if [[ "$PACKAGE" == registrar ]]; then TARBALL="$REGISTRAR_TARBALL"; fi
-              if [[ "$PACKAGE" == observer ]]; then TARBALL="$OBSERVER_TARBALL"; fi
-              if [[ "$PACKAGE" == multisync ]]; then TARBALL="$MULTISYNC_TARBALL"; fi
-              ;;
-          esac
-          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+        run:  bash "$TOOLING/release-artifact.sh" smoke "$PACKAGE" ${{ steps.deps.outputs.local }}
 
       - name: upload exact publish candidate
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ steps.meta.outputs.artifact }}-${{ steps.setup.outputs.package-version }}
-          path: packages/${{ inputs.package }}/npm/${{ steps.pack.outputs.tarball }}
+          name:              ${{ steps.meta.outputs.artifact }}-${{ steps.meta.outputs.version }}
+          path:              packages/${{ inputs.package }}/npm/${{ steps.build.outputs.tarball }}
           if-no-files-found: error
-          retention-days: 3
+          retention-days:    3
 
   publish:
     # An explicit status function: without one GitHub applies success() over the whole needs chain, and a
     # skipped release check upstream of artifact (green evidence found) would skip publication.
-    if: ${{ !cancelled() && inputs.publish && needs.artifact.result == 'success' }}
-    needs: artifact
-    runs-on: ubuntu-latest
+    if:          ${{ !cancelled() && inputs.publish && needs.artifact.result == 'success' }}
+    needs:       artifact
+    runs-on:     ubuntu-latest
     environment: publishing
     permissions:
       contents: read
@@ -356,7 +202,7 @@ jobs:
       - name: publish unless this exact version already exists
         env:
           NPM_NAME: ${{ needs.artifact.outputs.npm_name }}
-          VERSION: ${{ needs.artifact.outputs.version }}
+          VERSION:  ${{ needs.artifact.outputs.version }}
         run: |
           if npm view "$NPM_NAME@$VERSION" version >/dev/null 2>&1; then
             echo "$NPM_NAME@$VERSION is already published"
@@ -368,8 +214,8 @@ jobs:
 
   github-release:
     # Same explicit status check as publish; it also requires the publish job itself to have succeeded.
-    if: ${{ !cancelled() && inputs.publish && (github.event_name == 'push' || inputs.tag != '') && needs.artifact.result == 'success' && needs.publish.result == 'success' }}
-    needs: [artifact, publish]
+    if:      ${{ !cancelled() && inputs.publish && (github.event_name == 'push' || inputs.tag != '') && needs.artifact.result == 'success' && needs.publish.result == 'success' }}
+    needs:   [artifact, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -381,9 +227,9 @@ jobs:
 
       - name: create or update the GitHub release
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TITLE: ${{ needs.artifact.outputs.title }} ${{ needs.artifact.outputs.version }}
+          GH_TOKEN:    ${{ github.token }}
+          GH_REPO:     ${{ github.repository }}
+          TITLE:       ${{ needs.artifact.outputs.title }} ${{ needs.artifact.outputs.version }}
           RELEASE_TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
         run: |
           TARBALL=$(find release-tarball -type f -name '*.tgz' | head -1)

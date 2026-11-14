@@ -1,80 +1,39 @@
 #!/usr/bin/env bash
-# Smoke-test a packed `@keri-ts/tufa` npm artifact by installing the tarball
-# into a fresh runtime and exercising the published CLI entrypoint.
-# Optional additional args:
-# - a locally built `cesr-ts` tarball
-# - a locally built `keri-ts` tarball
-# - a locally built `@keri-ts/verifier` tarball
-# - a locally built `@keri-ts/hosting` tarball
-# - a locally built `@keri-ts/wallet` tarball for the independent wallet store probe
-# - a locally built `@keri-ts/registrar` tarball for its public service probe
+# Smoke-test a packed `@keri-ts/tufa` npm artifact by installing it into a fresh Node container and
+# exercising the published CLI entrypoint and the installed packages it depends on.
+#
+# Usage: smoke-test-tufa-npm.sh [<tufa.tgz> [local dependency .tgz...]]
+#   Tufa's internal dependencies come from the npm registry at the exact versions it pins, as users get
+#   them. A release dry run passes locally built tarballs for pins npm does not have yet; they are installed
+#   beside Tufa and satisfy those pins.
+#   With no arguments the script builds and packs Tufa and every internal package it depends on from this
+#   checkout, so a local run (`deno task smoke:tufa:npm`) exercises unreleased sources.
+#   SMOKE_NODE_IMAGE selects the Node image (default node:alpine).
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_DIR="${ROOT_DIR}/packages/tufa/npm"
 SAMPLES_DIR="${SAMPLES_DIR:-${ROOT_DIR}/samples}"
 SAMPLE_STREAM_REL="${SAMPLE_STREAM_REL:-cesr-streams/CESR_1_0-oor-auth-vc.cesr}"
 
+pack() {
+  # Build and pack one workspace package; prints the tarball path.
+  local dir="${ROOT_DIR}/packages/$1"
+  (cd "${dir}" && deno task build:npm >&2)
+  printf '%s/npm/%s\n' "${dir}" "$(cd "${dir}/npm" && npm pack --silent | tail -n1)"
+}
+
+# 1. Select the Tufa tarball and any local dependency tarballs.
 TARBALL_PATH="${1:-}"
-CESR_TARBALL_PATH="${2:-}"
-KERI_TARBALL_PATH="${3:-}"
-VERIFIER_TARBALL_PATH="${4:-}"
-HOSTING_TARBALL_PATH="${5:-}"
-WALLET_TARBALL_PATH="${6:-}"
-REGISTRAR_TARBALL_PATH="${7:-}"
-OBSERVER_TARBALL_PATH="${8:-}"
-MULTISYNC_TARBALL_PATH="${9:-}"
+LOCAL_DEPENDENCIES=()
 if [[ -z "${TARBALL_PATH}" ]]; then
-  echo "No tarball provided; building and packing @keri-ts/tufa..."
-  (
-    cd "${ROOT_DIR}/packages/tufa"
-    deno task build:npm
-  )
-  TARBALL_NAME="$(cd "${PACKAGE_DIR}" && npm pack --silent | tail -n1)"
-  TARBALL_PATH="${PACKAGE_DIR}/${TARBALL_NAME}"
-  if [[ -z "${VERIFIER_TARBALL_PATH}" ]]; then
-    (cd "${ROOT_DIR}/packages/verifier" && deno task build:npm)
-    VERIFIER_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/verifier/npm" && npm pack --silent | tail -n1)"
-    VERIFIER_TARBALL_PATH="${ROOT_DIR}/packages/verifier/npm/${VERIFIER_TARBALL_NAME}"
-  fi
-  if [[ -z "${HOSTING_TARBALL_PATH}" ]]; then
-    (cd "${ROOT_DIR}/packages/hosting" && deno task build:npm)
-    HOSTING_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/hosting/npm" && npm pack --silent | tail -n1)"
-    HOSTING_TARBALL_PATH="${ROOT_DIR}/packages/hosting/npm/${HOSTING_TARBALL_NAME}"
-  fi
-fi
-
-# The wallet probe is an independent package consumer; Tufa has no wallet dependency.
-if [[ -z "${WALLET_TARBALL_PATH}" ]]; then
-  (cd "${ROOT_DIR}/packages/wallet" && deno task build:npm)
-  WALLET_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/wallet/npm" && npm pack --silent | tail -n1)"
-  WALLET_TARBALL_PATH="${ROOT_DIR}/packages/wallet/npm/${WALLET_TARBALL_NAME}"
-fi
-
-# The registrar is an independent installed application, not a Tufa dependency.
-if [[ -z "${REGISTRAR_TARBALL_PATH}" ]]; then
-  (cd "${ROOT_DIR}/packages/registrar" && deno task build:npm)
-  REGISTRAR_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/registrar/npm" && npm pack --silent | tail -n1)"
-  REGISTRAR_TARBALL_PATH="${ROOT_DIR}/packages/registrar/npm/${REGISTRAR_TARBALL_NAME}"
-fi
-
-# The observer is an independent installed application, not a Tufa dependency.
-if [[ -z "${OBSERVER_TARBALL_PATH}" ]]; then
-  (cd "${ROOT_DIR}/packages/observer" && deno task build:npm)
-  OBSERVER_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/observer/npm" && npm pack --silent | tail -n1)"
-  OBSERVER_TARBALL_PATH="${ROOT_DIR}/packages/observer/npm/${OBSERVER_TARBALL_NAME}"
-fi
-
-# Multisync supplies the Tufa newcomer selector.
-if [[ -z "${MULTISYNC_TARBALL_PATH}" ]]; then
-  (cd "${ROOT_DIR}/packages/multisync" && deno task build:npm)
-  MULTISYNC_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/multisync/npm" && npm pack --silent | tail -n1)"
-  MULTISYNC_TARBALL_PATH="${ROOT_DIR}/packages/multisync/npm/${MULTISYNC_TARBALL_NAME}"
-fi
-
-if [[ ! -f "${TARBALL_PATH}" ]]; then
-  echo "Tarball not found: ${TARBALL_PATH}" >&2
-  exit 1
+  echo "No tarball provided; building and packing @keri-ts/tufa and its internal dependencies..."
+  for package in cesr keri hosting wallet registrar verifier observer; do
+    LOCAL_DEPENDENCIES+=("$(pack "${package}")")
+  done
+  TARBALL_PATH="$(pack tufa)"
+else
+  shift
+  LOCAL_DEPENDENCIES=("$@")
 fi
 
 if [[ ! -f "${SAMPLES_DIR}/${SAMPLE_STREAM_REL}" ]]; then
@@ -82,110 +41,31 @@ if [[ ! -f "${SAMPLES_DIR}/${SAMPLE_STREAM_REL}" ]]; then
   exit 1
 fi
 
+# 2. Every manifest and bin target must be in the tarball before anything is installed.
 # setup-python exports LD_LIBRARY_PATH on Linux release runners; Deno rejects
 # spawning tar with that inherited environment unless the variable is removed.
 env -u LD_LIBRARY_PATH deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${TARBALL_PATH}" --include-bin
 
-TARBALL_DIR="$(cd "$(dirname "${TARBALL_PATH}")" && pwd)"
-TARBALL_NAME="$(basename "${TARBALL_PATH}")"
-INSTALL_TARGETS=("/pkg/${TARBALL_NAME}")
-DOCKER_ARGS=(
-  -v "${TARBALL_DIR}:/pkg"
-  -v "${SAMPLES_DIR}:/samples"
-  -v "${ROOT_DIR}/scripts/npm:/smoke-scripts:ro"
-)
-
-if [[ -n "${CESR_TARBALL_PATH}" ]]; then
-  if [[ ! -f "${CESR_TARBALL_PATH}" ]]; then
-    echo "CESR tarball not found: ${CESR_TARBALL_PATH}" >&2
+# 3. Stage the tarballs in one directory the container mounts read-only; Tufa is installed last.
+STAGE_DIR="$(mktemp -d)"
+trap 'rm -rf "${STAGE_DIR}"' EXIT
+INSTALL_TARGETS=()
+for tarball in ${LOCAL_DEPENDENCIES[@]+"${LOCAL_DEPENDENCIES[@]}"} "${TARBALL_PATH}"; do
+  if [[ ! -f "${tarball}" ]]; then
+    echo "Tarball not found: ${tarball}" >&2
     exit 1
   fi
+  cp "${tarball}" "${STAGE_DIR}/"
+  INSTALL_TARGETS+=("/pkg/$(basename "${tarball}")")
+done
 
-  CESR_TARBALL_DIR="$(cd "$(dirname "${CESR_TARBALL_PATH}")" && pwd)"
-  CESR_TARBALL_NAME="$(basename "${CESR_TARBALL_PATH}")"
-  DOCKER_ARGS+=(-v "${CESR_TARBALL_DIR}:/cesr-pkg")
-  INSTALL_TARGETS=("/cesr-pkg/${CESR_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
-fi
-
-if [[ -n "${KERI_TARBALL_PATH}" ]]; then
-  if [[ ! -f "${KERI_TARBALL_PATH}" ]]; then
-    echo "keri-ts tarball not found: ${KERI_TARBALL_PATH}" >&2
-    exit 1
-  fi
-
-  KERI_TARBALL_DIR="$(cd "$(dirname "${KERI_TARBALL_PATH}")" && pwd)"
-  KERI_TARBALL_NAME="$(basename "${KERI_TARBALL_PATH}")"
-  DOCKER_ARGS+=(-v "${KERI_TARBALL_DIR}:/keri-pkg")
-  INSTALL_TARGETS=("/keri-pkg/${KERI_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
-fi
-
-if [[ -n "${VERIFIER_TARBALL_PATH}" ]]; then
-  if [[ ! -f "${VERIFIER_TARBALL_PATH}" ]]; then
-    echo "Verifier tarball not found: ${VERIFIER_TARBALL_PATH}" >&2
-    exit 1
-  fi
-  VERIFIER_TARBALL_DIR="$(cd "$(dirname "${VERIFIER_TARBALL_PATH}")" && pwd)"
-  VERIFIER_TARBALL_NAME="$(basename "${VERIFIER_TARBALL_PATH}")"
-  DOCKER_ARGS+=(-v "${VERIFIER_TARBALL_DIR}:/verifier-pkg")
-  INSTALL_TARGETS=("/verifier-pkg/${VERIFIER_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
-fi
-
-if [[ -n "${HOSTING_TARBALL_PATH}" ]]; then
-  if [[ ! -f "${HOSTING_TARBALL_PATH}" ]]; then
-    echo "Hosting tarball not found: ${HOSTING_TARBALL_PATH}" >&2
-    exit 1
-  fi
-  HOSTING_TARBALL_DIR="$(cd "$(dirname "${HOSTING_TARBALL_PATH}")" && pwd)"
-  HOSTING_TARBALL_NAME="$(basename "${HOSTING_TARBALL_PATH}")"
-  DOCKER_ARGS+=(-v "${HOSTING_TARBALL_DIR}:/hosting-pkg")
-  INSTALL_TARGETS=("/hosting-pkg/${HOSTING_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
-fi
-
-if [[ -n "${WALLET_TARBALL_PATH}" ]]; then
-  if [[ ! -f "${WALLET_TARBALL_PATH}" ]]; then
-    echo "Wallet tarball not found: ${WALLET_TARBALL_PATH}" >&2
-    exit 1
-  fi
-  WALLET_TARBALL_DIR="$(cd "$(dirname "${WALLET_TARBALL_PATH}")" && pwd)"
-  WALLET_TARBALL_NAME="$(basename "${WALLET_TARBALL_PATH}")"
-  DOCKER_ARGS+=(-v "${WALLET_TARBALL_DIR}:/wallet-pkg")
-  INSTALL_TARGETS=("/wallet-pkg/${WALLET_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
-fi
-
-if [[ ! -f "${REGISTRAR_TARBALL_PATH}" ]]; then
-  echo "Registrar tarball not found: ${REGISTRAR_TARBALL_PATH}" >&2
-  exit 1
-fi
-REGISTRAR_TARBALL_DIR="$(cd "$(dirname "${REGISTRAR_TARBALL_PATH}")" && pwd)"
-REGISTRAR_TARBALL_NAME="$(basename "${REGISTRAR_TARBALL_PATH}")"
-DOCKER_ARGS+=(-v "${REGISTRAR_TARBALL_DIR}:/registrar-pkg")
-INSTALL_TARGETS=("/registrar-pkg/${REGISTRAR_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
-
-if [[ ! -f "${OBSERVER_TARBALL_PATH}" ]]; then
-  echo "Observer tarball not found: ${OBSERVER_TARBALL_PATH}" >&2
-  exit 1
-fi
-OBSERVER_TARBALL_DIR="$(cd "$(dirname "${OBSERVER_TARBALL_PATH}")" && pwd)"
-OBSERVER_TARBALL_NAME="$(basename "${OBSERVER_TARBALL_PATH}")"
-DOCKER_ARGS+=(-v "${OBSERVER_TARBALL_DIR}:/observer-pkg")
-INSTALL_TARGETS=("/observer-pkg/${OBSERVER_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
-
-if [[ ! -f "${MULTISYNC_TARBALL_PATH}" ]]; then
-  echo "Multisync tarball not found: ${MULTISYNC_TARBALL_PATH}" >&2
-  exit 1
-fi
-MULTISYNC_TARBALL_DIR="$(cd "$(dirname "${MULTISYNC_TARBALL_PATH}")" && pwd)"
-MULTISYNC_TARBALL_NAME="$(basename "${MULTISYNC_TARBALL_PATH}")"
-DOCKER_ARGS+=(-v "${MULTISYNC_TARBALL_DIR}:/multisync-pkg")
-INSTALL_TARGETS=("/multisync-pkg/${MULTISYNC_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
-
+# 4. Install and run the CLI in a clean container: no workspace symlinks, caches or host node_modules.
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
-
-# Use a clean global install because Tufa's release contract is primarily the
-# executable. Workspace imports are optional local tarballs, never symlinks.
-echo "Running Docker smoke test with ${TARBALL_NAME} on ${SMOKE_NODE_IMAGE}"
+echo "Running Docker smoke test with $(basename "${TARBALL_PATH}") on ${SMOKE_NODE_IMAGE}"
 docker run --rm \
   -e "SAMPLE_STREAM_REL=${SAMPLE_STREAM_REL}" \
   -e "SMOKE_NODE_IMAGE=${SMOKE_NODE_IMAGE}" \
-  "${DOCKER_ARGS[@]}" \
+  -v "${STAGE_DIR}:/pkg:ro" \
+  -v "${SAMPLES_DIR}:/samples" \
+  -v "${ROOT_DIR}/scripts/npm:/smoke-scripts:ro" \
   "${SMOKE_NODE_IMAGE}" /bin/sh /smoke-scripts/smoke-tufa-container.sh "${INSTALL_TARGETS[@]}"

@@ -30,9 +30,10 @@ drift.
 
 Local macOS note:
 
-- `packages/keri/scripts/setup_lmdb_v1.sh` rebuilds every discovered local
-  `lmdb` package tree that Node or Deno may actually load, including Deno's
-  `.deno/.../node_modules/lmdb` copy when present
+- `packages/keri/scripts/setup_lmdb_v1.sh` rebuilds the local `lmdb` package
+  trees that Node or Deno actually load: top-level `node_modules/lmdb` and the
+  `.deno/.../node_modules/lmdb` copy Deno resolves for the pinned `npm:lmdb`,
+  each compiled once by real path (the top-level tree is often a symlink to it)
 - this is an addon-provenance safeguard, not a global-install requirement: Deno
   may resolve `npm:lmdb` from its shadow package tree under
   `node_modules/.deno/...`, and that tree can otherwise keep using an optional
@@ -81,15 +82,18 @@ deno task npm:build:all
 # Smoke test the keri-ts tarball entrypoints in node:alpine
 deno task smoke:keri:npm
 
-# Smoke test the tufa tarball in node:alpine (tufa version + annotate)
+# Smoke test the tufa tarball in node:alpine (tufa version + annotate), built
+# with its internal dependencies from this checkout
 deno task smoke:tufa:npm
 ```
 
-To test a specific prebuilt tarball:
+To test a specific prebuilt tarball (internal dependencies then come from npm at
+the pinned versions; add locally built dependency tarballs after it to use those):
 
 ```bash
 bash scripts/smoke-test-keri-npm.sh packages/keri/npm/keri-ts-<version>.tgz
 bash scripts/smoke-test-tufa-npm.sh packages/tufa/npm/keri-ts-tufa-<version>.tgz
+bash scripts/smoke-test-package-npm.sh hosting packages/hosting/npm/keri-ts-hosting-<version>.tgz
 ```
 
 ## Deno global install notes for tufa

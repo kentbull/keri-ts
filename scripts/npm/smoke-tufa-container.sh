@@ -33,19 +33,33 @@ log_agent_process() {
   echo "--- end tufa-agent process ---" >&2
 }
 
-npm install -g "$@" >/dev/null
+# Usage: smoke-tufa-container.sh [local dependency .tgz...] <tufa.tgz>
+# Tufa alone is installed globally, as users install the CLI; its dependencies come from the registry.
+# Local dependency tarballs (a release dry run of versions npm does not have yet) can only satisfy Tufa's
+# pins inside one project, so with them the set is installed into a fresh project instead.
+if [ "$#" -eq 1 ]; then
+  npm install -g "$1" >/dev/null
+  TUFA_ROOT="$(npm root -g)/@keri-ts/tufa"
+  TUFA_BIN=tufa
+else
+  WORK_DIR="$(mktemp -d)"
+  cd "${WORK_DIR}"
+  npm init -y >/dev/null 2>&1
+  npm install "$@" >/dev/null
+  TUFA_ROOT="${WORK_DIR}/node_modules/@keri-ts/tufa"
+  TUFA_BIN="${WORK_DIR}/node_modules/.bin/tufa"
+fi
 echo "Node runtime: $(node --version), npm: $(npm --version)" >&2
-TUFA_ROOT="$(npm root -g)/@keri-ts/tufa"
 cp /smoke-scripts/smoke-tufa-runtime.mjs "${TUFA_ROOT}/.runtime-smoke.mjs"
 node "${TUFA_ROOT}/.runtime-smoke.mjs" "${TUFA_ROOT}"
-V1="$(tufa version | tr -d "\r")"
-V2="$(tufa --version | tr -d "\r")"
+V1="$("${TUFA_BIN}" version | tr -d "\r")"
+V2="$("${TUFA_BIN}" --version | tr -d "\r")"
 if [ "${V1}" != "${V2}" ]; then
   echo "Version mismatch: tufa version=${V1}, tufa --version=${V2}" >&2
   exit 1
 fi
 
-OUT="$(tufa annotate --in "/samples/${SAMPLE_STREAM_REL}" | awk "NR==1{print; exit}")"
+OUT="$("${TUFA_BIN}" annotate --in "/samples/${SAMPLE_STREAM_REL}" | awk "NR==1{print; exit}")"
 echo "${OUT}" | grep -q "SERDER KERI JSON"
 
 HEAD_DIR=/tmp/tufa-smoke
@@ -65,11 +79,11 @@ cat >"${CONFIG_DIR}/keri/cf/${CONFIG_FILE}.json" <<EOF
   }
 }
 EOF
-tufa init --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --salt 0ADHFiisJ7FnfWkPl4YfX6AK >/dev/null
-tufa incept --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --alias "${ALIAS}" --file /samples/incept-config/single-sig-incept.json --transferable >/dev/null
+"${TUFA_BIN}" init --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --salt 0ADHFiisJ7FnfWkPl4YfX6AK >/dev/null
+"${TUFA_BIN}" incept --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --alias "${ALIAS}" --file /samples/incept-config/single-sig-incept.json --transferable >/dev/null
 rm -f /tmp/tufa-agent.exitcode
 (
-  tufa agent --name "${NAME}" --head-dir "${HEAD_DIR}" --config-dir "${CONFIG_DIR}" --config-file "${CONFIG_FILE}" -p "${PORT}" -P "${PASSCODE}" >/tmp/tufa-agent.log 2>&1
+  "${TUFA_BIN}" agent --name "${NAME}" --head-dir "${HEAD_DIR}" --config-dir "${CONFIG_DIR}" --config-file "${CONFIG_FILE}" -p "${PORT}" -P "${PASSCODE}" >/tmp/tufa-agent.log 2>&1
   status=$?
   printf "%s\n" "${status}" >/tmp/tufa-agent.exitcode
   exit "${status}"

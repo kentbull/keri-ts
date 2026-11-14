@@ -1,94 +1,86 @@
-name: 'Common CI Setup'
-description: 'Common Deno/Node setup, cache restore, install, assert, and optional fmt/version steps.'
+# Common Deno/Node setup for CI and release jobs, around one shared dependency cache.
+#
+# The cache holds the Deno cache and node_modules with the LMDB-js addon already rebuilt for KERI. Its key
+# (scripts/ci/deps-cache-key.ts) changes only when dependencies, the LMDB build, the runtimes or the runner
+# platform change, so Warm, the PR stage gate and the release workflows all restore the same entry and an
+# exact hit installs and compiles nothing.
+#
+# Scripts run from this action's own repository copy (for a release, the tooling checked out beside the tag),
+# against the checkout in the working directory. Procedure: docs/versioning/release-versioning.md.
+name: "Common CI Setup"
+description: "Deno/Node setup, shared dependency cache, install on a miss, optional LMDB addon and fmt check."
+
 inputs:
   do-fmt-check:
-    description: 'Whether to run fmt:check'
-    required: false
-    default: 'true'
-  do-version-check:
-    description: 'Whether to read package version and (if push) ensure tag matches. Requires package-json-path input.'
-    required: false
-    default: 'false'
-  package-json-path:
-    description: 'Path to package.json for version (e.g. packages/keri/package.json)'
-    required: false
-    default: ''
-  cache-key-extra:
-    description: 'Extra string to include in cache key (for package-specific deno.json etc.)'
-    required: false
-    default: ''
+    description: "Whether to run fmt:check"
+    required:    false
+    default:     "true"
+  lmdb:
+    description: "Whether the job loads the KERI LMDB addon: verify it, rebuild on a miss, and save the entry"
+    required:    false
+    default:     "false"
+
 outputs:
   cache-hit:
-    description: 'Whether the combined Deno and node_modules cache matched exactly.'
-    value: ${{ steps.deps-cache.outputs.cache-hit }}
-  package-version:
-    description: 'The version read from package.json (if do-version-check was true)'
-    value: ${{ steps.package.outputs.version }}
+    description: "Whether the shared dependency cache matched exactly"
+    value:       ${{ steps.deps-cache.outputs.cache-hit }}
+
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: ${{ env.NODE_VERSION }}
-        cache: "npm"
-        cache-dependency-path: package-lock.json
 
     - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
       with:
         deno-version: ${{ env.DENO_VERSION }}
 
-    - name: identify native cache platform
-      id: native-platform
+    - name:  compute the shared dependency cache key
+      id:    key
       shell: bash
-      run: |
-        PLATFORM=$(printf '%s\n%s\n' "${ImageOS:-$(uname -s)}" "$(c++ --version)" | shasum -a 256 | cut -d ' ' -f 1)
-        echo "fingerprint=$PLATFORM" >> "$GITHUB_OUTPUT"
+      run:   deno run --no-config --no-lock --allow-read --allow-env --allow-write --allow-run=c++ "$GITHUB_ACTION_PATH/../../../scripts/ci/deps-cache-key.ts"
 
-    - name: restore Deno dependency cache
-      id: deps-cache
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - name: restore the shared dependency cache
+      id:   deps-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           ${{ env.DENO_DIR }}
           node_modules
-        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.native-platform.outputs.fingerprint }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('packages/keri/scripts/setup_lmdb_v1.sh', 'packages/keri/scripts/lmdb/**', 'scripts/ci/report-lmdb-runtime.ts', 'deno.lock', 'deno.json', 'dprint.json', 'package.json', 'package-lock.json', 'packages/keri/package.json', 'packages/cesr/package.json', 'packages/tufa/package.json', 'packages/keri/deno.json', 'packages/cesr/deno.json', 'packages/tufa/deno.json', 'packages/verifier/package.json', 'packages/verifier/deno.json', 'packages/hosting/package.json', 'packages/hosting/deno.json', 'packages/wallet/package.json', 'packages/wallet/deno.json', 'packages/registrar/package.json', 'packages/registrar/deno.json') }}${{ inputs.cache-key-extra != '' && format('-{0}', inputs.cache-key-extra) || '' }}
-        restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-${{ steps.native-platform.outputs.fingerprint }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-
+        key:          ${{ steps.key.outputs.key }}
+        restore-keys: ${{ steps.key.outputs.restore-prefix }}
 
-    - name: install deterministic workspace dependencies
-      if: steps.deps-cache.outputs.cache-hit != 'true'
+    - name:  install deterministic workspace dependencies
+      if:    steps.deps-cache.outputs.cache-hit != 'true'
       shell: bash
-      run: npm ci --ignore-scripts
+      run:   npm ci --ignore-scripts
 
-    - name: assert environment
+    - name:  assert environment
       shell: bash
       env:
         EXPECTED_DENO_VERSION: ${{ env.DENO_VERSION }}
         EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
-      run: bash scripts/ci/assert-environment.sh
+      run:   bash scripts/ci/assert-environment.sh
 
-    - name: check formatting
-      if: ${{ inputs.do-fmt-check == 'true' }}
+    # A hit is only checked; a miss rebuilds. Either way the checkout's report-lmdb-runtime gate must pass.
+    - name:  verify or rebuild the KERI LMDB addon
+      if:    inputs.lmdb == 'true'
       shell: bash
-      run: deno task fmt:check
+      run:   bash "$GITHUB_ACTION_PATH/../../../scripts/ci/ensure-lmdb-addon.sh" "${{ steps.deps-cache.outputs.cache-hit }}"
 
-    - name: read package version
-      id: package
-      if: ${{ inputs.do-version-check == 'true' && inputs.package-json-path != '' }}
-      shell: bash
-      env:
-        PACKAGE_JSON_PATH: ${{ inputs.package-json-path }}
-      run: |
-        VERSION=$(node -e "const path = process.env.PACKAGE_JSON_PATH; const target = path.startsWith('.') ? path : './' + path; process.stdout.write(require(target).version);")
-        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+    # Only an entry with the rebuilt addon is saved, and only from a branch run: a tag or pull-request run
+    # saves into a scope no later run reads (master's entries, from Warm, are what releases restore).
+    - name: save the shared dependency cache
+      if:   inputs.lmdb == 'true' && steps.deps-cache.outputs.cache-hit != 'true' && startsWith(github.ref, 'refs/heads/')
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ env.DENO_DIR }}
+          node_modules
+        key: ${{ steps.key.outputs.key }}
 
-    - name: ensure tag matches package version
-      if: ${{ inputs.do-version-check == 'true' && inputs.package-json-path != '' && github.event_name == 'push' }}
+    - name:  check formatting
+      if:    inputs.do-fmt-check == 'true'
       shell: bash
-      run: |
-        TAG_VERSION="${GITHUB_REF_NAME#*-v}"
-        PKG_VERSION="${{ steps.package.outputs.version }}"
-        if [[ "${TAG_VERSION}" != "${PKG_VERSION}" ]]; then
-          echo "Tag version (${TAG_VERSION}) does not match ${PKG_VERSION}."
-          exit 1
-        fi
+      run:   deno task fmt:check
