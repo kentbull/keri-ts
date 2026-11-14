@@ -27,7 +27,6 @@ import {
   type Versionage,
   Vrsn_1_0,
 } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
 import {
   attachmentCounterPayloadQb64b,
   attachmentCounterQb64b,
@@ -36,7 +35,6 @@ import {
 } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";
-import type { StoreIdentity } from "./core/dber.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
 import type { LMDBerOptions } from "./core/lmdber.ts";
 import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
@@ -136,111 +134,97 @@ export class Reger extends StoreOwner {
   public cmse!: SerderSuber<SerderACDC>; // Credential missing-signature escrow.
   public ccrd!: SerderSuber<SerderACDC>; // Completed credentials.
 
-  /** Open the root LMDB environment and bind the KERIpy `Reger` subdb surface. */
-  *reopen(options: StoreIdentity = {}): Operation<boolean> {
-    const opened = yield* this.store.reopen(options);
-    if (!opened) {
-      return false;
-    }
-
-    try {
-      this.tvts = new BytesSuber(this.store, { subkey: "tvts." });
-      this.tels = new CesrOnSuber<Diger>(this.store, {
-        subkey: "tels.",
-        ctor: Diger,
-      });
-      this.ancs = new CatCesrSuber<TelAnchorTuple>(this.store, {
-        subkey: "ancs.",
-        ctor: [NumberPrimitive, Diger],
-      });
-      this.baks = new IoDupSuber<string>(this.store, { subkey: "baks." });
-      this.tibs = new CesrDupSuber<Siger>(this.store, {
-        subkey: "tibs.",
-        ctor: Siger,
-      });
-      this.oots = new OnIoDupSuber<string>(this.store, { subkey: "oots" });
-      this.twes = new OnIoDupSuber<string>(this.store, { subkey: "twes" });
-      this.taes = new OnIoDupSuber<string>(this.store, { subkey: "taes" });
-      this.tets = new CesrSuber<Dater>(this.store, {
-        subkey: "tets.",
-        ctor: Dater,
-      });
-      this.states = new Komer<RegStateRecord>(this.store, {
-        subkey: "stts.",
-        recordClass: RegStateRecord,
-      });
-      this.creds = new SerderSuber<SerderACDC>(this.store, {
-        subkey: "creds.",
-        ctor: SerderACDC,
-      });
-      this.cancs = new CatCesrSuber<CredentialAnchorTuple>(this.store, {
-        subkey: "cancs.",
-        ctor: [Prefixer, NumberPrimitive, Diger],
-      });
-      this.spsgs = new CesrIoSetSuber<Siger>(this.store, {
-        subkey: "ssgs.",
-        ctor: Siger,
-      });
-      this.spcgs = new CatCesrIoSetSuber<VerferCigarCouple>(this.store, {
-        subkey: "scgs.",
-        ctor: [Verfer, Cigar],
-      });
-      this.saved = new CesrSuber<Saider>(this.store, {
-        subkey: "saved.",
-        ctor: Saider,
-      });
-      this.issus = new CesrDupSuber<Saider>(this.store, {
-        subkey: "issus.",
-        ctor: Saider,
-      });
-      this.subjs = new CesrDupSuber<Saider>(this.store, {
-        subkey: "subjs.",
-        ctor: Saider,
-      });
-      this.schms = new CesrDupSuber<Saider>(this.store, {
-        subkey: "schms.",
-        ctor: Saider,
-      });
-      this.mre = new CesrSuber<Dater>(this.store, { subkey: "mre.", ctor: Dater });
-      this.mce = new CesrSuber<Dater>(this.store, { subkey: "mce.", ctor: Dater });
-      this.mse = new CesrSuber<Dater>(this.store, { subkey: "mse.", ctor: Dater });
-      this.txnsb = new Broker(this.store, "txn.");
-      this.regs = new Komer<RegistryRecord>(this.store, {
-        subkey: "regs.",
-        recordClass: RegistryRecord,
-      });
-      this.tpwe = new CatCesrIoSetSuber<TelSealTuple>(this.store, {
-        subkey: "tpwe.",
-        ctor: [Prefixer, NumberPrimitive, Diger],
-      });
-      this.tmse = new CatCesrIoSetSuber<TelSealTuple>(this.store, {
-        subkey: "tmse.",
-        ctor: [Prefixer, NumberPrimitive, Diger],
-      });
-      this.tede = new CatCesrIoSetSuber<TelCompletionTuple>(this.store, {
-        subkey: "tede.",
-        ctor: [Prefixer, NumberPrimitive, Saider],
-      });
-      this.ctel = new CesrSuber<Saider>(this.store, {
-        subkey: "ctel.",
-        ctor: Saider,
-      });
-      this.cmse = new SerderSuber<SerderACDC>(this.store, {
-        subkey: "cmse.",
-        ctor: SerderACDC,
-      });
-      this.ccrd = new SerderSuber<SerderACDC>(this.store, {
-        subkey: "ccrd.",
-        ctor: SerderACDC,
-      });
-
-      return this.opened;
-    } catch (error) {
-      throw new DatabaseOperationError(
-        "Failed to open Reger sub-databases",
-        { cause: error },
-      );
-    }
+  /** Bind the KERIpy `Reger` subdb surface; `StoreOwner.reopen` runs this in one transaction. */
+  protected bindTables(): void {
+    this.tvts = new BytesSuber(this.store, { subkey: "tvts." });
+    this.tels = new CesrOnSuber<Diger>(this.store, {
+      subkey: "tels.",
+      ctor: Diger,
+    });
+    this.ancs = new CatCesrSuber<TelAnchorTuple>(this.store, {
+      subkey: "ancs.",
+      ctor: [NumberPrimitive, Diger],
+    });
+    this.baks = new IoDupSuber<string>(this.store, { subkey: "baks." });
+    this.tibs = new CesrDupSuber<Siger>(this.store, {
+      subkey: "tibs.",
+      ctor: Siger,
+    });
+    this.oots = new OnIoDupSuber<string>(this.store, { subkey: "oots" });
+    this.twes = new OnIoDupSuber<string>(this.store, { subkey: "twes" });
+    this.taes = new OnIoDupSuber<string>(this.store, { subkey: "taes" });
+    this.tets = new CesrSuber<Dater>(this.store, {
+      subkey: "tets.",
+      ctor: Dater,
+    });
+    this.states = new Komer<RegStateRecord>(this.store, {
+      subkey: "stts.",
+      recordClass: RegStateRecord,
+    });
+    this.creds = new SerderSuber<SerderACDC>(this.store, {
+      subkey: "creds.",
+      ctor: SerderACDC,
+    });
+    this.cancs = new CatCesrSuber<CredentialAnchorTuple>(this.store, {
+      subkey: "cancs.",
+      ctor: [Prefixer, NumberPrimitive, Diger],
+    });
+    this.spsgs = new CesrIoSetSuber<Siger>(this.store, {
+      subkey: "ssgs.",
+      ctor: Siger,
+    });
+    this.spcgs = new CatCesrIoSetSuber<VerferCigarCouple>(this.store, {
+      subkey: "scgs.",
+      ctor: [Verfer, Cigar],
+    });
+    this.saved = new CesrSuber<Saider>(this.store, {
+      subkey: "saved.",
+      ctor: Saider,
+    });
+    this.issus = new CesrDupSuber<Saider>(this.store, {
+      subkey: "issus.",
+      ctor: Saider,
+    });
+    this.subjs = new CesrDupSuber<Saider>(this.store, {
+      subkey: "subjs.",
+      ctor: Saider,
+    });
+    this.schms = new CesrDupSuber<Saider>(this.store, {
+      subkey: "schms.",
+      ctor: Saider,
+    });
+    this.mre = new CesrSuber<Dater>(this.store, { subkey: "mre.", ctor: Dater });
+    this.mce = new CesrSuber<Dater>(this.store, { subkey: "mce.", ctor: Dater });
+    this.mse = new CesrSuber<Dater>(this.store, { subkey: "mse.", ctor: Dater });
+    this.txnsb = new Broker(this.store, "txn.");
+    this.regs = new Komer<RegistryRecord>(this.store, {
+      subkey: "regs.",
+      recordClass: RegistryRecord,
+    });
+    this.tpwe = new CatCesrIoSetSuber<TelSealTuple>(this.store, {
+      subkey: "tpwe.",
+      ctor: [Prefixer, NumberPrimitive, Diger],
+    });
+    this.tmse = new CatCesrIoSetSuber<TelSealTuple>(this.store, {
+      subkey: "tmse.",
+      ctor: [Prefixer, NumberPrimitive, Diger],
+    });
+    this.tede = new CatCesrIoSetSuber<TelCompletionTuple>(this.store, {
+      subkey: "tede.",
+      ctor: [Prefixer, NumberPrimitive, Saider],
+    });
+    this.ctel = new CesrSuber<Saider>(this.store, {
+      subkey: "ctel.",
+      ctor: Saider,
+    });
+    this.cmse = new SerderSuber<SerderACDC>(this.store, {
+      subkey: "cmse.",
+      ctor: SerderACDC,
+    });
+    this.ccrd = new SerderSuber<SerderACDC>(this.store, {
+      subkey: "ccrd.",
+      ctor: SerderACDC,
+    });
   }
 
   /** Persist one base credential and its anchoring event triple. */

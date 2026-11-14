@@ -7,7 +7,7 @@
  */
 
 import type { Operation } from "npm:effection@^3.6.0";
-import { DatabaseNotOpenError } from "../../core/errors.ts";
+import { DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
 import type { DBer, StoreIdentity } from "./dber.ts";
 import type { LMDBer } from "./lmdber.ts";
 
@@ -35,8 +35,40 @@ export interface StoreOpener {
 export abstract class StoreOwner {
   constructor(readonly store: DBer) {}
 
-  /** Open the store and rebind this owner's typed tables. */
-  abstract reopen(options?: StoreIdentity): Operation<boolean>;
+  /**
+   * Open the store, then create-if-missing and bind all of this owner's named
+   * tables inside ONE write transaction.
+   *
+   * Invariant: a store holds all of its tables or none of them. Binding a table
+   * on a fresh store creates it, and each creation used to be its own synced
+   * commit; grouping them makes first creation one commit, and a crash before
+   * it leaves a store that the next open completes. Reopening an existing store
+   * creates nothing. A failed binding rolls back, closes the store, and
+   * rethrows as a `DatabaseOperationError` naming the owner.
+   *
+   * Only table binding is grouped. Key creation, `setVer` and every other data
+   * write stay outside this transaction on purpose, each with its own normally
+   * synced commit. A readonly store creates nothing, so it binds without one.
+   */
+  *reopen(options: StoreIdentity = {}): Operation<boolean> {
+    if (!(yield* this.store.reopen(options))) return false;
+    try {
+      if (this.store.readonly) this.bindTables();
+      else this.store.transaction(() => this.bindTables());
+    } catch (error) {
+      yield* this.close();
+      throw new DatabaseOperationError(`Failed to open ${this.constructor.name} sub-databases`, { cause: error });
+    }
+    return true;
+  }
+
+  /**
+   * Bind this owner's typed table wrappers on the open store.
+   *
+   * Runs synchronously inside `reopen`'s single write transaction: bind tables
+   * only and perform no data writes here.
+   */
+  protected abstract bindTables(): void;
 
   get name(): string {
     return this.store.name;

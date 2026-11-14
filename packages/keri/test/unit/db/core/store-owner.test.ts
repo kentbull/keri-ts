@@ -43,10 +43,11 @@ class ProbeOwner extends StoreOwner {
   constructor(store: StoreOwner["store"], readonly opens: boolean) {
     super(store);
   }
-  *reopen(options?: StoreIdentity): Operation<boolean> {
+  override *reopen(options?: StoreIdentity): Operation<boolean> {
     if (!this.opens) return false;
     return yield* this.store.reopen(options);
   }
+  protected bindTables(): void {}
   override *close(clear = false): Operation<boolean> {
     this.closes += 1;
     return yield* this.store.close(clear);

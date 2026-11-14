@@ -13,7 +13,6 @@ import {
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Database } from "npm:lmdb@3.5.3";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
-import { consoleLogger, type Logger } from "../core/logger.ts";
 import { GroupMemberTuple, RawRecord } from "../core/records.ts";
 import type { DBer, StoreIdentity } from "./core/dber.ts";
 import type { LMDBerOptions } from "./core/lmdber.ts";
@@ -221,8 +220,6 @@ export class Keeper extends StoreOwner {
   /** Placement of this store kind. */
   static readonly Family: StoreFamily = { tail: "ks", maxTables: 24 };
 
-  private readonly logger: Logger;
-
   /** Keeper-global parameters shared across all managed prefixes. */
   public gbls!: Suber;
   /** Public-key to private-key secret store. */
@@ -248,101 +245,84 @@ export class Keeper extends StoreOwner {
 
   static readonly MaxNamedDBs = 24;
 
-  constructor(store: DBer, logger: Logger = consoleLogger) {
-    super(store);
-    this.logger = logger;
-  }
-
   /**
-   * Reopen the keeper environment and bind the KERIpy-style named subdbs.
+   * Bind the KERIpy-style named subdbs; `StoreOwner.reopen` runs this in one transaction.
    *
    * Runtime-active stores today include globals, private/public key material,
    * prefix parameters/situations, and the group-member tuple stores. The rest
    * of the keeper surface remains parity-bound even where higher-level runtime
    * flows have not yet exercised it deeply.
    */
-  *reopen(options: StoreIdentity = {}): Operation<boolean> {
-    const opened = yield* this.store.reopen(options);
-    if (!opened) return false;
+  protected bindTables(): void {
+    // Global keeper parameters for all prefixes.
+    // `aeid` anchors the encrypter/decrypter used to protect salts and
+    // private keys, while `pidx`, `algo`, `salt`, and `tier` capture the
+    // default root key-management settings.
+    this.gbls = new Suber(this.store, { subkey: "gbls." });
 
-    try {
-      // Global keeper parameters for all prefixes.
-      // `aeid` anchors the encrypter/decrypter used to protect salts and
-      // private keys, while `pidx`, `algo`, `salt`, and `tier` capture the
-      // default root key-management settings.
-      this.gbls = new Suber(this.store, { subkey: "gbls." });
+    // Public-key to private-key secret material store.
+    // Keys are fully qualified public keys and values are the corresponding
+    // fully qualified private keys.
+    this.pris = new CryptSignerSuber(this.store, { subkey: "pris." });
 
-      // Public-key to private-key secret material store.
-      // Keys are fully qualified public keys and values are the corresponding
-      // fully qualified private keys.
-      this.pris = new CryptSignerSuber(this.store, { subkey: "pris." });
+    // Group signing member tuples for one multisig prefix.
+    // The stored tuple shape mirrors KERIpy's `(Prefixer, Number)` member
+    // identifier set used by GroupSignifyHab flows.
+    this.smids = new CatCesrIoSetSuber<GroupMemberTuple>(this.store, {
+      subkey: "smids.",
+      ctor: [Prefixer, NumberPrimitive],
+    });
 
-      // Group signing member tuples for one multisig prefix.
-      // The stored tuple shape mirrors KERIpy's `(Prefixer, Number)` member
-      // identifier set used by GroupSignifyHab flows.
-      this.smids = new CatCesrIoSetSuber<GroupMemberTuple>(this.store, {
-        subkey: "smids.",
-        ctor: [Prefixer, NumberPrimitive],
-      });
+    // Group rotating member tuples for one multisig prefix.
+    // The stored tuple shape mirrors KERIpy's `(Prefixer, Number)` member
+    // identifier set used by GroupSignifyHab flows.
+    this.rmids = new CatCesrIoSetSuber<GroupMemberTuple>(this.store, {
+      subkey: "rmids.",
+      ctor: [Prefixer, NumberPrimitive],
+    });
 
-      // Group rotating member tuples for one multisig prefix.
-      // The stored tuple shape mirrors KERIpy's `(Prefixer, Number)` member
-      // identifier set used by GroupSignifyHab flows.
-      this.rmids = new CatCesrIoSetSuber<GroupMemberTuple>(this.store, {
-        subkey: "rmids.",
-        ctor: [Prefixer, NumberPrimitive],
-      });
+    // Prefix index keyed by the first public key in a key sequence.
+    // Values are the identifier prefix, or the first public key for
+    // temporary prefixes, matching the KERIpy keeper index contract.
+    this.pres = new CesrSuber<Prefixer>(this.store, {
+      subkey: "pres.",
+      ctor: Prefixer,
+    });
 
-      // Prefix index keyed by the first public key in a key sequence.
-      // Values are the identifier prefix, or the first public key for
-      // temporary prefixes, matching the KERIpy keeper index contract.
-      this.pres = new CesrSuber<Prefixer>(this.store, {
-        subkey: "pres.",
-        ctor: Prefixer,
-      });
+    // Root derivation parameters for one managed identifier prefix.
+    this.prms = new Komer<PrePrm>(this.store, {
+      subkey: "prms.",
+      recordClass: PrePrm,
+    });
 
-      // Root derivation parameters for one managed identifier prefix.
-      this.prms = new Komer<PrePrm>(this.store, {
-        subkey: "prms.",
-        recordClass: PrePrm,
-      });
+    // Old/current/next key situation for one managed identifier prefix.
+    this.sits = new Komer<PreSit>(this.store, {
+      subkey: "sits.",
+      recordClass: PreSit,
+    });
 
-      // Old/current/next key situation for one managed identifier prefix.
-      this.sits = new Komer<PreSit>(this.store, {
-        subkey: "sits.",
-        recordClass: PreSit,
-      });
+    // Replayable public-key sets keyed by `(prefix, ridx)`.
+    // This enables lookup of the current signing keys after each rotation so
+    // establishment events can be replayed in order.
+    this.pubs = new Komer<PubSet>(this.store, {
+      subkey: "pubs.",
+      recordClass: PubSet,
+    });
 
-      // Replayable public-key sets keyed by `(prefix, ridx)`.
-      // This enables lookup of the current signing keys after each rotation so
-      // establishment events can be replayed in order.
-      this.pubs = new Komer<PubSet>(this.store, {
-        subkey: "pubs.",
-        recordClass: PubSet,
-      });
+    // Encrypted next private keys used by group-signify keeper flows.
+    // KERIpy notes these are not yet broadly exercised outside that path.
+    this.prxs = new CesrSuber<Cipher>(this.store, {
+      subkey: "prxs.",
+      ctor: Cipher,
+    });
 
-      // Encrypted next private keys used by group-signify keeper flows.
-      // KERIpy notes these are not yet broadly exercised outside that path.
-      this.prxs = new CesrSuber<Cipher>(this.store, {
-        subkey: "prxs.",
-        ctor: Cipher,
-      });
-
-      // Encrypted next-key commitments used by group-signify keeper flows.
-      // KERIpy notes these are not yet broadly exercised outside that path.
-      this.nxts = new CesrSuber<Cipher>(this.store, {
-        subkey: "nxts.",
-        ctor: Cipher,
-      });
-      this.rroots = new CesrSuber<Cipher>(this.store, { subkey: "rroots.", ctor: Cipher });
-      return true;
-    } catch (error) {
-      this.logger.error(`Failed to open Keeper sub-databases: ${error}`);
-      throw new DatabaseOperationError(
-        "Failed to open Keeper sub-databases",
-        { cause: error },
-      );
-    }
+    // Encrypted next-key commitments used by group-signify keeper flows.
+    // KERIpy notes these are not yet broadly exercised outside that path.
+    this.nxts = new CesrSuber<Cipher>(this.store, {
+      subkey: "nxts.",
+      ctor: Cipher,
+    });
+    this.rroots = new CesrSuber<Cipher>(this.store, { subkey: "rroots.", ctor: Cipher });
   }
 
   /** Close the underlying keeper LMDB environment. */

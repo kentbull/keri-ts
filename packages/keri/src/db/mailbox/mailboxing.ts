@@ -14,9 +14,8 @@
  *   they all treat this module as the single source of mailbox payload truth
  */
 import { Diger, MtrDex } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
 import { DatabaseNotOpenError } from "../../core/errors.ts";
-import { MAX_KEY_BYTES, type StoreIdentity } from "../core/dber.ts";
+import { MAX_KEY_BYTES } from "../core/dber.ts";
 import { onKey } from "../core/keys.ts";
 import type { LMDBerOptions } from "../core/lmdber.ts";
 import { type StoreFamily, StoreOwner } from "../core/store-owner.ts";
@@ -79,17 +78,11 @@ export class Mailboxer extends StoreOwner {
   public msgs!: BytesSuber;
 
   /**
-   * Reopen the mailbox environment and bind the KERIpy-shaped named subdbs.
+   * Bind the KERIpy-shaped named subdbs; `StoreOwner.reopen` runs this in one transaction.
    */
-  *reopen(options: StoreIdentity = {}): Operation<boolean> {
-    const opened = yield* this.store.reopen(options);
-    if (!opened) {
-      return false;
-    }
-
+  protected bindTables(): void {
     this.tpcs = new CesrOnSuber(this.store, { subkey: "tpcs.", ctor: Diger });
     this.msgs = new BytesSuber(this.store, { subkey: "msgs." });
-    return true;
   }
 
   /**
