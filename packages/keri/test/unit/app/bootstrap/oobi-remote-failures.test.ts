@@ -31,6 +31,8 @@ interface OobiScene {
   readonly source: Hab;
   readonly oobiery: Oobiery;
   readonly cues: Deck<AgentCue>;
+  /** Semantic output the shared protocol processor published, such as a refused message's `invalid` cue. */
+  readonly protocolCues: Deck<AgentCue>;
 }
 
 /** Run `body` over a fresh resolver and a source identifier held by another Habery. */
@@ -43,7 +45,7 @@ function withOobiScene(http: HttpClient, body: (scene: OobiScene) => Operation<v
       const cues = new Deck<AgentCue>();
       const reactor = new Reactor(protocolFixture(hby));
       const oobiery = new Oobiery(hby, reactor.protocol, reactor.protocol.rvy, http, cues);
-      yield* body({ hby, source, oobiery, cues });
+      yield* body({ hby, source, oobiery, cues, protocolCues: reactor.protocol.cues });
     } finally {
       yield* sourceHby.close(true);
       yield* hby.close(true);
@@ -179,7 +181,7 @@ Deno.test("an OOBI host answering non-CESR ends that job and the loop resolves t
   });
 });
 
-Deno.test("an OOBI response frame that does not decode ends that job and the loop resolves the next", async () => {
+Deno.test("an OOBI response message whose field does not decode is refused and the job and the next resolve", async () => {
   const http = new FakeRuntimeHttpClient();
   await withOobiScene(http, function*(scene) {
     // A SAID-valid receipt whose sequence number is not hex: the frame parses, its field does not decode.
@@ -197,7 +199,11 @@ Deno.test("an OOBI response frame that does not decode ends that job and the loo
     scene.oobiery.resolve(invalid);
     scene.oobiery.resolve(good);
     yield* drain(scene.oobiery, 2);
-    assertFailedJob(scene, invalid, "invalid-response-frame");
+    // The malformed field ends only that message, as a refused receipt; the response itself was CESR.
+    const refused = scene.protocolCues.toArray().find((cue) => cue.kin === "invalid" && cue.serder.ilk === "rct");
+    assertExists(refused);
+    assertEquals([scene.hby.db.oobis.get(invalid), scene.hby.db.eoobi.get(invalid)], [null, null]);
+    assertEquals(scene.hby.db.roobi.get(invalid)?.state, "resolved");
     assertEquals(scene.hby.db.roobi.get(good)?.state, "resolved");
   });
 });

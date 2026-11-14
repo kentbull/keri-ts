@@ -13,6 +13,10 @@
  *   a member that is briefly offline), collects the other members' stored contributions, and, once the message is
  *   accepted, lets the elected lead send the completed message to its recipient. It signs nothing beyond the
  *   contribution that the consent recorded.
+ * - A member that did not sign a message the others' signatures complete (a weight-0 member, say) takes it with no
+ *   call: intake on receipt of a wrapper whose copies carry the group's threshold, or else `processOnce`'s periodic
+ *   sweep once the exchange the message answers is accepted. That adds no signature, so it is not consent; the
+ *   member then holds what the group completed and can accept the counterparty's answer in its thread.
  * - {@link groupIpexStatus} is a pure read and {@link waitForGroupIpex} only observes.
  *
  * Status is derived from the protocol stores: an accepted message reads `done`; a stored proposal without a live
@@ -32,7 +36,7 @@ import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
-import { MULTISIG_EXN_ROUTE } from "../multisig/grouping.ts";
+import { groupIpexFollowable, MULTISIG_EXN_ROUTE } from "../multisig/grouping.ts";
 import type { GroupSendResult } from "../multisig/multisig-messaging.ts";
 import { type RegistryProposeDeps } from "../multisig/proposing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
@@ -42,6 +46,7 @@ import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workf
 import { IpexAdmitter } from "./ipex-admitting.ts";
 import { attachPresentationProof, type PreparedGrantBody } from "./ipex-discloser.ts";
 import {
+  acceptGroupIpexCopies,
   approveMultisigIpexLocally,
   approveStoredMultisigIpexWrappers,
   findStoredMultisigIpex,
@@ -52,12 +57,15 @@ import {
   requireAcdcV2GroupUse,
   sendCompletedGroupIpex,
   storedMultisigIpexBody,
+  unacceptedGroupIpexCopies,
 } from "./ipex-grouping.ts";
 import { isIssuanceOrigin } from "./ipex-node-authentication.ts";
 import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
 
 /** Milliseconds between collections of the other members' stored contributions. */
 export const GROUP_IPEX_COLLECT_MS = 250;
+/** Milliseconds between sweeps for group messages this member holds completed but has not accepted. */
+export const GROUP_IPEX_FOLLOW_MS = 5_000;
 /** How long delivery failures may last before an operation ends `failed`; a group IPEX message has no deadline. */
 export const GROUP_IPEX_RETRY_BOUND_MS = 600_000;
 
@@ -199,16 +207,27 @@ export class GroupIpexOperations {
   readonly ended = new Map<string, { state: GroupIpexEndState; reason: string }>();
   /** What accepted operations published and delivered in this process; not durable. */
   readonly outcomes = new Map<string, GroupIpexOutcome>();
+  /** Messages this member's KRAM refused to take from their copies in this process; a sweep tries them no more. */
+  readonly unfollowable = new Set<string>();
+  /** When the next sweep for completed group messages is due. */
+  private nextFollow = 0;
 
   constructor(readonly deps: GroupIpexDeps) {}
 
-  /** Whether a pass has work. */
+  /** Whether a pass has work: a live operation, or a sweep for completed group messages is due. */
   active(): boolean {
-    return this.live.size > 0;
+    return this.live.size > 0 || this.deps.clock.now() >= this.nextFollow;
   }
 
-  /** Advance every live operation by one pass. */
+  /**
+   * Advance every live operation by one pass. Every {@link GROUP_IPEX_FOLLOW_MS} a pass also takes the group messages
+   * this member did not sign but holds completed ({@link follow}); that signs and sends nothing.
+   */
   *processOnce(): Operation<void> {
+    if (this.deps.clock.now() >= this.nextFollow) {
+      this.nextFollow = this.deps.clock.now() + GROUP_IPEX_FOLLOW_MS;
+      yield* this.follow();
+    }
     for (const op of [...this.live.values()]) {
       // A group whose local member cannot sign yet waits for its signer.
       if (op.busy || !this.live.has(op.said) || !op.group.canSign()) continue;
@@ -220,6 +239,28 @@ export class GroupIpexOperations {
       } finally {
         op.busy = false;
       }
+    }
+  }
+
+  /**
+   * Accept each stored group IPEX message whose received copies already carry the group's threshold
+   * ({@link groupIpexFollowable}), adding no signature, so this member holds what the group completed without it.
+   * Intake takes such a message on receipt; this sweep takes what intake could not yet, such as an answer that arrived
+   * before the exchange it answers. A message with a live operation is left to that operation's own collection.
+   */
+  private *follow(): Operation<void> {
+    const { hby, exc, protocol } = this.deps;
+    for (const copies of unacceptedGroupIpexCopies(hby, exc)) {
+      const said = copies[0].body.said!;
+      if (this.live.has(said) || this.unfollowable.has(said) || !groupIpexFollowable(hby, copies)) continue;
+      try {
+        yield* acceptGroupIpexCopies(protocol, copies);
+      } catch (error) {
+        if (!(error instanceof KramRefusedError)) throw error;
+        this.unfollowable.add(said);
+        continue;
+      }
+      if (exc.complete(said)) this.deps.changes?.push({ kind: "ipex", id: said });
     }
   }
 

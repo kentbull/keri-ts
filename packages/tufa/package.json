@@ -1,16 +1,16 @@
 {
   "name": "@keri-ts/tufa",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "description": "Trust Utilities for Agents CLI application package",
   "license": "Apache-2.0",
   "dependencies": {
     "cesr-ts": "2.2.1",
-    "keri-ts": "2.2.4",
-    "@keri-ts/wallet": "2.2.4",
-    "@keri-ts/hosting": "2.2.4",
-    "@keri-ts/observer": "2.2.2",
-    "@keri-ts/verifier": "2.2.2",
-    "@keri-ts/registrar": "2.2.2"
+    "keri-ts": "2.2.5",
+    "@keri-ts/wallet": "2.2.5",
+    "@keri-ts/hosting": "2.2.5",
+    "@keri-ts/observer": "2.2.3",
+    "@keri-ts/verifier": "2.2.3",
+    "@keri-ts/registrar": "2.2.3"
   },
   "repository": {
     "type": "git",

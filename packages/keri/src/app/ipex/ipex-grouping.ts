@@ -662,6 +662,39 @@ export function* approveStoredMultisigIpexWrappers(
 }
 
 /**
+ * The copies this member received of each v2 group IPEX message it has not accepted: per message, the child of each
+ * stored, authenticated `/multisig/exn` wrapper that carries it, with its signatures and nests. A pure read; whether a
+ * message may be taken from its copies is {@link groupIpexFollowable}'s rule.
+ */
+export function unacceptedGroupIpexCopies(hby: Habery, exchanger: Exchanger): CesrFrame[][] {
+  const copies = new Map<string, CesrFrame[]>();
+  for (const [, wrapper] of hby.db.exns.getTopItemIter()) {
+    if (wrapper.route !== MULTISIG_EXN_ROUTE || wrapper.pvrsn.major !== 2) continue;
+    const said = storedMultisigIpexBody(hby.db, wrapper)?.said;
+    if (!said || exchanger.complete(said) || !exchanger.verifyAccepted(wrapper.said!, MULTISIG_EXN_ROUTE)) continue;
+    copies.set(said, [...copies.get(said) ?? [], loadNests(hby.db, wrapper.said!)[0]]);
+  }
+  return [...copies.values()];
+}
+
+/**
+ * Accept a group IPEX message from the copies this member received, adding no signature: dispatch each copy with its
+ * own proofs, then advance escrows so that copies whose signatures only together meet the threshold complete. The
+ * caller has checked {@link groupIpexFollowable}.
+ *
+ * @throws KramRefusedError when this member's own KRAM refuses a copy for its time, thread or exchange lifetime: the
+ * message can no longer be accepted here.
+ */
+export function* acceptGroupIpexCopies(protocol: ProtocolProcessor, copies: readonly CesrFrame[]): Operation<void> {
+  const kvy = new Reactor(protocol).kvy;
+  for (const copy of copies) {
+    const { decision } = yield* protocol.dispatch(copy, { local: true }, kvy);
+    if (isKramExpiry(decision)) throw new KramRefusedError(copy.body.said!, decision);
+  }
+  yield* protocol.processEscrowsOnce();
+}
+
+/**
  * Return the first incomplete stored `/multisig/exn` wrapping `/ipex/*`.
  *
  * @param db Borrowed accepted exchanges; discovery does not mutate notices or approval state.

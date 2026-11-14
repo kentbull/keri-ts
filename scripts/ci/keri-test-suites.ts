@@ -372,6 +372,7 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/interop-ipex-mailbox-pairwise.test.ts",
       "test/integration/app/interop-relay-keripy.test.ts",
       "test/integration/app/interop-relay-keripy-chain.test.ts",
+      "test/integration/app/interop-relay-keripy-issuance.test.ts",
       "test/integration/app/interop-registry-root-mailbox.test.ts",
     ],
   },

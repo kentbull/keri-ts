@@ -1,5 +1,74 @@
 # @keri-ts/tufa
 
+## 2.2.5
+
+### Patch Changes
+
+- fa7cf41: Runtime components no longer call each other through callback hooks; they exchange records on decks or read state on their own tock. An accepted `/end/role` reply now emits an `endRoleSaved` cue (`EndRoleSavedCue`) after its commit, and the runtime cue pass (and the witness cue drain) prompts the KEL publisher and mailbox poller for a mailbox role. The mailbox poller pushes a `MailboxPollCue` (`polled` or `unauthorized`) onto the KEL publisher's new `polls` deck, which the publisher drains on its tock to re-arm a timed-out post or post the KEL again after a 403. The TCP witness host re-reads a retained query's `QueryReply.ready` each runtime tock instead of registering an observer.
+
+  Breaking changes: `Revery.onEndRole` is removed. The `MailboxPoller` options `onPolled` and `onUnauthorized`, and the `MailboxPoller.onPolled` and `MailboxPoller.onUnauthorized` fields, are removed; pass `polls` (a `Deck<MailboxPollCue>`, normally `KelPublisher.polls`) instead. `KelPublisher.repair` is now private; push an `unauthorized` record onto `KelPublisher.polls`. `QueryReply.observeReady` is removed; read `QueryReply.ready`.
+
+- 77865d3: An agent can now relay for the edges it serves. With the new `AgentRuntimeOptions.relaying` (or `HostKernelSpec.enableRelay` in `@keri-ts/hosting`), `/fwd` intake delivers the child of a sender that authorized this host as its `mailbox` or `agent`. A recipient that is a habitat of the agent's own Habery (an edge's group co-member hosted on the agent) receives it through the agent's own ingress, as remote input to that habitat's endpoint, with signature, KRAM and escrow rules applied as for any received message. Any other recipient gets it through the agent's own Poster, at the recipient and topic the `/fwd` names. A group's `/fwd` is signed by its local member; it relays when that member authorized the host, or when the forwarded message comes from a group the member belongs to and that group authorized the host. Witness membership alone never grants relaying. Exactly one path runs: local habitat, then a recipient this host already stores for (stored as before), then relay. A failed onward send is the Poster's logged failed outcome; nothing is acknowledged back to the edge. Relaying requires a mailbox store.
+
+  Breaking changes: `ForwardHandler` takes a second constructor argument, a `ForwardRelaying` (the runtime's `Poster` and `Reactor`), or `null` for store-only intake. `HostKernelSpec.enableRelay` is required.
+
+- 102dfe0: A browser wallet delivers through its agent unless it opts out. **Breaking:** `OpenWebWalletOptions` now requires
+  `delivery: WebWalletDelivery`, either a relay `{ aid, oobi }` (the agent the wallet sends, queries, polls and resolves
+  OOBIs through, passed to the runtime as `relay`) or `"direct"`, which behaves exactly as the wallet did before. An open
+  without it does not compile; a relay with an empty AID or a non-HTTP(S) OOBI rejects with `ValidationError` before any
+  store opens. `recoverWebWallet` reopens with the same `delivery`.
+
+  `WebWallet.health()` reports `relay-unresolved` (the relay's OOBI has not resolved) and `relay-unauthorized` (with the
+  local identifiers that have not authorized it as their mailbox), after `latched` and before `mailbox-unreachable`.
+  `WebWallet.relayStatus()` lists the onboarding steps still missing, in order. Both are read from accepted state by the
+  new `relayOnboarding(hby, relay)` in `keri-ts`, which also exports `assertRelay` and the `RelayStep` types.
+
+  `tufa agent --relay` and `tufa mailbox start --relay` turn on relay mode for the host (off by default).
+
+- Updated dependencies [99c3866]
+- Updated dependencies [d25473f]
+- Updated dependencies [fa7cf41]
+- Updated dependencies [a0a38f2]
+- Updated dependencies [a7a6a70]
+- Updated dependencies [16b4b0b]
+- Updated dependencies [ef7a960]
+- Updated dependencies [597a130]
+- Updated dependencies [59a5462]
+- Updated dependencies [b92b5f4]
+- Updated dependencies [9cea907]
+- Updated dependencies [979f05b]
+- Updated dependencies [28eefde]
+- Updated dependencies [ac85e2c]
+- Updated dependencies [d97fb7d]
+- Updated dependencies [e50c77d]
+- Updated dependencies [0dc3b5e]
+- Updated dependencies [6bb21ba]
+- Updated dependencies [8991821]
+- Updated dependencies [0d7b71b]
+- Updated dependencies [5376227]
+- Updated dependencies [0d9191e]
+- Updated dependencies [250cd4f]
+- Updated dependencies [77865d3]
+- Updated dependencies [f516489]
+- Updated dependencies [76cfbba]
+- Updated dependencies [886f2a5]
+- Updated dependencies [2b4d8eb]
+- Updated dependencies [f89b27c]
+- Updated dependencies [edda12e]
+- Updated dependencies [5a79358]
+- Updated dependencies [d64e69e]
+- Updated dependencies [00bed9a]
+- Updated dependencies [fa60668]
+- Updated dependencies [b23407f]
+- Updated dependencies [102dfe0]
+- Updated dependencies [e3f63d4]
+  - keri-ts@2.2.5
+  - @keri-ts/hosting@2.2.5
+  - @keri-ts/wallet@2.2.5
+  - @keri-ts/observer@2.2.3
+  - @keri-ts/registrar@2.2.3
+  - @keri-ts/verifier@2.2.3
+
 ## 2.2.4
 
 ### Patch Changes

@@ -1,5 +1,5 @@
 {
-  "commit": "54cf0a04a6206489795a3f3f46b14107c1b26f13",
+  "commit": "4d0ad65077fb71ec9638bb63fbc601639642cf95",
   "candidate": {
     "applications": {
       "dolly": { "repository": "kentbull/dolly", "commit": "7f9ebe35dbe5288e91ddd86c760946e5e94269eb" },
@@ -27,7 +27,7 @@
   },
   "profiles": {
     "candidate": {
-      "commit": "54cf0a04a6206489795a3f3f46b14107c1b26f13",
+      "commit": "4d0ad65077fb71ec9638bb63fbc601639642cf95",
       "python": "3.14",
       "hio": "0.7.20",
       "lmdb": "2.3.0",

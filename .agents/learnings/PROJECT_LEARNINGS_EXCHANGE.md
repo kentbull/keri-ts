@@ -226,6 +226,16 @@ Multiplexor validates, indexes and notifies them but never replays their childre
 Finite owners share any `/multisig/*` route through `runtime.mux.addChildHandler(route, childRoute, handler)` and release it with `removeChildHandler`; never replace
 `Exchanger.routes` entries.
 
+A member takes a group message it did not sign when the copies it received already
+carry the group's threshold: ixn/rot/rpy and v2 registry proposals on receipt
+(`alreadyComplete`), and v2 `/multisig/exn` IPEX children by `groupIpexFollowable`
+(local group, `groupThresholdSigned` over every received copy, prior accepted, not
+a group issuer's DH Grant), on receipt or on the group IPEX owner's
+`GROUP_IPEX_FOLLOW_MS` sweep. That adds no signature, so it is not consent. KERIpy
+replays a child only after local approval; keri-ts diverges so every member (weight 0
+included) holds what the group completed and its KRAM knows the thread before the
+counterparty answers (otherwise `unknownThread`).
+
 V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAID
 approval precedes ordinary KEL/reply processing. Local-first approval borrows parsed
 frames; remote-first approval reopens evidence. Commit proposal/submitter indexes

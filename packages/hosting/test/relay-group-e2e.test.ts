@@ -33,18 +33,20 @@ import { createHabery } from "keri-ts/db/lmdb";
 import {
   AcdcV2Regery as Regery,
   addMailbox,
+  admitAndDeliver,
   type AgentRuntime,
-  approveGroupIpex,
   approveGroupIssuanceExchange,
   completeGroupMailbox,
   createAgentRuntime,
   FetchHttpClient,
   groupIpexProposals,
+  groupIpexStatus,
   type Hab,
   type Habery,
   type HttpClient,
   incept,
   interact,
+  listGroupDisclosures,
   type MailboxAdminDeps,
   messagize,
   proposeGroupAdmit,
@@ -248,7 +250,8 @@ interface Observed {
 
 /**
  * The whole path: onboarding through the agent, the issuer's Grant to the group and the group's Admit, the custodian's
- * copy, the group's presentation to the verifier, authorship and egress. Each numbered block asserts
+ * copy, the group's presentation to the verifier, authorship, the co-hosted member's copy of the presentation and of
+ * the verifier's Admit, and egress. Each numbered block asserts
  * the matching check of the test name's brief.
  */
 function* edgeThroughAgent(): Operation<Observed> {
@@ -450,18 +453,20 @@ function* edgeThroughAgent(): Operation<Observed> {
       ),
     "the custodian to hold the edge member's DH reply, DH proof and Admit wrappers",
   );
-  // The weight-0 member's runtime follows the group's issuance proof on its own; its Admit approval is explicit.
+  // The weight-0 member's runtime follows the group's issuance proof on its own, and it takes the group's Admit, which
+  // the edge member's signature already completes, without approving it: it signs nothing.
   yield* until(() => agentRt.exc.complete(grant), "the custodian to accept the Grant");
   assertEquals(
-    groupIpexProposals(agentRt.operations!.groupIpex, custodianGroup.hab).map((p) => [p.said, p.proposer]),
-    [[admit, member.pre]],
-    "the custodian lists the edge member's Admit proposal",
+    groupIpexProposals(agentRt.operations!.groupIpex, custodianGroup.hab).map((p) => [p.said, p.proposer, p.approved]),
+    [[admit, member.pre, false]],
+    "the custodian holds the edge member's Admit wrapper and contributed nothing to it",
   );
-  assert(!agentRt.exc.complete(admit), "holding the proposal is not accepting it");
-  yield* approveGroupIpex(agentRt.operations!.groupIpex, admit);
+  yield* until(() => agentRt.exc.complete(admit), "the custodian to accept the group's completed Admit");
+  assertEquals(groupIpexStatus(agentRt.operations!.groupIpex, admit), { state: "done", phase: "accepted" });
   assertEquals(
-    (yield* waitForGroupIpex(agentRt.operations!.groupIpex, admit, { timeoutMs: BUDGET_MS })).status,
-    { state: "done", phase: "accepted" },
+    listGroupDisclosures(agentHby, agentRt.exc, group).map((row) => [row.grant, row.admit, row.role]),
+    [[grant, admit, "holder"]],
+    "the custodian lists the group's held credential",
   );
   assert(
     loadNests(agentHby.db, grant).some((frame) => frame.body.said === credential.said),
@@ -540,7 +545,54 @@ function* edgeThroughAgent(): Operation<Observed> {
     );
   }
 
-  // === 6. Every request the edge made went to the agent's origin ===
+  // === 6. The co-hosted member holds the group's presentation Grant and accepts the verifier's Admit ===
+  // The edge member's signature completed the Grant without the custodian, whose store took it from the edge member's
+  // wrapper, signing nothing; so the verifier's Admit, addressed to the group, opens no unknown thread there.
+  yield* until(() => agentRt.exc.complete(presented), "the custodian to accept the group's presentation Grant");
+  assertEquals(groupIpexStatus(agentRt.operations!.groupIpex, presented), { state: "done", phase: "accepted" });
+  assert(
+    agentRt.exc.verifyAccepted(presented, "/ipex/grant"),
+    "the custodian's Grant verifies against the group's KEL",
+  );
+  assertEquals(
+    groupIpexProposals(agentRt.operations!.groupIpex, custodianGroup.hab)
+      .filter((p) => p.said === presented).map((p) => [p.proposer, p.approved, p.complete]),
+    [[member.pre, false, true]],
+    "the custodian contributed nothing to the Grant it holds",
+  );
+  const refused: unknown[][] = [];
+  const logError = console.error;
+  console.error = (...args: unknown[]) => {
+    if (args[0] === "KRAM refused message") refused.push(args);
+    logError(...args);
+  };
+  let answered: string;
+  try {
+    const { admitted } = yield* admitAndDeliver(verifier.runtime.operations!.issuance.deps, {
+      grant: presented,
+      message: "Verified",
+    });
+    answered = admitted.admit.said!;
+    yield* until(() => agentRt.exc.complete(answered), "the custodian to accept the verifier's Admit");
+    yield* until(() => edge.exc.complete(answered), "the edge to poll and accept the verifier's Admit");
+  } finally {
+    console.error = logError;
+  }
+  assertEquals(
+    refused.filter((args) => (args[1] as { said?: unknown } | undefined)?.said === answered),
+    [],
+    "no KRAM refusal of the verifier's Admit",
+  );
+  for (const [name, hby] of [["custodian", agentHby], ["edge", edgeHby]] as const) {
+    assertEquals(
+      hby.db.erpy.get([presented])?.qb64,
+      answered,
+      `${name} pins the verifier's Admit as the Grant's answer`,
+    );
+    assertEquals(hby.db.exns.get([answered])?.pre, verifier.hab.pre, `${name} holds the verifier's Admit`);
+  }
+
+  // === 7. Every request the edge made went to the agent's origin ===
   assert(requested.length > 0);
   const agentOrigin = new URL(agentUrl).origin;
   assertEquals(requested.filter((url) => new URL(url).origin !== agentOrigin), [], "the edge contacted only its agent");
