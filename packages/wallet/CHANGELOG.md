@@ -1,5 +1,111 @@
 # @keri-ts/wallet
 
+## 2.2.5
+
+### Patch Changes
+
+- 597a130: A group IPEX contribution that the member's own KRAM refuses no longer stalls until timeout. Consent calls
+  (`proposeGroupIpex`, `approveGroupIpex`) throw `KramRefusedError`, a group IPEX operation whose collection is refused
+  ends `expired` with the KRAM reason and deadline, and `waitForGroupIpex` settles on it.
+- 9cea907: A local group's stored members now follow every accepted establishment event, whoever proposed it and however late its last signature arrives. A proposer whose own signature cannot complete a rotation (a weight-0 member) used to keep naming the old members until the store reopened, so group messages, IPEX traffic, credential copies and registry root copies went to the old member and not the new one. The runtime's Counselor now aligns each local group's members with its latest accepted establishment event on its pass (`Habery.alignGroupMembers`, the one writer of a group's member lists after its record is created), waits without writing anything while a member's KEL is missing, and the root replicator's sweep re-derives a group whose stored members changed, so new members are owed their registry root copies even when the establishment event did not change. The recorded local member is never changed by this; `replaceGroupMember` stays the explicit call. `settleProposedRotation` and `ProposedRotation` are removed, `Habery.recoverAcceptedGroupMembers` becomes `alignGroupMembers`, and `commitAcceptedGroupMembers` and the public `commitGroupHabMembers` are gone: members come from accepted state only. The wallet's `groups.rotate` no longer settles members itself.
+- e50c77d: A remote message that this receiver's KRAM refuses after its sender authenticated now reaches the application. `Kramer.intake` publishes a `kramRefused` cue (`KramRefusedCue`: `said`, `sender`, `ilk`, `route`, `reason`, `stamp`, and `deadline` and `xid` when they exist) for the reasons `timeliness`, `lifetime` and `unknownThread`, which KRAM decides only after a signature or anchored seal verified. `processCuesOnce` pushes it to the new `AgentRuntime.changes` sink as a `KramRefusedChange`, so the host's `ChangeSink` or the Signaler (topic `/workflow/kramRefused`, collapsed per SAID) receives it. `ChangeSink.push` now takes a `RuntimeChange`, either a `WorkflowChange` or a `KramRefusedChange`, and the wallet's sink forwards both. `timestamp`, `replay` and `authentication` refusals and local envelopes publish nothing; the cue is transient, with no durable record. `isKramLateReason`, `KramLateReason` and `kramExchangeId` live beside `KramRefusalReason`, and the generic ingress 422 uses the shared predicate.
+- 6bb21ba: A real fault in a runtime loop now ends `runAgentRuntime` instead of being swallowed. The operation owners' loop, the KEL publisher loop and the Counselor's forwarding of completed group events caught every error: the owner loop counted it in `operations.health` and kept running, the publisher counted it in `publisher.health`, and the Counselor turned it into a `failed` forward to every member and retried it up to eight times. No remote, network or validation outcome reaches those places (a failed post, delivery or member forward is already a typed `failed` result below them), so what they caught was store errors and corrupt state; they now catch nothing. Halting the runtime is not a fault and stays clean.
+
+  A local group whose record names a member habitat the store does not hold now throws the new `MissingDurableStateError` (a `DatabaseError`) from `localGroupMember`, instead of a `ValidationError`; a prefix that is not a local group still throws `ValidationError`. A peer's Grant whose disclosed credential names a registry that is not a canonical SAID no longer throws out of the holder's resumable-Grant sweep and `pendingIssuanceGrants`: `Manager.hasRegistryRoot` answers `false` and `Manager.getRegistryRoot` `null` for a key that is not canonical, and only `putRegistryRoot` refuses one. The Unblind owner no longer reprocesses held queries for a habitat that cannot sign when the loop asks whether it has work, which could throw `SignerNotHeldError` out of the loop.
+
+  Breaking changes: `RuntimeOperations.health`, `OwnerHealth` and `OwnerFault` are removed, and so is `KelPublisher.health`. `localGroupMember` throws `MissingDurableStateError` for a group whose local member is missing. The web wallet's `health()` no longer reports `faulted`; a loop fault ends the runtime, which `health()` reports as `stopped` with the fault as `cause`.
+
+- 0d7b71b: Retry a failed browser persistence write before latching. `PersistenceQueue` retries a failed task in place on a short
+  fixed schedule (`PERSISTENCE_RETRY_DELAYS`, about half a second), holding the head of the queue so no later commit
+  overtakes it, and latches only when every attempt fails. A latched queue now reports `PersistenceLatchedError` (cause:
+  the original failure) from commits, `flushed()` and `close`. `queue.read(task)` runs a task in queue order and returns
+  its result; a throwing read rejects only its caller with `PersistenceReadError` and never latches. `queue.status()`
+  reports `healthy`, `retrying` or `latched` (`PersistenceStatus`). The web wallet exposes them as
+  `persistenceStatus()` and `readPersisted(task)`.
+- 0d9191e: Recover a browser wallet in one call. `recoverWebWallet(wallet, { open, group?, attempts? })` closes the given
+  handle (a latched or closed one included), opens the wallet again with `open`, retrying a failed open up to
+  `attempts` times (default 3), and returns a new `WebWallet` holding the durable prefix. With `group` and no local
+  record of that group, it resolves the co-members' OOBIs and calls `groups.rejoin`; otherwise `skipped` says why no
+  rejoin ran (`no-group`, `group-recorded`, or `member-missing` for a wiped store, where the host re-adopts its member
+  and rejoins itself). A reopen that fails every attempt throws `WalletRecoveryError` with the last failure as its
+  cause. `readPersisted` on a closed or stopped wallet now rejects with `WalletStoppedError` instead of running.
+- 250cd4f: Rejoin a group after a lost store. `rejoinGroup(deps, { oobi, group, member, alias, timeoutMs })` resolves the
+  group's OOBI, waits for its accepted key state and records the group with `joinGroupHab`, reading the signing and
+  rotation members from that accepted state only. Remote outcomes are values: `joined`, `not-member`, `oobi-failed`
+  and `timed-out` (with what it was still waiting for); only `joined` writes. A record already naming the member is
+  returned as `joined` without I/O; one naming another member is refused in favour of `replaceGroupMember`. The web
+  wallet exposes it as `groups.rejoin(options)`. Credentials, registry state and exchanges are not restored by it.
+- 5a79358: `retireIdentifier(runtime, pre)` retires a local, non-group identifier from a running agent. It calls `Habery.retireHab`, then releases the held signers of the identifier's current keys, deletes its mailbox poll cursors (`tops.`) and KEL publisher rows (`kpub.`), and prompts the mailbox poller and the KEL publisher, so its poll workers halt on the next tock and leave no signer condition. It returns a `RetiredIdentifier` naming the prefix, the name, the released public keys and the mailbox endpoints whose workers stop. Before any write it refuses what `retireHab` refuses and, in addition, a registry issuer, an identifier with a pending delegated event or pinned as a delegation proxy, the habitat of a live issuance or Unblind, the source of a queued Poster event, the signer of a queued query and the querier's configured signer. `retireIdentifierRefusal(runtime, pre)` returns that reason without throwing, and `Habery.retireRefusal(pre)` does the same for the store-level refusals. Everything reply acceptance and replay protection need stays: the KEL, key state, every accepted reply, transaction-state notices, KRAM rows, exchanges and credentials.
+
+  `replaceGroupMember` now retires the replaced member by default. When the runtime still needs it, the replacement succeeds and the old member is kept; the new `previousMember` field of `ReplacedGroupMember` says `retired` or `kept` with the reason. `keepPrevious: true` keeps it. `Manager.release` returns the public keys whose held signers it dropped. A mailbox poll that ends after its subject was retired no longer writes a cursor back.
+
+  `@keri-ts/wallet`: `identifiers.retire(pre)` retires a single-signature identifier, and `groups.replaceMember` takes `keepPrevious` (its options are now the named `ReplaceMemberOptions`) and returns the old member's outcome.
+
+- 00bed9a: Signer availability is now state, read where it is needed, instead of a registry the runtime's loops wrote into. `Manager.hasSigner(pub)` says whether a signer is held or stored without decrypting or signing, and `Hab.canSign()` is a pure lookup over the keys `Hab.sign` would use (a group answers through its local member). Every background loop that signs reads it on its tock and skips a habitat that cannot sign yet through the skip path it already had: the mailbox poller neither polls nor backs off and polls within one tock of `Manager.hold`; a query request goes to the tail; a receipt or reply cue goes to the tail behind the cues that can go now (`Respondant.enqueueCue` returns a `CueOutcome`: `taken`, `unrouted` or `unsignable`); delegation keeps its row; Poster reports the forward as failed and delivers later events; Counselor and the registry-root replicator keep the copy without spending an attempt; the issuance, group IPEX and Unblind owners skip the operation until its signer is held (its Grant deadline still ends it); a registry root copy stays pending. `Habery.unsignable()` lists the accepted local habitats that cannot sign, with the keys they lack (`UnsignableHab`). Opening a store without a signer stays legal. A `SignerNotHeldError` that still escapes a loop is a fault and ends `runAgentRuntime`.
+
+  Breaking: removed `Manager.release`, `Manager.onHold`, `SignerConditions`, the `SignerCondition` type, `AgentRuntime.signerConditions`, the mailbox poller's `signerConditions` option and its `unsignable` `PollOutcome`. Held signers only grow while a store is open; `Habery.retireHab` drops the retired identifier's own through `Manager.forget(pre, current)`, which now returns `ForgottenKeys` (`deleted`, `released`), and `RetiredHab` carries `released`. Hosts that called `release()` after `close()` or after replacing a group member no longer need to. The wallet's `health()` arm is now `{ status: "signer-unavailable"; identifiers: readonly UnsignableHab[] }`, derived from `Habery.unsignable()` on each read, and sits below `mailbox-unreachable` in precedence.
+
+- fa60668: A wallet refilled from a co-member now rebuilds its inventory. `credentials.importStream(bytes, options?)` runs `importCredentialStream` against the wallet's own runtime and returns its `CredentialImportResult`, so an embedder never reaches into `wallet.runtime` to import. `credentials.rebuild()` then writes the inventory rows the imported history proves and returns the inventory: an `admitted.` row for every accepted Grant addressed to a local identifier (individual or group) whose accepted Admit answers it (`Wallet.reconcileAdmissions()`), checked against the history the pair was accepted under, so a credential revoked since is still listed as held; and an `issued.` row for every accepted Grant a local identifier sent of a credential it issued, once the wallet holds that registry's root. Both are explicit calls and idempotent. `Wallet.recordAdmission` is unchanged and still requires current standing; the new `AdmissionEvidence` type names the two checks.
+
+  `RejoinResult`'s `joined` outcome gains `written`: true when the call wrote the group record, false when it found the record already there. A written record means the identifier was already a member and the store had no record of the group, which is the embedder's signal to refill its credentials from a co-member. The wallet library guide gives the refill sequence and what it does and does not prove.
+
+- b23407f: `openWebWallet` takes an optional `salt`, the qb64 of a 128-bit keeper root salt, so a fresh store opened with the same passcode and salt derives the same signator and salty identifiers again. A malformed salt rejects with `ValidationError` before any store opens, and a salt that differs from the root salt the store already holds rejects with the new `KeeperSaltMismatchError` after the wallet closed what it opened. The wallet guide says what the passcode and salt re-derive and what they do not.
+
+  Breaking change: the `HaberyArgs.tier` field is removed. `openHabery` never read it; the Keeper's tier is set through `Manager`.
+
+- 102dfe0: A browser wallet delivers through its agent unless it opts out. **Breaking:** `OpenWebWalletOptions` now requires
+  `delivery: WebWalletDelivery`, either a relay `{ aid, oobi }` (the agent the wallet sends, queries, polls and resolves
+  OOBIs through, passed to the runtime as `relay`) or `"direct"`, which behaves exactly as the wallet did before. An open
+  without it does not compile; a relay with an empty AID or a non-HTTP(S) OOBI rejects with `ValidationError` before any
+  store opens. `recoverWebWallet` reopens with the same `delivery`.
+
+  `WebWallet.health()` reports `relay-unresolved` (the relay's OOBI has not resolved) and `relay-unauthorized` (with the
+  local identifiers that have not authorized it as their mailbox), after `latched` and before `mailbox-unreachable`.
+  `WebWallet.relayStatus()` lists the onboarding steps still missing, in order. Both are read from accepted state by the
+  new `relayOnboarding(hby, relay)` in `keri-ts`, which also exports `assertRelay` and the `RelayStep` types.
+
+  `tufa agent --relay` and `tufa mailbox start --relay` turn on relay mode for the host (off by default).
+
+- e3f63d4: The wallet now tracks an issuance in flight as plain data (the identifier, the credential and its registry) instead of
+  a stored function. One function, `recordFinished`, records it in the inventory from that record when the change sink
+  sees the issuance finish or a registry root arrive, and the single-signature path, the group path and
+  `credentials.rebuild()` share one recording step. The unused `IssuanceRecorder` type is no longer exported.
+- Updated dependencies [99c3866]
+- Updated dependencies [d25473f]
+- Updated dependencies [fa7cf41]
+- Updated dependencies [a0a38f2]
+- Updated dependencies [a7a6a70]
+- Updated dependencies [16b4b0b]
+- Updated dependencies [ef7a960]
+- Updated dependencies [597a130]
+- Updated dependencies [59a5462]
+- Updated dependencies [b92b5f4]
+- Updated dependencies [9cea907]
+- Updated dependencies [979f05b]
+- Updated dependencies [28eefde]
+- Updated dependencies [d97fb7d]
+- Updated dependencies [e50c77d]
+- Updated dependencies [0dc3b5e]
+- Updated dependencies [6bb21ba]
+- Updated dependencies [8991821]
+- Updated dependencies [0d7b71b]
+- Updated dependencies [5376227]
+- Updated dependencies [250cd4f]
+- Updated dependencies [77865d3]
+- Updated dependencies [f516489]
+- Updated dependencies [76cfbba]
+- Updated dependencies [886f2a5]
+- Updated dependencies [2b4d8eb]
+- Updated dependencies [f89b27c]
+- Updated dependencies [edda12e]
+- Updated dependencies [5a79358]
+- Updated dependencies [d64e69e]
+- Updated dependencies [00bed9a]
+- Updated dependencies [fa60668]
+- Updated dependencies [b23407f]
+- Updated dependencies [102dfe0]
+  - keri-ts@2.2.5
+
 ## 2.2.4
 
 ### Patch Changes

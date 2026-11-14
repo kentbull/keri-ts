@@ -1,5 +1,74 @@
 # @keri-ts/hosting
 
+## 2.2.5
+
+### Patch Changes
+
+- 99c3866: On a relaying agent, a `/fwd` naming a local group that authorized the host as its `mailbox` or `agent` is now ingested once by the hosted co-member and stored once in the group's mailbox topic for its remote members, whoever sent it. Before, a third party's `/fwd` to the group was stored and not processed, and nothing did both. A child whose originator is a local habitat, an agent principal of the host or a member of the group (the edge that would pick it up) is ingested and not stored, so an edge's own `/fwd` to its group is not handed back to it. The shared rules live in the new `app/mailbox/agent-inbox.ts`: `authorizedStoringHost` (the `mailbox` or `agent` end role, also the forward handler's served-sender role check), `keepsForPickup` (a storing role from a remote identifier or a local group) and `ownTraffic`.
+
+  A host that an identifier authorized as `agent` also keeps that identifier's raw inbound mail, as KERIA's agent receives a KERIpy sender's direct posts. `keepRawArrival` (exported from `keri-ts/runtime`) stores one dispatched raw message once for each principal: the recipient it names (`rp`/`ri` of an exn or xip, the delegator of a dip or drt) when that recipient authorized the host as agent and is remote or a local group, or, for a message that names no recipient, every remote identifier that authorized the host as agent. The topic follows the message: exn/xip by route, a delegated event for its delegator on `/delegate`, other KEL events on `/replay`, receipts on `/receipt`, replies on `/reply`, TEL events and ACDCs on `/credential`; queries and `/fwd` are never kept. Nothing is kept for its own traffic (as above), when the SAID does not verify, without attached authentication, or when the agent's decision is `drop`, `reject` or `duplicate`. Raw mail is not kept for the `mailbox` role, whose senders use `/fwd`.
+
+  In `@keri-ts/hosting`, the generic CESR ingress offers each frame it has dispatched for a hosted endpoint to `keepRawArrival`; dispatch remains the single ingest. Poster delivers to a recipient whose agent is a local identifier through the local mailbox store instead of posting to its own ingress.
+
+- ac85e2c: Generic CESR ingress answers 422 with `KRAM refused message: <reason>` when the final non-query frame is dropped for
+  `timeliness`, `lifetime` or `unknownThread`, so a sender learns its message was late. Those reasons are decided only
+  after a signature or anchored seal verified; replay, authentication, missing, pending and timestamp outcomes still
+  answer 204. KERIpy always answers 204 here.
+- e50c77d: A remote message that this receiver's KRAM refuses after its sender authenticated now reaches the application. `Kramer.intake` publishes a `kramRefused` cue (`KramRefusedCue`: `said`, `sender`, `ilk`, `route`, `reason`, `stamp`, and `deadline` and `xid` when they exist) for the reasons `timeliness`, `lifetime` and `unknownThread`, which KRAM decides only after a signature or anchored seal verified. `processCuesOnce` pushes it to the new `AgentRuntime.changes` sink as a `KramRefusedChange`, so the host's `ChangeSink` or the Signaler (topic `/workflow/kramRefused`, collapsed per SAID) receives it. `ChangeSink.push` now takes a `RuntimeChange`, either a `WorkflowChange` or a `KramRefusedChange`, and the wallet's sink forwards both. `timestamp`, `replay` and `authentication` refusals and local envelopes publish nothing; the cue is transient, with no durable record. `isKramLateReason`, `KramLateReason` and `kramExchangeId` live beside `KramRefusalReason`, and the generic ingress 422 uses the shared predicate.
+- 77865d3: An agent can now relay for the edges it serves. With the new `AgentRuntimeOptions.relaying` (or `HostKernelSpec.enableRelay` in `@keri-ts/hosting`), `/fwd` intake delivers the child of a sender that authorized this host as its `mailbox` or `agent`. A recipient that is a habitat of the agent's own Habery (an edge's group co-member hosted on the agent) receives it through the agent's own ingress, as remote input to that habitat's endpoint, with signature, KRAM and escrow rules applied as for any received message. Any other recipient gets it through the agent's own Poster, at the recipient and topic the `/fwd` names. A group's `/fwd` is signed by its local member; it relays when that member authorized the host, or when the forwarded message comes from a group the member belongs to and that group authorized the host. Witness membership alone never grants relaying. Exactly one path runs: local habitat, then a recipient this host already stores for (stored as before), then relay. A failed onward send is the Poster's logged failed outcome; nothing is acknowledged back to the edge. Relaying requires a mailbox store.
+
+  Breaking changes: `ForwardHandler` takes a second constructor argument, a `ForwardRelaying` (the runtime's `Poster` and `Reactor`), or `null` for store-only intake. `HostKernelSpec.enableRelay` is required.
+
+- f516489: A relaying agent now refreshes its own view of a subject its edges ask about. When a runtime with `relaying` receives a `logs` or `ksn` query from a sender it serves (the same served-sender rule as `/fwd` relaying) about a subject that is not one of its own, it also queues its own ordinary `logs` query for that subject, signed by the serving host and sent directly to the subject's controller, agent or witness endpoint. The requester must be authenticated: its KEL is held and its current keys signed the query to threshold. The refresh is skipped when the agent can address no attester for the subject (none with an accepted location). It is on demand only; nothing is watched or stored. The edge's first answer is what the agent held, unless its query named a sequence number or anchor the agent lacked, in which case the agent escrows it and answers after the refresh lands; a later query returns the refreshed state. A `tels` query is not refreshed.
+
+  A relaying runtime's cue router no longer queues a query identical to one already queued, so repeated edge queries about one subject leave one request queued.
+
+  The query sender no longer throws when the eligible attesters have no accepted location. It chooses at random among the eligible attesters that have one, still never promoting another role, and when none has one the request waits as unresolved work does. Before, a missing location threw a `ValidationError` that ended the sender's loop and, through hosted ingress, failed the HTTP request that caused the query.
+
+  `@keri-ts/hosting`: `drainRuntimeCues` only routes cues; it no longer runs a query-sender pass inside the HTTP request. Queries a request causes (a relaying agent's refresh, a KRAM recovery query) are sent by the runtime's query-sender worker on its tock, so the request never waits on or fails from them.
+
+  New: `WitnessInquisitor.enqueueCueOnce`, `addressableAttesters`, `relayRefreshCue`, and an optional trailing `relaying` argument to the `ProtocolProcessor` constructor.
+
+- 2b4d8eb: An edge runtime resolves OOBIs and schemas through its relay and never fetches a third party's URL. For a job whose origin is not the relay's, the Oobiery asks the relay to resolve it with the existing `/oobis` exchange, sent through Poster and signed by a local identifier that has authorized the relay as its mailbox, then fetches the result from the relay's own OOBI endpoint and verifies it as it does for a direct fetch. A controller, witness, agent or mailbox OOBI `.../oobi/{cid}/{role}[/{eid}]` is read from `oobi/{cid}/{role}[/{eid}]` on the relay, and a schema OOBI `.../oobi/{said}` from `oobi/{said}`. While the relay answers 404, is unreachable, or answers without the controller's KEL, the job stays queued in state `relay-requested` (or `relay-pending` before the relay can be asked) and jobs waiting on the relay take turns. After `RELAY_OOBI_TIMEOUT_MS` (30 seconds from the first relay attempt, on the runtime clock) it fails as `relay-unresolved` or `relay-unserved`. Another non-OK answer fails at once, as before, and a URL naming neither an identifier nor a SAID fails as `relay-unmappable-oobi`. The relay's own OOBI and any URL on an accepted relay location are fetched directly. The Oobiery takes an `OobiRelaying` (relay, Poster and clock), or null, after its cues, and `isRelayOrigin` exposes the relay-origin test the egress guard uses.
+
+  On a relaying agent (`AgentRuntimeOptions.relaying`), the `/oobis` handler accepts a request only from a served sender, by the same rule as `/fwd` relaying (`servingHost`, now exported from the forward handler). In `@keri-ts/hosting`, a relaying host's OOBI endpoint also answers for any identifier whose accepted KEL it holds, through its service habitat, as KERIpy's `OOBIEnd` does with a default habitat; `AgentRuntime.relaying` tells the host it relays. A runtime without `relay` or `relaying` behaves as before.
+
+- Updated dependencies [99c3866]
+- Updated dependencies [d25473f]
+- Updated dependencies [fa7cf41]
+- Updated dependencies [a0a38f2]
+- Updated dependencies [a7a6a70]
+- Updated dependencies [16b4b0b]
+- Updated dependencies [ef7a960]
+- Updated dependencies [597a130]
+- Updated dependencies [59a5462]
+- Updated dependencies [b92b5f4]
+- Updated dependencies [9cea907]
+- Updated dependencies [979f05b]
+- Updated dependencies [28eefde]
+- Updated dependencies [d97fb7d]
+- Updated dependencies [e50c77d]
+- Updated dependencies [0dc3b5e]
+- Updated dependencies [6bb21ba]
+- Updated dependencies [8991821]
+- Updated dependencies [0d7b71b]
+- Updated dependencies [5376227]
+- Updated dependencies [250cd4f]
+- Updated dependencies [77865d3]
+- Updated dependencies [f516489]
+- Updated dependencies [76cfbba]
+- Updated dependencies [886f2a5]
+- Updated dependencies [2b4d8eb]
+- Updated dependencies [f89b27c]
+- Updated dependencies [edda12e]
+- Updated dependencies [5a79358]
+- Updated dependencies [d64e69e]
+- Updated dependencies [00bed9a]
+- Updated dependencies [fa60668]
+- Updated dependencies [b23407f]
+- Updated dependencies [102dfe0]
+  - keri-ts@2.2.5
+
 ## 2.2.4
 
 ### Patch Changes
