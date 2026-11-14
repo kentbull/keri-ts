@@ -363,6 +363,18 @@ class ChainControl:
         return self.send(body, attachments, prior.pre, refused=True)
 
 
+def relay_query(peer, dest, wire):
+    """Send a signed query to `dest` by StreamPoster, through the end roles its OOBIs published."""
+    from keri.cli.common.sending import messageParts
+    poster = StreamPoster(hby=peer.hby, hab=peer.hab, recp=dest, topic="credential",
+                          version=Vrsn_2_0, kind=Kinds.json)
+    for serder, attachments in messageParts(wire):
+        poster.send(serder, attachment=attachments, gvrsn=Vrsn_2_0)
+    doers = poster.deliver()
+    assert doers, "StreamPoster must select one of the recipient's published end roles"
+    peer.doist.extend(doers)
+
+
 def relay(port, root):
     """Serve one v2 KERIpy peer that discovers and reaches a keri-ts relay only through published end roles.
 
@@ -373,6 +385,7 @@ def relay(port, root):
     with open_peer(port, None, version=Vrsn_2_0) as peer:
         peer.hby.rvy.cues = peer.kvy.cues
         peer.parser.rvy = peer.hby.rvy
+        peer.send_anchor_query = lambda dest, wire: relay_query(peer, dest, wire)
         url = peer.info()["url"]
         for wire in (peer.hab.makeLocScheme(url=url, gvrsn=Vrsn_2_0), peer.hab.makeEndRole(eid=peer.hab.pre, gvrsn=Vrsn_2_0)):
             peer.parser.parse(ims=bytearray(wire), local=True)
