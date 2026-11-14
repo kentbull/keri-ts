@@ -79,6 +79,7 @@ import { call, type Operation, race } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
 import { Dhke, grantTransactionId, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
+import { QUERY_RESEND_MS } from "../../acdc/query-resend.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { KramRefusedError, ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
@@ -114,15 +115,22 @@ import {
   storedGroupProof,
 } from "./group-issuance.ts";
 import { IpexAdmitter } from "./ipex-admitting.ts";
-import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions, storedExchangeWire } from "./ipex-discloser.ts";
+import {
+  exchangeWire,
+  IpexDiscloser,
+  type IssuanceGrantOptions,
+  type ProofSupportMark,
+  storedExchangeWire,
+} from "./ipex-discloser.ts";
 
 /**
- * Milliseconds between resends of the issuer query. Each resend is a new query (new date, SAID and signatures):
- * the peer's KRAM caches every query it accepts, so an identical resend is a replay it drops, which would
- * strand a peer that took the first query and then lost it before consenting (a process that ended, or a
- * retained query that outlived its window).
+ * Milliseconds between the first resends of the issuer query, which the holder may have lost before consenting (a
+ * process that ended, or a retained query that outlived its window). A single-signer issuer re-dates every resend
+ * (new date, SAID and signatures): the peer's KRAM caches every query it accepts, so an identical resend would be
+ * a replay it drops. A group cannot re-date (re-signing needs the members), so it resends the same bytes, doubling
+ * this interval up to a cap and stopping once the query is older than the multi-key acceptance window.
  */
-export const ISSUANCE_QUERY_RESEND_MS = 1000;
+export const ISSUANCE_QUERY_RESEND_MS = QUERY_RESEND_MS;
 
 /**
  * Milliseconds between scans of the pending exchange escrow for Grants a restarted process can finish and group
@@ -269,6 +277,11 @@ export interface LiveIssuance {
     /** Transient witness codes for the anchor. */
     readonly auths?: WitnessAuthMap;
     sent: boolean;
+    /**
+     * What the Grant send's proof support carried, so the support sent after proving carries only what accepted
+     * state gained since. Null for an operation rebuilt after a restart, which sends that support whole.
+     */
+    supportMark: ProofSupportMark | null;
     nextQuery: number;
   };
   /** Group party state, for an operation of a local group; such an operation has no {@link issuer} part. */
@@ -551,7 +564,7 @@ export class IssuanceOperations {
       peer: wires ? retained.serder.sad!.ri as string : retained.serder.pre!,
       registry: credential.regid!,
       expires,
-      issuer: wires ? { credential, ...wires, query: null, sent: true, nextQuery: 0 } : undefined,
+      issuer: wires ? { credential, ...wires, query: null, sent: true, supportMark: null, nextQuery: 0 } : undefined,
       phase: "rootRetained",
       outbox: new DeliveryOutbox(this.deps.retry),
       finished: false,
@@ -706,6 +719,7 @@ export class IssuanceOperations {
         dest: op.peer,
         msg: concatBytes(this.discloser.proofSupport(issuer.raw, op.hab), issuer.grantWire),
       });
+      issuer.supportMark = this.discloser.proofSupportMark(issuer.raw, op.hab);
       issuer.sent = true;
     }
     while (op.dh.outgoing.length) {
@@ -769,7 +783,11 @@ export class IssuanceOperations {
     this.setPhase(op, "proving");
     yield* op.dh.finish(op.xid);
     if (!this.deps.exc.complete(op.grant)) throw new ValidationError("Issued Grant remains unaccepted");
-    this.enqueue(op, { src: op.hab.pre!, dest: op.peer, msg: this.discloser.proofSupport(issuer.raw, op.hab) });
+    // The Grant send already carried the support; proving added the anchoring event and the registry update.
+    const support = issuer.supportMark
+      ? this.discloser.proofSupportSince(issuer.raw, op.hab, issuer.supportMark)
+      : this.discloser.proofSupport(issuer.raw, op.hab);
+    this.enqueue(op, { src: op.hab.pre!, dest: op.peer, msg: support });
     op.finished = true;
   }
 }
@@ -983,7 +1001,7 @@ export function* beginIssuance(
     peer: retained.serder.sad!.ri as string,
     registry: credential.regid!,
     expires,
-    issuer: { credential, raw, grantWire, query, auths, sent: false, nextQuery: 0 },
+    issuer: { credential, raw, grantWire, query, auths, sent: false, supportMark: null, nextQuery: 0 },
     phase: "exchangingKeys",
     outbox: new DeliveryOutbox(ops.deps.retry),
     finished: false,

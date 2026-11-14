@@ -57,6 +57,7 @@ import { messagize } from "../core/protocol-serialization.ts";
 import { fetchStoredTsgs, type ReplyProcessDecision, type Revery, unverifiedReplyDecision } from "../core/routing.ts";
 import type { Baser } from "../db/basing.ts";
 import { timestampMicros } from "../time/mod.ts";
+import { QUERY_RESEND_MS } from "./query-resend.ts";
 import { validateUpdate, verifyRegistryAnchor } from "./regeventing.ts";
 import { publicOpeningAttachment, type RegistryStore } from "./registering.ts";
 
@@ -225,6 +226,13 @@ interface DhkeOperation {
   peer: Record<string, string> | null;
   query: Uint8Array | null;
   reply: Uint8Array | null;
+  /**
+   * Wire (body and every attachment) of the last peer query this operation accepted. A copy identical to it is a
+   * duplicate: it was authenticated once and is not verified or derived again.
+   */
+  accepted: Uint8Array | null;
+  /** When the reply was last queued for the issuer (epoch ms); duplicates re-emit it at most once per base interval. */
+  repliedAt: number;
   proposal: Uint8Array | null;
   contribution: Uint8Array | null;
   custody: {
@@ -414,6 +422,8 @@ export class Dhke implements AuxiliaryQueryProcessor {
       peer: null,
       query: null,
       reply: null,
+      accepted: null,
+      repliedAt: 0,
       proposal: null,
       contribution: null,
       custody: null,
@@ -564,6 +574,11 @@ export class Dhke implements AuxiliaryQueryProcessor {
       if (own && (!op.proposal || !bytesEqual(op.proposal, serder.raw))) {
         throw new ValidationError("Own DH query lacks exact local proposal approval");
       }
+      // A group re-sends its frozen query unchanged (one member cannot re-date it), and KERIpy resends identical
+      // bytes. The wire, attachments included, is compared against the one already authenticated, so a copy is
+      // never trusted on its body or SAID alone.
+      const wire = auxiliaryQueryWire(envelope);
+      if (!own && op.accepted && bytesEqual(op.accepted, wire)) return this.duplicateQuery(op);
       if (!verifyQueryAttachments(this.hab.db, envelope)) {
         return { kind: "drop", reason: "missingAuthentication" };
       }
@@ -583,6 +598,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
       }
       if (this.group && !this.custody(op)) {
         op.peer = { ...peer };
+        op.accepted = wire;
         return { kind: "accept" };
       }
       if (!op.reply) {
@@ -606,15 +622,33 @@ export class Dhke implements AuxiliaryQueryProcessor {
         }
         if (this.group) {
           this.outgoing.push({ kin: "sign", dest: this.hab.pre!, msg: op.contribution!.slice() });
+          op.accepted = wire;
           return { kind: "accept" };
         }
       }
-      this.outgoing.push({ kin: "reply", dest: op.issuer, msg: op.reply!.slice() });
+      this.emitReply(op);
+      op.accepted = wire;
       return { kind: "accept" };
     } catch (error) {
       if (error instanceof ValidationError) return { kind: "drop", reason: "invalidQuery" };
       throw error;
     }
+  }
+
+  /**
+   * A copy of the accepted query: nothing is verified, derived or contributed again, so a member round that
+   * already holds its `sign` contribution is not asked for another. If the reply exists it is queued again for a
+   * peer that lost it, at most once per {@link QUERY_RESEND_MS}.
+   */
+  private duplicateQuery(op: DhkeOperation): { kind: "accept" } {
+    if (op.reply && this.now() - op.repliedAt >= QUERY_RESEND_MS) this.emitReply(op);
+    return { kind: "accept" };
+  }
+
+  /** Queue the stored reply for the issuer and note when. */
+  private emitReply(op: DhkeOperation): void {
+    this.outgoing.push({ kin: "reply", dest: op.issuer, msg: op.reply!.slice() });
+    op.repliedAt = this.now();
   }
 
   /** Revery decides reply threshold acceptance before any issuer derivation or retention. */
@@ -643,7 +677,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
             gvrsn: Vrsn_2_0,
           });
         }
-        if (this.custody(op)) this.outgoing.push({ kin: "reply", dest: op.issuer, msg: op.reply.slice() });
+        if (this.custody(op)) this.emitReply(op);
       } else if (this.custody(op) && !op.completed) this.retain(op, peer, this.derive(op, peer, "issuer"));
       return decision;
     } catch (error) {

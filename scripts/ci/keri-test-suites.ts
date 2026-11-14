@@ -119,6 +119,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/ipex/ipex-v2.test.ts",
       "test/unit/app/ipex/ipex-chaining.test.ts",
       "test/unit/acdc/dhking.test.ts",
+      "test/unit/acdc/query-resend.test.ts",
       "test/unit/acdc/registry-author.test.ts",
       "test/unit/acdc/registry-custody.test.ts",
       "test/unit/acdc/registry-root-replication.test.ts",
