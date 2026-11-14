@@ -1,0 +1,2 @@
+# Source patches carry upstream context lines verbatim, including their whitespace.
+*.patch -whitespace

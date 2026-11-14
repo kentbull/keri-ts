@@ -1,0 +1,42 @@
+lmdb-js 3.5.3 data-v1 close leak (upstream defect in kriszyp/lmdb-js src/env.cpp)
+
+Applied by setup_lmdb_v1.sh before node-gyp rebuild; the build fails if the
+patch neither applies nor is already present (for example, after an lmdb bump).
+
+EnvWrap::closeEnv() calls mdb_env_close() only for an env found in
+envTracking->envs. Envs enter that list solely through checkExistingEnvs(),
+which LMDB 0.9.90 invokes from mdb_env_open() via mdb_env_set_callback().
+The LMDB_DATA_V1 build compiles LMDB 0.9.29, which has neither
+MDB_OVERLAPPINGSYNC nor mdb_env_set_callback, so openEnv() never registers
+its env and closeEnv() never closes it: each close leaks lock.mdb and two
+data.mdb descriptors plus the data and lock-table mappings.
+
+The patch registers the opened env when MDB_OVERLAPPINGSYNC is undefined, so
+closeEnv() reaches mdb_env_close(). Remove it once lmdb-js ships a fix.
+
+--- a/src/env.cpp
++++ b/src/env.cpp
+@@ -394,7 +394,23 @@
+ 			pthread_mutex_unlock(envTracking->envsLock);
+ 			goto fail;
+ 		}
++	}
++#ifndef MDB_OVERLAPPINGSYNC
++	// LMDB 0.9.x (the LMDB_DATA_V1 build) has no mdb_env_set_callback, so
++	// checkExistingEnvs never runs and never adds this env to envTracking.
++	// closeEnv() only calls mdb_env_close() for tracked envs, so register the
++	// opened env here; otherwise every close leaks its fds, data map and lock map.
++	// 0.9.x cannot detect an env already open in this process, so nothing is shared.
++	{
++		SharedEnv envRef;
++		envRef.env = env;
++		envRef.dev = 0;
++		envRef.inode = 0;
++		envRef.count = 1;
++		envRef.hasWrites = false;
++		envTracking->envs.push_back(envRef);
+ 	}
++#endif
+ 	mdb_env_get_flags(env, (unsigned int*) &flags);
+ 	if ((jsFlags & DELETE_ON_CLOSE)
+ 	#ifdef MDB_OVERLAPPINGSYNC

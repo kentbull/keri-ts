@@ -131,6 +131,10 @@ acceleration. Ordinary native reads copy whole rows. Row size billing, prototype
 hook probes and before-copy callbacks are removed; no storage policy may return.
 Qualify actual addons under both runtimes, including rows above 16 MiB, owned
 bytes surviving replacement/later reads, and active writer access.
+Unpatched lmdb-js 3.5.3 data-v1 builds never call mdb_env_close(): its env
+tracking is filled only by an LMDB 0.9.90 open callback. setup_lmdb_v1.sh
+applies `scripts/lmdb/env-close-data-v1.patch`; `lmdber-close-release` proves
+close returns descriptors and maps. V1 and stock stores cannot open each other.
 TEL capture metadata retains no event bodies or cursors. Readers close each
 cursor before clone/yield, including reopened stores. No message/proof ceiling
 or canonical pair/brand inspection remains. Tevery composes management then

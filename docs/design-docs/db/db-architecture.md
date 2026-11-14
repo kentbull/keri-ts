@@ -8,6 +8,12 @@ V8 build only when its compiled Node major matches the actual runtime. This chan
 layout or the addon ABI. Ordinary reads copy whole rows into caller-owned bytes,
 including active writer reads; callers must keep their database owner open.
 
+The rebuild also applies `packages/keri/scripts/lmdb/env-close-data-v1.patch` to lmdb-js `src/env.cpp`. Unpatched,
+`closeEnv()` calls `mdb_env_close()` only for environments that LMDB 0.9.90's open callback registered, so a data-v1
+build leaks three descriptors and both maps on every close. Data-v1 (LMDB 0.9.29) and stock (0.9.90, data version 2)
+stores use different page headers and cannot open each other; lmdb-js crashes the process instead of returning an
+error, so a consumer must not switch builds over existing stores.
+
 Native row extent billing, getValBounded/getBounded/beforeCopy and prototype hook
 probes are removed. Read through the ordinary typed store or LMDBer.getVal path;
 there is no second size-probe transaction or per-row resource contract. Preserve
