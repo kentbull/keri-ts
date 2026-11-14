@@ -240,11 +240,28 @@ function* openGroupIssuers(clock: RuntimeClock, dir?: string): Operation<GroupIs
   return { sides, lead, peer, holder, rip, coordinator, credential };
 }
 
+/** Record, for each request that reaches the holder's endpoint, the key and registry events it carries as `ilk:sn`. */
+function recordEvents(holder: Side): string[][] {
+  const sent: string[][] = [];
+  const serve = holder.handler;
+  holder.handler = Object.assign(async (request: Request) => {
+    const events = parseBytes(new Uint8Array(await request.clone().arrayBuffer())).flatMap(({ body }) =>
+      body.ilk && ["icp", "rot", "ixn", "vcp", "vrt", "iss", "rev", "bup", "rip"].includes(body.ilk)
+        ? ["sn" in body ? `${body.ilk}:${body.sn}` : body.ilk]
+        : []
+    );
+    if (events.length) sent.push(events);
+    return serve(request);
+  }, serve) as typeof serve;
+  return sent;
+}
+
 Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder; a member reloads and consents again", async () => {
   const dir = await Deno.makeTempDir();
   try {
     await run(function*() {
       const { sides, lead, peer, holder, rip, coordinator, credential } = yield* openGroupIssuers(systemClock, dir);
+      const received = recordEvents(holder);
 
       // Every sent root copy writes one marker through the runtime's single replicator.
       const sentCopies: string[] = [];
@@ -429,6 +446,9 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
       );
       assertEquals(issuanceStatus(ops(lead), grant), done);
 
+      // The custodian reloaded, so the operation that proved the Grant never sent its support: it sends in full.
+      assert(received.length >= 1 && received.at(-1)!.includes("icp:0"), "a rebuilt operation sends the whole support");
+
       // --- the holder admits, a separate consent ---
       const admitted = yield* admitIssuance(ops(holder).deps, grant);
       const reached = yield* deliverIssuanceAdmit(ops(holder).deps.delivery, admitted);
@@ -443,6 +463,43 @@ Deno.test("a 2-of-2 group issues a v2 DH credential to a single-signature holder
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+Deno.test("the group's support sent after proving carries only the anchoring event and the registry update", async () => {
+  await run(function*() {
+    const { lead, peer, holder, coordinator, credential } = yield* openGroupIssuers(systemClock);
+    const received = recordEvents(holder);
+    const host = (side: Side) => spawn(() => runAgentRuntime(side.runtime, { hab: side.member, pollMailbox: false }));
+    const draft = { credential, options: { recipient: holder.hab.pre!, message: "Group issuance" } };
+    const { grant } = yield* proposeGroupIssuance(ops(lead), draft, { coordinator: coordinator.said! });
+    const hosts = [yield* host(lead), yield* host(holder), yield* host(peer)];
+    yield* until(
+      () => groupIssuanceProposals(ops(peer), peer.hab).some((proposal) => proposal.grant === grant),
+      "the member to hold the custodian's proposal",
+    );
+    yield* approveGroupIssuance(ops(peer), grant, { coordinator: coordinator.said! });
+    yield* until(() => !!holder.runtime.exc.retainedInput(grant, { pending: true }), "the holder to hold the Grant");
+    approveIssuanceExchange(ops(holder), grant);
+    let bup: SerderKERI | undefined;
+    yield* until(() => {
+      bup = [...peer.hby.db.exns.getTopItemIter()].map(([, body]) => body).find((body) =>
+        body.route === "/multisig/bup"
+      );
+      return !!bup;
+    }, "the registry update proposal to reach the member");
+    const sn = lead.hab.kever!.sn;
+    assertExists(yield* approvePending(peer.hby, peer.runtime, { said: bup!.said!, registryName: "group-derived" }));
+    const done: IssuanceStatus = { state: "done", role: "issuer", phase: "issued" };
+    assertEquals((yield* waitForIssuance(ops(lead), grant, { timeoutMs: BUDGET_MS })).status, done);
+    yield* sleep(300);
+    assert(received[0].includes("icp:0"), "the Grant carries the group's whole KEL");
+    assertEquals(
+      received.at(-1),
+      [`ixn:${sn + 1}`, "bup"],
+      "later: exactly the anchoring interaction event and the registry update",
+    );
+    for (const halt of hosts) yield* halt.halt();
+  });
 });
 
 // A group cannot re-date its threshold query, so the custodian resends the same bytes. The holder's KRAM drops
