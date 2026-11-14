@@ -168,7 +168,7 @@ Deno.test("Poster contains native connection and response-body failures while la
   }
 });
 
-Deno.test("Poster retains prior refusal and success when later target preparation throws", async () => {
+Deno.test("Poster retains prior refusal and success when a later target has no usable URL", async () => {
   const requested: string[] = [];
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
     await readCesrRequestBytes(request);
@@ -191,17 +191,19 @@ Deno.test("Poster retains prior refusal and success when later target preparatio
         }
         const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
         const evt = postman.send({ src: sender.pre, dest: recipient.pre, topic: "/reply", msg }, { notify: true });
-        const failure = yield* call(() => assertRejects(() => run(() => postman.process()), AggregateError));
+        // A location a remote party published that the HTTP client cannot use fails that target, not the pass.
+        yield* postman.process();
+        const outcome = yield* postman.wait(evt);
+        assertEquals(outcome.kin, "failed");
+        if (outcome.kin !== "failed") throw new Error("Expected failed delivery");
+        const failure = outcome.error;
+        assertInstanceOf(failure, AggregateError);
         assertEquals(failure.errors.length, 2);
         assertInstanceOf(failure.errors[0], CesrHttpRefusal);
         assertEquals(failure.errors[0].status, 503);
         assertEquals(failure.errors[0].message.includes(`${url}/refused`), true);
-        assertInstanceOf(failure.errors[1], TypeError);
-        assertStrictEquals(failure.cause, failure.errors[1]);
-        const outcome = yield* postman.wait(evt);
-        assertEquals(outcome.kin, "failed");
-        if (outcome.kin !== "failed") throw new Error("Expected failed delivery");
-        assertStrictEquals(outcome.error, failure);
+        assertInstanceOf(failure.errors[1], ValidationError);
+        assertEquals(failure.errors[1].message, "No supported endpoint URL for endpoint-2.");
         assertStrictEquals(outcome.evt, evt);
         assertEquals(outcome.evt.msg, msg);
         assertEquals(outcome.deliveries, [`${url}/good`]);

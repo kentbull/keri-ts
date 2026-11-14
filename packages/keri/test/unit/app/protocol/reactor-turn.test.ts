@@ -824,7 +824,7 @@ Deno.test("input cancellation during dispatch joins source and handler cleanup w
   }
 });
 
-Deno.test("OOBI CESR intake accepts before EOF and retains partial work through joined cancellation or failure", async () => {
+Deno.test("OOBI CESR intake accepts before EOF, retains partial work through joined cancellation and fails the job on a bad tail", async () => {
   const scenarios = [
     ["complete", "application/cesr+json"],
     ["cancel", "application/json+cesr"],
@@ -854,7 +854,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
       hab.interact();
       const second = acceptedEventReplayMessage(source, hab.pre, 1).message;
       const accepted = gate(), next = gate(), cancelling = gate(), cleanup = gate();
-      let offset = 0, cancelled = false, requests = 0, finished = false, failure: unknown;
+      let offset = 0, cancelled = false, requests = 0, finished = false;
       let signal: AbortSignal | undefined;
       const body = new ReadableStream<Uint8Array>({
         async pull(controller) {
@@ -904,9 +904,6 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
       const worker = yield* spawn(function*() {
         try {
           yield* oobi.processOnce();
-        } catch (error) {
-          if (mode !== "failure") throw error;
-          failure = error;
         } finally {
           finished = true;
         }
@@ -951,8 +948,17 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           assertEquals(target.db.getState(hab.pre)?.s, "1");
           assertEquals(target.db.oobis.get(url), null);
           assertEquals(target.db.roobi.get(url)?.state, "resolved");
+        } else if (mode === "failure") {
+          // Bytes that are not CESR are the remote party's fault: they end this job as failed, never the loop.
+          assertEquals(target.db.getState(hab.pre)?.s, "0", "Earlier independently accepted events survive");
+          assertEquals([target.db.roobi.get(url), target.db.oobis.get(url)], [null, null]);
+          assertEquals(target.db.eoobi.get(url)?.state, "unparseable-response");
+          assertEquals(resultCues.toArray().find((cue) => cue.kin === "oobiFailed"), {
+            kin: "oobiFailed",
+            url,
+            reason: "unparseable-response",
+          });
         } else {
-          assertEquals(mode === "failure" ? failure instanceof Error : failure === undefined, true);
           assertEquals(target.db.getState(hab.pre)?.s, "0", "Earlier independently accepted events survive");
           assertEquals(target.db.roobi.get(url), null);
           assertEquals(target.db.oobis.get(url)?.state, "queued");

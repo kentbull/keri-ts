@@ -3,32 +3,41 @@
  *
  * Our side is the downstream product's shape: the edge is a runtime with `relay` set, and every request it makes
  * goes to its agent, a real `runHostKernel` host with `enableRelay`, KRAM on and full workers. The edge authorizes
- * the agent as its `mailbox`. The KERIpy peer (packages/keri/test/fixtures/ipex-mailbox-peer.py, `relay` mode) is a
+ * the agent as its `mailbox`. It takes part either as a single-sig identifier or as the multisig group whose other
+ * member (weight 0) the agent hosts, acting as the group. The KERIpy peer (packages/keri/test/fixtures/ipex-mailbox-peer.py, `relay` mode) is a
  * v2 Habery with KRAM on that publishes its own controller location and end role, serves its OOBI with the stock
  * `OOBIEnd`, resolves ours with its own `Oobiery`, and sends with its own `StreamPoster`, which picks the edge's
  * published `mailbox` end role and wraps each message in a v2 `/fwd` to the agent. Nothing is posted into either
  * side by the test: the fixture's `/_relay` control only chooses an action and reads state.
  *
- * Each check names the KERIpy profile it runs against. The profile rule (2.2.5 gate): upstream `main` first, the
- * `candidate` (kentbull/keripy v2-spec) only for a check main cannot perform, with the missing capability named.
+ * Each check names the KERIpy profile it runs against. For the 2.2.5 gate the owner limited the checks to the
+ * `candidate` (kentbull/keripy v2-spec); upstream `main` is a fast follow, and its checks are recorded below as
+ * ignored expected failures with what was observed.
  */
-import { collectPayload, concatBytes, nestedPayload, Vrsn_2_0 } from "cesr-ts";
+import { runHostKernel } from "@keri-ts/hosting";
+import { collectPayload, concatBytes, MtrDex, nestedPayload, parseBytes, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
 import { call, ensure, type Operation, run, sleep, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { runHostKernel } from "@keri-ts/hosting";
 import { createHabery } from "keri-ts/db/lmdb";
 import {
   AcdcV2Regery as Regery,
   addMailbox,
   type AgentRuntime,
+  completeGroupMailbox,
   createAgentRuntime,
   FetchHttpClient,
   type Hab,
   type Habery,
   type HttpClient,
+  incept,
+  interact,
   type MailboxAdminDeps,
+  messagize,
   present,
+  proposeGroupAdmit,
+  proposeGroupMailbox,
+  proposeGroupPresentation,
   type Receiptor,
   receiveIssuance,
   RegistryAuthor,
@@ -37,9 +46,11 @@ import {
   runAgentRuntime,
   settleRuntimeIngress,
   systemClock,
+  waitForGroupIpex,
   waitForPresentation,
 } from "keri-ts/runtime";
 import type { RegBaser } from "../../../src/acdc/regbasing.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { loadNests } from "../../../src/db/exchange/exchange-nests.ts";
 import { openLmdbRegistry } from "../../../src/db/lmdb-stores.ts";
 import {
@@ -121,7 +132,7 @@ function* stores(name: string): Operation<Stores> {
     skipSignator: true,
   });
   const baser = yield* openLmdbRegistry({ name: `${name}-${crypto.randomUUID()}`, temp: true });
-  yield* ensure(function* () {
+  yield* ensure(function*() {
     yield* hby.close(true);
     yield* baser.close(true);
   });
@@ -173,8 +184,6 @@ interface PeerState {
   exchanges: Record<string, PeerExchange>;
   /** Accepted TEL head SAID of each asked registry. */
   registries: Record<string, string | null>;
-  /** Whether the KERIpy peer holds an opening of each asked registry's head (candidate only). */
-  openings: Record<string, boolean>;
   received: string[];
 }
 
@@ -190,8 +199,9 @@ interface StateQuery {
  * How a credential is authenticated and how its state is opened.
  * - `private`: a v2 registry; the issued state is an anchored blindable update (`bup`) whose opening travels only
  *   in the Grant, on the node.
- * - `public`: a v2 registry whose `bup` carries its opening in the published TEL; the Grant carries none, and any
- *   reader of the TEL learns the state without an Unblind or key exchange ("unblinded" for keri-ts).
+ * - `public`: the same, and the `bup` also carries its opening in the published TEL, so any reader of the TEL
+ *   learns the state without an Unblind or key exchange ("unblinded" for keri-ts). Both issuers also attach the
+ *   opening to the Grant's node.
  * - `signed`: no registry; the issuer's signature on the node.
  */
 type Credential = "private" | "public" | "signed";
@@ -283,6 +293,99 @@ async function withKeriPyPeer(profile: Profile, body: (peer: KeriPyRelayPeer) =>
  */
 type AgentKind = "transferable" | "non-transferable";
 
+/** The agent: a real host with relaying, KRAM and full workers. */
+interface Agent {
+  url: string;
+  hab: Hab;
+  hby: Habery;
+  runtime: AgentRuntime;
+}
+
+/** Start the agent host on a fresh store; its lifetime is the current scope. */
+function* startAgent(agentKind: AgentKind): Operation<Agent> {
+  const port = reservePort();
+  const url = `http://127.0.0.1:${port}/`;
+  const { hby } = yield* stores("agent");
+  const hab = hby.makeHab("agent", undefined, { transferable: agentKind === "transferable" });
+  yield* preload(hby, [hab.makeLocScheme(url, hab.pre!, "http"), hab.makeEndRole(hab.pre!, Roles.controller, true)]);
+  const listening = Promise.withResolvers<void>();
+  let hosted: AgentRuntime | undefined;
+  const host = yield* spawn(() =>
+    runHostKernel(hby, {
+      enableMailboxStore: true,
+      enableRelay: true,
+      kram: KRAM,
+      serviceHab: hab,
+      http: { port, hostname: "127.0.0.1", onListen: () => listening.resolve() },
+      protocolPolicy: {},
+      companionHosts: [function*(runtime) {
+        hosted = runtime;
+        yield* suspend();
+      }],
+    })
+  );
+  yield* ensure(() => host.halt());
+  yield* call(() => listening.promise);
+  yield* until(() => !!hosted, "the agent runtime");
+  return { url, hab, hby, runtime: hosted! };
+}
+
+/** The edge: a relay runtime over a recording client, with its registry store. */
+interface Edge {
+  hby: Habery;
+  runtime: AgentRuntime;
+  /** Every URL the edge's HTTP client was asked to reach. */
+  requested: string[];
+}
+
+/** Compose the edge's runtime with `relay` set to the agent; `member` is the habitat its host runs for. */
+function* startEdge(agent: Agent, hby: Habery, baser: RegBaser, member: Hab): Operation<Edge> {
+  const requested: string[] = [];
+  const relay: Relay = { aid: agent.hab.pre!, oobi: `${agent.url}oobi/${agent.hab.pre}/controller` };
+  const runtime = yield* createAgentRuntime(hby, recording(new FetchHttpClient(), requested), systemClock, {
+    relay,
+    acdc: new Regery(hby, baser),
+    kram: KRAM,
+  });
+  yield* ensure(() => runtime.close());
+  const host = yield* spawn(() => runAgentRuntime(runtime, { hab: member }));
+  yield* ensure(() => host.halt());
+  yield* until(() => hby.db.roobi.get(relay.oobi)?.state === "resolved", "the edge to resolve the agent's OOBI");
+  return { hby, runtime, requested };
+}
+
+/** Authorize the agent as `hab`'s mailbox from the edge, and wait for the agent to accept it. */
+function* authorizeMailbox(agent: Agent, edge: Edge, hab: Hab): Operation<void> {
+  assertEquals((yield* addMailbox(adminDeps(edge.runtime), hab, agent.hab.pre!)).state, "authorized");
+  yield* until(
+    () => agent.hby.db.ends.get([hab.pre!, Roles.mailbox, agent.hab.pre!])?.allowed === true,
+    `the agent to accept ${hab.pre}'s mailbox authorization`,
+  );
+}
+
+/**
+ * Introduce the two sides through their OOBIs: the edge learns the KERIpy peer by asking the agent; the KERIpy peer
+ * resolves `pre`'s mailbox OOBI at the agent with its own Oobiery and must end holding its KEL at `kever.sn`.
+ */
+function* introduce(py: KeriPyRelayPeer, agent: Agent, edge: Edge, hab: Hab): Operation<void> {
+  edge.runtime.oobiery.resolve(py.oobi);
+  yield* until(() => edge.hby.db.roobi.get(py.oobi)?.state === "resolved", "the edge to resolve the KERIpy OOBI");
+  assertEquals(agent.hby.db.roobi.get(py.oobi)?.state, "resolved", "the agent fetched the KERIpy OOBI");
+  assert(
+    edge.requested.includes(`${agent.url}oobi/${py.pre}/controller`),
+    "the edge read the KERIpy OOBI from the agent",
+  );
+  const oobi = `${agent.url}oobi/${hab.pre}/mailbox/${agent.hab.pre}`;
+  yield* call(() => py.resolve([oobi]));
+  const introduced = yield* observe(`the KERIpy peer to resolve ${hab.pre}'s mailbox OOBI at the agent`, async () => {
+    const state = await py.state({ urls: [oobi], pres: [hab.pre!] });
+    return state.oobis[oobi] === "resolved" && state.ends[hab.pre!]?.mailbox?.includes(agent.hab.pre!)
+      ? state
+      : undefined;
+  });
+  assertEquals(introduced.known[hab.pre!], hab.kever!.sn, "the KERIpy peer holds the KEL");
+}
+
 /** Our side: the agent host and the edge runtime behind it, onboarded and introduced to the KERIpy peer. */
 interface RelaySide {
   agentUrl: string;
@@ -303,75 +406,21 @@ function* singleSigRelay(
   agentKind: AgentKind,
   beforeIntroduction: (edge: Hab) => Operation<void>,
 ): Operation<RelaySide> {
-  const agentPort = reservePort();
-  const agentUrl = `http://127.0.0.1:${agentPort}/`;
-  const { hby: agentHby } = yield* stores("agent");
-  const agent = agentHby.makeHab("agent", undefined, { transferable: agentKind === "transferable" });
-  yield* preload(agentHby, [
-    agent.makeLocScheme(agentUrl, agent.pre!, "http"),
-    agent.makeEndRole(agent.pre!, Roles.controller, true),
-  ]);
-  const listening = Promise.withResolvers<void>();
-  let hosted: AgentRuntime | undefined;
-  const agentHost = yield* spawn(() =>
-    runHostKernel(agentHby, {
-      enableMailboxStore: true,
-      enableRelay: true,
-      kram: KRAM,
-      serviceHab: agent,
-      http: { port: agentPort, hostname: "127.0.0.1", onListen: () => listening.resolve() },
-      protocolPolicy: {},
-      companionHosts: [function* (runtime) {
-        hosted = runtime;
-        yield* suspend();
-      }],
-    })
-  );
-  yield* ensure(() => agentHost.halt());
-  yield* call(() => listening.promise);
-  yield* until(() => !!hosted, "the agent runtime");
-  const agentRt = hosted!;
-
-  const edgeStores = yield* stores("edge");
-  const edgeHby = edgeStores.hby;
-  const edgeHab = edgeHby.makeHab("edge");
-  const requested: string[] = [];
-  const relay: Relay = { aid: agent.pre!, oobi: `${agentUrl}oobi/${agent.pre}/controller` };
-  const edge = yield* createAgentRuntime(edgeHby, recording(new FetchHttpClient(), requested), systemClock, {
-    relay,
-    acdc: new Regery(edgeHby, edgeStores.baser),
-    kram: KRAM,
-  });
-  yield* ensure(() => edge.close());
-  const edgeHost = yield* spawn(() => runAgentRuntime(edge, { hab: edgeHab }));
-  yield* ensure(() => edgeHost.halt());
-
-  // Onboarding through the agent only.
-  yield* until(() => edgeHby.db.roobi.get(relay.oobi)?.state === "resolved", "the edge to resolve the agent's OOBI");
-  assertEquals((yield* addMailbox(adminDeps(edge), edgeHab, agent.pre!)).state, "authorized");
-  yield* until(
-    () => agentHby.db.ends.get([edgeHab.pre!, Roles.mailbox, agent.pre!])?.allowed === true,
-    "the agent to accept the edge's mailbox authorization",
-  );
-
+  const agent = yield* startAgent(agentKind);
+  const { hby, baser } = yield* stores("edge");
+  const edgeHab = hby.makeHab("edge");
+  const edge = yield* startEdge(agent, hby, baser, edgeHab);
+  yield* authorizeMailbox(agent, edge, edgeHab);
   yield* beforeIntroduction(edgeHab);
-
-  // The edge learns the KERIpy peer by asking the agent; the KERIpy peer resolves the edge's mailbox OOBI at the
-  // agent with its own Oobiery.
-  edge.oobiery.resolve(py.oobi);
-  yield* until(() => edgeHby.db.roobi.get(py.oobi)?.state === "resolved", "the edge to resolve the KERIpy OOBI");
-  assertEquals(agentHby.db.roobi.get(py.oobi)?.state, "resolved", "the agent fetched the KERIpy OOBI");
-  assert(requested.includes(`${agentUrl}oobi/${py.pre}/controller`), "the edge read the KERIpy OOBI from the agent");
-  const edgeOobi = `${agentUrl}oobi/${edgeHab.pre}/mailbox/${agent.pre}`;
-  yield* call(() => py.resolve([edgeOobi]));
-  const introduced = yield* observe("the KERIpy peer to resolve the edge's mailbox OOBI at the agent", async () => {
-    const state = await py.state({ urls: [edgeOobi], pres: [edgeHab.pre!] });
-    return state.oobis[edgeOobi] === "resolved" && state.ends[edgeHab.pre!]?.mailbox?.includes(agent.pre!)
-      ? state
-      : undefined;
-  });
-  assertEquals(introduced.known[edgeHab.pre!], edgeHab.kever!.sn, "the KERIpy peer holds the edge's KEL");
-  return { agentUrl, agent, agentRt, edge, edgeHab, requested };
+  yield* introduce(py, agent, edge, edgeHab);
+  return {
+    agentUrl: agent.url,
+    agent: agent.hab,
+    agentRt: agent.runtime,
+    edge: edge.runtime,
+    edgeHab,
+    requested: edge.requested,
+  };
 }
 
 /** Every request the edge made went to the agent's origin. */
@@ -396,7 +445,7 @@ interface Received {
  */
 function* receiveFromKeriPy(py: KeriPyRelayPeer, agentKind: AgentKind, credential: Credential): Operation<Received> {
   let issued: PeerIssued | undefined;
-  const side = yield* singleSigRelay(py, agentKind, function* (edge) {
+  const side = yield* singleSigRelay(py, agentKind, function*(edge) {
     issued = yield* call(() => py.issue(edge.pre!, credential));
   });
   const { edge, edgeHab, agentRt } = side;
@@ -500,11 +549,13 @@ function unwitnessed(hby: Habery): Receiptor {
 
 /**
  * The edge issues a publicly opened v2 credential to the KERIpy peer and grants it through the agent; the Grant's
- * proof support carries the edge's KEL and the TEL with the published opening. The KERIpy peer accepts the Grant,
- * holds the TEL head and its opening, and answers with an Admit.
+ * proof support carries the edge's KEL and the TEL with the published opening, and the node carries the opening
+ * too. The KERIpy peer accepts the Grant (verifying the issued state from that opening, with no Unblind or key
+ * exchange), holds the edge's TEL head and answers with an Admit. The candidate does not retain a published opening
+ * from TEL intake (retention is caller policy there), so only its acceptance shows the state it read.
  */
 function* issueToKeriPy(py: KeriPyRelayPeer, agentKind: AgentKind): Operation<void> {
-  const side = yield* singleSigRelay(py, agentKind, function* () {});
+  const side = yield* singleSigRelay(py, agentKind, function*() {});
   const { edge, edgeHab } = side;
   const author = new RegistryAuthor(edge.acdc!, unwitnessed(edge.hby));
   yield* author.incept("relay", edgeHab.pre!);
@@ -518,16 +569,203 @@ function* issueToKeriPy(py: KeriPyRelayPeer, agentKind: AgentKind): Operation<vo
   const { said: grant } = yield* present(edge.operations!.presentation, {
     verb: "grant",
     hab: edgeHab,
-    selection: { transferred: node, presenterAuthorized: true },
+    // `refresh` attaches the current registry proof: the public opening the edge published with its TEL.
+    selection: { transferred: node, presenterAuthorized: true, refresh: true },
     options: { recipient: py.pre, message: "Relay issuance" },
   });
   const accepted = yield* keriPyAdmits(side, py, grant, credential.said!, registry.regk!);
   assertEquals(accepted.registries[registry.regk!], update.said, "the KERIpy peer holds the edge's TEL head");
-  assertEquals(accepted.openings[registry.regk!], true, "the KERIpy peer holds the published opening of that head");
   assertOnlyAgent(side);
 }
 
-// --- upstream main (WebOfTrust c7e74adc): every check fails; each records the first cause that stops it ---
+/** Our side as the group: the agent, the edge, the edge member, the group as the edge holds it, the custodian's copy. */
+interface GroupSide {
+  agent: Agent;
+  edge: Edge;
+  member: Hab;
+  group: Hab;
+  /** The group as the custodian on the agent holds it (the weight-0 co-member's habitat of the group). */
+  custodianGroup: Hab;
+}
+
+/**
+ * Start the agent and the edge as a group member, and onboard both the member and the group through the agent.
+ *
+ * The product's shape, as in packages/hosting/test/relay-group-e2e.test.ts: the edge member is a non-transferable,
+ * single-key identifier with an externally held signer (weight 1); the custodian on the agent is the group's sole
+ * rotation member (weight 0). The group is `[member, custodian]`, `isith ["1","0"]`, `nsith "1"`, toad 0. Setup that
+ * is not under test is done in-process: the group's inception and the coordinator event that elects the edge member
+ * as lead are dispatched into the edge's and the agent's stores. The member and the group each authorize the agent
+ * as `mailbox`; the group's role is proposed to the custodian through the relay. `beforeIntroduction` runs before
+ * either side resolves the other's OOBI.
+ */
+function* groupRelay(
+  py: KeriPyRelayPeer,
+  beforeIntroduction: (group: Hab) => Operation<void>,
+): Operation<GroupSide> {
+  const agent = yield* startAgent("transferable");
+  const custodian = agent.hby.makeHab("custodian");
+  const { hby, baser } = yield* stores("edge");
+  const signer = Signer.random({ code: MtrDex.Ed25519_Seed, transferable: false });
+  const icp = incept([signer.verfer.qb64], { version: Vrsn_2_0, code: signer.verfer.code, nsith: "0", toad: 0 });
+  const member = hby.makeSignedHab("edge", undefined, {
+    serder: icp,
+    sigers: [signer.sign(icp.raw, { index: 0 }) as Siger],
+  });
+  hby.mgr.hold([signer]);
+  const edge = yield* startEdge(agent, hby, baser, member);
+  edge.runtime.oobiery.resolve(`${agent.url}oobi/${custodian.pre}/controller`);
+  yield* until(() => !!hby.db.getKever(custodian.pre!), "the edge to learn the custodian's KEL from the agent");
+  yield* authorizeMailbox(agent, edge, member);
+
+  const signing = [member.pre!, custodian.pre!];
+  const groupArgs = { isith: ["1", "0"], nsith: "1", toad: 0 };
+  const edgeGroup = hby.makeGroupHab("group", member, signing, [custodian.pre!], undefined, groupArgs);
+  const custodianGroup = agent.hby.makeGroupHab("group", custodian, signing, [custodian.pre!], undefined, groupArgs);
+  const inception = parseBytes(messagize(edgeGroup.serder, { sigers: edgeGroup.sigers, gvrsn: Vrsn_2_0 }))[0];
+  for (const store of [hby, agent.hby]) {
+    yield* dispatchEnvelope(envelopeFromFrame(inception, true), store.rvy, store.kevery);
+  }
+  const group = edgeGroup.hab, state = group.kever!;
+  const coordinator = interact(group.pre!, state.said, state.sn + 1, [], { version: Vrsn_2_0 });
+  const coordinatorWire = messagize(coordinator, { sigers: group.sign(coordinator.raw, true), gvrsn: Vrsn_2_0 });
+  yield* edge.runtime.reactor.processBytes(coordinatorWire, { local: true });
+  yield* agent.runtime.reactor.processBytes(coordinatorWire, { local: true });
+  for (const store of [hby, agent.hby]) assertEquals(store.db.getKever(group.pre!)?.sn, 1, "the coordinator holds");
+
+  yield* proposeGroupMailbox(hby, edge.runtime.protocol, edge.runtime.postman, group, agent.hab.pre!);
+  yield* until(
+    () => hby.db.ends.get([group.pre!, Roles.mailbox, agent.hab.pre!])?.allowed === true,
+    "the edge to accept the group's mailbox role",
+  );
+  assertEquals((yield* completeGroupMailbox(adminDeps(edge.runtime), group, agent.hab.pre!)).state, "authorized");
+  yield* until(
+    () => agent.hby.db.ends.get([group.pre!, Roles.mailbox, agent.hab.pre!])?.allowed === true,
+    "the agent to accept the group's mailbox authorization",
+  );
+
+  yield* beforeIntroduction(group);
+  yield* introduce(py, agent, edge, group);
+  return { agent, edge, member, group, custodianGroup: custodianGroup.hab };
+}
+
+/** What the group's receive direction proved, for its present direction to build on. */
+interface GroupReceived {
+  side: GroupSide;
+  issued: PeerIssued;
+  grant: string;
+  admit: string;
+}
+
+/**
+ * Receive (R) as the group: the KERIpy peer issues a v2 credential to the group and opens with its Grant, sent by
+ * StreamPoster to the group's published `mailbox` (the agent). The agent's `/fwd` intake ingests it for the custodian
+ * and stores one copy for the edge; the edge polls it from the group's mailbox at the agent and proposes the group's
+ * Admit, which the edge member's weight satisfies; the agent forwards that Admit, signed as the group, to the KERIpy
+ * peer, which accepts it against the group's KEL.
+ */
+function* groupReceives(py: KeriPyRelayPeer, credential: Credential): Operation<GroupReceived> {
+  let issued: PeerIssued | undefined;
+  const side = yield* groupRelay(py, function*(group) {
+    issued = yield* call(() => py.issue(group.pre!, credential));
+  });
+  const { agent, edge, group } = side;
+  const grant = yield* call(() => py.grant());
+  yield* until(() => edge.runtime.exc.complete(grant), "the edge to poll and accept the KERIpy Grant to the group");
+  assertExists(edge.hby.db.tops.get([group.pre!, agent.hab.pre!]), "the edge polled the group's mailbox at the agent");
+  yield* until(() => agent.runtime.exc.complete(grant), "the custodian on the agent to accept the Grant");
+  const { said: admit } = yield* proposeGroupAdmit(edge.runtime.operations!.groupIpex, {
+    hab: group,
+    grant,
+    message: "Relay group admit",
+  });
+  assertEquals(
+    (yield* waitForGroupIpex(edge.runtime.operations!.groupIpex, admit, { timeoutMs: BUDGET_MS })).status,
+    { state: "done", phase: "accepted" },
+  );
+  assert(
+    loadNests(edge.hby.db, grant).some((frame) => frame.body.said === issued!.credential),
+    "the edge holds the credential",
+  );
+  if (issued!.registry) {
+    const head = issued!.events.at(-1)!;
+    assertEquals(edge.runtime.acdc!.store.headEvent(issued!.registry)?.said, head, "the edge holds the TEL head");
+    assertEquals(!!edge.runtime.acdc!.store.opening(head), credential === "public", "where the edge read the state");
+  }
+  const seen = yield* observe("the KERIpy peer to accept the group's Admit", async () => {
+    const state = await py.state({ saids: [grant, admit] });
+    return state.exchanges[admit]?.accepted ? state : undefined;
+  });
+  assertEquals(seen.exchanges[admit].sender, group.pre, "the Admit is the group's");
+  assertEquals(seen.exchanges[admit].prior, grant);
+  assertEquals(seen.exchanges[grant].response, admit, "the KERIpy peer records the group's Admit as the answer");
+  return { side, issued: issued!, grant, admit };
+}
+
+/** Every request the group's edge made went to the agent's origin. */
+function assertGroupOnlyAgent(side: GroupSide): void {
+  assertOnlyAgent({
+    agentUrl: side.agent.url,
+    agent: side.agent.hab,
+    agentRt: side.agent.runtime,
+    edge: side.edge.runtime,
+    edgeHab: side.member,
+    requested: side.edge.requested,
+  });
+}
+
+/** The group's receive check. */
+function* groupReceiveCheck(py: KeriPyRelayPeer, credential: Credential): Operation<void> {
+  const { side } = yield* groupReceives(py, credential);
+  assertGroupOnlyAgent(side);
+}
+
+/**
+ * Present (P) as the group: after receiving a KERIpy-issued credential, the edge presents it as the group to the
+ * KERIpy peer (the admitted Grant's own nodes, with presenter authorization); the agent forwards the group's Grant;
+ * the KERIpy peer accepts it against the group's KEL, reads its TEL head, and answers with an Admit by StreamPoster
+ * to the group's mailbox, which the edge polls.
+ */
+function* groupPresentCheck(py: KeriPyRelayPeer, credential: Credential): Operation<void> {
+  const { side, issued, grant } = yield* groupReceives(py, credential);
+  const { edge, group } = side;
+  const transferred = concatBytes(
+    ...(yield* call(() =>
+      Promise.all(loadNests(edge.hby.db, grant).map((node) => collectPayload(nestedPayload(node, Vrsn_2_0))))
+    )),
+  );
+  const { said: presented } = yield* proposeGroupPresentation(
+    edge.runtime.operations!.presentation.deps,
+    edge.runtime.operations!.groupIpex,
+    {
+      hab: group,
+      selection: { transferred, presenterAuthorized: true },
+      options: { recipient: py.pre, message: "Relay group presentation" },
+    },
+  );
+  assertEquals(
+    (yield* waitForGroupIpex(edge.runtime.operations!.groupIpex, presented, { timeoutMs: BUDGET_MS })).status,
+    { state: "done", phase: "accepted" },
+  );
+  const accepted = yield* observe("the KERIpy peer to accept the group's Grant", async () => {
+    const state = await py.state({ saids: [presented], registries: issued.registry ? [issued.registry] : [] });
+    return state.exchanges[presented]?.accepted ? state : undefined;
+  });
+  assertEquals(accepted.exchanges[presented].sender, group.pre, "the Grant is the group's");
+  assertEquals(accepted.exchanges[presented].nests.map((nest) => nest.said), [issued.credential]);
+  if (issued.registry) {
+    assertEquals(accepted.registries[issued.registry], issued.events.at(-1), "the KERIpy peer reads its TEL head");
+  }
+  const admit = yield* call(() => py.admit(presented));
+  yield* until(
+    () => edge.hby.db.erpy.get([presented])?.qb64 === admit,
+    "the edge to poll the KERIpy Admit of the group's Grant from the group's mailbox",
+  );
+  assertGroupOnlyAgent(side);
+}
+
+// --- upstream main: ignored expected failures; each records what stopped it at the pin (c7e74adc) and at the
+// newer upstream head b7cd5429 (2026-11-13), run once each. b7cd5429 needs hio 0.7.21; the profile pins 0.7.20. ---
 
 Deno.test({
   name: "KERIpy main -> relay single-sig",
@@ -537,6 +775,8 @@ Deno.test({
   // "AttributeError: 'Baser' object has no attribute 'vrc'". Fixed upstream after the pin by 999d226d
   // ("Fix introduction receipt lookup for the target peer", WebOfTrust/keripy#1721). A signed credential, because
   // main cannot send a v2 TEL at all (see the candidate tests).
+  // At b7cd5429 the AttributeError is gone and main opens with an `xip`, but the check still fails: "timed out
+  // waiting for the edge to poll the KERIpy Grant from its mailbox at the agent". Cause not established.
   ignore: true,
   async fn() {
     await withKeriPyPeer("main", (py) => run(() => receiveCheck(py, "transferable", "signed")));
@@ -560,12 +800,14 @@ Deno.test({
 
 Deno.test({
   name: "relay single-sig -> KERIpy main",
-  // EXPECTED FAILURE against main. Main cannot take in anything a keri-ts presentation needs: (1) its Parser has
+  // EXPECTED FAILURE against main. At c7e74adc main cannot take in anything a keri-ts presentation needs: (1) its Parser has
   // no v2 registry route, so the `rip`/`bup` TEL frames ahead of the Grant raise "Unexpected message ilk"
   // (core/parsing.py, the SerderACDC branch); (2) it drops every `xip`: Kevery.processXip is a stub that does
   // nothing (core/eventing.py, "Stub: KERI v2 exchange transaction; no processing yet."), so the Grant (an `xip`,
   // as the specification requires of an opener) is neither accepted nor escrowed and no Admit is sent. A keri-ts
   // Apply is dropped the same way. The test times out waiting for the KERIpy peer to accept the Grant.
+  // At b7cd5429 `xip` is processed (core/eventing.py `case Ilks.exn | Ilks.xip`), and the test still times out
+  // waiting for the KERIpy peer to accept the Grant. Likely, not established: its Parser still has no v2 registry route.
   ignore: true,
   async fn() {
     await withKeriPyPeer("main", (py) => run(() => issueToKeriPy(py, "transferable")));
@@ -584,11 +826,6 @@ Deno.test("relay single-sig -> KERIpy candidate", async () => {
 
 Deno.test({
   name: "a publicly opened v2 credential issued by KERIpy is admitted and read by keri-ts",
-  // NOT FINISHED: the test's construction is incomplete, so this proves nothing yet in either direction. The
-  // fixture's public issue builds the Grant origin with `messagize(full)` and no opening, which the candidate
-  // refuses before anything is sent: "ValueError: Missing authenticator for msg=..." (keri/core/eventing.py
-  // messagize). Remove `ignore` once the origin is built without that authenticator check.
-  ignore: true,
   async fn() {
     await withKeriPyPeer("candidate", (py) => run(() => receiveCheck(py, "transferable", "public")));
   },
@@ -596,12 +833,19 @@ Deno.test({
 
 Deno.test({
   name: "a publicly opened v2 credential issued by keri-ts is admitted and read by KERIpy",
-  // NOT FINISHED: the test's construction is incomplete. Selecting the bare issued node with
-  // `{ transferred, presenterAuthorized: true }` is refused locally before anything is sent: "ValidationError:
-  // Current authenticated graph truth is required before use." (packages/keri/src/app/ipex/ipex-discloser.ts:501,
-  // requireGraph). The issuer's own selection path is still to be chosen. Remove `ignore` once it is.
-  ignore: true,
   async fn() {
     await withKeriPyPeer("candidate", (py) => run(() => issueToKeriPy(py, "transferable")));
   },
+});
+
+Deno.test("KERIpy candidate -> relay group", async () => {
+  await withKeriPyPeer("candidate", (py) => run(() => groupReceiveCheck(py, "private")));
+});
+
+Deno.test("relay group -> KERIpy candidate", async () => {
+  await withKeriPyPeer("candidate", (py) => run(() => groupPresentCheck(py, "private")));
+});
+
+Deno.test("a publicly opened v2 credential issued by KERIpy is admitted and read by a relay group", async () => {
+  await withKeriPyPeer("candidate", (py) => run(() => groupReceiveCheck(py, "public")));
 });
