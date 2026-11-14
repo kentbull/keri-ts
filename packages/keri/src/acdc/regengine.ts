@@ -6,8 +6,11 @@ import {
   type Saider,
   SerderACDC,
 } from "cesr-ts";
+import type { AgentCue } from "../core/cues.ts";
+import type { Deck } from "../core/deck.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { consoleLogger } from "../core/logger.ts";
+import { missingAnchorCue, type MissingAnchorQuery, missingAnchorQuery } from "../core/missing-anchor-query.ts";
 import type { Baser } from "../db/basing.ts";
 import {
   findRegistryAnchor,
@@ -24,7 +27,13 @@ import type { RegistryStore } from "./registering.ts";
 /** Expected event outcomes; persistence, corruption and programming failures throw. */
 export type RegistryEventDecision =
   | { kind: "accept" | "duplicate"; event: RegistryEvent }
-  | { kind: "escrow"; reason: "anchor" | "order"; event: RegistryEvent }
+  | {
+    kind: "escrow";
+    reason: "anchor" | "order";
+    event: RegistryEvent;
+    /** Present only when this decision first placed the event in the anchor escrow and issuer KEL events are missing. */
+    query?: MissingAnchorQuery;
+  }
   | { kind: "reject"; reason: "ordinalRange" }
   | Extract<RegistryEventValidation, { kind: "reject" }>;
 
@@ -32,6 +41,7 @@ export type RegistryEventDecision =
  * Borrow the issuer's accepted KEL and registry store; no keys or handles are acquired.
  * The local facade and foreign observer share this accepted-state engine.
  * Publication is atomic; binding this instance happens only after successful commit.
+ * An event that first enters the anchor escrow publishes one issuer KEL `logs` query to `cues` after that write.
  */
 export class RegistryEventer {
   constructor(
@@ -39,6 +49,8 @@ export class RegistryEventer {
     readonly issuer: string,
     readonly store: RegistryStore,
     public regk: string | null = null,
+    /** Application cue flow for missing-anchor queries; null for a local issuer, whose own KEL holds every anchor. */
+    readonly cues: Deck<AgentCue> | null = null,
   ) {}
 
   /** Validated accepted head metadata; local construction may inspect it without duplicating acceptance checks. */
@@ -221,6 +233,8 @@ export class RegistryEventer {
   processEvent(serder: SerderACDC, locators: RegistrySourceLocators = {}): RegistryEventDecision {
     const decision = this.processOne(serder, locators);
     if (decision.kind === "accept") this.processQueued();
+    // The escrow row is committed; ask the issuer's KEL holders for what the anchor needs through the ordinary cue path.
+    if (decision.kind === "escrow" && decision.query) this.cues?.push(missingAnchorCue(decision.query));
     return decision;
   }
 
@@ -248,10 +262,7 @@ export class RegistryEventer {
       if (previous) return previous;
       this.store.putEvent(serder);
       this.discoverAnchor(event);
-      if (!this.store.anchor(event.said)) {
-        this.store.escrowMissingAnchor(event.regid, Number(event.sn), event.said);
-        return { kind: "escrow", reason: "anchor", event };
-      }
+      if (!this.store.anchor(event.said)) return this.escrowAnchorless(event, locators);
       this.store.baser.maes.rem(event.regid, Number(event.sn), [event.said]);
       if (!prior) {
         this.store.escrowOutOfOrder(event.regid, Number(event.sn), event.said);
@@ -286,15 +297,33 @@ export class RegistryEventer {
       if (this.store.head(event.regid)) throw new Error("Registry head exists without its accepted inception.");
       this.store.putEvent(serder);
       this.discoverAnchor(event);
-      if (!this.store.anchor(event.said)) {
-        this.store.escrowMissingAnchor(event.regid, 0, event.said);
-        return { kind: "escrow", reason: "anchor", event };
-      }
+      if (!this.store.anchor(event.said)) return this.escrowAnchorless(event, locators);
       this.commit(event);
       return { kind: "accept", event };
     });
     if (decision.kind !== "reject") this.regk = event.regid;
     return decision;
+  }
+
+  /**
+   * Retain an event whose anchoring issuer KEL event is not accepted yet and decide whether to ask for it.
+   *
+   * The decision names the missing KEL only when this call put the event into the anchor escrow; retries and repeat
+   * arrivals find the row present. A source seal naming this issuer supplies the anchor's sequence number, and the
+   * highest one bounds the replay; without one the query names only where the recipient's KEL ends.
+   */
+  private escrowAnchorless(event: RegistryEvent, locators: RegistrySourceLocators): RegistryEventDecision {
+    const added = this.store.escrowMissingAnchor(event.regid, Number(event.sn), event.said);
+    const decision = { kind: "escrow", reason: "anchor", event } as const;
+    if (!added) return decision;
+    const seals = [
+      ...(locators.sscs ?? []).map((seal) => seal.s.num),
+      ...(locators.ssts ?? []).filter((seal) => seal.i.qb64 === this.issuer).map((seal) => seal.s.num),
+    ];
+    const anchor = seals.length ? seals.reduce((high, sn) => (sn > high ? sn : high)) : null;
+    const accepted = this.db.getKever(this.issuer, { refresh: true })?.sner.num ?? null;
+    const query = missingAnchorQuery(this.issuer, accepted, anchor);
+    return query ? { ...decision, query } : decision;
   }
 
   /** Replay is read-only; first acceptance repeats this check under its write transaction. */

@@ -1,5 +1,7 @@
 /** Public v2 registry intake with event-local opening preflight and durable retention. */
 import { type BlindState, type BoundState, bytesEqual, Diger, Ilks, ParserError, type SerderACDC } from "cesr-ts";
+import type { AgentCue } from "../core/cues.ts";
+import type { Deck } from "../core/deck.ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import { type RegistryEventDecision, RegistryEventer } from "./regengine.ts";
@@ -31,9 +33,10 @@ export type RegistryObserverDecision =
  * event commits independently; a later failure preserves the already accepted prefix.
  * Parsed evidence stays borrowed. Composition supplies this owner to v2 protocol dispatch;
  * no local habitat, alias or application disclosure custody is created by public intake.
+ * `cues` receives the issuer KEL `logs` query of each event that first waits for its anchoring KEL event.
  */
 export class RegistryObserver {
-  constructor(readonly db: Baser, readonly store: RegistryStore) {}
+  constructor(readonly db: Baser, readonly store: RegistryStore, readonly cues: Deck<AgentCue> | null = null) {}
 
   /** Stage parsed events before inception, otherwise delegate ordinary validation and acceptance. */
   processEvent(serder: SerderACDC, locators: RegistryIntakeEvidence = {}): RegistryObserverDecision {
@@ -62,7 +65,7 @@ export class RegistryObserver {
     if (engine && !(engine instanceof RegistryEventer)) return engine;
     if (event.ilk === Ilks.rip) {
       if (!event.issuer) return { kind: "reject", reason: "issuer" };
-      engine ??= new RegistryEventer(this.db, event.issuer, this.store, event.regid);
+      engine ??= new RegistryEventer(this.db, event.issuer, this.store, event.regid, this.cues);
     }
     if (engine) {
       const decision = engine.processEvent(serder, locators);
@@ -117,6 +120,6 @@ export class RegistryObserver {
     if (result.kind !== "valid" || result.event.regid !== regid || !result.event.issuer) {
       throw new Error("Corrupt observer registry inception.");
     }
-    return new RegistryEventer(this.db, result.event.issuer, this.store, regid);
+    return new RegistryEventer(this.db, result.event.issuer, this.store, regid, this.cues);
   }
 }
