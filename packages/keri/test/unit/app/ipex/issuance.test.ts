@@ -110,7 +110,7 @@ Deno.test("the proof support sent after proving carries only the anchoring event
     const events = (msg: Uint8Array) =>
       parseBytes(msg).flatMap(({ body }) =>
         body.ilk && ["icp", "rot", "ixn", "vcp", "vrt", "iss", "rev", "bup", "rip"].includes(body.ilk)
-          ? [body.sn === undefined ? body.ilk : `${body.ilk}:${body.sn}`]
+          ? ["sn" in body ? `${body.ilk}:${body.sn}` : body.ilk]
           : []
       );
     const first = events(s.log[0].msg), last = events(s.log.at(-1)!.msg);
