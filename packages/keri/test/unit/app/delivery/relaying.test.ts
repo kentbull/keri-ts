@@ -18,6 +18,7 @@ import {
 } from "../../../../src/app/delivery/relaying.ts";
 import type { Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
+import { kelHeads, pinKelPublished } from "../../../../src/app/mailbox/kel-publishing.ts";
 import { addMailbox, type MailboxAdminDeps } from "../../../../src/app/mailbox/mailbox-admin.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import { MailboxPoller } from "../../../../src/app/mailbox/mailbox-poller.ts";
@@ -217,6 +218,46 @@ Deno.test("Poster with a relay forwards every recipient to the relay", async () 
         { pre: unknown.pre, topic: "credential" },
       ], "exactly one forward per message");
       assertEquals(wrappers.map((frame) => frame.body.ked!.i), [sender.pre, sender.pre]);
+    } finally {
+      yield* postman.close();
+    }
+  });
+});
+
+/** The sender's own KEL events (inception, rotation, interaction) the relay received, one message per request. */
+function kelEvents(received: readonly Received[], pre: string): number {
+  return received.flatMap((request) => request.frames).filter((frame) =>
+    frame.body instanceof SerderKERI && frame.body.pre === pre && ["icp", "rot", "ixn"].includes(frame.body.ilk ?? "")
+  ).length;
+}
+
+Deno.test("a relay already given the sender's latest establishment is not re-introduced to", async () => {
+  await withHabery(function*(hby) {
+    const relay = relayOf(hby, true);
+    const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+    authorize(hby, sender.pre, relay);
+    for (let i = 0; i < 60; i++) sender.interact();
+    const received: Received[] = [];
+    const postman = new Poster(hby, null, null, recordingHttp(received), systemClock, relay);
+    const deliver = function*(s: string) {
+      const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: { s } });
+      const [outcome] = yield* deliverAll(postman, [
+        postman.send({ src: sender.pre, dest: recipient.pre, topic: "/credential", msg }, { notify: true }),
+      ]);
+      assertEquals(outcome.kin, "sent");
+      return kelEvents(received.splice(0), sender.pre);
+    };
+    try {
+      assert((yield* deliver("0")) >= 61, "no record: the whole KEL goes");
+      assert((yield* deliver("1")) >= 61, "still no record: introduced in full again");
+      // What the KEL publisher records once the relay answers its post.
+      pinKelPublished(hby.db, sender.pre, relay.aid, kelHeads(hby, sender.pre)!, systemClock);
+      for (let i = 0; i < 3; i++) {
+        sender.interact();
+        assertEquals(yield* deliver(`2${i}`), 0, "a new interaction event does not change what the relay needs");
+      }
+      sender.rotate();
+      assert((yield* deliver("3")) >= 65, "a rotation the relay has not been given goes in full");
     } finally {
       yield* postman.close();
     }

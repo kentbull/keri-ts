@@ -97,6 +97,33 @@ Deno.test("issuance completes: Grant, query, reply, anchored BUP, finish, proof 
   });
 });
 
+Deno.test("the proof support sent after proving carries only the anchoring event and the registry update", async () => {
+  await run(function*() {
+    const s = yield* scenario(1);
+    const hab = s.issuer.habs[0], reg = yield* s.registry(0), ops = s.owner();
+    const begun = yield* proposeIssuance(ops, { credential: reg.credential(), options: grantOptions(s) });
+    yield* ops.processOnce();
+    holderApproves(s, begun.grant);
+    const sn = hab.kever!.sn;
+    yield* settle(s, ops, [begun.grant]);
+    assertEquals(issuanceStatus(ops, begun.grant), { state: "done", role: "issuer", phase: "issued" });
+    const events = (msg: Uint8Array) =>
+      parseBytes(msg).flatMap(({ body }) =>
+        body.ilk && ["icp", "rot", "ixn", "vcp", "vrt", "iss", "rev", "bup", "rip"].includes(body.ilk)
+          ? ["sn" in body ? `${body.ilk}:${body.sn}` : body.ilk]
+          : []
+      );
+    const first = events(s.log[0].msg), last = events(s.log.at(-1)!.msg);
+    assert(first.includes("icp:0"), "the Grant carries the issuer's whole KEL");
+    assertEquals(
+      last,
+      [`ixn:${sn + 1}`, "bup"],
+      "later: exactly the anchoring interaction event and the registry update",
+    );
+    assertEquals((yield* s.holder.runtime.ipex!.dhke(s.holder.habs[0]).finish(begun.grant)).kind, "accept");
+  });
+});
+
 Deno.test("the query is resent each second, freshly dated with the same keys, until DH completes", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);

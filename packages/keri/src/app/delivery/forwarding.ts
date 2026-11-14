@@ -18,6 +18,7 @@ import { exchange } from "../../core/exchange/protocol-exchanging.ts";
 import { Roles } from "../../core/roles.ts";
 import type { Mailboxer } from "../../db/mailbox/mailboxing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
+import { holdsHeads, kelHeads } from "../mailbox/kel-publishing.ts";
 import { mailboxTopicKey } from "../mailbox/mailboxing.ts";
 import { transportMailboxTopic } from "../mailbox/topic-routing.ts";
 import { localGroupMember } from "../multisig/group-members.ts";
@@ -764,6 +765,32 @@ export class Poster {
   }
 
   /**
+   * Whether the configured relay is already known to hold what it needs to verify `signer`'s `/fwd` wrappers, so
+   * the whole-KEL introduction can be left out.
+   *
+   * The relay verifies a wrapper against the signer's current key state, which the signer's latest establishment
+   * event fixes; interaction events do not change it. The evidence is `Baser.kpub`, the record the KEL publisher
+   * keeps per (identifier, mailbox) of the establishment event whose KEL (delegation chain included, and only once a
+   * delegated establishment is anchored) the mailbox was last given. The relay is the signer's mailbox, so the
+   * publisher and the mailbox admin request keep that record. Any other endpoint, and any mismatch or missing
+   * record, keeps today's full introduction.
+   *
+   * Known limit: a 2xx is not acceptance, and a relay that lost its store answers a `/fwd` from a sender it no
+   * longer knows with the same 204 acknowledgement and drops it. Nothing in the `/fwd` path signals that today; the
+   * sender's next mailbox poll gets the relay's 403, which makes `KelPublisher` clear the record and repost the KEL.
+   * Wrappers sent in between are lost until then.
+   *
+   * @param signer Local habitat that signs the wrapper (a group's local member).
+   * @param eid Endpoint AID the prepared wire goes to.
+   * @returns True only when `eid` is the relay and the record holds `signer`'s current establishment heads.
+   */
+  private relayHoldsKel(signer: Hab, eid: string): boolean {
+    if (!this.relay || this.relay.aid !== eid || !signer.pre) return false;
+    const heads = kelHeads(this.hby, signer.pre);
+    return !!heads && holdsHeads(this.hby.db.kpub.get([signer.pre, eid]), heads);
+  }
+
+  /**
    * Prepare complete signed wire and its introduction before opening transport.
    *
    * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
@@ -808,7 +835,7 @@ export class Poster {
     // Prepare every frame before opening the one selected relay attempt.
     const forwarded: Uint8Array[] = [];
     for (const child of frames) forwarded.push(yield* buildForwardedDelivery(signer, { recipient, topic, child }));
-    const intro = introduce(signer, endpoint.eid);
+    const intro = this.relayHoldsKel(signer, endpoint.eid) ? new Uint8Array() : introduce(signer, endpoint.eid);
     let message = concatBytes(intro, ...forwarded);
     if (evt.kin === "stream") {
       // This node's own wrappers around already-decoded children: a parse failure here is a fault.
