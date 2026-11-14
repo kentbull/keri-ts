@@ -595,8 +595,9 @@ export class LMDBer extends BaseDBer {
 
   /** Run `fn` in one native synchronous write transaction; nesting is a child transaction. */
   transaction<T>(fn: () => T): T {
-    // A transaction is not itself a write: the puts and removes inside it count, so one that writes nothing does not.
-    return this.requireEnv().transactionSync(fn);
+    // Opening a write transaction takes the environment's writer lock whether or not `fn` writes, so callers
+    // read first and open one only when there is something to write.
+    return this.writing(this.requireEnv()).transactionSync(fn);
   }
 
   /**
@@ -614,16 +615,19 @@ export class LMDBer extends BaseDBer {
     }
   }
 
-  /** Write attempts made through this handle; a process-local counter, so reading it touches no store. */
+  /** Write transactions this handle opened; a process-local counter, so reading it touches no store. */
   private commits = 0;
 
-  /** Count one write attempt through this handle and return the environment to write through. */
+  /**
+   * Count one write transaction through this handle and return the environment to write through. A write
+   * inside an open writer borrows it and opens nothing, so only the outermost one counts.
+   */
   private writing(env: ReturnType<LMDBer["requireEnv"]>): ReturnType<LMDBer["requireEnv"]> {
-    this.commits++;
+    if (!this.inWriteTransaction) this.commits++;
     return env;
   }
 
-  /** Counts this handle's own writes without reading the store; other processes' commits are not seen. */
+  /** Counts the write transactions this handle opened without reading the store; other processes' commits are not seen. */
   get writeActivity(): number {
     return this.commits;
   }
@@ -702,12 +706,12 @@ export class LMDBer extends BaseDBer {
 
   protected putRow(table: Table, key: Uint8Array, val: Uint8Array): void {
     assertRowFits(table, key, val);
-    this.commits++;
+    this.writing(this.requireEnv());
     lmdbTable(table).putSync(key, val);
   }
 
   protected removeRow(table: Table, key: Uint8Array, val?: Uint8Array): boolean {
-    this.commits++;
+    this.writing(this.requireEnv());
     return val === undefined ? lmdbTable(table).removeSync(key) : lmdbTable(table).removeSync(key, val);
   }
 
@@ -734,6 +738,8 @@ export class LMDBer extends BaseDBer {
     const env = this.requireEnv();
 
     try {
+      // An existing row ends the call without a write transaction; the writer re-checks before it inserts.
+      if (!this.inWriteTransaction && !isAbsentKey(key) && db.get(key) != null) return false;
       const result = this.writing(env).transactionSync(() => {
         const existing = db.get(key);
         if (existing !== null && existing !== undefined) {
@@ -796,6 +802,19 @@ export class LMDBer extends BaseDBer {
   }
 
   /**
+   * True when a plain read shows `key` (or its duplicate `val`) is not stored, so removing it needs no writer.
+   * A key no row can have and a plain table's `val` are left to the writer, which owns their errors and semantics.
+   */
+  private isAbsentRow(db: LmdbTable, key: Uint8Array, val?: Uint8Array): boolean {
+    if (val === undefined) return !isAbsentKey(key) && db.get(key) == null;
+    if (key.length === 0 || !(db as { dupSort?: boolean }).dupSort) return false;
+    if (key.length > MAX_KEY_BYTES || val.length === 0) return true;
+    if (val.length > MAX_KEY_BYTES) return false;
+    const found = this.seekVal(db, key, val);
+    return found === null || compareBytes(found, val) !== 0;
+  }
+
+  /**
    * Delete the value stored at `key`.
    *
    * For plain key/value DBs this removes the whole key. When `val` is supplied
@@ -811,6 +830,8 @@ export class LMDBer extends BaseDBer {
     const env = this.requireEnv();
 
     try {
+      // A row that is not there ends the call without a write transaction; the writer re-checks before it removes.
+      if (!this.inWriteTransaction && this.isAbsentRow(db, key, val)) return false;
       const result = this.writing(env).transactionSync(() => {
         if (val !== undefined) {
           // An empty key must still fail, but an over-long one can only be absent.
@@ -1015,8 +1036,11 @@ export class LMDBer extends BaseDBer {
       this.getVals(db, key).map((val) => bytesHex(val)),
     );
     const env = this.requireEnv();
+    const items = [...vals];
+    // Values that are all stored already end the call without a write transaction.
+    if (!this.inWriteTransaction && items.every((val) => existing.has(bytesHex(val)))) return items.length === 0;
     this.writing(env).transactionSync(() => {
-      for (const val of vals) {
+      for (const val of items) {
         const vh = bytesHex(val);
         if (existing.has(vh)) {
           result = false;
