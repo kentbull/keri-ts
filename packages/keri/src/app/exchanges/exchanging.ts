@@ -41,7 +41,7 @@ import { exchangeWindow } from "../../core/mailbox/kram-policy.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../core/protocol-serialization.ts";
 import { readPrefixer } from "../../core/wire-fields.ts";
 import { hasNests, loadNests, prepareNests, publishNests } from "../../db/exchange/exchange-nests.ts";
-import type { ExchangeRegistryStateShape } from "../../db/exchange/exchange-records.ts";
+import type { ExchangeRecordShape, ExchangeRegistryStateShape } from "../../db/exchange/exchange-records.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../time/mod.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { groupMemberHasKey } from "../multisig/group-members.ts";
@@ -234,8 +234,67 @@ interface PreparedExchangeEvidence {
 interface ExchangeAdmission {
   decision: ExchangeDecision;
   cues: AgentCue[];
-  handling?: Parameters<ExchangeRouteHandler["handle"]>[0];
+  handling?: ExchangeHandling;
   ejection?: EscrowEjection;
+}
+
+/** What an accepted exchange hands its route handler once the admission commits. */
+type ExchangeHandling = Parameters<ExchangeRouteHandler["handle"]>[0];
+
+/** Registry observations a route's verification accepts alongside the exchange. */
+type ExchangeRegistryStates = Extract<ExchangeRouteVerification, { kind: "accept" }>["registryStates"];
+
+/** The inputs one admission attempt decides from, frozen before its transaction. */
+interface ExchangeAttemptContext {
+  args: ExchangeInput;
+  /** An escrow replay: the evidence is re-read from the stores and the attempt may find the exchange gone. */
+  retry: boolean;
+  selectedGrant?: "proof" | "contribution";
+  handler?: ExchangeRouteHandler;
+  resolved: ResolvedExchangeFactors;
+  /** Nested bodies serialized while no writer was held. */
+  nests?: readonly Uint8Array[];
+}
+
+/** Everything one attempt read and decided that an acceptance or escrow persists. */
+interface ExchangeStage {
+  input: ExchangeInput;
+  prepared: PreparedExchangeEvidence;
+  /** Sender factors kept when authentication did not verify. */
+  resolved: ResolvedExchangeFactors;
+  approved?: AuthenticatedExchange;
+  /** Present while the exchange waits on a dependency; absent when it is accepted. */
+  pending?: Extract<ExchangeDecision, { kind: "escrow" }>;
+  registryStates: ExchangeRegistryStates;
+  /** Set when the dependency is a schema; otherwise it is proof or signatures. */
+  missingSchema?: string;
+  needsProof: boolean;
+  senderQuery?: MissingExchangeState;
+  retainedIpex: boolean;
+  meta: ExchangeRecordShape;
+  /** False when the stored metadata already equals `meta`. */
+  metaChanged: boolean;
+  handling: ExchangeHandling;
+}
+
+/**
+ * The outcome of deciding one admission attempt by reads. `answer` and `obsolete` write nothing and need no
+ * writer; the others name the durable effect {@link Exchanger.persist} applies inside one.
+ */
+type ExchangeVerdict =
+  | { kind: "answer"; admission: ExchangeAdmission }
+  | { kind: "obsolete" }
+  | { kind: "settled"; serder: SerderKERI }
+  | { kind: "retire"; serder: SerderKERI; admission: ExchangeAdmission }
+  | { kind: "retain"; input: ExchangeInput; approved: AuthenticatedExchange; admission: ExchangeAdmission }
+  | { kind: "stage"; stage: ExchangeStage };
+
+function answered(admission: ExchangeAdmission): ExchangeVerdict {
+  return { kind: "answer", admission };
+}
+
+function rejection(said: string, reason: string): ExchangeAdmission {
+  return { decision: { kind: "reject", said, reason }, cues: [] };
 }
 
 /** Diagnostic fact emitted only after committed escrow removal. */
@@ -421,7 +480,7 @@ export class Exchanger {
     selectedGrant?: "proof" | "contribution",
   ): Operation<ExchangeAttempt | undefined> {
     const said = args.serder.said ?? "<unknown>";
-    const reject = (reason: string): ExchangeAdmission => ({ decision: { kind: "reject", said, reason }, cues: [] });
+    const reject = (reason: string): ExchangeAdmission => rejection(said, reason);
     if (this.hby.db.inWriteTransaction) throw new Error("Exchanger must own the admission transaction");
     if (args.serder.ilk !== "exn" && args.serder.ilk !== "xip") {
       return reject(`Unsupported exchange ilk ${args.serder.ilk}.`);
@@ -439,65 +498,19 @@ export class Exchanger {
     const nests = args.nests?.length
       ? yield* abortable((signal) => prepareNests(args.nests!, signal))
       : undefined;
+    const context: ExchangeAttemptContext = { args, retry, selectedGrant, handler, resolved, nests };
     const written = this.hby.db.writeVersion;
-    const result = this.hby.db.transaction((): ExchangeAdmission | undefined => {
-      if (selectedGrant) {
-        const db = this.hby.db;
-        const stored = selectedGrant === "proof" ? db.epse.get([said]) : db.exns.get([said]) ?? db.epse.get([said]);
-        const deadline = stored && this.exchangeDeadline(stored);
-        const expiry = deadline ? timestampMicros(deadline) : null;
-        const live = stored && this.isV2Grant(stored) && !db.erpy.get([said])
-          && expiry !== null && this.nowMicros() < expiry;
-        const original = !live ? null : selectedGrant === "proof"
-          ? this.retainedInput(said, { pending: true })
-          : { serder: stored, nests: loadNests(db, said) };
-        const before = original?.nests ?? [], after = args.nests ?? [];
-        if (
-          !original || !bytesEqual(original.serder.raw, args.serder.raw) || before.length !== after.length
-          || before.some((node, index) => !bytesEqual(node.body.raw, after[index].body.raw))
-        ) return reject("Selected pending Grant proof is expired, terminated or changes the original disclosure");
-        if (selectedGrant === "contribution") {
-          const retained = db.enst.get([said]);
-          if (retained.length !== nests?.length || retained.some((raw, index) => !bytesEqual(b(raw), nests![index]))) {
-            return reject("Prepared Grant contribution changes the original nested evidence");
-          }
-        }
-      }
-      let status: EscrowStatus | undefined;
-      if (retry) {
-        status = this.escrowStatus(said);
-        if (status.kind === "accepted") {
-          this.clearPending(args.serder);
-          return undefined;
-        }
-        if (status.kind === "absent") return undefined;
-        if (status.kind !== "pending") {
-          return {
-            ...reject(status.kind),
-            ejection: this.retireCurrent(args.serder, this.expiryReport(status)),
-          };
-        }
-      }
-      const current = retry ? this.escrowInput(args.serder) : args;
-      const failure = this.verifyEssr(current.serder, current.essrs);
-      const admission = failure
-        ? { decision: failure, cues: [] }
-        : this.admitCurrent(current, retry ? this.resolveProofs(current) : resolved, handler, {
-          attachments: normalizeAttachments(current.ptds ?? []),
-          nests,
-        }, selectedGrant === "contribution");
-      if (status?.kind === "pending" && admission.decision.kind === "reject" && !admission.decision.preserveEscrow) {
-        return {
-          ...admission,
-          ejection: this.retireCurrent(args.serder, {
-            family: status.family,
-            reason: admission.decision.reason,
-            cause: admission.decision.cause,
-          }),
-        };
-      }
-      return admission;
-    });
+    // Decide by reads first: an attempt that changes nothing stored (a retry still waiting on the same dependency, a
+    // rejection that keeps its escrow) answers without a writer. A decision that does write is reused inside the
+    // writer when no commit, from any process, came between, and made again when one did.
+    const verdict = this.decide(context, this.cues);
+    // Sender-state queries publish while authenticating, ahead of the route's hooks; a second decision in the
+    // writer repeats them into a deck nobody reads.
+    const result = verdict.kind === "answer" || verdict.kind === "obsolete"
+      ? this.persist(verdict)
+      : this.hby.db.transaction(() =>
+        this.persist(this.hby.db.writeVersion === written ? verdict : this.decide(context, new Deck<AgentCue>()))
+      );
     // Durable completion joins the actual LMDB flush; a transaction that wrote nothing has nothing to wait for.
     if (this.hby.db.writeVersion !== written) yield* this.hby.db.flushed();
     if (!result) return undefined;
@@ -537,19 +550,154 @@ export class Exchanger {
     }
   }
 
-  /** Authenticate, validate route policy and write evidence in one uninterrupted owner turn. */
-  private admitCurrent(
+  /**
+   * Decide one admission attempt by reads alone, leaving every durable effect to {@link persist}.
+   * A retry re-reads the escrow evidence and deadlines, so work that accepted or expired meanwhile is seen.
+   *
+   * @param queries Receives the sender-state queries authentication finds, as it finds them.
+   */
+  private decide(context: ExchangeAttemptContext, queries: Deck<AgentCue>): ExchangeVerdict {
+    const { args, retry, selectedGrant } = context, db = this.hby.db;
+    const said = args.serder.said!;
+    if (selectedGrant) {
+      const stored = selectedGrant === "proof" ? db.epse.get([said]) : db.exns.get([said]) ?? db.epse.get([said]);
+      const deadline = stored && this.exchangeDeadline(stored);
+      const expiry = deadline ? timestampMicros(deadline) : null;
+      const live = stored && this.isV2Grant(stored) && !db.erpy.get([said])
+        && expiry !== null && this.nowMicros() < expiry;
+      const original = !live ? null : selectedGrant === "proof"
+        ? this.retainedInput(said, { pending: true })
+        : { serder: stored, nests: loadNests(db, said) };
+      const before = original?.nests ?? [], after = args.nests ?? [];
+      if (
+        !original || !bytesEqual(original.serder.raw, args.serder.raw) || before.length !== after.length
+        || before.some((node, index) => !bytesEqual(node.body.raw, after[index].body.raw))
+      ) {
+        return answered(
+          rejection(said, "Selected pending Grant proof is expired, terminated or changes the original disclosure"),
+        );
+      }
+      if (selectedGrant === "contribution") {
+        const retained = db.enst.get([said]);
+        if (
+          retained.length !== context.nests?.length
+          || retained.some((raw, index) => !bytesEqual(b(raw), context.nests![index]))
+        ) return answered(rejection(said, "Prepared Grant contribution changes the original nested evidence"));
+      }
+    }
+    let status: EscrowStatus | undefined;
+    if (retry) {
+      status = this.escrowStatus(said);
+      if (status.kind === "accepted") return { kind: "settled", serder: args.serder };
+      if (status.kind === "absent") return { kind: "obsolete" };
+      if (status.kind !== "pending") {
+        return {
+          kind: "retire",
+          serder: args.serder,
+          admission: { ...rejection(said, status.kind), ejection: this.expiryReport(status) },
+        };
+      }
+    }
+    const current = retry ? this.escrowInput(args.serder) : args;
+    const failure = this.verifyEssr(current.serder, current.essrs);
+    const verdict = failure
+      ? answered({ decision: failure, cues: [] })
+      : this.decideCurrent(
+        current,
+        retry ? this.resolveProofs(current) : context.resolved,
+        context.handler,
+        {
+          attachments: normalizeAttachments(current.ptds ?? []),
+          nests: context.nests,
+        },
+        selectedGrant === "contribution",
+        queries,
+      );
+    if (verdict.kind === "answer" && status?.kind === "pending") {
+      const { decision } = verdict.admission;
+      if (decision.kind === "reject" && !decision.preserveEscrow) {
+        return {
+          kind: "retire",
+          serder: args.serder,
+          admission: {
+            ...verdict.admission,
+            ejection: { family: status.family, reason: decision.reason, cause: decision.cause },
+          },
+        };
+      }
+    }
+    if (retry && verdict.kind === "stage" && this.staysPending(verdict.stage)) {
+      return answered({ decision: verdict.stage.pending!, cues: [] });
+    }
+    return verdict;
+  }
+
+  /**
+   * Whether a retry would only rewrite the rows it was rebuilt from. Its evidence comes from the escrow itself,
+   * so the evidence writes repeat what is stored; only the dependency rows, the deadline and the metadata can
+   * differ. A malformed stored deadline is left to the writer, which reports it.
+   */
+  private staysPending(stage: ExchangeStage): boolean {
+    const db = this.hby.db, serder = stage.input.serder, said = serder.said!;
+    if (!stage.pending || stage.metaChanged) return false;
+    if (stage.missingSchema === undefined) {
+      const prior = db.epsd.get([said]);
+      if (!db.epse.get([said]) || db.hasSchemaEscrow(said) || !prior || timestampMicros(prior.dts) === null) {
+        return false;
+      }
+      const accepted = this.isV2Grant(serder) ? this.exchangeDeadline(serder) : null;
+      return !accepted || prior.dts === accepted;
+    }
+    const { emse, emsd } = db, prior = emsd?.get([said]);
+    if (!emse || !prior || timestampMicros(prior.dts) === null) return false;
+    let branches = 0;
+    for (const key of db.scanKeys(emse.sdb, { start: b(`${said}.`), limit: 2 })) {
+      if (textDecoder.decode(key).startsWith(`${said}.`)) branches++;
+    }
+    return branches === 1 && emse.get([said, stage.missingSchema]) !== null && !db.epse.get([said])
+      && !db.epsd.get([said]);
+  }
+
+  /** Apply a verdict inside the owning writer; the cues and handling it returns publish after the commit. */
+  private persist(verdict: ExchangeVerdict): ExchangeAdmission | undefined {
+    switch (verdict.kind) {
+      case "answer":
+        return verdict.admission;
+      case "obsolete":
+        return undefined;
+      case "settled":
+        this.clearPending(verdict.serder);
+        return undefined;
+      case "retire":
+        this.clearEscrow(verdict.serder);
+        return verdict.admission;
+      case "retain":
+        this.logAcceptedEvent({
+          serder: verdict.input.serder,
+          ...verdict.approved.retained,
+          supplemental: verdict.approved.supplemental,
+          ptds: verdict.input.ptds ?? [],
+        });
+        return verdict.admission;
+      case "stage":
+        return this.persistStage(verdict.stage);
+    }
+  }
+
+  /** Authenticate and validate route policy by reads; the returned verdict carries everything to write. */
+  private decideCurrent(
     args: ExchangeInput,
     resolved: ResolvedExchangeFactors,
     handler: ExchangeRouteHandler | undefined,
     prepared: PreparedExchangeEvidence,
-    preparedContribution = false,
-  ): ExchangeAdmission {
+    preparedContribution: boolean,
+    queries: Deck<AgentCue>,
+  ): ExchangeVerdict {
     const said = args.serder.said!;
-    const authentication = this.authenticate(args.serder, resolved, handler, this.cues);
+    const authentication = this.authenticate(args.serder, resolved, handler, queries);
     const cues: AgentCue[] = [];
-    if (authentication.kind === "reject") return { decision: authentication, cues };
-    let pending = authentication.kind === "escrow"
+    if (authentication.kind === "reject") return answered({ decision: authentication, cues });
+    let pending: Extract<ExchangeDecision, { kind: "escrow" }> | undefined = authentication.kind === "escrow"
       ? { kind: authentication.kind, said, reason: authentication.reason }
       : undefined;
     const senderQuery = authentication.kind === "escrow" ? authentication.query : undefined;
@@ -564,12 +712,15 @@ export class Exchanger {
       nests.length
       && (!handler?.acceptsNests || !supportsNestedExchange(args.serder.route ?? "", args.serder.pvrsn.major))
     ) {
-      return { decision: { kind: "reject", said, reason: "Nested exchange route is not implemented." }, cues };
+      return answered({
+        decision: { kind: "reject", said, reason: "Nested exchange route is not implemented." },
+        cues,
+      });
     }
-    let registryStates: Extract<ExchangeRouteVerification, { kind: "accept" }>["registryStates"] = [];
+    let registryStates: ExchangeRegistryStates = [];
     let missingSchema: string | undefined;
     let needsProof = false;
-    const handling = {
+    const handling: ExchangeHandling = {
       serder: args.serder,
       attachments: prepared.attachments,
       essrs: args.essrs,
@@ -584,14 +735,14 @@ export class Exchanger {
         ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
       });
       if (verified === false) {
-        return {
+        return answered({
           decision: {
             kind: "reject",
             said,
             reason: `Exchange route ${args.serder.route ?? ""} failed handler verification.`,
           },
           cues,
-        };
+        });
       }
       if (typeof verified === "object" && verified.kind === "accept") registryStates = verified.registryStates;
       if (typeof verified === "object" && verified.kind === "escrow") {
@@ -606,59 +757,74 @@ export class Exchanger {
     if (pending && this.complete(said)) {
       // The exact prepared-file writer may retain verified added consent while
       // current issuer openings remain unresolved; accepted proof rows stay untouched.
-      if (preparedContribution && approved) {
-        this.logAcceptedEvent({
-          serder: args.serder,
-          ...approved.retained,
-          supplemental: approved.supplemental,
-          ptds: args.ptds ?? [],
-        });
-      }
-      return { decision: pending, cues };
+      const admission: ExchangeAdmission = { decision: pending, cues };
+      return preparedContribution && approved
+        ? { kind: "retain", input: args, approved, admission }
+        : answered(admission);
     }
-    const retainedIpex = args.serder.pvrsn.major === 2 && nestedIpexRoute(args.serder.route ?? "")
-      && this.complete(said);
-    if (prepared.nests && !retainedIpex) publishNests(this.hby.db, said, prepared.nests);
-    let newEscrow = false;
-    if (!pending && approved) {
-      this.clearEscrow(args.serder, true);
-      for (const [node, record] of registryStates) this.hby.db.exrs.pin([said, node], record);
-      this.logAcceptedEvent({
-        serder: args.serder,
-        ...approved.retained,
-        supplemental: approved.supplemental,
-        ptds: args.ptds ?? [],
-      });
-    } else {
-      const factors = approved?.retained ?? resolved;
-      newEscrow = missingSchema === undefined
-        ? this.escrowPartialSigned(args.serder, factors, args.ptds ?? [])
-        : this.escrowMissingSchema(args.serder, missingSchema, factors, args.ptds ?? []);
-    }
-    // False means an existing qualified member, not a failed write. Exceptions abort the writer.
-    for (const texter of args.essrs ?? []) this.hby.db.essrs.add([said], texter);
-    const meta = {
+    const meta: ExchangeRecordShape = {
       mailboxAid,
       ...(receiverTime !== undefined ? { receiverTime } : {}),
       gvrsn: previous?.gvrsn ?? args.gvrsn ?? args.serder.gvrsn ?? args.serder.pvrsn,
       ...(retained ? { retained } : {}),
     };
-    // A retry that learns nothing new leaves the stored record as it is rather than committing it again.
-    if (
-      !previous || previous.mailboxAid !== meta.mailboxAid || previous.receiverTime !== meta.receiverTime
-      || JSON.stringify(previous.gvrsn) !== JSON.stringify(meta.gvrsn) || (previous.retained === true) !== retained
-    ) {
-      this.hby.db.exchangeMeta.pin([said], meta);
+    return {
+      kind: "stage",
+      stage: {
+        input: args,
+        prepared,
+        resolved,
+        approved,
+        pending,
+        registryStates,
+        missingSchema,
+        needsProof,
+        senderQuery,
+        retainedIpex: args.serder.pvrsn.major === 2 && nestedIpexRoute(args.serder.route ?? ""),
+        meta,
+        // A retry that learns nothing new leaves the stored record as it is rather than committing it again.
+        metaChanged: !previous || previous.mailboxAid !== meta.mailboxAid || previous.receiverTime !== meta.receiverTime
+          || JSON.stringify(previous.gvrsn) !== JSON.stringify(meta.gvrsn) || (previous.retained === true) !== retained,
+        handling: retained ? { ...handling, retained } : handling,
+      },
+    };
+  }
+
+  /** Write one staged attempt's evidence, escrow or acceptance, and report the cues it raises. */
+  private persistStage(stage: ExchangeStage): ExchangeAdmission {
+    const { input, pending, approved, missingSchema } = stage, db = this.hby.db, said = input.serder.said!;
+    const cues: AgentCue[] = [];
+    if (stage.prepared.nests && !(stage.retainedIpex && this.complete(said))) {
+      publishNests(db, said, stage.prepared.nests);
     }
+    let newEscrow = false;
+    if (!pending && approved) {
+      this.clearEscrow(input.serder, true);
+      for (const [node, record] of stage.registryStates) db.exrs.pin([said, node], record);
+      this.logAcceptedEvent({
+        serder: input.serder,
+        ...approved.retained,
+        supplemental: approved.supplemental,
+        ptds: input.ptds ?? [],
+      });
+    } else {
+      const factors = approved?.retained ?? stage.resolved;
+      newEscrow = missingSchema === undefined
+        ? this.escrowPartialSigned(input.serder, factors, input.ptds ?? [])
+        : this.escrowMissingSchema(input.serder, missingSchema, factors, input.ptds ?? []);
+    }
+    // False means an existing qualified member, not a failed write. Exceptions abort the writer.
+    for (const texter of input.essrs ?? []) db.essrs.add([said], texter);
+    if (stage.metaChanged) db.exchangeMeta.pin([said], stage.meta);
     if (pending) {
       if (newEscrow) {
-        if (senderQuery) cues.push(...this.missingStateCues([senderQuery]));
-        if (needsProof) cues.push({ kin: "proof", said });
+        if (stage.senderQuery) cues.push(...this.missingStateCues([stage.senderQuery]));
+        if (stage.needsProof) cues.push({ kin: "proof", said });
         if (missingSchema) cues.push({ kin: "query", q: { r: "schema", said: missingSchema } });
       }
       return { decision: pending, cues };
     }
-    return { decision: { kind: "accept", said }, cues, handling: retained ? { ...handling, retained } : handling };
+    return { decision: { kind: "accept", said }, cues, handling: stage.handling };
   }
 
   /** Retry escrows using ordinary LMDB evidence and retained mailbox provenance. */
