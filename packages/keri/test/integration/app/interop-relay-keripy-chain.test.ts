@@ -15,11 +15,11 @@
  *
  * The helpers up to `groupReceives` are copied from interop-relay-keripy.test.ts so that file stays as it is.
  */
+import { runHostKernel } from "@keri-ts/hosting";
 import { collectPayload, concatBytes, MtrDex, nestedPayload, parseBytes, type Siger, Signer, Vrsn_2_0 } from "cesr-ts";
 import { call, ensure, type Operation, run, sleep, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { runHostKernel } from "@keri-ts/hosting";
 import { createHabery } from "keri-ts/db/lmdb";
 import {
   AcdcV2Regery as Regery,
@@ -53,8 +53,8 @@ import {
   waitForGroupIpex,
   waitForPresentation,
 } from "keri-ts/runtime";
-import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import type { RegBaser } from "../../../src/acdc/regbasing.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { loadNests } from "../../../src/db/exchange/exchange-nests.ts";
 import { openLmdbRegistry } from "../../../src/db/lmdb-stores.ts";
 import {
@@ -133,7 +133,7 @@ function* stores(name: string): Operation<Stores> {
     skipSignator: true,
   });
   const baser = yield* openLmdbRegistry({ name: `${name}-${crypto.randomUUID()}`, temp: true });
-  yield* ensure(function* () {
+  yield* ensure(function*() {
     yield* hby.close(true);
     yield* baser.close(true);
   });
@@ -321,7 +321,7 @@ function* startAgent(): Operation<Agent> {
       serviceHab: hab,
       http: { port, hostname: "127.0.0.1", onListen: () => listening.resolve() },
       protocolPolicy: {},
-      companionHosts: [function* (runtime) {
+      companionHosts: [function*(runtime) {
         hosted = runtime;
         yield* suspend();
       }],
@@ -492,7 +492,7 @@ function* transferredView(party: Party, grant: string): Operation<Uint8Array> {
 /** The single-sig edge receives a private v2 credential from the KERIpy peer (Grant, Admit), as in the existing file. */
 function* singleSigHolds(py: KeriPyRelayPeer): Operation<Held> {
   let issued: PeerIssued | undefined;
-  const party = yield* singleSigRelay(py, function* (edge) {
+  const party = yield* singleSigRelay(py, function*(edge) {
     issued = yield* call(() => py.issue(edge.pre!, "private"));
   });
   const grant = yield* call(() => py.grant());
@@ -509,7 +509,7 @@ function* singleSigHolds(py: KeriPyRelayPeer): Operation<Held> {
 /** The group receives a private v2 credential from the KERIpy peer (Grant, group Admit), as in the existing file. */
 function* groupHolds(py: KeriPyRelayPeer): Operation<Held> {
   let issued: PeerIssued | undefined;
-  const party = yield* groupRelay(py, function* (group) {
+  const party = yield* groupRelay(py, function*(group) {
     issued = yield* call(() => py.issue(group.pre!, "private"));
   });
   const { agent, edge, hab: group } = party;
@@ -681,15 +681,15 @@ function* spurnedApply(
 
 Deno.test("relay single-sig and KERIpy candidate complete the whole IPEX chain", async () => {
   await withKeriPyPeer((py) =>
-    run(function* () {
+    run(function*() {
       const held = yield* singleSigHolds(py);
       const { party, transferred } = held;
       const presentation = party.edge.runtime.operations!.presentation;
       const selection = { transferred, presenterAuthorized: true };
-      yield* wholeChain(py, held, function* (apply) {
+      yield* wholeChain(py, held, function*(apply) {
         const options = { priorSaid: apply, recipient: py.pre, message: "Relay offer" };
         return (yield* present(presentation, { verb: "offer", hab: party.hab, selection, options })).said;
-      }, function* (agree) {
+      }, function*(agree) {
         const options = { priorSaid: agree, recipient: py.pre, message: "Relay grant" };
         const { said } = yield* present(presentation, { verb: "grant", hab: party.hab, selection, options });
         const delivered = yield* waitForPresentation(presentation, said, { timeoutMs: BUDGET_MS });
@@ -702,20 +702,20 @@ Deno.test("relay single-sig and KERIpy candidate complete the whole IPEX chain",
 
 Deno.test("relay group and KERIpy candidate complete the whole IPEX chain", async () => {
   await withKeriPyPeer((py) =>
-    run(function* () {
+    run(function*() {
       const held = yield* groupHolds(py);
       const { party, transferred } = held;
       const { groupIpex, presentation } = party.edge.runtime.operations!;
       const selection = { transferred, presenterAuthorized: true };
       // The edge member's weight satisfies the group's threshold: the weight-0 custodian approves nothing.
-      const accepted = function* (said: string) {
+      const accepted = function*(said: string) {
         assertEquals(
           (yield* waitForGroupIpex(groupIpex, said, { timeoutMs: BUDGET_MS })).status,
           { state: "done", phase: "accepted" },
         );
         return said;
       };
-      yield* wholeChain(py, held, function* (apply) {
+      yield* wholeChain(py, held, function*(apply) {
         const options = { priorSaid: apply, recipient: py.pre, message: "Relay group offer" };
         const { said } = yield* proposeGroupNegotiation(presentation.deps, groupIpex, {
           verb: "offer",
@@ -724,7 +724,7 @@ Deno.test("relay group and KERIpy candidate complete the whole IPEX chain", asyn
           options,
         });
         return yield* accepted(said);
-      }, function* (agree) {
+      }, function*(agree) {
         const options = { priorSaid: agree, recipient: py.pre, message: "Relay group grant" };
         const { said } = yield* proposeGroupPresentation(presentation.deps, groupIpex, {
           hab: party.hab,
@@ -739,14 +739,14 @@ Deno.test("relay group and KERIpy candidate complete the whole IPEX chain", asyn
 
 Deno.test("an Apply answered with a Spurn ends the exchange", async () => {
   await withKeriPyPeer((py) =>
-    run(function* () {
+    run(function*() {
       let schema = "";
-      const party = yield* singleSigRelay(py, function* (edge) {
+      const party = yield* singleSigRelay(py, function*(edge) {
         // A signed credential gives the Apply a real schema; nothing is disclosed before the Spurn.
         schema = (yield* call(() => py.issue(edge.pre!, "signed"))).schema;
       });
       const presentation = party.edge.runtime.operations!.presentation;
-      yield* spurnedApply(py, party, schema, function* (schema) {
+      yield* spurnedApply(py, party, schema, function*(schema) {
         const options = { recipient: py.pre, message: "Relay apply", plan: [[schema, "/", []]] as const };
         const { said } = yield* present(presentation, { verb: "apply", hab: party.hab, options });
         return said;
@@ -757,13 +757,13 @@ Deno.test("an Apply answered with a Spurn ends the exchange", async () => {
 
 Deno.test("a group's Apply answered with a Spurn ends the exchange", async () => {
   await withKeriPyPeer((py) =>
-    run(function* () {
+    run(function*() {
       let schema = "";
-      const party = yield* groupRelay(py, function* (group) {
+      const party = yield* groupRelay(py, function*(group) {
         schema = (yield* call(() => py.issue(group.pre!, "signed"))).schema;
       });
       const { groupIpex, presentation } = party.edge.runtime.operations!;
-      yield* spurnedApply(py, party, schema, function* (schema) {
+      yield* spurnedApply(py, party, schema, function*(schema) {
         const options = { recipient: py.pre, message: "Relay group apply", plan: [[schema, "/", []]] as const };
         const { said } = yield* proposeGroupNegotiation(presentation.deps, groupIpex, {
           verb: "apply",
