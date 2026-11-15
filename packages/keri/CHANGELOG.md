@@ -1,5 +1,29 @@
 # keri-ts
 
+## 2.2.7
+
+### Patch Changes
+
+- 2e403e5: A pending exchange no longer opens an LMDB write transaction on each escrow retry. The `Exchanger` now decides an
+  admission attempt by reads first (`decide`) and persists it separately (`persist`). A retry that is still waiting on
+  the same dependency, finds the exchange gone, or is rejected with its escrow kept answers without a writer. A decision
+  that does write is reused inside the writer when no commit came between, and made again when one did. What is accepted,
+  escrowed or rejected, the cues emitted and the deadlines are unchanged. An idle runtime holding a pending IPEX Grant
+  no longer re-runs its escrow pass every tock.
+- 702813f: The LMDB backend now depends on `@keri-ts/lmdb-js` 3.5.10-v1.2 instead of `lmdb` 3.5.3. It is lmdb-js 3.5.10
+  compiled for LMDB 0.9.29 (data format version 1, the format KERIpy reads), N-API only, with the environment close
+  fix (kriszyp/lmdb-js#388), and it ships prebuilt binaries for linux-x64 and linux-arm64 (glibc and musl, so Alpine
+  works) and darwin-arm64, so installing keri-ts compiles nothing. Node and Deno consumers previously got the stock `lmdb` addon,
+  which writes data format version 2, unless they rebuilt it: stores written that way cannot be opened by this release
+  (LMDB crashes the process on a format mismatch), so start from fresh stores. The in-place rebuild
+  (`setup:compat-lmdb`, `setup_lmdb_v1.sh` and its close patch) is removed.
+- 028028d: An idle agent runtime no longer opens LMDB write transactions. Work-finding passes now read first and open a
+  writer only for rows that will change: TEL publication advance, KRAM pruning, exchange escrow expiry, KEL escrow
+  replay of an escrow that is still waiting, and the no-op keeper encryption change. `LMDBer` answers `putVal`
+  of an existing row, `delVal` of an absent row or duplicate, and `putVals` of stored duplicates from a read.
+  `writeActivity` now counts the write transactions a handle opened.
+- 959fbe5: Creating a store now makes all of its named tables in one write transaction instead of one synced commit per table. A fresh agent keystore and runtime drop from 191 synced commits to 24, and reopening drops from 173 clean commits to 6. A crash during first creation leaves a store with all of its tables or none, and the next open completes it. Key creation and other data writes are unchanged.
+
 ## 2.2.6
 
 ### Patch Changes
