@@ -21,11 +21,10 @@ env:
   KERIPY_INTEROP_ROOT: ${{ github.workspace }}/.cache/keripy-mailbox-main
   KERIPY_INTEROP_PYTHON: ${{ github.workspace }}/.cache/keripy-venv/bin/python
   KERIPY_VENV: ${{ github.workspace }}/.cache/keripy-venv
-  LMDB_DATA_V1: "true"
   NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
-  DEPS_CACHE_KEY_PREFIX: ci-deps-v3
-  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v2
+  DEPS_CACHE_KEY_PREFIX: ci-deps-v4
+  INTEROP_NODE_MODULES_CACHE_KEY_PREFIX: interop-node-modules-v3
   KERIPY_CACHE_KEY_PREFIX: keripy-mailbox-source-v1
 
 jobs:
@@ -61,28 +60,24 @@ jobs:
           path: |
             ${{ env.DENO_DIR }}
             node_modules
-          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('packages/keri/scripts/setup_lmdb_v1.sh', 'deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          key: ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.DEPS_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-
 
       - name: restore interop LMDB node_modules cache
         id: interop-node-modules-cache
         # The shared deps cache is only bootstrap state. macOS interop runs
-        # need a dedicated node_modules cache saved after `deno task setup`
-        # rebuilds LMDB-js with the required v1 data format.
+        # keep a dedicated node_modules cache holding the prebuilt data-v1
+        # @keri-ts/lmdb-js platform package.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules
-          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('packages/keri/scripts/setup_lmdb_v1.sh', 'deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
+          key: ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-${{ hashFiles('deno.lock', 'deno.json', 'dprint.json', 'package-lock.json', 'packages/keri/deno.json', 'packages/cesr/deno.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ env.INTEROP_NODE_MODULES_CACHE_KEY_PREFIX }}-deno-${{ env.DENO_VERSION }}-node-${{ env.NODE_VERSION }}-lmdb-data-v1-napi-
 
-      - name: verify or rebuild LMDB-js data v1 and NAPI compatibility
-        run: |
-          if [[ "${{ steps.interop-node-modules-cache.outputs.cache-hit }}" != "true" ]] || ! deno run -A scripts/ci/report-lmdb-runtime.ts; then
-            deno task setup:compat-lmdb
-            deno run -A scripts/ci/report-lmdb-runtime.ts
-          fi
+      - name: verify the prebuilt LMDB-js data v1 N-API addon
+        run: bash scripts/ci/ensure-lmdb-addon.sh "${{ steps.interop-node-modules-cache.outputs.cache-hit }}"
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:

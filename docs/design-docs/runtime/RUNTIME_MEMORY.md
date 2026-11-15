@@ -47,8 +47,8 @@ measured workload that requires it. Standalone package launchers do not download
 custom runtime or alter the operator's `NODE_OPTIONS`.
 
 Native compatibility must be qualified on the actual runtime and architecture.
-Keep the LMDB data-v1/NAPI rebuild (`LMDB_DATA_V1=true`,
-`ENABLE_V8_FUNCTIONS=false`); loading an addon is insufficient proof. Package CI
+Keep the data-v1 N-API addon of `@keri-ts/lmdb-js` (LMDB 0.9.29, V8 API off);
+loading an addon is insufficient proof. Package CI
 runs the existing large-row/read/reopen, source-byte ownership, signing, transport,
 declaration and hosted CLI checks on the pinned caged image. The same checks on
 an official runtime still matter. Neither generic N-API compatibility claims nor

@@ -59,7 +59,7 @@ const BUNDLED_WORKSPACE_SOURCE_PATTERNS = [
   "/observer/src/",
 ];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
-  "lmdb",
+  "@keri-ts/lmdb-js",
   "@noble/curves",
   "@noble/hashes",
   "ajv",

@@ -327,7 +327,7 @@ function normalizeBuiltManifest(): void {
 }
 
 /**
- * Select LMDB 3.5.3's valid CommonJS declarations for published type-only imports.
+ * Select lmdb-js's valid CommonJS declarations for published type-only imports.
  * Its ESM declaration uses export assignment; DNT omits source resolution
  * attributes. Normalize emitted declarations without changing runtime bindings.
  */
@@ -336,7 +336,7 @@ function normalizeLmdbDeclarations(): void {
     if (!path.endsWith(".d.ts")) continue;
     const source = Deno.readTextFileSync(path);
     const normalized = source.replace(
-      /(import type\s+\{[^}]+\}\s+from "lmdb")\s*;/g,
+      /(import type\s+\{[^}]+\}\s+from "@keri-ts\/lmdb-js")\s*;/g,
       "$1 with { \"resolution-mode\": \"require\" };",
     );
     if (normalized !== source) Deno.writeTextFileSync(path, normalized);
@@ -354,7 +354,7 @@ function pruneBundledCesr(): void {
   }
 }
 
-// Avoid running native install scripts (for example lmdb build) during packaging.
+// Avoid running native install scripts (for example the lmdb-js source fallback) during packaging.
 setIgnoreScriptsDefault();
 
 await emptyDir(OUT_DIR);

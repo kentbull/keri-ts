@@ -1,6 +1,6 @@
 name: Warm CI dependencies
 
-# Saves the shared dependency cache (Deno cache and node_modules with the rebuilt KERI LMDB addon) on
+# Saves the shared dependency cache (Deno cache and node_modules with the prebuilt KERI LMDB addon) on
 # master, the one scope every pull request, stage-gate dispatch and release run can restore. The key
 # (scripts/ci/deps-cache-key.ts) ignores versions and source, so the entry saved for a Version Packages
 # commit is the one its release tags restore. A run whose key already exists only verifies the addon.
@@ -22,7 +22,6 @@ env:
   DENO_VERSION:   "2.9.8"
   NODE_VERSION:   "25.9.0"
   PYTHON_VERSION: "3.14"
-  LMDB_DATA_V1:   "true"
 
 jobs:
   warm:

@@ -1,14 +1,14 @@
 # Common Deno/Node setup for CI and release jobs, around one shared dependency cache.
 #
-# The cache holds the Deno cache and node_modules with the LMDB-js addon already rebuilt for KERI. Its key
-# (scripts/ci/deps-cache-key.ts) changes only when dependencies, the LMDB build, the runtimes or the runner
-# platform change, so Warm, the PR stage gate and the release workflows all restore the same entry and an
-# exact hit installs and compiles nothing.
+# The cache holds the Deno cache and node_modules, including the prebuilt data-v1 addon of @keri-ts/lmdb-js.
+# Its key (scripts/ci/deps-cache-key.ts) changes only when dependencies, the runtimes or the runner platform
+# change, so Warm, the PR stage gate and the release workflows all restore the same entry and an exact hit
+# installs nothing.
 #
 # Scripts run from this action's own repository copy (for a release, the tooling checked out beside the tag),
 # against the checkout in the working directory. Procedure: docs/versioning/release-versioning.md.
 name: "Common CI Setup"
-description: "Deno/Node setup, shared dependency cache, install on a miss, optional LMDB addon and fmt check."
+description: "Deno/Node setup, shared dependency cache, install on a miss, optional LMDB addon gate and fmt check."
 
 inputs:
   do-fmt-check:
@@ -16,7 +16,7 @@ inputs:
     required:    false
     default:     "true"
   lmdb:
-    description: "Whether the job loads the KERI LMDB addon: verify it, rebuild on a miss, and save the entry"
+    description: "Whether the job loads the KERI LMDB addon: verify it, install on a miss, and save the entry"
     required:    false
     default:     "false"
 
@@ -63,13 +63,13 @@ runs:
         EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
       run:   bash scripts/ci/assert-environment.sh
 
-    # A hit is only checked; a miss rebuilds. Either way the checkout's report-lmdb-runtime gate must pass.
-    - name:  verify or rebuild the KERI LMDB addon
+    # A hit is only checked; a miss installs. Either way the checkout's report-lmdb-runtime gate must pass.
+    - name:  verify the KERI LMDB addon
       if:    inputs.lmdb == 'true'
       shell: bash
       run:   bash "$GITHUB_ACTION_PATH/../../../scripts/ci/ensure-lmdb-addon.sh" "${{ steps.deps-cache.outputs.cache-hit }}"
 
-    # Only an entry with the rebuilt addon is saved, and only from a branch run: a tag or pull-request run
+    # Only an entry with the verified addon is saved, and only from a branch run: a tag or pull-request run
     # saves into a scope no later run reads (master's entries, from Warm, are what releases restore).
     - name: save the shared dependency cache
       if:   inputs.lmdb == 'true' && steps.deps-cache.outputs.cache-hit != 'true' && startsWith(github.ref, 'refs/heads/')

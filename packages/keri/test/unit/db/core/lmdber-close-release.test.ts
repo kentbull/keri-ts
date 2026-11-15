@@ -1,9 +1,9 @@
 /**
  * Closing an LMDB store must release its native file descriptors and mappings.
  *
- * lmdb-js 3.5.3 built with LMDB_DATA_V1 never called mdb_env_close(), so each
- * close leaked lock.mdb, two data.mdb descriptors and both maps (see
- * scripts/lmdb/env-close-data-v1.patch). The probe counts only descriptors and
+ * Data-v1 lmdb-js builds without kriszyp/lmdb-js#388 never called
+ * mdb_env_close(), so each close leaked lock.mdb, two data.mdb descriptors and
+ * both maps; @keri-ts/lmdb-js carries that fix. The probe counts only descriptors and
  * mappings under this test's own directory, so other test files sharing the
  * process cannot disturb it. It reads /proc/self, so it runs on Linux only.
  */

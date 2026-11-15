@@ -13,7 +13,7 @@ mailbox extensions are absent from unmodified upstream.
 
 ## Commands and ownership
 
-Run these commands from the repository root after `deno task setup:compat-lmdb`:
+Run these commands from the repository root after `deno install`:
 
 | Command                        | Coverage                                                                                                           |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
@@ -182,10 +182,8 @@ For the maintained mailbox-on-main qualification, select its exact checkout and 
 export KERIPY_INTEROP_ROOT=/Users/kbull/enc/keri/worktrees/keripy/mailbox-impl
 export KERIPY_INTEROP_EXPECTED_COMMIT=$(node -p 'require("./scripts/ci/keripy-reference.json").commit')
 export KERIPY_INTEROP_PYTHON="$KERIPY_INTEROP_ROOT/venv/bin/python"
-export LMDB_DATA_V1=true
 export KERI_TEST_TIMINGS_DIR=/tmp/keri-mailbox-main-qualification
 
-deno task setup:compat-lmdb
 deno task test:qualification
 ```
 
@@ -205,6 +203,6 @@ probe checks resolver HEAD and actual `dws` import path and records the embedded
 KERI runtime and dependency versions separately. Selecting
 the mailbox-on-main fork for KLI does **not** upgrade or establish that fork's compatibility for the
 resolver's embedded dependency. Preserve this limitation in qualification
-reports. Runtime setup also requires libsodium and a checkout-local LMDB addon
-built with `LMDB_DATA_V1=true`; missing native setup is an environment failure,
-not a protocol regression.
+reports. Runtime setup also requires libsodium and the installed data-v1 addon of
+`@keri-ts/lmdb-js`; missing native setup is an environment failure, not a protocol
+regression.

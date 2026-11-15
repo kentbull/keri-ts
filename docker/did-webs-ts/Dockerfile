@@ -37,11 +37,11 @@ COPY docker/did-webs-ts/run-interop.sh /usr/local/bin/did-webs-ts-interop
 
 RUN chmod +x /usr/local/bin/did-webs-ts-interop
 RUN npm ci --ignore-scripts
-RUN npm install -g node-gyp
-RUN cd packages/keri && deno task setup:compat-lmdb
 RUN deno cache --unstable-ffi \
   packages/tufa/mod.ts \
   packages/keri/test/integration/app/interop-did-webs-resolver-matrix.test.ts
+# @keri-ts/lmdb-js ships the data-v1 addon prebuilt; fail the image if it is not the one loaded.
+RUN deno run -A scripts/ci/report-lmdb-runtime.ts
 
 FROM base AS runtime
 

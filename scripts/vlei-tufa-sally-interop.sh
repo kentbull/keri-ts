@@ -266,7 +266,7 @@ start_tool_containers() {
   docker exec "${TUFA_CONTAINER}" mkdir -p "${TUFA_REPO_DIR}" "${RUN_DIR}"
   git -C "${ROOT_DIR}" archive --format=tar HEAD | docker exec -i "${TUFA_CONTAINER}" tar -x -C "${TUFA_REPO_DIR}"
   in_tufa deno install >/dev/null 2>&1 || true
-  run in_tufa deno task setup:compat-lmdb
+  run in_tufa deno run -A scripts/ci/report-lmdb-runtime.ts
 }
 
 start_bg() {

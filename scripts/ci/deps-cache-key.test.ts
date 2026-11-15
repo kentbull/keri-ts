@@ -1,7 +1,7 @@
 import { assertEquals, assertNotEquals } from "jsr:@std/assert";
-import { cacheKey, type Files, type KeyInputs, lmdbHelperDir, readFiles } from "./deps-cache-key.ts";
+import { cacheKey, type Files, type KeyInputs, readFiles } from "./deps-cache-key.ts";
 
-/** The repository's own manifests, locks and LMDB build scripts, read from the checkout under test. */
+/** The repository's own manifests and locks, read from the checkout under test. */
 const repo: Files = await readFiles();
 
 function inputs(files: Files): KeyInputs {
@@ -9,7 +9,6 @@ function inputs(files: Files): KeyInputs {
     files,
     denoVersion: "2.9.8",
     nodeVersion: "25.9.0",
-    lmdbDataV1: true,
     os: "Linux",
     arch: "X64",
     platform: "ubuntu26\ng++ 15",
@@ -84,9 +83,11 @@ Deno.test("a dependency change alters the key", async () => {
   };
   assertNotEquals(relocked["deno.lock"], repo["deno.lock"]);
   assertNotEquals(await key(relocked), await key(repo));
-  const lmdbPin = editJson(repo, "package.json", (json) => {
-    (json.dependencies as Record<string, string>).lmdb = "git+https://github.com/kentbull/lmdb-js.git#0000000";
-  });
+  const lmdbPin = {
+    ...repo,
+    "deno.lock": repo["deno.lock"]!.replaceAll("@keri-ts/lmdb-js@3.5.10-v1.2", "@keri-ts/lmdb-js@3.5.10-v1.3"),
+  };
+  assertNotEquals(lmdbPin["deno.lock"], repo["deno.lock"]);
   assertNotEquals(await key(lmdbPin), await key(repo));
   const imported = editJson(repo, "deno.json", (json) => {
     (json.imports as Record<string, string>)["effection"] = "npm:effection@^4.0.0";
@@ -94,19 +95,12 @@ Deno.test("a dependency change alters the key", async () => {
   assertNotEquals(await key(imported), await key(repo));
 });
 
-Deno.test("the LMDB build scripts, runtimes, flag and platform are part of the key", async () => {
+Deno.test("the runtimes and platform are part of the key", async () => {
   const base = await key(repo);
-  const setup = "packages/keri/scripts/setup_lmdb_v1.sh";
-  assertNotEquals(await key({ ...repo, [setup]: repo[setup] + "\n# changed\n" }), base);
-  const helper = Object.keys(repo).find((path) => path.startsWith(`${lmdbHelperDir}/`))!;
-  assertNotEquals(await key({ ...repo, [helper]: repo[helper] + "\n// changed\n" }), base);
-  const gate = "scripts/ci/report-lmdb-runtime.ts";
-  assertNotEquals(await key({ ...repo, [gate]: repo[gate] + "\n// changed\n" }), base);
   for (
     const change of [
       { denoVersion: "2.9.9" },
       { nodeVersion: "25.9.1" },
-      { lmdbDataV1: false },
       { arch: "ARM64" },
       { platform: "ubuntu26\ng++ 16" },
     ]
@@ -119,5 +113,5 @@ Deno.test("the restore prefix keeps platform and runtimes and drops only the dep
   const { key: exact, restorePrefix } = await cacheKey(inputs(repo));
   assertEquals(exact.startsWith(restorePrefix), true);
   assertEquals(/^[0-9a-f]{32}$/.test(exact.slice(restorePrefix.length)), true);
-  assertEquals(restorePrefix.includes("-deno-2.9.8-node-25.9.0-lmdb-data-v1-"), true);
+  assertEquals(restorePrefix.endsWith("-deno-2.9.8-node-25.9.0-"), true);
 });

@@ -11,14 +11,10 @@ import {
   type ScenarioContext,
 } from "./interop-keystore-helpers.ts";
 
-import { ensureCompatLmdbBuild } from "../../../test/utils.ts";
-
 /** Read the same persisted KERIpy store through Tufa compatibility paths. */
 async function runKliCompatStoreOpen(
   ctx: ScenarioContext,
 ): Promise<void> {
-  await ensureCompatLmdbBuild(ctx.packageRoot);
-
   const alias = "interop-aid";
   const passcode = "MyPasscodeARealSecret";
   const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";

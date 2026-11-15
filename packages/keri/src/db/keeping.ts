@@ -10,8 +10,8 @@ import {
   type Tier,
   Verfer,
 } from "cesr-ts";
+import type { Database } from "npm:@keri-ts/lmdb-js@3.5.10-v1.2";
 import { type Operation } from "npm:effection@^3.6.0";
-import type { Database } from "npm:lmdb@3.5.3";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { GroupMemberTuple, RawRecord } from "../core/records.ts";
 import type { DBer, StoreIdentity } from "./core/dber.ts";

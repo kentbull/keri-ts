@@ -26,7 +26,6 @@ env:
   DENO_DIR:     ${{ github.workspace }}/.deno-cache
   DENO_VERSION: "2.9.8"
   NODE_VERSION: "25.9.0"
-  LMDB_DATA_V1: "true"
 
 jobs:
   # Decide before any runner builds: a recorded green stage-gate run on this exact content covering the
@@ -86,7 +85,7 @@ jobs:
         with:
           python-version: "3.14"
 
-      # The shared dependency cache already holds the rebuilt LMDB addon; a miss rebuilds it here.
+      # The shared dependency cache already holds the prebuilt LMDB addon; a miss installs it here.
       - uses: ./.release-tooling/.github/actions/common-release-setup
         with:
           do-fmt-check: "false"

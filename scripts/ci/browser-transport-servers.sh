@@ -50,7 +50,7 @@ up() {
   git ls-files -co --exclude-standard | tar -cf - -T - | docker run --rm -i -v "$VOLUME":/work \
     -e DENO_DIR=/work/deno-cache "$TS_IMAGE" bash -c '
       mkdir -p /work/repo && tar xf - -C /work/repo && cd /work/repo
-      [ -d node_modules/lmdb ] || { deno install || true; deno task setup:compat-lmdb; } >&2' >&2
+      deno install >&2' >&2
 
   docker run -d --name keri-transport-witness --init -p 127.0.0.1:$WITNESS_HTTP:$WITNESS_HTTP \
     -v "$VOLUME":/work -v keri-interop-keripy:/k:ro -v keri-interop-venvs:/v:ro \

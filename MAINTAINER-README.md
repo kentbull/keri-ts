@@ -24,28 +24,20 @@ Use the checked-in `.tool-versions` file for local maintainer work:
 Local tooling and CI select Deno `2.9.8` and Node `25.9.0`. Deno 2.8.2 fails
 the configured HTTPS wrong-CA control after a valid connection; 2.9.8 rejects
 that connection. See the [configured-source boundary](docs/reference/compatibility/KERI_V1_V2_COMPATIBILITY.md#comp-02--detached-and-full-body-http-framing).
-Record the actual runtime when comparing results: the native `lmdb-js` addon is
-rebuilt with `LMDB_DATA_V1=true`, and its behavior has been sensitive to runtime
-drift.
+Record the actual runtime when comparing results: the native LMDB addon's
+behavior has been sensitive to runtime drift.
 
-Local macOS note:
+LMDB note:
 
-- `packages/keri/scripts/setup_lmdb_v1.sh` rebuilds the local `lmdb` package
-  trees that Node or Deno actually load: top-level `node_modules/lmdb` and the
-  `.deno/.../node_modules/lmdb` copy Deno resolves for the pinned `npm:lmdb`,
-  each compiled once by real path (the top-level tree is often a symlink to it)
-- this is an addon-provenance safeguard, not a global-install requirement: Deno
-  may resolve `npm:lmdb` from its shadow package tree under
-  `node_modules/.deno/...`, and that tree can otherwise keep using an optional
-  prebuilt native addon even after top-level `node_modules/lmdb` has been
-  rebuilt successfully
-- the script intentionally resolves `npm:lmdb` through Deno itself so the
-  runtime-selected package directory is materialized and rebuilt, not just the
-  package directory we assume should be used
-- Run `deno task setup:compat-lmdb` explicitly before compat-dependent tests;
-  the test runner never mutates native dependency builds.
-- the dependency is upstream `lmdb@3.5.3`; do not restore the retired fork or
-  cleanup-hook patch
+- the dependency is `@keri-ts/lmdb-js` (kentbull/lmdb-js, branch `data-v1`):
+  lmdb-js compiled for LMDB 0.9.29 (data format v1, what KERIpy reads), N-API
+  only, with the upstream close fix (kriszyp/lmdb-js#388). Its platform
+  packages ship the addon prebuilt, so `deno install` compiles nothing and no
+  install script needs to run
+- `scripts/ci/report-lmdb-runtime.ts` proves which addon loaded and that it
+  writes data version 1; do not rebuild lmdb-js in place
+- retire the fork package and return to upstream `lmdb` once upstream ships the
+  close fix in a data-v1 release
 - if the macOS data-v1 lock path still fails with `ENOSPC`, treat it as a host
   OS/resource-exhaustion problem to document separately, not as justification
   for weakening LMDB locking semantics in `keri-ts`
@@ -98,9 +90,6 @@ bash scripts/smoke-test-package-npm.sh hosting packages/hosting/npm/keri-ts-host
 
 ## Deno global install notes for tufa
 
-Before rebuilding LMDB locally with `deno task setup`, make sure your active
-`node` and `deno` binaries match the pinned versions above.
-
 When installing `tufa` directly from local source with Deno, allow scripts for
 native npm dependencies to avoid repeated warnings:
 
@@ -110,7 +99,7 @@ deno install --global \
   --lock "$(pwd)/deno.lock" \
   --frozen \
   --node-modules-dir=auto \
-  --allow-scripts=npm:cbor-extract,npm:lmdb,npm:msgpackr-extract \
+  --allow-scripts=npm:cbor-extract,npm:msgpackr-extract \
   --allow-all \
   --unstable-ffi \
   --name tufa \
