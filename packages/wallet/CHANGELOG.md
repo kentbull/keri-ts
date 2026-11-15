@@ -1,5 +1,16 @@
 # @keri-ts/wallet
 
+## 2.2.7
+
+### Patch Changes
+
+- 959fbe5: Creating a store now makes all of its named tables in one write transaction instead of one synced commit per table. A fresh agent keystore and runtime drop from 191 synced commits to 24, and reopening drops from 173 clean commits to 6. A crash during first creation leaves a store with all of its tables or none, and the next open completes it. Key creation and other data writes are unchanged.
+- Updated dependencies [2e403e5]
+- Updated dependencies [702813f]
+- Updated dependencies [028028d]
+- Updated dependencies [959fbe5]
+  - keri-ts@2.2.7
+
 ## 2.2.6
 
 ### Patch Changes
