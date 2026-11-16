@@ -1,5 +1,14 @@
 # @keri-ts/observer
 
+## 2.2.6
+
+### Patch Changes
+
+- Updated dependencies [8c347b8]
+  - keri-ts@2.2.8
+  - @keri-ts/hosting@2.2.8
+  - @keri-ts/registrar@2.2.6
+
 ## 2.2.5
 
 ### Patch Changes

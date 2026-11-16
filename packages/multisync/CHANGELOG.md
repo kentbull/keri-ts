@@ -1,5 +1,12 @@
 # @keri-ts/multisync
 
+## 0.2.5
+
+### Patch Changes
+
+- Updated dependencies [8c347b8]
+  - keri-ts@2.2.8
+
 ## 0.2.4
 
 ### Patch Changes
