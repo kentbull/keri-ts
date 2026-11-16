@@ -11,6 +11,7 @@ protocol, messenger, routing and lifetime behavior. The
 [reliability roadmap](plans/runtime/cue-reliability-roadmap.md) records deferred
 capabilities and their evidence requirements. Completed execution plans are removed;
 Git history and pull requests retain implementation history.
+The [browser IndexedDB format 2 guide](reference/compatibility/INDEXEDDB_FORMAT_2.md) covers upgrading stores.
 
 | Area                                           | Purpose                                           |
 | ---------------------------------------------- | ------------------------------------------------- |

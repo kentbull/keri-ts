@@ -497,6 +497,8 @@ export class Manager {
   private readonly held = new Map<string, Signer>();
 
   constructor(args: ManagerArgs) {
+    // Before any default pin below can write over lost state.
+    args.ks.assertInitialized();
     const {
       ks,
       seed = "",

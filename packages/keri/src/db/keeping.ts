@@ -12,7 +12,7 @@ import {
 } from "cesr-ts";
 import type { Database } from "npm:@keri-ts/lmdb-js@3.5.10-v1.2";
 import { type Operation } from "npm:effection@^3.6.0";
-import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
+import { DatabaseNotOpenError, DatabaseOperationError, MissingDurableStateError } from "../core/errors.ts";
 import { GroupMemberTuple, RawRecord } from "../core/records.ts";
 import type { DBer, StoreIdentity } from "./core/dber.ts";
 import type { LMDBerOptions } from "./core/lmdber.ts";
@@ -328,6 +328,37 @@ export class Keeper extends StoreOwner {
   /** Close the underlying keeper LMDB environment. */
   override *close(clear = false): Operation<boolean> {
     return yield* this.store.close(clear);
+  }
+
+  /**
+   * Fail closed when keeper tables hold rows but `gbls.aeid` is absent.
+   *
+   * `Manager` pins `pidx`, `algo`, `salt` and `tier` first and `setup()` writes `aeid` last, so a completed first
+   * initialization always has `aeid` before any other keeper table gets rows. Rows without `aeid` therefore mean
+   * durable state was lost, and re-initializing over the gap would pin defaults beside surviving rows and fail later
+   * with misleading errors. A store with no rows, or only some `gbls.` pins (a crash during first initialization),
+   * passes. `Manager` calls this first, also for readonly opens.
+   *
+   * This diverges from KERIpy, whose LMDB commits are ordered so a lost `aeid` with surviving rows is not an expected
+   * state. A browser store reloads from an engine's on-disk IndexedDB, where a partial load must stop the open.
+   */
+  assertInitialized(): void {
+    if (this.getGbls("aeid") !== null) return;
+    const tables = [
+      this.pris,
+      this.prms,
+      this.sits,
+      this.pubs,
+      this.pres,
+      this.prxs,
+      this.nxts,
+      this.rroots,
+      this.smids,
+      this.rmids,
+    ];
+    if (tables.some((table) => table.cnt() > 0)) {
+      throw new MissingDurableStateError("Keeper tables hold rows but gbls. has no aeid; repair or replace the store");
+    }
   }
 
   /**

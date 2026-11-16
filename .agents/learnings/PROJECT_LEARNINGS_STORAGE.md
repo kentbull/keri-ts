@@ -54,15 +54,17 @@ loading the durable prefix. `read(task)` runs in queue order and never latches; 
 reports `healthy`, `retrying` or `latched`. An unwritten table rides the next batch, or
 a table-only batch at `flushed` or `close`, so its dupsort flag persists.
 
-`IndexedDbPersistence` keeps all logical tables in one `rows` object store (keys
-`[table, key, valueOrEmpty]`, `ArrayBuffer` parts) plus a `meta` store, so a new table never needs
-a schema upgrade that another tab's open connection could block. A write is one strict
-`readwrite` transaction settled on `complete`; a request's `success` fires before the
-commit is final. `versionchange` closes the connection and the adapter then refuses
-`load` and `write` until a new `meta`, because writing on after another context deleted the
-database would break prefix durability. A blocked `deleteDatabase` stays pending in the
-browser, so `clear` rejects rather than hanging. `fake-indexeddb` honors all of this, but
-real-engine behavior (durability hints, eviction, blocked ordering) is only checked in PR 14.
+`IndexedDbPersistence` (format 2) keeps all logical tables in one `rows` object store plus a `meta` store, so a new
+table never needs a schema upgrade that another tab's open connection could block. Rule: no IndexedDB key contains a
+binary element, because WebKit's on-disk IndexedDB mis-reads a binary element of an array key that is not the last.
+Rows have string keys `${hex(key)}.${hex(dup)}.${table}` with `{t, k, v}` values, and `open()` loads everything with
+two unbounded `getAll()` calls; a row whose table has no record throws `MissingDurableStateError`, and `Manager`
+fails closed the same way when `gbls.aeid` is missing but other keeper tables have rows. Upgrading from format 1
+wipes the store. A write is one strict `readwrite` transaction settled on `complete`; a request's `success` fires
+before the commit is final. `versionchange` or an abnormal `close` leaves the adapter lost: `write` and every retry
+of it reject until a new `open`, because writing on after another context deleted the database would break prefix
+durability. A blocked `open` or `deleteDatabase` rejects rather than hanging. `fake-indexeddb` honors all of this,
+but real-engine behavior (durability hints, eviction, blocked ordering) is only checked in PR 14.
 It is public only as `keri-ts/db/indexeddb` (`IndexedDbPersistence`, `indexedDbOpener`), never from
 `keri-ts/db`, whose Node consumers must not type-check DOM types.
 

@@ -4,7 +4,7 @@ import { run } from "npm:effection@^3.6.0";
 import { DatabaseOperationError, PersistenceLatchedError, PersistenceReadError } from "../../../../src/core/errors.ts";
 import type { Table, TableEntry } from "../../../../src/db/core/dber.ts";
 import {
-  type PersistedMeta,
+  type PersistedStore,
   type Persistence,
   type PersistenceBatch,
   PersistenceQueue,
@@ -49,16 +49,16 @@ class FakePersistence implements Persistence {
     };
   }
 
-  meta(): Promise<PersistedMeta> {
+  /** Rows reversed, because an adapter owes no particular order. */
+  open(): Promise<PersistedStore> {
     return Promise.resolve({
       version: this.version,
-      tables: [...this.tables].map(([name, { dupsort }]) => ({ name, dupsort })),
+      tables: [...this.tables].map(([name, { dupsort, rows }]) => ({
+        name,
+        dupsort,
+        rows: [...rows.values()].reverse(),
+      })),
     });
-  }
-
-  /** Reversed, because an adapter owes no particular order. */
-  load(table: string): Promise<TableEntry[]> {
-    return Promise.resolve([...this.tables.get(table)!.rows.values()].reverse());
   }
 
   async write(batch: PersistenceBatch): Promise<void> {
@@ -746,7 +746,8 @@ Deno.test("WebDBer readonly opens a snapshot, refuses writes and persists nothin
 Deno.test("WebDBer refuses a persisted table that repeats a row", async () => {
   const persistence = new FakePersistence();
   persistence.tables.set("t.", { dupsort: false, rows: new Map() });
-  persistence.load = () => Promise.resolve([{ key: b("k"), value: b("1") }, { key: b("k"), value: b("2") }]);
+  const rows = [{ key: b("k"), value: b("1") }, { key: b("k"), value: b("2") }];
+  persistence.open = () => Promise.resolve({ version: null, tables: [{ name: "t.", dupsort: false, rows }] });
   await assertRejects(
     () => run(() => new WebDBer({}, persistence, new PersistenceQueue()).reopen()),
     DatabaseOperationError,

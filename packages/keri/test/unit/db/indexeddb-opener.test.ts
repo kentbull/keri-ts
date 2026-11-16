@@ -1,7 +1,7 @@
 import { b } from "cesr-ts";
 import { assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
-import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
+import { IDBFactory } from "npm:fake-indexeddb@6.2.5";
 import {
   indexedDbOpener,
   IndexedDbPersistence,
@@ -12,8 +12,6 @@ import {
 } from "../../../db-indexeddb.ts";
 import { PersistenceLatchedError } from "../../../src/core/errors.ts";
 import type { WebDBer } from "../../../src/db/core/webdber.ts";
-
-const keyRange = IDBKeyRange as unknown as typeof globalThis.IDBKeyRange;
 
 /** A single-process lock manager honouring exclusive + ifAvailable; `log` records grants and releases. */
 function fakeLocks(log: string[] = []): StoreLockManager & { held: Set<string> } {
@@ -44,7 +42,7 @@ async function open(opener: ReturnType<typeof indexedDbOpener>, tail: string): P
 Deno.test("indexedDbOpener persists per family across a close and a fresh opener", async () => {
   const factory = new IDBFactory() as unknown as IDBFactory;
   const locks = fakeLocks();
-  const first = indexedDbOpener({ factory, keyRange, locks });
+  const first = indexedDbOpener({ factory, locks });
   const db = await open(first, "db");
   const keeper = await open(first, "keeper");
   db.setVal(db.openTable("evts."), b("k"), b("db-value"));
@@ -54,7 +52,7 @@ Deno.test("indexedDbOpener persists per family across a close and a fresh opener
   await run(() => keeper.close());
 
   assertEquals(locks.held.size, 0);
-  const second = indexedDbOpener({ factory, keyRange, locks });
+  const second = indexedDbOpener({ factory, locks });
   const reopenedDb = await open(second, "db");
   const reopenedKeeper = await open(second, "keeper");
   assertEquals(reopenedDb.getVal(reopenedDb.openTable("evts."), b("k")), b("db-value"));
@@ -64,7 +62,7 @@ Deno.test("indexedDbOpener persists per family across a close and a fresh opener
 });
 
 Deno.test("indexedDbOpener builds an IndexedDbPersistence per family and identity", () => {
-  const opener = indexedDbOpener({ factory: new IDBFactory() as unknown as IDBFactory, keyRange });
+  const opener = indexedDbOpener({ factory: new IDBFactory() as unknown as IDBFactory });
   assertInstanceOf(opener.persistenceFor({ tail: "db" }, { name: "x" }), IndexedDbPersistence);
 });
 
@@ -84,7 +82,7 @@ function loggedFactory(log: string[], failOpen = false): IDBFactory {
 Deno.test("the first reopen takes the lock before anything loads; families share it; the last close releases it", async () => {
   const log: string[] = [];
   const locks = fakeLocks(log);
-  const opener = indexedDbOpener({ factory: loggedFactory(log), keyRange, locks });
+  const opener = indexedDbOpener({ factory: loggedFactory(log), locks });
   const db = await open(opener, "db");
   assertEquals(log.slice(0, 2), ["lock", "load"]);
   assertEquals([...locks.held], [identityKey]);
@@ -101,7 +99,7 @@ Deno.test("the first reopen takes the lock before anything loads; families share
 
 Deno.test("a failed first reopen releases the lock", async () => {
   const locks = fakeLocks();
-  const opener = indexedDbOpener({ factory: loggedFactory([], true), keyRange, locks });
+  const opener = indexedDbOpener({ factory: loggedFactory([], true), locks });
   const store = opener.create({ tail: "db" }, { name: "wallet" });
   await assertRejects(() => run(() => store.reopen()), Error, "open failed");
   assertEquals(locks.held.size, 0);
@@ -109,7 +107,7 @@ Deno.test("a failed first reopen releases the lock", async () => {
 
 Deno.test("close then reopen in one page re-acquires, and a close that fails still releases", async () => {
   const locks = fakeLocks();
-  const opener = indexedDbOpener({ factory: new IDBFactory() as unknown as IDBFactory, keyRange, locks });
+  const opener = indexedDbOpener({ factory: new IDBFactory() as unknown as IDBFactory, locks });
   const store = await open(opener, "db");
   assertEquals(await run(() => store.reopen()), true, "reopening an open store keeps its lock");
   assertEquals(locks.held.size, 1);
@@ -120,7 +118,7 @@ Deno.test("close then reopen in one page re-acquires, and a close that fails sti
   assertEquals(error.cause, lost);
   assertEquals(locks.held.size, 0, "the lock is released although close failed");
 
-  const next = indexedDbOpener({ factory: new IDBFactory() as unknown as IDBFactory, keyRange, locks });
+  const next = indexedDbOpener({ factory: new IDBFactory() as unknown as IDBFactory, locks });
   const reopened = await open(next, "db");
   await run(() => reopened.close());
 });
@@ -128,25 +126,25 @@ Deno.test("close then reopen in one page re-acquires, and a close that fails sti
 Deno.test("a second opener on the same identity is refused until the first closes; temp is a distinct identity", async () => {
   const factory = new IDBFactory() as unknown as IDBFactory;
   const locks = fakeLocks();
-  const first = await open(indexedDbOpener({ factory, keyRange, locks }), "db");
-  const refused = indexedDbOpener({ factory, keyRange, locks }).create({ tail: "db" }, { name: "wallet" });
+  const first = await open(indexedDbOpener({ factory, locks }), "db");
+  const refused = indexedDbOpener({ factory, locks }).create({ tail: "db" }, { name: "wallet" });
   const error = await assertRejects(() => run(() => refused.reopen()), StoreLockHeldError);
   assertEquals(error.key, identityKey);
 
-  const temp = indexedDbOpener({ factory, keyRange, locks }).create({ tail: "db" }, { name: "wallet", temp: true });
+  const temp = indexedDbOpener({ factory, locks }).create({ tail: "db" }, { name: "wallet", temp: true });
   assertEquals(await run(() => temp.reopen()), true);
   assertEquals(locks.held.has(storeLockKey({ name: "wallet", temp: true })), true);
   await run(() => temp.close(true));
 
   await run(() => first.close());
-  const after = await open(indexedDbOpener({ factory, keyRange, locks }), "db");
+  const after = await open(indexedDbOpener({ factory, locks }), "db");
   await run(() => after.close());
 });
 
 Deno.test("unsafeSkipStoreLock opens the same identity twice and takes no lock", async () => {
   const factory = new IDBFactory() as unknown as IDBFactory;
   const locks = fakeLocks();
-  const options = { factory, keyRange, locks, unsafeSkipStoreLock: true };
+  const options = { factory, locks, unsafeSkipStoreLock: true };
   const first = await open(indexedDbOpener(options), "db");
   const second = await open(indexedDbOpener(options), "db");
   assertEquals(locks.held.size, 0);
@@ -155,7 +153,7 @@ Deno.test("unsafeSkipStoreLock opens the same identity twice and takes no lock",
 });
 
 Deno.test("an engine without Web Locks refuses to open, and nothing runs unlocked", async () => {
-  const opener = indexedDbOpener({ factory: new IDBFactory() as unknown as IDBFactory, keyRange, locks: null });
+  const opener = indexedDbOpener({ factory: new IDBFactory() as unknown as IDBFactory, locks: null });
   const store = opener.create({ tail: "db" }, { name: "wallet" });
   await assertRejects(() => run(() => store.reopen()), StoreLockUnsupportedError);
   assertEquals(store.opened, false);

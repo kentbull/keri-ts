@@ -1,7 +1,7 @@
 /** `Baser.rrsn` (sent `/registry/root` markers) survives a reopen on the LMDB and IndexedDB backends. */
 import { assertEquals } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
-import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
+import { IDBFactory } from "npm:fake-indexeddb@6.2.5";
 import { indexedDbOpener, type StoreLockManager } from "../../../db-indexeddb.ts";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { Baser } from "../../../src/db/basing.ts";
@@ -47,11 +47,10 @@ function fakeLocks(): StoreLockManager {
 
 Deno.test("db/basing - rrsn markers survive a flush and a reload through the IndexedDB opener", async () => {
   const factory = new IDBFactory() as unknown as IDBFactory;
-  const keyRange = IDBKeyRange as unknown as typeof globalThis.IDBKeyRange;
   const locks = fakeLocks();
   await run(function*() {
     const open = function*() {
-      const opener = indexedDbOpener({ factory, keyRange, locks });
+      const opener = indexedDbOpener({ factory, locks });
       const baser = new Baser(opener.create(Baser.Family, { name: "wallet" }));
       yield* baser.reopen();
       return baser;

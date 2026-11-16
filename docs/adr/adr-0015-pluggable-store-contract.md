@@ -131,7 +131,10 @@ an explicit backend choice, never a hidden substitution in a parity-gated flow.
 `IndexedDbPersistence` comes first; a SQLite adapter for Capacitor may follow
 behind the same interface. An adapter provides:
 
-- the list of persisted tables with their dupsort flags, and one table's rows;
+- `open()`, which connects if needed and returns the version marker and every
+  persisted table with its dupsort flag and all its rows, in any order, and
+  rejects when rows and table records contradict each other (a row whose table
+  has no record raises `MissingDurableStateError`);
 - `write(batch)`, applying one batch atomically across all its tables;
 - `clear()` and close.
 
@@ -139,7 +142,12 @@ A batch carries the row effects of a commit and any newly created tables. A row
 is identified by `(table, key)`, or `(table, key, value)` in a dupsort table. An
 adapter never reserializes a whole table.
 
-Open bulk-loads every persisted table before returning, so reads never suspend.
+Open calls `Persistence.open()` once and loads every persisted table before
+returning, so reads never suspend. Because the mirror sorts what it loads and
+storage is only asked to persist rows by exact identity, an adapter needs no key
+ordering, ranges or comparable binary keys, and must not depend on them: the
+IndexedDB adapter keys each row by a plain string of the hex key, duplicate and
+table name, and reads with unbounded `getAll()` calls.
 `openTable` needs no prior declaration: on a writable store an absent table
 starts as an empty mirror and is physically created by the batch that first
 carries it, or by a batch of its own at `flushed()` or `close` when no commit has
