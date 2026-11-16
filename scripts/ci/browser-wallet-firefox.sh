@@ -20,5 +20,5 @@ git ls-files -co --exclude-standard | tar -cf - -T - | docker run --rm -i -v "$V
   bash -c 'tar xf - -C /work/repo'
 docker run --rm --network container:keri-wallet-net -v "$VOLUME":/work \
   -e DENO_DIR=/work/deno-cache -e KERI_WALLET_SERVERS="$servers" -w /work/repo "$TS_IMAGE" bash -c \
-  'npx --yes playwright-core@1.63.0 install-deps firefox && npx --yes playwright-core@1.63.0 install firefox \
+  'npx --yes playwright-core@1.56.1 install-deps firefox && npx --yes playwright-core@1.56.1 install firefox \
    && cd packages/keri && deno run -A scripts/run_browser_wallet.ts firefox'

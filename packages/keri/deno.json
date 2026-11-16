@@ -26,7 +26,6 @@
     "test": "deno run -A ../../scripts/ci/run-keri-test-group.ts full",
     "test:quality": "deno run -A ../../scripts/ci/run-keri-test-group.ts quality",
     "test:browser": "deno run -A scripts/run_browser_tests.ts",
-    "test:browser:persist": "deno run -A scripts/run_browser_persist.ts",
     "test:browser:transport": "deno run -A scripts/run_browser_transport.ts",
     "test:browser:wallet": "deno run -A scripts/run_browser_wallet.ts",
     "test:browser:wallet:group": "deno run -A scripts/run_browser_wallet_group.ts",

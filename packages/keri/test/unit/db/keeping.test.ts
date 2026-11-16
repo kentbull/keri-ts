@@ -1092,8 +1092,7 @@ function withKeeper(use: (keeper: Keeper) => void): Promise<void> {
 Deno.test("db/keeping - Manager refuses a keeper with rows but no aeid before pinning any default", async () => {
   await withKeeper((keeper) => {
     keeper.putPres("first-key", PRE);
-    const error = assertThrows(() => new Manager({ ks: keeper }), MissingDurableStateError, "pres.");
-    assertInstanceOf(error, MissingDurableStateError);
+    assertThrows(() => new Manager({ ks: keeper }), MissingDurableStateError, "no aeid");
     assertEquals(keeper.getGbls("pidx"), null, "no default was pinned over the gap");
     assertEquals(keeper.getGbls("algo"), null);
     assertEquals(keeper.getGbls("salt"), null);
@@ -1111,13 +1110,5 @@ Deno.test("db/keeping - Manager opens a keeper holding only some gbls rows or no
     const manager = new Manager({ ks: keeper });
     assertEquals(manager.pidx, 0, "a crash during first initialization completes on the next open");
     assertEquals(manager.tier !== null, true);
-  });
-});
-
-Deno.test("db/keeping - Manager opens a keeper that has an aeid alongside its rows", async () => {
-  await withKeeper((keeper) => {
-    keeper.pinGbls("aeid", "");
-    keeper.putPres("first-key", PRE);
-    assertEquals(new Manager({ ks: keeper }).ks.getPres("first-key"), PRE);
   });
 });

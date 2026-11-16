@@ -331,40 +331,33 @@ export class Keeper extends StoreOwner {
   }
 
   /**
-   * Fail closed when the keeper holds key material but no `aeid`.
+   * Fail closed when keeper tables hold rows but `gbls.aeid` is absent.
    *
-   * `aeid` is the first `gbls.` row a completed initialization writes, so a store that has secrets, parameters or
-   * registry roots in any other keeper table and no `aeid` lost durable state and would otherwise be re-initialized
-   * over the gap: `Manager` pins default `pidx`, `algo`, `salt` and `tier` into the empty `gbls.`, and the
-   * surviving rows then fail with misleading errors such as an invalid registry root. A store with only some `gbls.`
-   * rows (a crash during first initialization) or no rows at all passes. `Manager` calls this before any pin, also
-   * for readonly opens.
+   * `Manager` pins `pidx`, `algo`, `salt` and `tier` first and `setup()` writes `aeid` last, so a completed first
+   * initialization always has `aeid` before any other keeper table gets rows. Rows without `aeid` therefore mean
+   * durable state was lost, and re-initializing over the gap would pin defaults beside surviving rows and fail later
+   * with misleading errors. A store with no rows, or only some `gbls.` pins (a crash during first initialization),
+   * passes. `Manager` calls this first, also for readonly opens.
    *
-   * This diverges from KERIpy, whose keeper has no such check because LMDB commits are ordered and a lost `aeid`
-   * with surviving rows is not an expected state there. The browser store reloads from an engine's on-disk
-   * IndexedDB, where a partial load must stop the open instead of being papered over.
+   * This diverges from KERIpy, whose LMDB commits are ordered so a lost `aeid` with surviving rows is not an expected
+   * state. A browser store reloads from an engine's on-disk IndexedDB, where a partial load must stop the open.
    */
   assertInitialized(): void {
     if (this.getGbls("aeid") !== null) return;
-    const tables: ReadonlyArray<readonly [string, { cnt(): number }]> = [
-      ["pris.", this.pris],
-      ["prms.", this.prms],
-      ["sits.", this.sits],
-      ["pubs.", this.pubs],
-      ["pres.", this.pres],
-      ["prxs.", this.prxs],
-      ["nxts.", this.nxts],
-      ["rroots.", this.rroots],
-      ["smids.", this.smids],
-      ["rmids.", this.rmids],
+    const tables = [
+      this.pris,
+      this.prms,
+      this.sits,
+      this.pubs,
+      this.pres,
+      this.prxs,
+      this.nxts,
+      this.rroots,
+      this.smids,
+      this.rmids,
     ];
-    const populated = tables.filter(([, table]) => table.cnt() > 0).map(([name]) => name);
-    if (populated.length > 0) {
-      throw new MissingDurableStateError(
-        `Keeper has rows in ${
-          populated.join(", ")
-        } but no gbls. aeid; the store lost durable state and must be repaired or replaced`,
-      );
+    if (tables.some((table) => table.cnt() > 0)) {
+      throw new MissingDurableStateError("Keeper tables hold rows but gbls. has no aeid; repair or replace the store");
     }
   }
 

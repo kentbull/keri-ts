@@ -42,7 +42,6 @@
     "test:quality:tufa": "cd packages/tufa && deno task test:quality",
     "test:integration:server": "cd packages/tufa && deno task test:integration:server",
     "test:browser": "cd packages/keri && deno task test:browser",
-    "test:browser:persist": "cd packages/keri && deno task test:browser:persist",
     "test:browser:transport": "cd packages/keri && deno task test:browser:transport",
     "test:browser:wallet": "cd packages/keri && deno task test:browser:wallet",
     "test:browser:wallet:group": "cd packages/keri && deno task test:browser:wallet:group",

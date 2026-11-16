@@ -10,7 +10,7 @@
  * Engines: chromium, firefox, webkit. Arguments win over the environment variable.
  *
  * One-time setup (binaries land in Playwright's user cache, nothing is committed):
- *   npx playwright-core@1.63.0 install chromium firefox webkit
+ *   npx playwright-core@1.56.1 install chromium firefox webkit
  * On Linux add system libraries with scripts/ci/install-browser-deps.sh.
  */
 

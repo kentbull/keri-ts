@@ -2,14 +2,10 @@
 "keri-ts": patch
 ---
 
-Fix browser wallets losing `gbls.aeid` on reload in Safari. WebKit's on-disk IndexedDB over-reads a binary element of
-an array key that is not the last element, appending the next element's header and bytes, so the keeper's `aeid`
-row was missed and setup failed with "Invalid registry root". The browser IndexedDB store is now format version 2:
-rows have plain string keys and are read with unbounded `getAll()` calls, with no binary key parts, `IDBKeyRange` or
-`getAllKeys` pairing. Upgrading deletes and recreates every existing browser keri-ts
-IndexedDB store: restore the wallet or create it again. The `keyRange` option of `indexedDbOpener` and
-`IndexedDbPersistence` is gone, and `Persistence.meta()` and `load(table)` are replaced by `Persistence.open()`. A blocked
-open now rejects with a named error, and an abnormal connection close marks the adapter lost. `Manager` now fails
-closed with `MissingDurableStateError` when the keeper has key material but no `gbls.aeid`, before it pins any
-default, instead of writing defaults over the gap and failing later with "Invalid registry root". A new
-`test:browser:persist` lane relaunches a persistent browser profile in WebKit and Chromium to check reloads from disk.
+Fix keeper state lost on reload in Safari: WebKit's on-disk IndexedDB over-reads a binary element of an array key
+that is not the last element, so format 1 rows keyed `[table, ArrayBuffer, ArrayBuffer]` were looked up wrongly.
+The browser IndexedDB store is now format 2 with plain string keys and unbounded `getAll()` reads. Upgrading deletes
+every existing browser IndexedDB store; re-create or restore them. `Persistence.open()` replaces `meta()` and
+`load(table)`, and the `keyRange` option of `indexedDbOpener` and `IndexedDbPersistence` is removed. A blocked open
+rejects, and an abnormal connection close marks the adapter lost. `Manager` fails closed with
+`MissingDurableStateError` when the keeper has rows but no `gbls.aeid`, instead of pinning defaults over the gap.

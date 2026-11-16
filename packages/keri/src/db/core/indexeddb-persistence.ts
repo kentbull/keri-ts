@@ -12,8 +12,7 @@
  * storage to persist rows by exact identity, so storage needs no ordering,
  * ranges or comparable keys. Rows therefore have an out-of-line plain string
  * key `${hex(key)}.${hex(dup)}.${table}`: `dup` is the duplicate value on a
- * dupsort table and empty on a plain one, hex contains no `.`, and so the first
- * two dots delimit and the table name is the remainder. The value is a
+ * dupsort table and empty on a plain one, unique because hex has no `.`. The value is a
  * self-describing record `{t, k, v}` of table name, key and value, the binary
  * parts as `ArrayBuffer`s. A put on the same identity overwrites, and each
  * duplicate has its own id. Meta records are `table:${name}` ->
@@ -21,14 +20,10 @@
  * Because each table has its own record, creating a table is atomic with the
  * batch that first carries it and never a read-modify-write.
  *
- * No key contains a binary element, and none uses `IDBKeyRange`, an index or a
- * pairing of `getAllKeys` with `getAll`. Format version 1 keyed rows by
- * `[table, ArrayBuffer, ArrayBuffer]`, and WebKit's on-disk decoder (observed in iOS
- * and macOS Safari, not in Playwright's WebKit) over-reads any binary element of an
- * array key that is not the last one, appending the next element's header and
- * bytes, so exact lookups of rows such as `gbls.` `aeid` failed. Binary lives only
- * in values. Version 2 is a new format under the same database name, and upgrading
- * deletes and recreates both stores without migration.
+ * No key contains a binary element: WebKit's on-disk IndexedDB mis-reads a binary
+ * element of an array key that is not the last (format 1 used such keys). Binary
+ * lives only in values. Version 2 is a new format under the same database name,
+ * and upgrading deletes and recreates both stores without migration.
  *
  * `open` reads `rows` and `meta` in one readonly transaction with two unbounded
  * `getAll` calls and groups rows by table. A row whose table has no record is
@@ -45,10 +40,10 @@
  * Another tab's upgrade or delete fires `versionchange` here, and the browser
  * may kill the connection and fire `close`. The connection closes at once on
  * `versionchange` so that tab is never blocked, and either event leaves this
- * adapter lost with a named error: its next `open` or `write` rejects, and so
- * does every retry of it (a write never reconnects), which latches the queue,
+ * adapter lost with a named error: its next `write` rejects, and so does
+ * every retry of it (a write never reconnects), which latches the queue,
  * because writing on after another context deleted the database would break
- * prefix durability. Recovery is a new open, which reconnects. Single-writer
+ * prefix durability. A new `open` reconnects. Single-writer
  * exclusion is the composition's job, not this adapter's.
  *
  * Opening is refused with a named error when an older connection blocks the

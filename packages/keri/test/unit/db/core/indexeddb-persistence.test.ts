@@ -300,11 +300,19 @@ Deno.test("IndexedDbPersistence open rejects instead of hanging when an old conn
     };
     request.onsuccess = () => resolve(request.result); // ignores versionchange, so it blocks the upgrade
   });
-  const error = await assertRejects(() => adapter(factory).open(), DatabaseOperationError, "blocks its upgrade");
-  assertInstanceOf(error, DatabaseOperationError);
+  let late!: Promise<void>;
+  const watched = spy(factory, (prop, real) =>
+    prop === "open"
+      ? (name: string, version?: number) => {
+        const request = real.open(name, version);
+        late = new Promise((resolve) => request.addEventListener("success", () => resolve()));
+        return request;
+      }
+      : undefined);
+  await assertRejects(() => adapter(watched).open(), DatabaseOperationError, "blocks its upgrade");
   legacy.close();
   // The upgrade request is still pending; its late connection must be closed, so a delete is not blocked.
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await late;
   await adapter(factory).clear();
 });
 
@@ -536,8 +544,7 @@ Deno.test("clear rejects instead of hanging when a foreign connection blocks the
     request.onsuccess = () => resolve(request.result); // deliberately ignores versionchange
     request.onerror = () => reject(request.error);
   });
-  const error = await assertRejects(() => persistence.clear(), DatabaseOperationError, "another connection");
-  assertInstanceOf(error, DatabaseOperationError);
+  await assertRejects(() => persistence.clear(), DatabaseOperationError, "another connection");
   foreign.close();
 });
 
