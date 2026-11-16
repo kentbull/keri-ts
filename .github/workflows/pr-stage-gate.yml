@@ -201,7 +201,7 @@ jobs:
   browser-tests:
     needs:           changeset-required
     if:              needs.changeset-required.outputs.run_browser == 'true'
-    # Playwright 1.56 does not support ubuntu-latest (26.04); pin a supported image.
+    # Playwright 1.63 does not support ubuntu-latest (26.04); pin a supported image.
     runs-on:         ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -227,6 +227,9 @@ jobs:
 
       - name: run the three-engine browser lane
         run:  deno task test:browser
+
+      - name: run the persistent-profile lane
+        run:  deno task test:browser:persist webkit chromium
 
   package-smoke:
     needs: changeset-required

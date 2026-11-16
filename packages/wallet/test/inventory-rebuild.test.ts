@@ -27,7 +27,7 @@ import {
   ValidationError,
 } from "keri-ts/runtime";
 import type { StoreLockManager } from "keri-ts/runtime/web";
-import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
+import { IDBFactory } from "npm:fake-indexeddb@6.2.5";
 import { RegistryAuthor } from "../../keri/src/acdc/authoring.ts";
 import type { Hab } from "../../keri/src/app/identity/habbing.ts";
 import type { Receiptor } from "../../keri/src/app/witness/receipting.ts";
@@ -112,7 +112,7 @@ function* freshEdge(g: WeightZeroGroup): Operation<Edge> {
       delivery: "direct",
       heldSigners: [keys.signer],
       host: {
-        indexedDb: { factory: new IDBFactory(), keyRange: IDBKeyRange as unknown as typeof globalThis.IDBKeyRange },
+        indexedDb: { factory: new IDBFactory() },
         locks,
         storage: { persist: () => Promise.resolve(true) },
         http: oobiClient([custodian.hab, custodian.member]),

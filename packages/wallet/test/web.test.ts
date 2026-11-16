@@ -28,7 +28,7 @@ import {
   regcept,
   RegistryObserver,
 } from "keri-ts/runtime";
-import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
+import { IDBFactory } from "npm:fake-indexeddb@6.2.5";
 import { ipexExnBody } from "../../keri/src/app/ipex/ipex-building.ts";
 import { loadIpexHandlers } from "../../keri/src/app/ipex/ipexing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../keri/src/app/protocol/parsering.ts";
@@ -58,7 +58,6 @@ function* ingest(frame: CesrFrame | Uint8Array, hby: Habery, exc: Exchanger): Op
 
 Deno.test("wallet/web records issuance and admission through indexedDbOpener and reads them after a fresh reopen", async () => {
   const factory = new IDBFactory() as unknown as IDBFactory;
-  const keyRange = IDBKeyRange as unknown as typeof globalThis.IDBKeyRange;
   const name = crypto.randomUUID();
   await run(function*() {
     // Protocol owners stay in memory; only the wallet inventory is on IndexedDB.
@@ -71,7 +70,7 @@ Deno.test("wallet/web records issuance and admission through indexedDbOpener and
     const sending = new Exchanger(source), receiving = new Exchanger(receiver);
     loadIpexHandlers(source, sending, { registry });
     loadIpexHandlers(receiver, receiving, { registry });
-    const first = indexedDbOpener({ factory, keyRange });
+    const first = indexedDbOpener({ factory });
     const db = yield* openWalletBaser(first, { name });
     const issuerWallet = new Wallet({ hby: source, registry, exc: sending, db });
     const holderWallet = new Wallet({ hby: receiver, registry, exc: receiving, db });
@@ -117,7 +116,7 @@ Deno.test("wallet/web records issuance and admission through indexedDbOpener and
       // Durable close, then a fresh opener over the same IndexedDB factory.
       yield* db.store.flushed();
       yield* db.close();
-      reopened = yield* openWalletBaser(indexedDbOpener({ factory, keyRange }), { name });
+      reopened = yield* openWalletBaser(indexedDbOpener({ factory }), { name });
       const wallet = new Wallet({ hby: source, registry, exc: sending, db: reopened });
       assertEquals(wallet.inventory().issued, [record]);
       assertEquals(wallet.inventory().held, [admission]);

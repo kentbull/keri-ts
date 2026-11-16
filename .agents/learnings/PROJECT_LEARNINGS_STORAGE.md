@@ -54,15 +54,32 @@ loading the durable prefix. `read(task)` runs in queue order and never latches; 
 reports `healthy`, `retrying` or `latched`. An unwritten table rides the next batch, or
 a table-only batch at `flushed` or `close`, so its dupsort flag persists.
 
-`IndexedDbPersistence` keeps all logical tables in one `rows` object store (keys
-`[table, key, valueOrEmpty]`, `ArrayBuffer` parts) plus a `meta` store, so a new table never needs
-a schema upgrade that another tab's open connection could block. A write is one strict
-`readwrite` transaction settled on `complete`; a request's `success` fires before the
-commit is final. `versionchange` closes the connection and the adapter then refuses
-`load` and `write` until a new `meta`, because writing on after another context deleted the
-database would break prefix durability. A blocked `deleteDatabase` stays pending in the
-browser, so `clear` rejects rather than hanging. `fake-indexeddb` honors all of this, but
-real-engine behavior (durability hints, eviction, blocked ordering) is only checked in PR 14.
+`IndexedDbPersistence` (format version 2, same database name per family and identity) keeps all logical
+tables in one `rows` object store plus a `meta` store, so a new table never needs a schema upgrade that
+another tab's open connection could block. Rows have plain string keys `${hex(key)}.${hex(dup)}.${table}`
+(`dup` empty on a plain table) and `{t, k, v}` records with `ArrayBuffer` key and value; meta holds one
+`table:${name}` record per table and a `version` record. `WebDBer` mirrors and sorts everything, so storage uses
+no ranges, binary or array keys, or indexes. Rule: no IndexedDB key contains a binary element at all; binary
+lives only in values. Reason (confirmed on iOS 26.5 Simulator Safari, iOS Safari and macOS Safari): WebKit's
+on-disk key decoder over-reads any binary element of an array key that is not the last element, appending the
+next element's header (tag `0x80`, 8-byte length) and payload, so `["gbls.", AB("aeid"), AB(0)]` read back with a
+13-byte `"aeid"` and `getGbls("aeid")` missed, surfacing as "Invalid registry root". Row counts, ranges and string
+keys were fine. Playwright WebKit (builds 2215, 2359) does not have the bug, so the persistent lane cannot
+reproduce it: it guards the format and the reload path, and real Safari is the check for the decoder. Upgrading
+from format 1 deletes and recreates both stores with no migration. `open()` reads both stores in one readonly
+transaction (two `getAll()` calls) and throws `MissingDurableStateError` for a row whose table has no record. The
+`Manager` constructor first calls `Keeper.assertInitialized()`, which fails closed when `gbls.aeid` is absent but
+another keeper table has rows, before any default is pinned; a `gbls.`-only partial first init still opens. A
+write is one strict `readwrite` transaction settled on `complete`; a request's `success` fires before the commit
+is final. `versionchange` and an abnormal `close` event mark the adapter lost and it then refuses `write` and
+`open` until a new `open`, because writing on after another context deleted the database would break prefix
+durability (reconnecting after the browser kills a connection is deferred: it would change ADR-0015's "a write
+never reconnects"). A blocked open rejects with a named error and closes a connection that arrives later. A
+blocked `deleteDatabase` stays pending in the browser, so `clear` rejects rather than hanging. `fake-indexeddb`
+honors all of this, but real-engine behavior (durability hints, eviction, blocked ordering, on-disk reload) is
+only checked in the browser lanes. The `test:browser:persist` lane writes in one persistent-profile launch, closes
+the context, relaunches the same directory and verifies every row and a real `openWebWallet` reopen, in WebKit and
+Chromium; an ephemeral context never exercises the on-disk backend.
 It is public only as `keri-ts/db/indexeddb` (`IndexedDbPersistence`, `indexedDbOpener`), never from
 `keri-ts/db`, whose Node consumers must not type-check DOM types.
 

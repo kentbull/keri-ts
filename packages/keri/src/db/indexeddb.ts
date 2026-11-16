@@ -2,7 +2,7 @@
  * Browser IndexedDB backend surface for `keri-ts/db/indexeddb`.
  *
  * Kept off `keri-ts/db` because `IndexedDbPersistence` names DOM types
- * (`IDBFactory`, `IDBKeyRange`) that Node consumers should not have to type-check.
+ * (`IDBFactory`) that Node consumers should not have to type-check.
  */
 
 import { call, type Operation } from "npm:effection@^3.6.0";
@@ -36,8 +36,6 @@ export {
 export interface IndexedDbOpenerOptions {
   /** Defaults to the browser global. */
   factory?: IDBFactory;
-  /** Defaults to the browser global; inject with `factory`. */
-  keyRange?: typeof IDBKeyRange;
   /** Defaults to `navigator.locks`; `null` simulates an engine without it, which refuses every open. */
   locks?: StoreLockManager | null;
   /**
@@ -115,7 +113,7 @@ class LockedStoreOpener extends WebStoreOpener {
 
 /**
  * A `WebStoreOpener` whose stores persist to IndexedDB, one database per store
- * family and identity. Inject `factory` and `keyRange` together outside a browser.
+ * family and identity. Inject `factory` outside a browser.
  *
  * Single-writer by default: the first store to open an identity (`base`, `name`, `temp`) takes a
  * Web Locks lock, shared by every family the opener creates for it and released when the last of
@@ -125,7 +123,7 @@ class LockedStoreOpener extends WebStoreOpener {
  */
 export function indexedDbOpener(options: IndexedDbOpenerOptions = {}): WebStoreOpener {
   const persistenceFor = (family: StoreFamily, identity: StoreIdentity) =>
-    new IndexedDbPersistence(family, identity, options.factory, options.keyRange);
+    new IndexedDbPersistence(family, identity, options.factory);
   return options.unsafeSkipStoreLock
     ? new WebStoreOpener(persistenceFor)
     : new LockedStoreOpener(persistenceFor, options.locks === undefined ? {} : { locks: options.locks });

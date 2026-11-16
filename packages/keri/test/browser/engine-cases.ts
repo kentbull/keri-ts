@@ -29,19 +29,19 @@ const rowPut = (table: string) => ({ table, key: b("k"), value: b("v") });
 async function abortedWriteLeavesNothing(): Promise<void> {
   const persistence = adapter(unique("abort"));
   try {
-    await persistence.meta();
+    await persistence.open();
     const batch = { tables: [{ name: "plain.", dupsort: false }], version: "1.0.0", deletes: [] };
     const error = await assertRejects(() =>
       persistence.write({ ...batch, puts: [rowPut("plain."), rowPut("nowhere.")] })
     );
     assertInstanceOf(error, DatabaseOperationError);
     assertEquals(
-      await persistence.meta(),
+      await persistence.open(),
       { version: null, tables: [] },
       "no table, version or row survives the abort",
     );
     await persistence.write({ ...batch, puts: [rowPut("plain.")] });
-    assertEquals((await persistence.load("plain.")).length, 1, "the same adapter writes normally afterwards");
+    assertEquals((await persistence.open()).tables[0].rows.length, 1, "the same adapter writes normally afterwards");
   } finally {
     await persistence.clear();
   }
@@ -53,8 +53,7 @@ async function failedBatchLatchesStore(): Promise<void> {
   const real = adapter(name);
   let poison = false;
   const persistence: Persistence = {
-    meta: () => real.meta(),
-    load: (table) => real.load(table),
+    open: () => real.open(),
     write: (batch) => real.write(poison ? { ...batch, puts: [...batch.puts, rowPut("nowhere.")] } : batch),
     clear: () => real.clear(),
     close: () => real.close(),
@@ -73,10 +72,10 @@ async function failedBatchLatchesStore(): Promise<void> {
     assertThrows(() => store.setVal(first, b("three"), b("3")), DatabaseOperationError);
     await assertRejects(() => run(() => store.close()), DatabaseOperationError);
 
-    const meta = await survivor.meta();
-    assertEquals(meta.tables.map(({ name }) => name), ["first."], "the failed commit left no table");
-    assertEquals(meta.version, "1.0.0", "nor its version");
-    assertEquals((await survivor.load("first.")).length, 1, "the earlier commit is durable");
+    const persisted = await survivor.open();
+    assertEquals(persisted.tables.map(({ name }) => name), ["first."], "the failed commit left no table");
+    assertEquals(persisted.version, "1.0.0", "nor its version");
+    assertEquals(persisted.tables[0].rows.length, 1, "the earlier commit is durable");
   } finally {
     await real.close();
     await survivor.clear();

@@ -4,7 +4,15 @@
  * `run_browser_transport.ts` (HTTP transport probe) both build on it.
  */
 
-import { type Browser, type BrowserType, chromium, firefox, type Page, webkit } from "npm:playwright-core@1.56.1";
+import {
+  type Browser,
+  type BrowserContext,
+  type BrowserType,
+  chromium,
+  firefox,
+  type Page,
+  webkit,
+} from "npm:playwright-core@1.63.0";
 import { echoHandler } from "./transport_echo.ts";
 
 const packageDir = new URL("../", import.meta.url);
@@ -70,6 +78,16 @@ export async function openPage(page: Page, url: string, name: string, timeoutMs 
 /** Launch one engine, naming the install command when its binary is missing. */
 export async function launch(name: string): Promise<Browser> {
   return await engines[name].launch().catch((error) => {
-    throw new Error(`${error.message}\nInstall it with: npx playwright-core@1.56.1 install ${name}`);
+    throw new Error(`${error.message}\nInstall it with: npx playwright-core@1.63.0 install ${name}`);
+  });
+}
+
+/**
+ * Launch one engine on a persistent profile in `dir`, so its IndexedDB lives on disk and survives closing the
+ * context. A second call on the same directory is a relaunch of that profile.
+ */
+export async function launchPersistent(name: string, dir: string): Promise<BrowserContext> {
+  return await engines[name].launchPersistentContext(dir).catch((error) => {
+    throw new Error(`${error.message}\nInstall it with: npx playwright-core@1.63.0 install ${name}`);
   });
 }

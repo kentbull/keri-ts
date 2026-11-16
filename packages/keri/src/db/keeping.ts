@@ -12,7 +12,7 @@ import {
 } from "cesr-ts";
 import type { Database } from "npm:@keri-ts/lmdb-js@3.5.10-v1.2";
 import { type Operation } from "npm:effection@^3.6.0";
-import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
+import { DatabaseNotOpenError, DatabaseOperationError, MissingDurableStateError } from "../core/errors.ts";
 import { GroupMemberTuple, RawRecord } from "../core/records.ts";
 import type { DBer, StoreIdentity } from "./core/dber.ts";
 import type { LMDBerOptions } from "./core/lmdber.ts";
@@ -328,6 +328,44 @@ export class Keeper extends StoreOwner {
   /** Close the underlying keeper LMDB environment. */
   override *close(clear = false): Operation<boolean> {
     return yield* this.store.close(clear);
+  }
+
+  /**
+   * Fail closed when the keeper holds key material but no `aeid`.
+   *
+   * `aeid` is the first `gbls.` row a completed initialization writes, so a store that has secrets, parameters or
+   * registry roots in any other keeper table and no `aeid` lost durable state and would otherwise be re-initialized
+   * over the gap: `Manager` pins default `pidx`, `algo`, `salt` and `tier` into the empty `gbls.`, and the
+   * surviving rows then fail with misleading errors such as an invalid registry root. A store with only some `gbls.`
+   * rows (a crash during first initialization) or no rows at all passes. `Manager` calls this before any pin, also
+   * for readonly opens.
+   *
+   * This diverges from KERIpy, whose keeper has no such check because LMDB commits are ordered and a lost `aeid`
+   * with surviving rows is not an expected state there. The browser store reloads from an engine's on-disk
+   * IndexedDB, where a partial load must stop the open instead of being papered over.
+   */
+  assertInitialized(): void {
+    if (this.getGbls("aeid") !== null) return;
+    const tables: ReadonlyArray<readonly [string, { cnt(): number }]> = [
+      ["pris.", this.pris],
+      ["prms.", this.prms],
+      ["sits.", this.sits],
+      ["pubs.", this.pubs],
+      ["pres.", this.pres],
+      ["prxs.", this.prxs],
+      ["nxts.", this.nxts],
+      ["rroots.", this.rroots],
+      ["smids.", this.smids],
+      ["rmids.", this.rmids],
+    ];
+    const populated = tables.filter(([, table]) => table.cnt() > 0).map(([name]) => name);
+    if (populated.length > 0) {
+      throw new MissingDurableStateError(
+        `Keeper has rows in ${
+          populated.join(", ")
+        } but no gbls. aeid; the store lost durable state and must be repaired or replaced`,
+      );
+    }
   }
 
   /**

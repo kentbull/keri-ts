@@ -112,7 +112,7 @@ engine. The bundle must contain no `node:` or LMDB import.
 
 Name engines to run a subset: `deno task test:browser webkit`, or
 `KERI_BROWSER_ENGINES=firefox,webkit`. Install once with
-`npx playwright-core@1.56.1 install chromium firefox webkit`; binaries stay in Playwright's
+`npx playwright-core@1.63.0 install chromium firefox webkit`; binaries stay in Playwright's
 user cache. On Linux, `scripts/ci/install-browser-deps.sh` also installs the system
 libraries.
 

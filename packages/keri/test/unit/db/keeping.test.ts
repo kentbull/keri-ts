@@ -3,8 +3,10 @@ import { assertEquals, assertExists, assertInstanceOf, assertThrows } from "jsr:
 import { b, Cigar, Diger, MtrDex, NumberPrimitive, Prefixer, Salter, Siger, Verfer } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
 import { Algos, Creatory, encodeHugeNumber, Manager, saltySigner } from "../../../src/app/identity/keeping.ts";
+import { MissingDurableStateError } from "../../../src/core/errors.ts";
 import { encryptSaltQb64, makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
 import { lmdbTable } from "../../../src/db/core/lmdber.ts";
+import type { Keeper } from "../../../src/db/keeping.ts";
 import { createKeeper } from "../../../src/db/lmdb-stores.ts";
 
 function keeperPubsKey(pre: string, ridx: number): string {
@@ -1070,5 +1072,52 @@ Deno.test("app/keeping - updateAeid re-encrypts stored salts and signer secrets"
     } finally {
       yield* keeper.close(true);
     }
+  });
+});
+
+const PRE = new Prefixer({ code: MtrDex.Ed25519N, raw: new Uint8Array(32) }).qb64;
+
+/** A fresh in-memory keeper, closed after `use`. */
+function withKeeper(use: (keeper: Keeper) => void): Promise<void> {
+  return run(function*() {
+    const keeper = yield* createKeeper({ name: `keeper-${crypto.randomUUID()}`, temp: true });
+    try {
+      use(keeper);
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+}
+
+Deno.test("db/keeping - Manager refuses a keeper with rows but no aeid before pinning any default", async () => {
+  await withKeeper((keeper) => {
+    keeper.putPres("first-key", PRE);
+    const error = assertThrows(() => new Manager({ ks: keeper }), MissingDurableStateError, "pres.");
+    assertInstanceOf(error, MissingDurableStateError);
+    assertEquals(keeper.getGbls("pidx"), null, "no default was pinned over the gap");
+    assertEquals(keeper.getGbls("algo"), null);
+    assertEquals(keeper.getGbls("salt"), null);
+    assertEquals(keeper.getGbls("tier"), null);
+  });
+});
+
+Deno.test("db/keeping - Manager opens a keeper holding only some gbls rows or none", async () => {
+  await withKeeper((keeper) => {
+    assertEquals(new Manager({ ks: keeper }).aeid, "", "a fresh store initializes");
+  });
+  await withKeeper((keeper) => {
+    keeper.pinGbls("pidx", "0");
+    keeper.pinGbls("algo", Algos.salty);
+    const manager = new Manager({ ks: keeper });
+    assertEquals(manager.pidx, 0, "a crash during first initialization completes on the next open");
+    assertEquals(manager.tier !== null, true);
+  });
+});
+
+Deno.test("db/keeping - Manager opens a keeper that has an aeid alongside its rows", async () => {
+  await withKeeper((keeper) => {
+    keeper.pinGbls("aeid", "");
+    keeper.putPres("first-key", PRE);
+    assertEquals(new Manager({ ks: keeper }).ks.getPres("first-key"), PRE);
   });
 });

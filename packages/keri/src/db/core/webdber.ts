@@ -13,8 +13,8 @@
 import { bytesEqual, bytesHex } from "cesr-ts";
 import { call, ensure, type Operation } from "npm:effection@^3.6.0";
 import { PersistenceLatchedError, PersistenceReadError } from "../../core/errors.ts";
-import type { StoreIdentity, Table, TableEntry } from "./dber.ts";
-import { MemStore, type StoreChange } from "./memstore.ts";
+import type { StoreIdentity, Table } from "./dber.ts";
+import { type LoadedTable, MemStore, type StoreChange } from "./memstore.ts";
 import type { StoreFamily, StoreOpener } from "./store-owner.ts";
 
 /** One persisted table and the dupsort flag fixed when it was created. */
@@ -23,11 +23,11 @@ export interface PersistedTable {
   readonly dupsort: boolean;
 }
 
-/** What one store has persisted, apart from its rows. */
-export interface PersistedMeta {
+/** Everything one store has persisted: its version marker and every table with its rows. */
+export interface PersistedStore {
   /** The `__version__` marker, or `null` when none was written. */
   readonly version: string | null;
-  readonly tables: readonly PersistedTable[];
+  readonly tables: readonly LoadedTable[];
 }
 
 /** Store one row. Replaces `(table, key)` on a plain table; adds `(table, key, value)` on a dupsort one. */
@@ -63,15 +63,16 @@ export interface PersistenceBatch {
  * to keep: it shares no bytes with the mirror.
  */
 export interface Persistence {
-  /** Describe what is persisted, connecting if needed; called first on every open. */
-  meta(): Promise<PersistedMeta>;
-  /** Every row of one table, in any order. */
-  load(table: string): Promise<TableEntry[]>;
+  /**
+   * Connect if needed and return everything persisted: the version marker and every table with its rows in any
+   * order. Called first on every open. Rejects when the rows and the table records contradict each other.
+   */
+  open(): Promise<PersistedStore>;
   /** Apply one batch atomically across its tables. Resolves only once it is durable. */
   write(batch: PersistenceBatch): Promise<void>;
   /** Delete everything persisted. Called with the connection released. */
   clear(): Promise<void>;
-  /** Release the connection. A later `meta` reconnects. */
+  /** Release the connection. A later `open` reconnects. */
   close(): Promise<void>;
 }
 
@@ -278,12 +279,8 @@ export class WebDBer extends MemStore {
     yield* this.close(options.clear ?? false);
     const persistence = this.#persistence;
     this.#connected = true;
-    const meta = yield* call(() => persistence.meta());
-    const tables = [];
-    for (const { name, dupsort } of meta.tables) {
-      tables.push({ name, dupsort, rows: yield* call(() => persistence.load(name)) });
-    }
-    this.loadContents(tables, meta.version);
+    const persisted = yield* call(() => persistence.open());
+    this.loadContents(persisted.tables, persisted.version);
     return yield* super.reopen(options);
   }
 

@@ -28,7 +28,7 @@ import {
 } from "keri-ts/runtime";
 import type { HttpClient, HttpResponse, HttpStreamResponse } from "keri-ts/runtime";
 import { StoreLockHeldError, type StoreLockManager, StoreLockUnsupportedError } from "keri-ts/runtime/web";
-import { IDBFactory, IDBKeyRange } from "npm:fake-indexeddb@6.2.5";
+import { IDBFactory } from "npm:fake-indexeddb@6.2.5";
 import { exchange, incept } from "../../keri/src/core/protocol-eventing.ts";
 import { messagize } from "../../keri/src/core/protocol-serialization.ts";
 import { dgKey } from "../../keri/src/db/core/keys.ts";
@@ -46,7 +46,6 @@ import {
   type WebWallet,
 } from "../web.ts";
 
-const keyRange = IDBKeyRange as unknown as typeof globalThis.IDBKeyRange;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** An IDBFactory whose read-write transactions throw once `poison.on` is set. */
@@ -102,7 +101,7 @@ function page() {
     document: Object.assign(new EventTarget(), { visibilityState: "visible" }),
   };
   const host = {
-    indexedDb: { factory, keyRange },
+    indexedDb: { factory },
     locks,
     storage: { persist: () => Promise.resolve(true) },
     http,
@@ -264,8 +263,7 @@ Deno.test("a second opener of the same identity is refused until the first close
 Deno.test("no Web Locks fails closed", async () => {
   const p = page();
   await assertRejects(
-    () =>
-      p.open({ host: { indexedDb: { factory: new IDBFactory() as unknown as IDBFactory, keyRange }, locks: null } }),
+    () => p.open({ host: { indexedDb: { factory: new IDBFactory() as unknown as IDBFactory }, locks: null } }),
     StoreLockUnsupportedError,
   );
 });
