@@ -22,8 +22,9 @@
  *
  * No key contains a binary element: WebKit's on-disk IndexedDB mis-reads a binary
  * element of an array key that is not the last (format 1 used such keys). Binary
- * lives only in values. Version 2 is a new format under the same database name,
- * and upgrading deletes and recreates both stores without migration.
+ * lives only in values. Version 2 is a new format under the same database name.
+ * A database of any other version is refused and left untouched; the upgrade guide
+ * says how to migrate or replace it.
  *
  * `open` reads `rows` and `meta` in one readonly transaction with two unbounded
  * `getAll` calls and groups rows by table. A row whose table has no record is
@@ -145,18 +146,20 @@ export class IndexedDbPersistence implements Persistence {
     if (!this.#factory) throw new DatabaseOperationError("IndexedDB is not available in this environment");
     return new Promise((resolve, reject) => {
       let refused = false;
+      let format: Error | null = null;
       const request = this.#factory.open(this.#databaseName, FORMAT_VERSION);
       request.onupgradeneeded = (event) => {
-        const db = request.result;
-        // Format 1 used array keys; it is dropped, not migrated.
-        if (event.oldVersion === 1) {
-          db.deleteObjectStore(ROWS);
-          db.deleteObjectStore(META);
+        if (event.oldVersion !== 0) {
+          format = new DatabaseOperationError(
+            `${this.#databaseName} holds keri-ts IndexedDB format ${event.oldVersion}; see docs/reference/compatibility/INDEXEDDB_FORMAT_2.md`,
+          );
+          request.transaction?.abort();
+          return;
         }
-        db.createObjectStore(ROWS);
-        db.createObjectStore(META);
+        request.result.createObjectStore(ROWS);
+        request.result.createObjectStore(META);
       };
-      request.onerror = () => reject(request.error);
+      request.onerror = () => reject(format ?? request.error);
       request.onblocked = () => {
         refused = true;
         reject(

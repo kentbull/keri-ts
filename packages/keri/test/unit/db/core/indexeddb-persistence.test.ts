@@ -258,7 +258,7 @@ Deno.test("IndexedDbPersistence open refuses a row whose table has no record", a
   await persistence.close();
 });
 
-Deno.test("IndexedDbPersistence upgrading a format 1 database wipes it", async () => {
+Deno.test("IndexedDbPersistence refuses a format 1 database and leaves it untouched", async () => {
   const factory = newFactory();
   const place = JSON.stringify(["", "web", "db", "durable"]);
   const legacy = await new Promise<IDBDatabase>((resolve) => {
@@ -278,15 +278,10 @@ Deno.test("IndexedDbPersistence upgrading a format 1 database wipes it", async (
   });
   legacy.close();
 
-  const persistence = adapter(factory);
-  assertEquals(await persistence.open(), { version: null, tables: [] });
-  await persistence.write({
-    tables: [{ name: "new.", dupsort: false }],
-    puts: [{ table: "new.", key: b("k"), value: b("v") }],
-    deletes: [],
-  });
-  assertEquals((await rawRows(factory)).length, 1, "only the new format's row exists");
-  await persistence.close();
+  await assertRejects(() => adapter(factory).open(), DatabaseOperationError, "format 1");
+  const [{ version }] = await factory.databases();
+  assertEquals(version, 1, "the upgrade was aborted");
+  assertEquals((await rawRows(factory)).length, 1, "the format 1 row is still there");
 });
 
 Deno.test("IndexedDbPersistence open rejects instead of hanging when an old connection blocks the upgrade", async () => {
@@ -305,13 +300,13 @@ Deno.test("IndexedDbPersistence open rejects instead of hanging when an old conn
     prop === "open"
       ? (name: string, version?: number) => {
         const request = real.open(name, version);
-        late = new Promise((resolve) => request.addEventListener("success", () => resolve()));
+        late = new Promise((resolve) => request.addEventListener("error", () => resolve()));
         return request;
       }
       : undefined);
   await assertRejects(() => adapter(watched).open(), DatabaseOperationError, "blocks its upgrade");
   legacy.close();
-  // The upgrade request is still pending; its late connection must be closed, so a delete is not blocked.
+  // The upgrade request is still pending; once the holder closes it is refused as format 1, so a delete is not blocked.
   await late;
   await adapter(factory).clear();
 });
@@ -581,4 +576,47 @@ Deno.test("stores of one identity keep separate databases per family and temp fl
   assertEquals((await baser.open()).version, "1.0.0");
   await keeper.close();
   await baser.close();
+});
+
+Deno.test("the format 2 upgrade script migrates a format 1 database that IndexedDbPersistence then reads", async () => {
+  await import("../../../../../../scripts/indexeddb-format-2-upgrade.js");
+  const script = (globalThis as unknown as {
+    keriIndexedDbFormat2: { migrate(factory: IDBFactory): Promise<unknown[]> };
+  }).keriIndexedDbFormat2;
+  const factory = newFactory();
+  const place = JSON.stringify(["", "web", "db", "durable"]);
+  const legacy = await new Promise<IDBDatabase>((resolve) => {
+    const request = factory.open(`keri-ts:${place}`, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore("rows");
+      request.result.createObjectStore("meta");
+    };
+    request.onsuccess = () => resolve(request.result);
+  });
+  const ab = (...bytes: number[]) => new Uint8Array(bytes).buffer;
+  await new Promise<void>((resolve) => {
+    const transaction = legacy.transaction(["rows", "meta"], "readwrite");
+    const rows = transaction.objectStore("rows");
+    rows.put(ab(9, 9), ["plain.", ab(1, 2), new ArrayBuffer(0)]);
+    rows.put(null, ["dups.", ab(3), ab(7)]);
+    rows.put(null, ["dups.", ab(3), ab(8)]);
+    const meta = transaction.objectStore("meta");
+    meta.put(false, "table:plain.");
+    meta.put(true, "table:dups.");
+    meta.put("1.0.0", "version");
+    transaction.oncomplete = () => resolve();
+  });
+  legacy.close();
+
+  assertEquals((await script.migrate(factory)).length, 1);
+  const persistence = adapter(factory);
+  const persisted = await persistence.open();
+  assertEquals(persisted.version, "1.0.0");
+  const table = (name: string) => persisted.tables.find((entry) => entry.name === name)!;
+  assertEquals(table("plain.").dupsort, false);
+  assertEquals([...table("plain.").rows[0].key], [1, 2]);
+  assertEquals([...table("plain.").rows[0].value], [9, 9]);
+  assertEquals(table("dups.").dupsort, true);
+  assertEquals(table("dups.").rows.map(({ value }) => value[0]).sort(), [7, 8]);
+  await persistence.close();
 });
