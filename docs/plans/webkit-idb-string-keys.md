@@ -43,8 +43,8 @@ ordering, ranges, or comparable keys.
   `t`, returning `{version, tables: [{name, dupsort, rows}]}`. No `IDBKeyRange`,
   no array or binary keys, no index, no pairing of `getAllKeys` with `getAll`. A
   row whose table has no meta record throws `MissingDurableStateError`.
-- **Format.** Database version 2 under the same name (ODH and the store lock key
-  depend on the name). Upgrading from 1 deletes and recreates both stores: no
+- **Format.** Database version 2 under the same name (the store lock key and
+  callers that locate a store's databases depend on the name). Upgrading from 1 deletes and recreates both stores: no
   migration, per the no-compatibility rule; the changeset says browser stores
   are wiped and must be restored or re-created.
 - **Open blocked.** Reject a blocked `open` with a named error instead of
@@ -75,5 +75,5 @@ ordering, ranges, or comparable keys.
 ## Release
 
 Release-impacting patch for `keri-ts` and, through exact pins, every dependent
-package. ODH then bumps `keri-ts` and `@keri-ts/wallet`, and its kept-wallet
-open must treat an empty store as a reconcile from diddaemon.
+package. Applications must expect an empty browser store after upgrading and
+restore or re-create it.
