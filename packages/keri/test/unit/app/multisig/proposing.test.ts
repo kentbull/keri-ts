@@ -5,7 +5,11 @@ import { Poster } from "../../../../src/app/delivery/forwarding.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import type { GroupEventRef } from "../../../../src/app/multisig/counseling.ts";
 import { multisigInceptExn } from "../../../../src/app/multisig/grouping.ts";
-import { signGroupMessage, storedGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
+import {
+  signGroupMessage,
+  storedGroupMessage,
+  unreachableGroupMembers,
+} from "../../../../src/app/multisig/multisig-messaging.ts";
 import { findGroupProposal } from "../../../../src/app/multisig/proposals.ts";
 import {
   proposeGroupInception,
@@ -21,7 +25,7 @@ function proposeDeps(s: Scenario) {
   const sent: Array<{ dest: string; route: string }> = [];
   // The fixture's members have no end roles; the stubbed transport reaches them, so the reachability check agrees.
   s.runtime.postman.canReach = () => true;
-  s.runtime.postman.send = evt => {
+  s.runtime.postman.send = (evt) => {
     const text = new TextDecoder().decode(evt.msg);
     sent.push({ dest: evt.dest, route: text.match(/"r":"([^"]+)"/)?.[1] ?? "" });
     return { ...evt, kin: "msg" };
@@ -74,6 +78,27 @@ Deno.test("proposeGroupInception refuses a member no route reaches and leaves no
   });
 });
 
+Deno.test("unreachableGroupMembers lists the remote members no accepted route reaches, in member order", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const poster = s.runtime.postman;
+      // The fixture's peer has no end role in the local store, so delivery has no route to it.
+      assertEquals(unreachableGroupMembers(s.left, poster, s.alice, s.mids), [s.bob.pre]);
+      // The sender and the members this Habery holds are never listed; repeats collapse; the topic is passed on.
+      const asked: Array<[string, string, string | undefined]> = [];
+      const reach = {
+        canReach: (src: string, dest: string, topic?: string) => (asked.push([src, dest, topic]), dest !== "Eother"),
+      };
+      assertEquals(
+        unreachableGroupMembers(s.left, reach, s.alice, ["Eother", s.alice.pre, s.bob.pre, "Eother"], "credential"),
+        ["Eother"],
+      );
+      assertEquals(asked, [[s.alice.pre, "Eother", "credential"], [s.alice.pre, s.bob.pre, "credential"]]);
+      assertEquals(unreachableGroupMembers(s.left, { canReach: () => true }, s.alice, s.mids), []);
+    }, "2");
+  });
+});
+
 Deno.test("proposeGroupInteraction counsels and publishes an interaction", async () => {
   await run(function*() {
     yield* scenario(function*(s) {
@@ -103,7 +128,7 @@ Deno.test("a proposed rotation's newcomer enters the stored members only once th
         const spec = { smids: s.mids, rmids: next, isith: "2", nsith: "3" } as const;
         const result = yield* proposeGroupRotation(deps, s.left.habs.get(s.group)!, spec);
         assertEquals(started, [result.event]);
-        assertEquals(sent.map(m => m.route), ["/multisig/rot", "/multisig/rot"]);
+        assertEquals(sent.map((m) => m.route), ["/multisig/rot", "/multisig/rot"]);
         yield* s.runtime.counselor.processOnce();
         assertEquals(s.left.db.getHab(s.group)?.rmids, s.mids);
         const peer = s.right.rotateGroupHab("group", s.mids, next, { isith: "2", nsith: "3" });

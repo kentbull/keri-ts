@@ -62,7 +62,30 @@ export interface GroupSendResult {
 
 /** Select unique remote member AIDs, preserving the supplied member order. */
 export function remoteGroupMembers(hby: Habery, member: Hab, recipients: readonly string[]): string[] {
-  return uniqueMembers(recipients).filter(recipient => recipient !== member.pre && !hby.habs.has(recipient));
+  return uniqueMembers(recipients).filter((recipient) => recipient !== member.pre && !hby.habs.has(recipient));
+}
+
+/**
+ * The remote members of `recipients` that `member` has no eligible end role to reach, in member order. A pure read
+ * of accepted endpoint state ({@link Poster.canReach}): it says nothing about whether an endpoint answers. Group
+ * messages go to every other member, so a caller can refuse, or report what a member still has to authorize, before
+ * it proposes.
+ *
+ * @param hby Habery holding `member` and the accepted end-role and location state.
+ * @param postman Poster whose route selection delivery would use.
+ * @param member Local member that would send.
+ * @param recipients Group member AIDs, for example `groupSigningMembers(hby, group)`.
+ * @param topic Recipient mailbox topic for a forwarded route.
+ * @returns Unreachable remote members; empty when every one has a route.
+ */
+export function unreachableGroupMembers(
+  hby: Habery,
+  postman: Pick<Poster, "canReach">,
+  member: Hab,
+  recipients: readonly string[],
+  topic = "multisig",
+): string[] {
+  return remoteGroupMembers(hby, member, recipients).filter((other) => !postman.canReach(member.pre!, other, topic));
 }
 
 /**
@@ -142,7 +165,7 @@ export function* prepareGroupMessage(
 ): Operation<SignedGroupMessage> {
   const stored = storedGroupMessage(exchanger.hby.db, member.pre, prepared[0], recipient);
   if (!stored) return signGroupMessage(member, recipient, prepared);
-  const message = yield* abortable(signal => collectBytes(exchanger.replay(stored.said!, signal)));
+  const message = yield* abortable((signal) => collectBytes(exchanger.replay(stored.said!, signal)));
   return {
     src: member.pre,
     recipient,
@@ -246,10 +269,10 @@ export function* deliverGroupMessage(
 
 /** Collect recipient outcomes: delivered message identities and completed target URLs, and every member's outcome. */
 export function groupSendResult(outcomes: readonly GroupDelivery[]): GroupSendResult {
-  const delivered = outcomes.filter(outcome => outcome.outcome === "delivered");
+  const delivered = outcomes.filter((outcome) => outcome.outcome === "delivered");
   return {
     messages: delivered.map(({ recipient, exnSaid, payloadSaid }) => ({ recipient, exnSaid, payloadSaid })),
-    deliveries: delivered.flatMap(outcome => outcome.deliveries),
+    deliveries: delivered.flatMap((outcome) => outcome.deliveries),
     members: [...outcomes],
   };
 }
