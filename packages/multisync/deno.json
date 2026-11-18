@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/multisync",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "exports": {
     "./v2": "./v2/mod.ts"
   },

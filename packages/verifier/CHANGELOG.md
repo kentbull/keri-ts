@@ -1,5 +1,13 @@
 # @keri-ts/verifier
 
+## 2.2.7
+
+### Patch Changes
+
+- Updated dependencies [7e33fd8]
+  - keri-ts@2.2.9
+  - @keri-ts/registrar@2.2.7
+
 ## 2.2.6
 
 ### Patch Changes
