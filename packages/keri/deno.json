@@ -1,6 +1,6 @@
 {
   "name": "keri-ts",
-  "version": "2.2.8",
+  "version": "2.2.9",
   "exports": {
     ".": "./mod.ts",
     "./cli": "./cli.ts",
