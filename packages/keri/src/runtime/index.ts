@@ -443,7 +443,7 @@ export type {
   GroupMessageRef,
   GroupSendResult,
 } from "../app/multisig/multisig-messaging.ts";
-export { signGroupMessage } from "../app/multisig/multisig-messaging.ts";
+export { signGroupMessage, unreachableGroupMembers } from "../app/multisig/multisig-messaging.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
 export {
   approveGroupProposal,

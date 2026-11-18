@@ -37,7 +37,7 @@ import type { Reactor } from "../protocol/reactor.ts";
 import type { CounselInputs, Counselor, GroupEventRef } from "./counseling.ts";
 import { groupSigningMembers, localGroupMember, uniqueMembers } from "./group-members.ts";
 import { MULTISIG_ICP_ROUTE, MULTISIG_IXN_ROUTE, MULTISIG_ROT_ROUTE } from "./grouping.ts";
-import { type GroupSendResult, remoteGroupMembers } from "./multisig-messaging.ts";
+import { type GroupSendResult, unreachableGroupMembers } from "./multisig-messaging.ts";
 import {
   type ApprovalResult,
   approveAcdcV2Registry,
@@ -94,12 +94,11 @@ export function* proposeGroupInception(
 ): Operation<GroupEventResult> {
   // Publishing needs a route to every other member. Refuse before the group habitat exists, so a call that could
   // not be sent leaves nothing behind and the same alias can be used again.
-  for (const other of remoteGroupMembers(deps.hby, member, uniqueMembers([...smids, ...rmids]))) {
-    if (!deps.postman.canReach(member.pre!, other)) {
-      throw new ValidationError(
-        `Group member ${other} cannot be reached: no end role is known for it. Resolve its OOBI first.`,
-      );
-    }
+  const [other] = unreachableGroupMembers(deps.hby, deps.postman, member, [...smids, ...rmids]);
+  if (other) {
+    throw new ValidationError(
+      `Group member ${other} cannot be reached: no end role is known for it. Resolve its OOBI first.`,
+    );
   }
   const created = deps.hby.makeGroupHab(alias, member, [...smids], [...rmids], undefined, args);
   const event = { pre: created.hab.pre, sn: created.serder.sn ?? 0, said: created.serder.said! };
