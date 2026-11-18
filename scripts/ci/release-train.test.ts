@@ -7,6 +7,7 @@ import {
   dispatchAndWait,
   type DispatchApi,
   gateSupportsEvidence,
+  installable,
   internalPins,
   latestTag,
   type Package,
@@ -223,4 +224,32 @@ Deno.test("a publishing release's smoke needs nothing local; a dry run builds wh
   ]);
   // Nothing is on npm yet: the stand-ins come back in dependency order.
   assertEquals(await standIns(verifier, readManifest, onNpm([])), ["cesr", "keri", "hosting", "registrar"]);
+});
+
+Deno.test("installable needs the install packument to list the version and the registry to serve its tarball", async () => {
+  const tarball = "https://registry.npmjs.org/keri-ts/-/keri-ts-2.2.9.tgz";
+  const answer = async (listed: boolean, served: boolean) => {
+    const seen: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      seen.push(`${init?.method ?? "GET"} ${url}`);
+      if (url === tarball) return Promise.resolve(new Response(null, { status: served ? 200 : 404 }));
+      const accept = new Headers(init?.headers).get("accept");
+      assertEquals(accept, "application/vnd.npm.install-v1+json");
+      const versions = listed ? { "2.2.9": { dist: { tarball } } } : { "2.2.8": { dist: { tarball: "x" } } };
+      return Promise.resolve(Response.json({ name: "keri-ts", versions }));
+    }) as typeof fetch;
+    try {
+      return { installable: await installable("keri-ts", "2.2.9"), seen };
+    } finally {
+      globalThis.fetch = real;
+    }
+  };
+  assertEquals((await answer(false, true)).installable, false);
+  assertEquals((await answer(true, false)).installable, false);
+  const ready = await answer(true, true);
+  assertEquals(ready.installable, true);
+  assertEquals(ready.seen, ["GET https://registry.npmjs.org/keri-ts", `HEAD ${tarball}`]);
+  await assertRejects(() => installable("keri-ts", "^2.2.9"), Error, "not an exact version");
 });

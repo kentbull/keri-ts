@@ -5,7 +5,7 @@
  * Modes (first argument):
  *   plan     resolve each package's tag, drop what npm already has, order the rest by dependency stage
  *   qualify  run the stage gate for commits that have no recorded green run, and wait for it
- *   registry-deps  before a package's smoke: wait until its internal dependencies are on npm (publish), or list
+ *   registry-deps  before a package's smoke: wait until its internal dependencies are installable from npm (publish), or list
  *                  the ones a dry run must build locally because npm does not have them (argument: package)
  *   dispatch dispatch a package's own release workflow for a tag and wait for that run to finish
  *   verify   check a built package's internal dependencies against the planned graph (argument: package)
@@ -230,6 +230,27 @@ export async function onRegistry(name: string, version: string): Promise<boolean
   await response.body?.cancel();
   if (response.status === 404) return false;
   if (!response.ok) throw new Error(`npm registry ${name}@${version}: HTTP ${response.status}`);
+  return true;
+}
+
+/**
+ * Whether `npm install` can install `name@version` now, as a smoke right after the dependency's publish does:
+ * the abbreviated install packument it resolves the version from lists it, and the registry serves its tarball.
+ * Both lag the version document that {@link onRegistry} reads: a release train saw `ETARGET` (the packument
+ * did not list a version minutes after publish) and then a 404 for the tarball, each after `onRegistry` agreed.
+ */
+export async function installable(name: string, version: string): Promise<boolean> {
+  if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) throw new Error(`${name}@${version} is not an exact version.`);
+  const base = `https://registry.npmjs.org/${name.replace("/", "%2F")}`;
+  const packument = await fetch(base, { headers: { accept: "application/vnd.npm.install-v1+json" } });
+  if (packument.status === 404) return (await packument.body?.cancel(), false);
+  if (!packument.ok) throw new Error(`npm registry ${name}: HTTP ${packument.status}`);
+  const tarball = (await packument.json()).versions?.[version]?.dist?.tarball;
+  if (typeof tarball !== "string") return false;
+  const served = await fetch(tarball, { method: "HEAD" });
+  await served.body?.cancel();
+  if (served.status === 404) return false;
+  if (!served.ok) throw new Error(`npm registry ${name}@${version} tarball: HTTP ${served.status}`);
   return true;
 }
 
@@ -506,8 +527,8 @@ export async function standIns(direct: Pin[], manifest: ManifestReader, publishe
 /**
  * Run before a package's smoke, after its build. A publishing run waits until every internal dependency the
  * package pins in its `package.json` (the exact versions released with it; the built manifest may widen a pin
- * to a range, as keri-ts does for cesr-ts) is visible on npm, because the smoke installs them from there, as
- * users will. A dry run publishes nothing, so a dependency released in the same train is not on npm: it probes
+ * to a range, as keri-ts does for cesr-ts) is installable from npm ({@link installable}), because the smoke
+ * installs them from there, as users will. A dry run publishes nothing, so a dependency released in the same train is not on npm: it probes
  * once and outputs `local`, the packages to build from this checkout and install beside the tarball instead.
  */
 async function runRegistryDeps(id: string): Promise<void> {
@@ -516,11 +537,11 @@ async function runRegistryDeps(id: string): Promise<void> {
     for (const pin of direct) {
       const entry = `${packages[pin.package]}@${pin.version}`;
       for (let attempt = 0;; attempt++) {
-        if (await onRegistry(packages[pin.package], pin.version)) break;
-        if (attempt >= 60) throw new Error(`${entry} is not visible on the npm registry.`);
+        if (await installable(packages[pin.package], pin.version)) break;
+        if (attempt >= 60) throw new Error(`${entry} is not installable from the npm registry.`);
         await new Promise((resolve) => setTimeout(resolve, 10_000));
       }
-      console.log(`${entry} is visible on npm`);
+      console.log(`${entry} is installable from npm`);
     }
     await output({ local: "" });
     return;
