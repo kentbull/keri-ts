@@ -33,7 +33,12 @@ export function* publishPendingTel(
     const hab = hby.habs.get(target.issuer);
     if (!hab) throw new ValidationError(`Missing local TEL issuer ${target.issuer}.`);
     const diger = publication.reger.tels.getOn(target.pre, target.sn)!;
-    const message = publication.reger.cloneTvt(target.pre, diger);
+    // Legacy TEL bodies are KERI v1, but their attachments travel in the issuer's
+    // KEL genus, the stream genus its witnesses already parse. KERIpy disseminates
+    // with v2 attachments (`Reger.clonePreIter` defaults `gvrsn` to `Version`) and
+    // its witnesses read detached attachments in their stream genus, ignoring
+    // CESR-Genus. The leading selector lets egress recognize the mixed frame.
+    const message = publication.reger.cloneTvt(target.pre, diger, hab.kelVersion, true);
     let delivered = true;
     for (const witness of target.witnesses) {
       const delivery = yield* deliverWitnessMessage(hab, witness, message, http, clock, null);

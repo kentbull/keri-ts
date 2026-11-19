@@ -35,11 +35,13 @@ Deno.test("TEL publication resumes receipt and dissemination escrows across reop
     let refuseReceipts = false;
     let refuseTel = false;
     let telAttempts = 0;
+    const telGenera = new Set<string | null>();
     const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
       if (new URL(request.url).pathname === "/receipts") {
         if (refuseReceipts) return new Response("withheld receipt", { status: 403 });
       } else if (request.method === "POST") {
         telAttempts++;
+        telGenera.add(request.headers.get("CESR-Genus"));
         if (refuseTel) return new Response("publication unavailable", { status: 503 });
       }
       return await handler(request);
@@ -132,6 +134,9 @@ Deno.test("TEL publication resumes receipt and dissemination escrows across reop
       yield* publishPendingTel(issuerHby, reopened.publication, receiptor, http, systemClock);
       assertEquals(loaded.complete(creder.said!, 1), true);
       assertEquals(observer.vdr!.tvy.tevers.get(regk)?.vcState(creder.said!)?.et, "rev");
+      // v1 TEL bodies from a v2 issuer travel with the issuer's v2 attachment genus.
+      assertEquals(issuer.kelVersion.major, 2);
+      assertEquals([...telGenera], ["2"]);
     } finally {
       yield* call(() => server.shutdown());
       handler.close?.();
